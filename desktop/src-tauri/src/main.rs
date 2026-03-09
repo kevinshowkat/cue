@@ -27,6 +27,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::TcpListener;
+use std::net::TcpStream;
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::PermissionsExt;
 #[cfg(target_family = "unix")]
@@ -34,9 +35,12 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{CustomMenuItem, Manager, Menu, MenuItem, State, Submenu};
+use tungstenite::client::IntoClientRequest;
+use tungstenite::stream::MaybeTlsStream;
+use tungstenite::{connect, Message, WebSocket};
 use url::Url;
 
 const MENU_CANVAS_IMPORT: &str = "canvas_import_photos";
@@ -2298,6 +2302,53 @@ fn review_image_data_url(path: &str) -> Result<String, String> {
     Ok(format!("data:{mime};base64,{encoded}"))
 }
 
+#[derive(Default)]
+struct ReviewResponsesWsSession {
+    socket: Option<WebSocket<MaybeTlsStream<TcpStream>>>,
+    connected_at: Option<Instant>,
+    last_response_id: Option<String>,
+}
+
+static REVIEW_RESPONSES_WS_SESSION: OnceLock<Mutex<ReviewResponsesWsSession>> = OnceLock::new();
+
+fn review_responses_ws_session() -> &'static Mutex<ReviewResponsesWsSession> {
+    REVIEW_RESPONSES_WS_SESSION.get_or_init(|| Mutex::new(ReviewResponsesWsSession::default()))
+}
+
+fn review_set_stream_timeouts(
+    stream: &mut MaybeTlsStream<TcpStream>,
+    timeout: Duration,
+) -> Result<(), String> {
+    match stream {
+        MaybeTlsStream::Plain(socket) => {
+            socket
+                .set_read_timeout(Some(timeout))
+                .map_err(|e| e.to_string())?;
+            socket
+                .set_write_timeout(Some(timeout))
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        MaybeTlsStream::Rustls(socket) => {
+            socket
+                .get_mut()
+                .set_read_timeout(Some(timeout))
+                .map_err(|e| e.to_string())?;
+            socket
+                .get_mut()
+                .set_write_timeout(Some(timeout))
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn review_drop_responses_ws_session(session: &mut ReviewResponsesWsSession) {
+    session.socket = None;
+    session.connected_at = None;
+}
+
 fn review_extract_openai_output_text(payload: &serde_json::Value) -> String {
     if let Some(text) = payload.get("output_text").and_then(|value| value.as_str()) {
         let trimmed = text.trim();
@@ -2545,6 +2596,279 @@ fn review_build_openai_planner_payload(
     })
 }
 
+fn review_build_openai_planner_ws_event(
+    prompt: &str,
+    image_urls: &[String],
+    model: &str,
+    previous_response_id: Option<&str>,
+) -> serde_json::Value {
+    let mut content = vec![serde_json::json!({
+        "type": "input_text",
+        "text": prompt,
+    })];
+    for image_url in image_urls {
+        content.push(serde_json::json!({
+            "type": "input_image",
+            "image_url": image_url,
+            "detail": "high",
+        }));
+    }
+    let mut event = serde_json::json!({
+        "type": "response.create",
+        "model": model,
+        "store": false,
+        "reasoning": {
+            "effort": "xhigh",
+        },
+        "input": [{
+            "type": "message",
+            "role": "user",
+            "content": content,
+        }],
+    });
+    if let Some(value) = previous_response_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        event["previous_response_id"] = serde_json::json!(value);
+    }
+    event
+}
+
+fn review_extract_openai_ws_response_id(payload: &serde_json::Value) -> Option<String> {
+    [
+        payload
+            .pointer("/response/id")
+            .and_then(|value| value.as_str())
+            .map(str::trim),
+        payload
+            .get("id")
+            .and_then(|value| value.as_str())
+            .map(str::trim),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|value| !value.is_empty())
+    .map(|value| value.to_string())
+}
+
+fn review_extract_openai_ws_error(payload: &serde_json::Value) -> String {
+    [
+        payload
+            .pointer("/error/message")
+            .and_then(|value| value.as_str()),
+        payload
+            .pointer("/response/error/message")
+            .and_then(|value| value.as_str()),
+        payload.pointer("/message").and_then(|value| value.as_str()),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .find(|value| !value.is_empty())
+    .map(|value| value.to_string())
+    .unwrap_or_else(|| "OpenAI planner websocket returned an unknown error.".to_string())
+}
+
+fn review_openai_planner_http_fallback(
+    client: &Client,
+    api_key: &str,
+    prompt: &str,
+    image_urls: &[String],
+    normalized_model: &str,
+) -> Result<serde_json::Value, String> {
+    let payload = review_build_openai_planner_payload(prompt, image_urls, normalized_model);
+    let response = client
+        .post("https://api.openai.com/v1/responses")
+        .bearer_auth(api_key)
+        .header("content-type", "application/json")
+        .json(&payload)
+        .send()
+        .map_err(|error| {
+            if error.is_timeout() {
+                return "OpenAI planner HTTP fallback timed out after 90 seconds.".to_string();
+            }
+            format!("OpenAI planner HTTP fallback request failed: {error}")
+        })?;
+    let status = response.status();
+    let body = response.text().map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(review_format_planner_http_error(
+            "openai",
+            normalized_model,
+            status.as_u16(),
+            &body,
+        ));
+    }
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
+    Ok(serde_json::json!({
+        "provider": "openai",
+        "model": normalized_model,
+        "transport": "responses_http_fallback",
+        "text": review_extract_openai_output_text(&parsed),
+        "response_id": review_extract_openai_ws_response_id(&parsed),
+        "raw": parsed,
+    }))
+}
+
+fn review_openai_ws_connect(
+    session: &mut ReviewResponsesWsSession,
+    api_key: &str,
+) -> Result<(), String> {
+    let needs_reconnect = session
+        .connected_at
+        .map(|connected_at| connected_at.elapsed() >= Duration::from_secs(55 * 60))
+        .unwrap_or(true)
+        || session.socket.is_none();
+    if !needs_reconnect {
+        return Ok(());
+    }
+    review_drop_responses_ws_session(session);
+    let mut request = "wss://api.openai.com/v1/responses"
+        .into_client_request()
+        .map_err(|e| e.to_string())?;
+    let auth_header = format!("Bearer {api_key}")
+        .parse()
+        .map_err(|e| format!("invalid websocket auth header: {e}"))?;
+    request.headers_mut().insert("Authorization", auth_header);
+    let (mut socket, _) =
+        connect(request).map_err(|e| format!("OpenAI planner websocket connect failed: {e}"))?;
+    review_set_stream_timeouts(socket.get_mut(), Duration::from_secs(90))?;
+    session.connected_at = Some(Instant::now());
+    session.socket = Some(socket);
+    Ok(())
+}
+
+fn review_openai_planner_ws_request_inner(
+    socket: &mut WebSocket<MaybeTlsStream<TcpStream>>,
+    prompt: &str,
+    image_urls: &[String],
+    normalized_model: &str,
+    previous_response_id: Option<&str>,
+) -> Result<(String, Option<String>, serde_json::Value), String> {
+    let event = review_build_openai_planner_ws_event(
+        prompt,
+        image_urls,
+        normalized_model,
+        previous_response_id,
+    );
+    socket
+        .send(Message::Text(event.to_string().into()))
+        .map_err(|e| format!("OpenAI planner websocket send failed: {e}"))?;
+
+    let mut streamed_text = String::new();
+    loop {
+        let message = socket.read().map_err(|e| {
+            format!("OpenAI planner websocket read failed or timed out after 90 seconds: {e}")
+        })?;
+        match message {
+            Message::Text(raw) => {
+                let parsed: serde_json::Value =
+                    serde_json::from_str(raw.as_str()).unwrap_or_else(|_| {
+                        serde_json::json!({
+                            "type": "unknown",
+                            "raw": raw.as_str(),
+                        })
+                    });
+                let event_type = parsed
+                    .get("type")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default();
+                match event_type {
+                    "response.output_text.delta" => {
+                        if let Some(delta) = parsed.get("delta").and_then(|value| value.as_str()) {
+                            streamed_text.push_str(delta);
+                        }
+                    }
+                    "response.output_text.done" => {
+                        if let Some(text) = parsed.get("text").and_then(|value| value.as_str()) {
+                            streamed_text = text.trim().to_string();
+                        }
+                    }
+                    "response.completed" => {
+                        let response = parsed
+                            .get("response")
+                            .cloned()
+                            .unwrap_or_else(|| serde_json::json!({}));
+                        let response_id = review_extract_openai_ws_response_id(&response)
+                            .or_else(|| review_extract_openai_ws_response_id(&parsed));
+                        let output_text = review_extract_openai_output_text(&response);
+                        return Ok((
+                            if output_text.trim().is_empty() {
+                                streamed_text.trim().to_string()
+                            } else {
+                                output_text
+                            },
+                            response_id,
+                            response,
+                        ));
+                    }
+                    "response.failed" | "response.incomplete" | "error" => {
+                        return Err(review_extract_openai_ws_error(&parsed));
+                    }
+                    _ => {}
+                }
+            }
+            Message::Ping(payload) => {
+                socket
+                    .send(Message::Pong(payload))
+                    .map_err(|e| format!("OpenAI planner websocket ping reply failed: {e}"))?;
+            }
+            Message::Close(frame) => {
+                let detail = frame
+                    .as_ref()
+                    .map(|value| value.reason.to_string())
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| "connection closed".to_string());
+                return Err(format!(
+                    "OpenAI planner websocket closed before completion: {detail}"
+                ));
+            }
+            _ => {}
+        }
+    }
+}
+
+fn review_openai_planner_ws_request(
+    session: &mut ReviewResponsesWsSession,
+    prompt: &str,
+    image_urls: &[String],
+    normalized_model: &str,
+    previous_response_id: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let result = {
+        let Some(socket) = session.socket.as_mut() else {
+            return Err("OpenAI planner websocket session is unavailable.".to_string());
+        };
+        review_openai_planner_ws_request_inner(
+            socket,
+            prompt,
+            image_urls,
+            normalized_model,
+            previous_response_id,
+        )
+    };
+    match result {
+        Ok((text, response_id, raw)) => {
+            session.last_response_id = response_id.clone();
+            Ok(serde_json::json!({
+                "provider": "openai",
+                "model": normalized_model,
+                "transport": "responses_websocket",
+                "text": text,
+                "response_id": response_id,
+                "previous_response_id": previous_response_id,
+                "raw": raw,
+            }))
+        }
+        Err(error) => {
+            review_drop_responses_ws_session(session);
+            Err(error)
+        }
+    }
+}
+
 fn review_apply_openrouter_headers(
     mut request: reqwest::blocking::RequestBuilder,
     vars: &HashMap<String, String>,
@@ -2754,34 +3078,47 @@ fn run_design_review_planner_request(
                 .iter()
                 .map(|path| review_image_data_url(path))
                 .collect::<Result<Vec<_>, _>>()?;
-            let payload =
-                review_build_openai_planner_payload(&prompt, &image_urls, &normalized_model);
-            let response = client
-                .post("https://api.openai.com/v1/responses")
-                .bearer_auth(api_key)
-                .header("content-type", "application/json")
-                .json(&payload)
-                .send()
-                .map_err(|e| format!("OpenAI planner request failed: {e}"))?;
-            let status = response.status();
-            let body = response.text().map_err(|e| e.to_string())?;
-            if !status.is_success() {
-                return Err(review_format_planner_http_error(
-                    "openai",
+            let previous_response_id = request
+                .get("previous_response_id")
+                .and_then(|value| value.as_str())
+                .or_else(|| {
+                    request
+                        .get("previousResponseId")
+                        .and_then(|value| value.as_str())
+                });
+            let session_lock = review_responses_ws_session()
+                .lock()
+                .map_err(|_| "OpenAI planner websocket session lock is poisoned.".to_string())?;
+            let mut session = session_lock;
+            match review_openai_ws_connect(&mut session, &api_key).and_then(|_| {
+                review_openai_planner_ws_request(
+                    &mut session,
+                    &prompt,
+                    &image_urls,
                     &normalized_model,
-                    status.as_u16(),
-                    &body,
-                ));
+                    previous_response_id,
+                )
+            }) {
+                Ok(result) => return Ok(result),
+                Err(ws_error) => {
+                    let mut fallback = review_openai_planner_http_fallback(
+                        &client,
+                        &api_key,
+                        &prompt,
+                        &image_urls,
+                        &normalized_model,
+                    )
+                    .map_err(|http_error| {
+                        format!(
+                            "OpenAI planner websocket request failed: {ws_error} HTTP fallback also failed: {http_error}"
+                        )
+                    })?;
+                    if let Some(object) = fallback.as_object_mut() {
+                        object.insert("fallback_reason".to_string(), serde_json::json!(ws_error));
+                    }
+                    return Ok(fallback);
+                }
             }
-            let parsed: serde_json::Value = serde_json::from_str(&body)
-                .unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
-            return Ok(serde_json::json!({
-                "provider": "openai",
-                "model": normalized_model,
-                "transport": "responses",
-                "text": review_extract_openai_output_text(&parsed),
-                "raw": parsed,
-            }));
         }
     }
 
@@ -3685,7 +4022,8 @@ mod tests {
     use super::{
         encode_flattened_psd_rgba, is_native_engine_placeholder, push_native_path_candidate,
         resolve_existing_env_binary_path, review_build_openai_planner_payload,
-        review_format_planner_http_error, review_normalize_planner_model, EngineProgramCandidate,
+        review_build_openai_planner_ws_event, review_format_planner_http_error,
+        review_normalize_planner_model, EngineProgramCandidate,
         DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL, DESIGN_REVIEW_PLANNER_MODEL,
     };
 
@@ -3803,6 +4141,37 @@ mod tests {
                 .pointer("/input/0/content/2/detail")
                 .and_then(|value| value.as_str()),
             Some("high")
+        );
+    }
+
+    #[test]
+    fn openai_planner_ws_event_uses_response_create_and_previous_response_id() {
+        let event = review_build_openai_planner_ws_event(
+            "Plan the next edit.",
+            &["data:image/png;base64,AAAA".to_string()],
+            DESIGN_REVIEW_PLANNER_MODEL,
+            Some("resp_prev_123"),
+        );
+
+        assert_eq!(
+            event.get("type").and_then(|value| value.as_str()),
+            Some("response.create")
+        );
+        assert_eq!(
+            event.get("store").and_then(|value| value.as_bool()),
+            Some(false)
+        );
+        assert_eq!(
+            event
+                .pointer("/input/0/type")
+                .and_then(|value| value.as_str()),
+            Some("message")
+        );
+        assert_eq!(
+            event
+                .get("previous_response_id")
+                .and_then(|value| value.as_str()),
+            Some("resp_prev_123")
         );
     }
 

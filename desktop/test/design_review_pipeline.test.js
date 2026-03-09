@@ -85,3 +85,81 @@ test("design review pipeline plans, fans out previews, and records acceptance me
   assert.equal(memory.acceptedActionTypes.cut_out_subject, 1);
   assert.equal(persisted.acceptedActionTypes.cut_out_subject, 1);
 });
+
+test("design review pipeline ignores stale review completions after a newer review starts", async () => {
+  let resolveFirstPlanner;
+  const firstPlanner = new Promise((resolve) => {
+    resolveFirstPlanner = resolve;
+  });
+  const plannerCalls = [];
+  const pipeline = createDesignReviewPipeline({
+    providerRouter: {
+      async runPlanner({ request }) {
+        plannerCalls.push(request.requestId);
+        if (request.requestId === "review-1") {
+          return firstPlanner;
+        }
+        return {
+          text: JSON.stringify({
+            proposals: [
+              {
+                label: "Second review wins",
+                imageId: "img-2",
+                actionType: "targeted_remove",
+                why: "This is the active review state.",
+                previewBrief: "Preview the active request only.",
+                applyBrief: "Apply the active request only.",
+              },
+            ],
+          }),
+        };
+      },
+      async runPreview({ proposal, outputPath }) {
+        return {
+          outputPath: outputPath || `/tmp/${proposal.proposalId}.png`,
+        };
+      },
+    },
+  });
+
+  const firstRun = pipeline.startReview({
+    request: {
+      requestId: "review-1",
+      primaryImageId: "img-1",
+      visibleCanvasRef: "/tmp/review-1.png",
+      visibleCanvasContext: { runDir: "/tmp/review-1" },
+    },
+  });
+  const secondRun = pipeline.startReview({
+    request: {
+      requestId: "review-2",
+      primaryImageId: "img-2",
+      visibleCanvasRef: "/tmp/review-2.png",
+      visibleCanvasContext: { runDir: "/tmp/review-2" },
+      slotCount: 2,
+    },
+  });
+
+  resolveFirstPlanner({
+    text: JSON.stringify({
+      proposals: [
+        {
+          label: "Stale review",
+          imageId: "img-1",
+          actionType: "cut_out_subject",
+          why: "This should not overwrite the newer state.",
+          previewBrief: "Preview the stale request.",
+          applyBrief: "Apply the stale request.",
+        },
+      ],
+    }),
+  });
+
+  await firstRun;
+  const secondResult = await secondRun;
+
+  assert.deepEqual(plannerCalls, ["review-1", "review-2"]);
+  assert.equal(secondResult.request.requestId, "review-2");
+  assert.equal(secondResult.proposals[0].label, "Second review wins");
+  assert.equal(pipeline.getState().request.requestId, "review-2");
+});
