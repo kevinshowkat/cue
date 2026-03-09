@@ -320,10 +320,29 @@ function ensureReviewStyle() {
   display: grid;
   gap: 4px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 .design-review-runtime-meta {
   font-size: 11px;
   color: rgba(86, 101, 121, 0.74);
+}
+.design-review-runtime-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.design-review-runtime-head-debug {
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: rgba(233, 238, 244, 0.96);
+  color: rgba(61, 78, 98, 0.84);
 }
 .design-review-runtime-card {
   display: grid;
@@ -688,6 +707,44 @@ function slotSummaryText(slot = {}) {
   );
 }
 
+function collectReviewDebugPayload(state = {}) {
+  const slots = Array.isArray(state?.slots) ? state.slots : [];
+  const failedSlots = slots
+    .filter((slot) => slot?.status === "failed" && slot?.debugInfo)
+    .map((slot, index) => ({
+      rank: Number(slot?.rank) || index + 1,
+      label: readFirstString(slot?.proposal?.label, slot?.proposal?.title) || `Proposal ${index + 1}`,
+      error: readFirstString(slot?.error) || null,
+      debugInfo: JSON.parse(JSON.stringify(slot.debugInfo)),
+    }));
+  if (!failedSlots.length && !state?.plannerDebugInfo) return null;
+  return {
+    requestId: readFirstString(state?.request?.requestId) || null,
+    status: readFirstString(state?.status) || null,
+    reviewRequest: state?.request && typeof state.request === "object" ? JSON.parse(JSON.stringify(state.request)) : null,
+    plannerDebugInfo: state?.plannerDebugInfo ? JSON.parse(JSON.stringify(state.plannerDebugInfo)) : null,
+    failedSlots,
+  };
+}
+
+function clampTrayIntoCanvasWrap(tray = null) {
+  const trayEl = tray || communicationTrayRoot();
+  const wrap = document.getElementById("canvas-wrap");
+  if (!trayEl || !wrap) return false;
+  const width = Number(trayEl.offsetWidth) || 0;
+  const height = Number(trayEl.offsetHeight) || 0;
+  if (!width || !height) return false;
+  const maxX = Math.max(12, (Number(wrap.clientWidth) || 0) - width - 12);
+  const maxY = Math.max(12, (Number(wrap.clientHeight) || 0) - height - 18);
+  const currentX = Number.parseFloat(trayEl.style.left || "0");
+  const currentY = Number.parseFloat(trayEl.style.top || "0");
+  const clampedX = Math.min(maxX, Math.max(12, Number.isFinite(currentX) ? currentX : 12));
+  const clampedY = Math.min(maxY, Math.max(12, Number.isFinite(currentY) ? currentY : 12));
+  trayEl.style.left = `${Math.round(clampedX)}px`;
+  trayEl.style.top = `${Math.round(clampedY)}px`;
+  return true;
+}
+
 export function mapDesignReviewStateToCommunicationTray(state = {}) {
   const slots = Array.isArray(state?.slots) ? state.slots : [];
   return {
@@ -755,6 +812,30 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
       meta = document.createElement("div");
       meta.className = "design-review-runtime-meta";
       headGroup.appendChild(meta);
+    }
+    let headActions = head.querySelector(".design-review-runtime-head-actions");
+    if (!headActions) {
+      headActions = document.createElement("div");
+      headActions.className = "design-review-runtime-head-actions";
+      if (title?.parentElement === headGroup) {
+        head.insertBefore(headActions, head.querySelector(".communication-proposal-tray-close") || null);
+      } else {
+        head.appendChild(headActions);
+      }
+    }
+    headActions.replaceChildren();
+    const reviewDebugPayload = collectReviewDebugPayload(state);
+    if (reviewDebugPayload) {
+      const debug = document.createElement("button");
+      debug.type = "button";
+      debug.className = "design-review-runtime-head-debug";
+      debug.textContent = "Debug Payload";
+      debug.addEventListener("click", () => {
+        openReviewDebugModal(reviewDebugPayload);
+      });
+      headActions.appendChild(debug);
+    } else {
+      headActions.remove();
     }
     const imageId = readFirstString(state?.request?.primaryImageId);
     meta.textContent = imageId
@@ -846,6 +927,9 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
 
     layout.append(media, copy);
     card.appendChild(layout);
+  });
+  requestAnimationFrame(() => {
+    clampTrayIntoCanvasWrap(tray);
   });
 }
 
@@ -988,11 +1072,13 @@ function clearCommunicationTrayReviewDetails() {
   const head = tray.querySelector(".communication-proposal-tray-head");
   const title = tray.querySelector(".communication-proposal-tray-title");
   const headGroup = head?.querySelector(".design-review-runtime-head") || null;
+  const headActions = head?.querySelector(".design-review-runtime-head-actions") || null;
   if (title && headGroup && title.parentElement === headGroup && head) {
     head.prepend(title);
   }
   if (title) title.textContent = "Design Review";
   headGroup?.remove();
+  headActions?.remove();
   return true;
 }
 
