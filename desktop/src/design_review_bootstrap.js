@@ -361,6 +361,7 @@ function ensureReviewStyle() {
 #communication-proposal-tray.is-design-review-runtime {
   width: min(360px, calc(100vw - 40px));
   min-width: 280px;
+  overflow: hidden;
   border-color: rgba(203, 212, 222, 0.94);
   background:
     radial-gradient(220px 126px at 18% -6%, rgba(255, 149, 92, 0.10), transparent 62%),
@@ -371,6 +372,9 @@ function ensureReviewStyle() {
     0 1px 0 rgba(255, 255, 255, 0.86) inset;
   backdrop-filter: blur(22px) saturate(1.15);
 }
+#communication-proposal-tray.is-design-review-runtime.is-collapsed {
+  padding: 10px;
+}
 #communication-proposal-tray.is-design-review-runtime::after {
   border-right-color: rgba(203, 212, 222, 0.94);
   border-bottom-color: rgba(203, 212, 222, 0.94);
@@ -378,6 +382,9 @@ function ensureReviewStyle() {
 #communication-proposal-tray.is-design-review-runtime .communication-proposal-tray-head {
   align-items: flex-start;
   margin-bottom: 12px;
+}
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .communication-proposal-tray-head {
+  margin-bottom: 8px;
 }
 #communication-proposal-tray.is-design-review-runtime .communication-proposal-tray-title {
   color: rgba(72, 84, 102, 0.9);
@@ -393,6 +400,35 @@ function ensureReviewStyle() {
   gap: 4px;
   min-width: 0;
   flex: 1 1 auto;
+}
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .communication-proposal-slot-list {
+  gap: 6px;
+}
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .communication-proposal-slot {
+  padding: 8px 10px;
+  border-radius: 12px;
+}
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-card {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-media {
+  display: none;
+}
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-copy {
+  gap: 4px;
+}
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-title {
+  font-size: 13px;
+  line-height: 1.24;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-why,
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-hint,
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-actions {
+  display: none;
 }
 .design-review-runtime-meta {
   font-size: 11px;
@@ -831,6 +867,62 @@ function slotSummaryText(slot = {}) {
   return proposalEffectText(slot?.proposal);
 }
 
+function shouldCollapseReviewTray(state = {}) {
+  const status = readFirstString(state?.status).toLowerCase();
+  if (["preparing", "planning", "previewing", "apply_running"].includes(status)) {
+    return true;
+  }
+  if (["ready", "failed", "apply_failed", "apply_succeeded"].includes(status)) {
+    return false;
+  }
+  const slots = Array.isArray(state?.slots) ? state.slots : [];
+  if (!slots.length) return false;
+  const hasTerminalSlot = slots.some((slot) =>
+    ["ready", "failed", "apply_failed", "apply_succeeded"].includes(
+      readFirstString(slot?.status).toLowerCase()
+    )
+  );
+  if (hasTerminalSlot) return false;
+  return slots.some((slot) =>
+    ["planning", "preview_pending", "preview_running", "apply_running"].includes(
+      readFirstString(slot?.status).toLowerCase()
+    )
+  );
+}
+
+function createPendingRuntimeReviewState(requestId = null) {
+  const normalizedRequestId = readFirstString(requestId) || null;
+  return {
+    status: "planning",
+    request: {
+      requestId: normalizedRequestId,
+    },
+    slots: [
+      {
+        rank: 1,
+        status: "planning",
+        proposal: {
+          label: "Map the edit",
+        },
+      },
+      {
+        rank: 2,
+        status: "preview_pending",
+        proposal: {
+          label: "Queue options",
+        },
+      },
+      {
+        rank: 3,
+        status: "preview_pending",
+        proposal: {
+          label: "Render previews",
+        },
+      },
+    ],
+  };
+}
+
 function collectReviewDebugPayload(state = {}) {
   const slots = Array.isArray(state?.slots) ? state.slots : [];
   const failedSlots = slots
@@ -929,6 +1021,7 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
   const list = communicationTraySlotList();
   if (!tray || !list) return;
   tray.classList.add("is-design-review-runtime");
+  tray.classList.toggle("is-collapsed", shouldCollapseReviewTray(state));
   tray.dataset.reviewStatus = readFirstString(state?.status) || "idle";
 
   const head = tray.querySelector(".communication-proposal-tray-head");
@@ -1258,6 +1351,7 @@ function clearCommunicationTrayReviewDetails() {
   const tray = communicationTrayRoot();
   if (!tray) return false;
   tray.classList.remove("is-design-review-runtime");
+  tray.classList.remove("is-collapsed");
   tray.dataset.reviewStatus = "idle";
   const head = tray.querySelector(".communication-proposal-tray-head");
   const title = tray.querySelector(".communication-proposal-tray-title");
@@ -1279,8 +1373,11 @@ function syncCommunicationTray(runtimeState, state = {}, onAccept = null) {
     runtimeState.lastCommunicationPayload,
     runtimeState.lastTrayAnchor
   );
+  runtimeState.lastTrayAnchor = anchor || runtimeState.lastTrayAnchor || null;
+  renderCommunicationTrayDetails(state, (proposal) => {
+    if (typeof onAccept === "function") onAccept(proposal, runtimeState);
+  });
   if (shell && typeof shell.showCommunicationProposalTray === "function" && trayState.requestId) {
-    runtimeState.lastTrayAnchor = anchor || runtimeState.lastTrayAnchor || null;
     shell.showCommunicationProposalTray({
       visible: true,
       requestId: trayState.requestId,
@@ -1289,9 +1386,6 @@ function syncCommunicationTray(runtimeState, state = {}, onAccept = null) {
       slots: trayState.slots,
     });
   }
-  renderCommunicationTrayDetails(state, (proposal) => {
-    if (typeof onAccept === "function") onAccept(proposal, runtimeState);
-  });
 }
 
 function renderReviewFailure(
@@ -1565,6 +1659,12 @@ export async function installDesignReviewBootstrap() {
     runtimeState.activeRequestId =
       readFirstString(detail?.requestId, reviewPayload?.requestId) || runtimeState.activeRequestId;
     runtimeRegistry.rememberRequest(runtimeState.activeRequestId, runtimeState.sessionKey);
+    if (runtimeState.activeRequestId) {
+      syncRuntimeReviewState(
+        runtimeState,
+        createPendingRuntimeReviewState(runtimeState.activeRequestId)
+      );
+    }
 
     if (!snapshot?.images?.length) {
       return renderReviewFailure(

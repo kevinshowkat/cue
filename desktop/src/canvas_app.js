@@ -22022,7 +22022,15 @@ function suppressBootstrapDesignReviewTray() {
   return true;
 }
 
-function setCommunicationProposalTray(next = {}, { source = "review_runtime" } = {}) {
+function setCommunicationProposalTray(
+  next = {},
+  {
+    source = "review_runtime",
+    render = true,
+    dispatch = true,
+    requestRender: shouldRequestRender = true,
+  } = {}
+) {
   clearCommunicationProposalTrayDismissTimer();
   els.communicationProposalTray?.classList.remove("is-dismissing");
   const tray = state.communication.proposalTray || createFreshCommunicationState().proposalTray;
@@ -22035,13 +22043,19 @@ function setCommunicationProposalTray(next = {}, { source = "review_runtime" } =
     createCommunicationProposalSlot(index, Array.isArray(next?.slots) ? next.slots[index] || {} : tray.slots?.[index] || {})
   );
   state.communication.proposalTray = tray;
-  renderCommunicationChrome();
-  dispatchJuggernautShellEvent(COMMUNICATION_PROPOSAL_TRAY_EVENT, {
-    source,
-    tray: buildCommunicationProposalTraySnapshot(),
-    context: buildJuggernautShellContext(),
-  });
-  requestRender();
+  if (render) {
+    renderCommunicationChrome();
+  }
+  if (dispatch) {
+    dispatchJuggernautShellEvent(COMMUNICATION_PROPOSAL_TRAY_EVENT, {
+      source,
+      tray: buildCommunicationProposalTraySnapshot(),
+      context: buildJuggernautShellContext(),
+    });
+  }
+  if (shouldRequestRender) {
+    requestRender();
+  }
   return tray;
 }
 
@@ -22197,6 +22211,7 @@ function requestCommunicationDesignReview({ source = "titlebar" } = {}) {
   }
   state.communication.lastReviewRequestedAt = now;
   const requestId = `design-review-${Date.now()}-${Math.max(1, ++state.communication.reviewRequestSeq)}`;
+  const silentPrime = titlebarSource;
   setCommunicationProposalTray(
     {
       visible: true,
@@ -22205,7 +22220,12 @@ function requestCommunicationDesignReview({ source = "titlebar" } = {}) {
       anchor: trayAnchor,
       slots: buildCommunicationReviewPendingSlots({ overallStatus: "preparing" }),
     },
-    { source }
+    {
+      source,
+      render: !silentPrime,
+      dispatch: !silentPrime,
+      requestRender: !silentPrime,
+    }
   );
   const payload = buildCommunicationReviewPayload({ requestId, source });
   dispatchJuggernautShellEvent(COMMUNICATION_REVIEW_REQUESTED_EVENT, {

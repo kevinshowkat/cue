@@ -121,6 +121,9 @@ test("requestCommunicationDesignReview primes immediate communication-tray state
     trayCalls[0].next.slots.map((slot) => slot.status),
     ["preparing", "planning", "preview_pending"]
   );
+  assert.equal(trayCalls[0].meta.render, false);
+  assert.equal(trayCalls[0].meta.dispatch, false);
+  assert.equal(trayCalls[0].meta.requestRender, false);
   assert.equal(eventCalls.length, 1);
   assert.equal(eventCalls[0].name, "juggernaut:design-review-requested");
   assert.equal(eventCalls[0].detail.context.requestId, result.requestId);

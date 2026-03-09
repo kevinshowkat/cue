@@ -270,3 +270,77 @@ test("review bootstrap slot summaries prioritize compact effect statements for r
   );
   assert.equal(applyingCopy, "Applying to the target image.");
 });
+
+test("review bootstrap collapses the runtime tray only while review work is busy", () => {
+  const readFirstString = instantiateFunction("readFirstString");
+  const shouldCollapseReviewTray = instantiateFunction("shouldCollapseReviewTray", {
+    readFirstString,
+  });
+
+  assert.equal(shouldCollapseReviewTray({ status: "planning", slots: [] }), true);
+  assert.equal(
+    shouldCollapseReviewTray({
+      status: "previewing",
+      slots: [{ status: "preview_running" }],
+    }),
+    true
+  );
+  assert.equal(
+    shouldCollapseReviewTray({
+      status: "ready",
+      slots: [{ status: "ready" }],
+    }),
+    false
+  );
+  assert.equal(
+    shouldCollapseReviewTray({
+      status: "apply_failed",
+      slots: [{ status: "apply_failed" }],
+    }),
+    false
+  );
+});
+
+test("review bootstrap renders runtime tray details before shell positioning to avoid shell-to-runtime flicker", () => {
+  const callOrder = [];
+  const syncCommunicationTray = instantiateFunction("syncCommunicationTray", {
+    mapDesignReviewStateToCommunicationTray: () => ({
+      requestId: "review-1",
+      slots: [{ slotId: "slot-1", status: "skeleton" }],
+    }),
+    shellBridge: () => ({
+      showCommunicationProposalTray(payload) {
+        callOrder.push(["show", payload]);
+      },
+    }),
+    activeTrayAnchor: () => ({
+      kind: "titlebar_button",
+      trayPlacement: "below",
+    }),
+    renderCommunicationTrayDetails: (_state, onAccept) => {
+      callOrder.push(["render"]);
+      assert.equal(typeof onAccept, "function");
+    },
+  });
+
+  const runtimeState = {
+    lastCommunicationPayload: null,
+    lastTrayAnchor: null,
+  };
+  syncCommunicationTray(runtimeState, {
+    request: { requestId: "review-1" },
+    status: "planning",
+    slots: [],
+  });
+
+  assert.equal(callOrder[0][0], "render");
+  assert.equal(callOrder[1][0], "show");
+  assert.equal(runtimeState.lastTrayAnchor?.kind, "titlebar_button");
+});
+
+test("review bootstrap seeds a pending runtime tray before async review work starts", () => {
+  assert.match(
+    bootstrap,
+    /syncRuntimeReviewState\(\s*runtimeState,\s*createPendingRuntimeReviewState\(runtimeState\.activeRequestId\)\s*\)/
+  );
+});
