@@ -69,6 +69,7 @@ export function createDesignReviewPipeline({
   slotCount = 3,
 } = {}) {
   let state = freshState();
+  let activeRunToken = 0;
   const listeners = new Set();
 
   const emit = () => {
@@ -126,6 +127,9 @@ export function createDesignReviewPipeline({
       return out;
     },
     async startReview(input = {}) {
+      const runToken = activeRunToken + 1;
+      activeRunToken = runToken;
+      const isCurrentRun = () => runToken === activeRunToken;
       const request =
         input?.request && typeof input.request === "object"
           ? { ...input.request }
@@ -150,6 +154,7 @@ export function createDesignReviewPipeline({
       });
 
       if (!providerRouter?.runPlanner) {
+        if (!isCurrentRun()) return cloneJson(state);
         setState({
           ...state,
           status: "failed",
@@ -171,6 +176,7 @@ export function createDesignReviewPipeline({
         prompt: plannerPrompt,
         images: [request.visibleCanvasRef].filter(Boolean),
       });
+      if (!isCurrentRun()) return cloneJson(state);
       const parsed = parseDesignReviewPlannerResponse(
         plannerResult?.text || plannerResult?.outputText || plannerResult?.rawText || "",
         request
@@ -203,6 +209,7 @@ export function createDesignReviewPipeline({
         errors: rankedProposals.length ? [] : ["planner_returned_no_proposal"],
       });
       if (!rankedProposals.length) {
+        if (!isCurrentRun()) return cloneJson(state);
         setState({
           ...state,
           completedAt: new Date().toISOString(),
@@ -212,9 +219,11 @@ export function createDesignReviewPipeline({
 
       await Promise.all(
         rankedProposals.map(async (proposal, index) => {
+          if (!isCurrentRun()) return;
           const rank = index + 1;
           const previewJob = previewJobs[index];
           const outputPath = previewFilePathForProposal(request.visibleCanvasContext?.runDir, proposal.proposalId);
+          if (!isCurrentRun()) return;
           state = {
             ...state,
             previewJobs: state.previewJobs.map((job) =>
@@ -241,6 +250,7 @@ export function createDesignReviewPipeline({
                 : null,
               outputPath,
             });
+            if (!isCurrentRun()) return;
             state = {
               ...state,
               previewJobs: state.previewJobs.map((job) =>
@@ -267,6 +277,7 @@ export function createDesignReviewPipeline({
             };
             emit();
           } catch (error) {
+            if (!isCurrentRun()) return;
             state = {
               ...state,
               previewJobs: state.previewJobs.map((job) =>
@@ -292,6 +303,7 @@ export function createDesignReviewPipeline({
           }
         })
       );
+      if (!isCurrentRun()) return cloneJson(state);
       setState({
         ...state,
         status: "ready",

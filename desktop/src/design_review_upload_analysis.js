@@ -218,6 +218,7 @@ export async function scheduleOpportunisticUploadAnalysis({
   cacheStore = null,
   hashImage = null,
   analyzeImage = null,
+  inFlightByHash = null,
   onUpdate = null,
 } = {}) {
   const normalizedConsent = normalizeConsent(
@@ -256,6 +257,16 @@ export async function scheduleOpportunisticUploadAnalysis({
       promise: Promise.resolve(cached),
     };
   }
+  const sharedInFlight =
+    inFlightByHash instanceof Map ? inFlightByHash.get(hash) || null : null;
+  if (sharedInFlight) {
+    return {
+      started: false,
+      status: "in_flight",
+      hash,
+      promise: sharedInFlight,
+    };
+  }
   const promise = Promise.resolve()
     .then(() =>
       analyzeImage({
@@ -290,11 +301,68 @@ export async function scheduleOpportunisticUploadAnalysis({
       };
       if (typeof onUpdate === "function") onUpdate(failure);
       return failure;
+    })
+    .finally(() => {
+      if (inFlightByHash instanceof Map) {
+        inFlightByHash.delete(hash);
+      }
     });
+  if (inFlightByHash instanceof Map) {
+    inFlightByHash.set(hash, promise);
+  }
   return {
     started: true,
     status: "queued",
     hash,
     promise,
+  };
+}
+
+function imageWarmupKey(image = {}) {
+  return readFirstString(image?.path, image?.imagePath, image?.id, image?.imageId);
+}
+
+export function createUploadAnalysisWarmupController({
+  cacheStore = null,
+  hashImage = null,
+  analyzeImage = null,
+  onUpdate = null,
+} = {}) {
+  const warmedImageKeys = new Set();
+  const inFlightByHash = new Map();
+
+  return {
+    get warmedImageKeys() {
+      return new Set(warmedImageKeys);
+    },
+    reset() {
+      warmedImageKeys.clear();
+      inFlightByHash.clear();
+    },
+    async warmImages(images = [], { consent = null } = {}) {
+      const scheduled = [];
+      for (const image of Array.isArray(images) ? images : []) {
+        const imageKey = imageWarmupKey(image);
+        if (!imageKey || warmedImageKeys.has(imageKey)) continue;
+        const next = await scheduleOpportunisticUploadAnalysis({
+          image,
+          consent,
+          cacheStore,
+          hashImage,
+          analyzeImage,
+          inFlightByHash,
+          onUpdate,
+        });
+        if (
+          next?.started ||
+          next?.status === "cached" ||
+          next?.status === "in_flight"
+        ) {
+          warmedImageKeys.add(imageKey);
+        }
+        scheduled.push(next);
+      }
+      return scheduled;
+    },
   };
 }

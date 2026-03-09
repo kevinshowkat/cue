@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  createUploadAnalysisWarmupController,
   createUploadAnalysisCacheStore,
   normalizeUploadAnalysisResult,
   scheduleOpportunisticUploadAnalysis,
@@ -61,4 +62,41 @@ test("upload analysis normalization accepts text-wrapped JSON payloads", () => {
   assert.equal(normalized.hash, "hash-3");
   assert.equal(normalized.summary, "Bright sneaker on a seamless backdrop.");
   assert.deepEqual(normalized.subjectTags, ["sneaker"]);
+});
+
+test("upload analysis warmup controller only schedules newly seen images", async () => {
+  const cache = createUploadAnalysisCacheStore();
+  cache.setConsent("granted");
+  const analyzed = [];
+  const controller = createUploadAnalysisWarmupController({
+    cacheStore: cache,
+    hashImage: async (image) => `hash:${image?.path || image?.id || ""}`,
+    analyzeImage: async ({ image }) => {
+      analyzed.push(image.path);
+      return {
+        summary: `summary:${image.path}`,
+      };
+    },
+  });
+
+  const first = await controller.warmImages(
+    [
+      { id: "img-1", path: "/tmp/one.png" },
+      { id: "img-2", path: "/tmp/two.png" },
+    ],
+    { consent: "granted" }
+  );
+  await Promise.all(first.map((entry) => entry?.promise).filter(Boolean));
+  const second = await controller.warmImages(
+    [
+      { id: "img-1b", path: "/tmp/one.png" },
+      { id: "img-3", path: "/tmp/three.png" },
+    ],
+    { consent: "granted" }
+  );
+  await Promise.all(second.map((entry) => entry?.promise).filter(Boolean));
+
+  assert.deepEqual(analyzed, ["/tmp/one.png", "/tmp/two.png", "/tmp/three.png"]);
+  assert.equal(cache.get("hash:/tmp/one.png").summary, "summary:/tmp/one.png");
+  assert.equal(cache.get("hash:/tmp/three.png").summary, "summary:/tmp/three.png");
 });
