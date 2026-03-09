@@ -13,6 +13,9 @@ Juggernaut is a text-free-first, image-first desktop design workstation for non-
 ## Decisions Incorporated On 2026-03-08
 - Product name: `Juggernaut`.
 - Main editing workflow: text-free to start.
+- V1 primary wedge: single-image-first. The primary loop is one image in, usable asset out.
+- V1 primary rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots.
+- `Create Tool` remains core product value, but for the single-image-first wedge it moves to a secondary follow-on surface such as `Save Shortcut`.
 - Icon system: custom iconography generated from the same pipeline family used for Oscillo bookend icon generation, with the starting reference at `../oscillo/scripts/generate_bookend_overlays.py`.
 - Export requirement: native `.psd`, native `.ai`, and native `.fig` are release requirements.
 - Native `.ai` and `.fig` exports must re-import into Juggernaut with high fidelity.
@@ -28,7 +31,7 @@ Juggernaut is a text-free-first, image-first desktop design workstation for non-
 ## Key Clarification
 "No words" and "Create Tool from words" conflict unless scoped carefully. Juggernaut resolves that by making the primary editing workflow text-free, while still allowing text in the following secondary surfaces:
 
-- `Create Tool`
+- `Save Shortcut` / `Create Tool`
 - settings
 - receipts
 - export dialogs
@@ -55,7 +58,7 @@ There is "vibe coding" because code can be shaped through examples, suggestions,
 - Small teams that need reproducible visual workflows and shareable receipts.
 
 ## Jobs To Be Done
-- Turn one or more source images into a polished 2D asset without learning Photoshop, Illustrator, or Figma.
+- Turn a source image into a polished 2D asset without learning Photoshop, Illustrator, or Figma.
 - Turn a concept image into a printable 3D-ready relief or mesh.
 - Build reusable custom tools from plain-language instructions instead of coding them manually.
 - Iterate quickly with AI assistance while preserving reproducibility and edit history.
@@ -76,15 +79,22 @@ At release, Juggernaut is a cross-platform desktop app for macOS, Windows, and L
 By **5:30 PM America/Los_Angeles on Sunday, March 8, 2026**, produce a launchable vertical slice on the current Mac that:
 
 - launches as a desktop app
-- lets the user upload an image to the canvas
-- lets the user add custom tools
-- lets the user edit photos with those tools
+- lets the user upload one image to the canvas
+- lets the user complete a useful single-image edit
+- lets the user reach a follow-on `Save Shortcut` / `Create Tool` surface after a useful edit
 - exports to PSD
 
 This is a same-day launch slice, not the full release bar. Cross-platform parity and native `.ai`/`.fig` remain release requirements unless scope is later renegotiated.
 
 ## V1 Outcome
-Users can open the app, drop in one or more images, see intent-aware edit suggestions, apply preset tools, create at least one custom tool from a short description, and export a result into native 2D design formats and basic printable 3D formats with reproducible receipts.
+Users can open the app, drop in one image, see intent-aware suggested rail jobs, apply seeded single-image edits, optionally save a reusable shortcut after a successful edit, and export a usable 2D asset with a reproducibility receipt. Multi-image flows are deferred from the primary v1 loop until the single-image wedge is stable.
+
+## V1 Primary Wedge
+- One image in.
+- One usable asset out.
+- No multi-image flows in the primary loop.
+- Left rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots.
+- `Create Tool` remains in the product, but enters as a secondary follow-on capability through `Save Shortcut` or a secondary dialog after useful edits.
 
 ## V1 Non-Goals
 - Replacing Photoshop or Figma feature-for-feature.
@@ -95,50 +105,60 @@ Users can open the app, drop in one or more images, see intent-aware edit sugges
 
 ## Core User Experience
 1. The user launches the app from the dock and lands on an immediately interactive canvas shell.
-2. The user drags one or more images onto the canvas.
-3. The system infers intent from image content, selection, layout, and recent actions.
-4. The left rail shows 5-7 icon-only tools with no required text labels in the main editing loop.
-5. The system proposes next edits in real time as the user moves, resizes, masks, or selects parts of the image.
-6. The user opens `Create Tool`, describes a desired action in plain language, and receives a new one-click tool that plugs into the same tool system.
-7. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
+2. The user drags one image onto the canvas.
+3. The system infers intent from image content, current selection, and recent committed actions.
+4. The left rail keeps two stable icon-only anchors: `Upload` and `Select`.
+5. The rail fills 3 dynamic suggested job slots from the seeded single-image job set.
+6. The system updates job ranking only at settled interaction boundaries and keeps the visible rail sticky during active edits.
+7. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
+8. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
 
 ## V1 Feature Scope
-### 1. Canvas And Editing
+### 1. Single-Image Canvas And Editing
 - Infinite or effectively unbounded canvas.
-- Multi-image import via drag-drop and file picker.
+- Single-image import via drag-drop and file picker.
+- One active source image per primary editing session.
+- Multi-image composition and cross-image operations are out of the primary v1 loop.
 - Fast transforms: move, scale, rotate, skew, crop, mask, select region.
 - Layer and region selection based on direct manipulation.
-- Real-time preview pipeline for local transforms.
+- Real-time preview pipeline for deterministic local transforms.
 
 ### 2. Intent Recognition And Guidance
-- Continuously infer likely user intent from canvas state and image content.
-- Display 1-3 proposed next actions as visual suggestions.
-- Update suggestions after every material edit.
+- Continuously infer likely single-image job intent from canvas state and image content.
+- Rank the seeded single-image job set and supply 3 dynamic suggested rail slots.
+- Update suggestions after every material committed edit.
 - Preserve user agency: suggestions are optional and reversible.
+- Ranking must remain provider-agnostic and capability-first.
+- Intent ranking outputs ordered candidates using the contract defined below.
 
-### 3. Preset Tools
-V1 ships with 7 tools:
+### 3. Primary Rail Shape
+- Stable anchors: `Upload`, `Select`.
+- Dynamic suggested job slots: 3.
+- Anchors do not rerank or disappear.
+- Dynamic slots draw only from the seeded single-image job set in the primary loop.
+- `Create Tool` and multi-image actions do not appear as primary rail actions in the v1 wedge.
 
-- `Select Subject`
-- `Background Swap`
-- `Cleanup`
-- `Style Bridge`
-- `Variations`
-- `Make Printable`
-- `Create Tool`
+### 4. Seeded Single-Image Job Set
+V1 seeds 5 single-image jobs and lets intent ranking choose which 3 to show at a time:
+
+- `Cut Out` -> `subject_isolation`
+- `Remove` -> `targeted_remove`
+- `New Background` -> `background_replace`
+- `Reframe` -> `crop_or_outpaint`
+- `Variants` -> `identity_preserving_variation`
 
 Notes:
-- `Make Printable` converts supported inputs into depth-aware relief or watertight mesh output when possible.
-- `Create Tool` is the flagship differentiator and must generate a reusable tool manifest plus runtime wiring.
+- The seeded set is finite for the v1 wedge. Intent ranking may reorder and enable or disable it, but does not invent new primary rail jobs.
+- `Select` is the deterministic local entry into region-aware variants of jobs that need explicit user scope.
 
-### 4. Custom Tool Creation
-- User opens a centered dialog and describes the desired tool in plain language.
-- A coding-capable model generates a tool definition in a standard schema.
-- The system chooses the right execution path: local transform, image-edit model call, multi-step workflow, or 3D conversion pipeline.
-- Newly created tools appear in the same tool rail and update the user's evolving intent profile.
+### 5. Secondary Shortcut Creation And Tool Authoring
+- `Create Tool` remains a core product capability, but it moves out of the primary rail for the single-image-first wedge.
+- After a successful edit or repeated action, the app may offer `Save Shortcut` as a follow-on surface that captures the job, capability, and reusable parameters.
+- Full plain-language `Create Tool` can live in a secondary dialog, details sheet, or post-edit flow.
+- Saved shortcuts and generated tools still resolve through the shared tool schema and execution router.
 - Tool creation must include guardrails, previewability, and rollback if generation fails.
 
-### 5. Model-Orchestrated Runtime
+### 6. Model-Orchestrated Runtime
 - Vision LLM calls are first-class runtime events, not a bolted-on assistant feature.
 - The app can sustain multiple concurrent model tasks during one session:
   - intent inference
@@ -148,13 +168,66 @@ Notes:
   - export analysis
 - The UI must stay interactive while model calls are in flight.
 - Remote and local model providers use the same internal action contract.
+- V1 single-image runtime exposes these provider-agnostic capability names:
+  - `subject_isolation`
+  - `targeted_remove`
+  - `background_replace`
+  - `crop_or_outpaint`
+  - `identity_preserving_variation`
+- The runtime, not the rail, resolves a capability to a deterministic local transform, a model-backed action, or a hybrid pipeline.
+- Provider and model names must stay out of the main editing loop.
 
-### 6. 2D And 3D Outputs
+### 7. Suggested Rail Job Contract
+Intent ranking must output an ordered candidate list for the seeded single-image job set. The rail consumes that ranking, applies sticky rules, and renders 3 dynamic slots.
+
+```text
+{
+  schemaVersion: "single-image-rail-v1",
+  imageId: "asset_123",
+  selectionState: "none" | "subject" | "region",
+  rankedJobs: [
+    {
+      jobId: "cut_out",
+      label: "Cut Out",
+      capability: "subject_isolation",
+      requiresSelection: false,
+      enabled: true,
+      disabledReason: null,
+      confidence: 0.94,
+      reasonCodes: ["single_subject_detected", "background_separable"],
+      stickyKey: "asset_123:none:subject_isolation"
+    }
+  ]
+}
+```
+
+Contract rules:
+- `rankedJobs` is ordered highest-to-lowest confidence and contains at most one entry for each seeded job.
+- `jobId` is stable across sessions for the seeded set: `cut_out`, `remove`, `new_background`, `reframe`, `variants`.
+- `capability` must use only provider-agnostic runtime names.
+- `requiresSelection` tells the rail whether `Select` must scope the action first.
+- `enabled` is the main-loop readiness bit the rail and runtime both consume.
+- `disabledReason` is a user-safe enum: `selection_required`, `busy`, `unsupported_image`, `unavailable_in_current_mode`, or `capability_unavailable`.
+- `confidence` is normalized to `0.0`-`1.0`.
+- `reasonCodes` explain ranking without naming providers or models.
+- `stickyKey` must remain stable for the same image, selection scope, and capability so the rail can preserve slot identity across reranks.
+
+Rerank policy:
+- The rail is allowed to rerank after image import or replacement, after selection commit or clear, after a committed crop or transform, after job completion or failure, after undo or redo, and after a capability-availability change.
+- The rail is not allowed to rerank during pointer-down interactions, live selection drags, active transform scrubs, or while a suggested job is in flight.
+- When a rerank is allowed, the rail should keep any currently visible job whose `stickyKey` still exists in the new ranked list and whose `enabled` state has not worsened, then fill remaining slots by rank order.
+
+Unavailable capability policy:
+- If a capability cannot run, the rail still represents that job with its normal label and icon but sets `enabled: false`.
+- The main loop shows only the generic `disabledReason`; it must not expose provider or model names.
+- Provider resolution details belong in settings, receipts, diagnostics, or deeper follow-on surfaces, not the primary rail.
+
+### 8. 2D And 3D Outputs
 - 2D outputs: layered raster export plus native design-tool outputs.
 - 3D outputs: relief or mesh export for supported toolchains and printable targets.
 - Unsupported cases must fail clearly and preserve intermediate artifacts rather than silently flattening everything.
 
-### 7. Export And Receipts
+### 9. Export And Receipts
 - Every export includes a reproducibility receipt.
 - Receipts must contain:
   - source asset references
@@ -166,22 +239,22 @@ Notes:
 - Receipts are readable by both humans and machines.
 - The app can analyze prior receipts and suggest cheaper or faster routes for similar workflows.
 
-### 8. Local-Only Mode
+### 10. Local-Only Mode
 - The app supports a local-only mode with no required internet access.
 - In local-only mode, cloud-only tools are visibly disabled or swapped for local equivalents.
 - Local-only mode still supports a meaningful subset of the core workflow:
   - import
   - canvas transforms
-  - at least 3 preset tools
+  - at least 3 seeded single-image jobs
   - receipt generation
   - local export
 
-### 9. Platformization
+### 11. Platformization
 - The editing and tool runtime is not app-only.
 - The same tool graph and receipt system must be callable through a local or remote API for future services and agents.
 - Headless execution is a first-class design concern even if the first release is GUI-first.
 
-### 10. Improvement Data Pipeline
+### 12. Improvement Data Pipeline
 - Connected or non-local mode defaults to improvement data enabled with opt-out controls.
 - Local-only mode defaults to no upload, with explicit opt-in if the user wants to send anonymized bundles later.
 - Upload packaging must be explicit, reviewable, and consent-aware.
@@ -252,16 +325,24 @@ Notes:
 
 ### Core UX
 - The main workspace includes a left vertical icon-only rail.
+- The left rail keeps stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots.
 - The main editing workflow requires no text labels to operate.
+- The primary wedge is one image in and one usable asset out.
+- No multi-image action is required in the primary loop.
 - The UI uses a glass-material visual system on macOS and equivalent platform-native material styling elsewhere.
 - The default workflow is image-led, not chat-led.
-- The app offers 5-7 preset tools; V1 defines 7.
+- The primary rail suggestions come only from the seeded 5-job single-image set.
+
+### Suggested Rail Jobs
+- Intent ranking emits ordered seeded-job candidates using the `single-image-rail-v1` contract.
+- The rail reranks only at settled boundaries and remains sticky during active edits.
+- Unavailable capabilities remain visible as disabled jobs with generic disabled reasons.
 
 ### Create Tool
-- `Create Tool` opens a centered dialog.
-- The user can type a short description of the desired tool.
-- The system generates a new tool in the shared tool schema and selects an execution strategy automatically.
-- The new tool can be previewed, saved, and reused within the session.
+- The primary left rail does not include `Create Tool`.
+- After a successful edit, the app can surface `Save Shortcut` or `Create Tool` in a secondary follow-on surface.
+- The user can save the current action as a reusable shortcut and, when supported, generalize it into a tool in the shared tool schema.
+- The saved shortcut or generated tool can be previewed, saved, and reused within the session.
 
 ### Model And Mode Support
 - The app supports remote and local model routing through one unified contract.
@@ -283,9 +364,10 @@ Notes:
 ## Delivery Plan
 ### Sprint 0: Today By 5:30 PM
 - Fork or adapt `../brood` into a Juggernaut desktop shell.
-- Achieve launchable image-upload-to-canvas loop.
-- Add custom tool creation path.
-- Wire at least one working photo-edit tool path.
+- Achieve launchable single-image upload-to-canvas loop.
+- Land the primary rail contract with stable anchors and 3 dynamic job slots.
+- Wire at least one working single-image edit path.
+- Expose a follow-on `Save Shortcut` / `Create Tool` surface after a useful edit.
 - Export to PSD.
 
 ### Milestone 1: Interactive Cross-Platform Core
@@ -294,11 +376,11 @@ Notes:
 - Lock shared action schema and receipt format.
 
 ### Milestone 2: Guided Intent Loop
-- Add live intent inference, visual suggestions, and non-blocking proposal pipeline.
+- Add live single-image intent inference, visual suggestions, and non-blocking proposal pipeline.
 - Stabilize concurrent provider calls and queue behavior.
 
 ### Milestone 3: Tool Runtime
-- Ship preset tools plus `Create Tool`.
+- Ship the seeded single-image rail jobs plus secondary `Save Shortcut` / `Create Tool`.
 - Harden tool schema, execution sandbox, and rollback behavior.
 
 ### Milestone 4: Native Design Exports
@@ -322,3 +404,4 @@ Notes:
 - Native `.ai` and `.fig` must round-trip back into Juggernaut with high fidelity.
 - Release parity across macOS, Windows, and Linux means the same core features.
 - Hidden accessibility labels and screen-reader metadata are allowed even when visible labels are absent.
+- The primary v1 loop is single-image-first; multi-image flows return only after the single-image wedge is stable.
