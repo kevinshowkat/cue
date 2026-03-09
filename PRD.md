@@ -92,7 +92,7 @@ By **5:30 PM America/Los_Angeles on Sunday, March 8, 2026**, produce a launchabl
 This is a same-day launch slice, not the full release bar. Cross-platform parity and native `.ai`/`.fig` remain release requirements unless scope is later renegotiated.
 
 ## V1 Outcome
-Users can open the app, keep multiple isolated runs in one window through session tabs, swap the active run into a shared canvas surface, drop in one image, use the left rail for deterministic precomputed actions and the bottom rail for complex communication-driven edits, see intent-aware suggested rail jobs, apply seeded single-image edits, request action-first design review proposals against the visible canvas plus any marks, optionally save a reusable shortcut after a successful edit, and export a usable 2D asset with a reproducibility receipt. Multi-image flows are deferred from the primary v1 loop until the single-image wedge is stable.
+Users can open the app, keep multiple isolated runs in one window through session tabs, swap the active run into a shared canvas surface, drop in one image, use the left rail for deterministic precomputed actions and the bottom rail for complex communication-driven edits, see intent-aware suggested rail jobs, apply seeded single-image edits, request action-first design review proposals against the visible canvas plus any marks, accept a proposal to run a real single-image edit that replaces the target image in place, optionally save a reusable shortcut after a successful edit, and export a usable 2D asset with a reproducibility receipt. Multi-image flows are deferred from the primary v1 loop until the single-image wedge is stable.
 
 ## V1 Primary Wedge
 - One image in.
@@ -126,7 +126,7 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 11. `Eraser` clears communication marks and region proposals only; it does not delete image pixels or committed edits.
 12. The user triggers `Design review` explicitly with the existing `Design review` button.
 13. Review analyzes the whole visible canvas plus the marked region or active region candidate, can infer the relevant image or region from mark overlap and intersection at review time, and immediately opens a floating proposal tray near that area with 2-3 preview skeleton slots.
-14. The planner/reviewer uses `GPT-5.4 vision`, preview rendering uses `gemini-3.1-flash-image-preview`, and final apply remains routed through the normal execution layer.
+14. The planner/reviewer uses `GPT-5.4 vision`, preview rendering uses `gemini-3.1-flash-image-preview`, and accepting a proposal routes through the normal execution layer to produce a real single-image replacement edit in the active tab.
 15. If the active tab is busy, tab switching is blocked or deferred until the session reaches a safe boundary.
 16. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
 17. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
@@ -241,7 +241,7 @@ Notes:
 - The tray reserves 2-3 preview slots immediately as skeletons while preview work starts.
 - `GPT-5.4 vision` is the planner/reviewer for design-review reasoning.
 - `gemini-3.1-flash-image-preview` is the preview renderer for proposal thumbnails.
-- Final apply of any accepted proposal remains routed through the normal execution layer and receipt system.
+- Final apply of any accepted proposal remains routed through the normal execution layer and receipt system, replacing the target image in place for the active tab when a valid target image is present.
 - Upload-time analysis must never block `Design review`; review can run with cached context, fresh context, or no prior upload analysis.
 
 ### 7. Upload-Time Analysis And Memory
@@ -593,7 +593,7 @@ Rules:
 - Review analyzes the visible canvas plus the marked region or active region candidate.
 - Review may infer the relevant image or region from overlap and intersection with the mark instead of relying on marker-time image attachment.
 - The proposal tray floats near the marked region and shows 2-3 preview slots immediately as skeletons.
-- Accepted proposals still execute through the normal execution layer.
+- Accepted proposals still execute through the normal execution layer and replace the target image in place when the review request resolves to an existing target image.
 
 ### Create Tool
 - The primary left rail does not include `Create Tool`.

@@ -10,6 +10,8 @@ These are the multi-agent execution documents created during the launch/design/p
 - [TODAY_DESIGN_WAVE_TASKS.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/TODAY_DESIGN_WAVE_TASKS.md): design-wave worker prompts
 - [WARP_APPLE_POLISH.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/WARP_APPLE_POLISH.md): Apple-polish setup
 - [TODAY_APPLE_POLISH_TASKS.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/TODAY_APPLE_POLISH_TASKS.md): Apple-polish worker prompts
+- [WARP_REVIEW_APPLY_WAVE.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/WARP_REVIEW_APPLY_WAVE.md): review-accept apply wave setup
+- [TODAY_REVIEW_APPLY_TASKS.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/TODAY_REVIEW_APPLY_TASKS.md): review-accept apply worker prompts
 
 ## Notes
 
