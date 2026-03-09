@@ -19,7 +19,7 @@ test("communication rail markup exposes bottom rail tools and proposal tray scaf
   assert.match(html, /id="communication-tool-marker"/);
   assert.match(html, /id="communication-tool-magic-select"/);
   assert.match(html, /id="communication-tool-eraser"/);
-  assert.match(html, /id="communication-tool-marker"[\s\S]*d="M12 3\.8 16\.8 8\.6 14\.95 10\.45 15\.6 19\.1H8\.4l\.65-8\.65L7\.2 8\.6z"/);
+  assert.match(html, /id="communication-tool-marker"[\s\S]*d="M15\.3 4\.2 19\.8 8\.7 18 10\.5 16\.8 9\.3 8\.05 18\.05 4\.9 18\.7 5\.55 15\.55 14\.3 6\.8 13\.1 5\.6z"/);
 });
 
 test("communication rail css anchors the rail at the bottom and keeps the proposal tray floating", () => {
