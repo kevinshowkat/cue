@@ -6823,6 +6823,10 @@ button.ghost:hover {
   border-bottom-right-radius: 4px;
 }
 
+.communication-proposal-tray[data-anchor-placement="below"]::after {
+  display: none;
+}
+
 .communication-proposal-tray-head {
   display: flex;
   align-items: center;

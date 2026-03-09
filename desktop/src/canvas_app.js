@@ -21058,6 +21058,25 @@ function resolveCommunicationReviewAnchor() {
   return null;
 }
 
+function designReviewButtonTrayAnchor() {
+  const button = els.sessionTabDesignReview;
+  const wrap = els.canvasWrap;
+  const buttonRect = button?.getBoundingClientRect?.();
+  const wrapRect = wrap?.getBoundingClientRect?.();
+  if (!buttonRect || !wrapRect) return null;
+  return {
+    kind: "titlebar_button",
+    role: "design_review_button",
+    trayPlacement: "below",
+    canvasOverlayBounds: {
+      x0: (Number(buttonRect.left) || 0) - (Number(wrapRect.left) || 0),
+      y0: (Number(buttonRect.top) || 0) - (Number(wrapRect.top) || 0),
+      w: Math.max(1, Number(buttonRect.width) || 1),
+      h: Math.max(1, Number(buttonRect.height) || 1),
+    },
+  };
+}
+
 function communicationAnchorCanvasCss(anchor = resolveCommunicationReviewAnchor()) {
   if (!anchor) return null;
   if (anchor.canvasOverlayPoint) {
@@ -21109,6 +21128,46 @@ function communicationAnchorCanvasCss(anchor = resolveCommunicationReviewAnchor(
     }
   }
   return null;
+}
+
+function communicationTrayAnchorPlacement(anchor = null) {
+  return String(anchor?.trayPlacement || "").trim().toLowerCase() === "below" ? "below" : "above";
+}
+
+function communicationTrayAnchorPinnedToTitlebar(anchor = null) {
+  return String(anchor?.kind || "").trim().toLowerCase() === "titlebar_button";
+}
+
+function positionCommunicationProposalTrayElement(trayEl, anchor = null, anchorCss = null) {
+  const wrap = els.canvasWrap;
+  if (!trayEl || !wrap || !anchorCss) return false;
+  const maxX = Math.max(12, (Number(wrap?.clientWidth) || 0) - (trayEl.offsetWidth || 0) - 12);
+  const maxY = Math.max(12, (Number(wrap?.clientHeight) || 0) - (trayEl.offsetHeight || 0) - 18);
+  const placement = communicationTrayAnchorPlacement(anchor);
+  let preferredX = 12;
+  let preferredY = 12;
+  if (placement === "below") {
+    const bounds = anchor?.canvasOverlayBounds && typeof anchor.canvasOverlayBounds === "object"
+      ? anchor.canvasOverlayBounds
+      : null;
+    const anchorRight = bounds
+      ? (Number(bounds.x0) || 0) + Math.max(1, Number(bounds.w) || 1)
+      : Number(anchorCss.x) || 0;
+    const anchorBottom = bounds
+      ? (Number(bounds.y0) || 0) + Math.max(1, Number(bounds.h) || 1)
+      : Number(anchorCss.y) || 0;
+    preferredX = clamp(anchorRight - (trayEl.offsetWidth || 0), 12, maxX);
+    preferredY = clamp(anchorBottom + 12, 12, maxY);
+  } else {
+    preferredX = clamp((Number(anchorCss.x) || 0) + 18, 12, maxX);
+    preferredY = clamp((Number(anchorCss.y) || 0) - (trayEl.offsetHeight || 0) - 16, 12, maxY);
+  }
+  if (trayEl.dataset) {
+    trayEl.dataset.anchorPlacement = placement;
+  }
+  trayEl.style.left = `${preferredX}px`;
+  trayEl.style.top = `${preferredY}px`;
+  return true;
 }
 
 function communicationRectCssPolygon(rectCss = null) {
@@ -22041,10 +22100,16 @@ function renderCommunicationProposalTray() {
   const listEl = els.communicationProposalSlotList;
   if (!trayEl || !listEl) return;
   const tray = buildCommunicationProposalTraySnapshot();
-  const anchorCss = communicationAnchorCanvasCss(tray.anchor || resolveCommunicationReviewAnchor());
+  const anchor = tray.anchor || resolveCommunicationReviewAnchor();
+  const anchorCss = communicationAnchorCanvasCss(anchor);
   const visible = Boolean(tray.visible && anchorCss);
   trayEl.classList.toggle("hidden", !visible);
-  if (!visible) return;
+  if (!visible) {
+    if (trayEl.dataset) {
+      trayEl.dataset.anchorPlacement = "";
+    }
+    return;
+  }
   const traySource = String(tray.source || "").trim();
   const runtimeOwnsSlotList =
     trayEl.classList.contains("is-design-review-runtime") &&
@@ -22080,13 +22145,7 @@ function renderCommunicationProposalTray() {
   trayEl.style.top = `${Math.round(Number(anchorCss.y) || 0)}px`;
   requestAnimationFrame(() => {
     if (trayEl.classList.contains("hidden")) return;
-    const wrap = els.canvasWrap;
-    const maxX = Math.max(12, (Number(wrap?.clientWidth) || 0) - (trayEl.offsetWidth || 0) - 12);
-    const maxY = Math.max(12, (Number(wrap?.clientHeight) || 0) - (trayEl.offsetHeight || 0) - 18);
-    const preferredX = clamp((Number(anchorCss.x) || 0) + 18, 12, maxX);
-    const preferredY = clamp((Number(anchorCss.y) || 0) - (trayEl.offsetHeight || 0) - 16, 12, maxY);
-    trayEl.style.left = `${preferredX}px`;
-    trayEl.style.top = `${preferredY}px`;
+    positionCommunicationProposalTrayElement(trayEl, anchor, anchorCss);
   });
 }
 
@@ -22120,11 +22179,13 @@ function syncCommunicationProposalTrayFromReviewState(reviewState = {}, { source
 }
 
 function requestCommunicationDesignReview({ source = "titlebar" } = {}) {
-  const anchor = resolveCommunicationReviewAnchor();
-  if (!anchor) {
+  const reviewAnchor = resolveCommunicationReviewAnchor();
+  if (!reviewAnchor) {
     showToast("Add a mark or Magic Select region first.", "tip", 1800);
     return { ok: false, reason: "missing_anchor" };
   }
+  const titlebarSource = String(source || "").trim().startsWith("titlebar");
+  const trayAnchor = titlebarSource ? designReviewButtonTrayAnchor() || reviewAnchor : reviewAnchor;
   suppressBootstrapDesignReviewTray();
   const now = Date.now();
   const tray = state.communication.proposalTray || createFreshCommunicationState().proposalTray;
@@ -22141,7 +22202,7 @@ function requestCommunicationDesignReview({ source = "titlebar" } = {}) {
       visible: true,
       requestId,
       source,
-      anchor,
+      anchor: trayAnchor,
       slots: buildCommunicationReviewPendingSlots({ overallStatus: "preparing" }),
     },
     { source }
@@ -37165,7 +37226,10 @@ function installCanvasHandlers() {
           if (kind === COMMUNICATION_POINTER_KINDS.MARKER) {
             const mark = commitCommunicationMarkDraft();
             if (mark) {
-              if (state.communication?.proposalTray?.visible) {
+              if (
+                state.communication?.proposalTray?.visible &&
+                !communicationTrayAnchorPinnedToTitlebar(state.communication?.proposalTray?.anchor)
+              ) {
                 state.communication.proposalTray.anchor = state.communication.lastAnchor;
               }
               invalidateActiveTabPreview("selection_overlay_change");
@@ -37188,7 +37252,11 @@ function installCanvasHandlers() {
             const imagePoint = !moved && targetImageId ? canvasToImageForImageId(canvasPointFromEvent(event), targetImageId) : null;
             if (targetImageId && imagePoint) {
               const group = applyCommunicationMagicSelectAtPoint(targetImageId, imagePoint);
-              if (group && state.communication?.proposalTray?.visible) {
+              if (
+                group &&
+                state.communication?.proposalTray?.visible &&
+                !communicationTrayAnchorPinnedToTitlebar(state.communication?.proposalTray?.anchor)
+              ) {
                 state.communication.proposalTray.anchor = state.communication.lastAnchor;
               }
               invalidateActiveTabPreview("selection_overlay_change");

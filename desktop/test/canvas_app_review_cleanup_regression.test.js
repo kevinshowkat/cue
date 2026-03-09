@@ -51,6 +51,17 @@ test("requestCommunicationDesignReview primes immediate communication-tray state
   const trayCalls = [];
   const eventCalls = [];
   let suppressed = 0;
+  const buttonAnchor = {
+    kind: "titlebar_button",
+    role: "design_review_button",
+    trayPlacement: "below",
+    canvasOverlayBounds: {
+      x0: 640,
+      y0: -32,
+      w: 120,
+      h: 36,
+    },
+  };
   const requestCommunicationDesignReview = instantiateFunction("requestCommunicationDesignReview", {
     state: {
       communication: {
@@ -63,6 +74,7 @@ test("requestCommunicationDesignReview primes immediate communication-tray state
       },
     },
     resolveCommunicationReviewAnchor: () => ({ kind: "mark", x: 120, y: 88 }),
+    designReviewButtonTrayAnchor: () => buttonAnchor,
     showToast: () => {
       throw new Error("requestCommunicationDesignReview should not toast when an anchor exists");
     },
@@ -104,6 +116,7 @@ test("requestCommunicationDesignReview primes immediate communication-tray state
   assert.equal(result.deduped, false);
   assert.equal(suppressed, 1);
   assert.equal(trayCalls.length, 1);
+  assert.deepEqual(trayCalls[0].next.anchor, buttonAnchor);
   assert.deepEqual(
     trayCalls[0].next.slots.map((slot) => slot.status),
     ["preparing", "planning", "preview_pending"]
@@ -112,6 +125,84 @@ test("requestCommunicationDesignReview primes immediate communication-tray state
   assert.equal(eventCalls[0].name, "juggernaut:design-review-requested");
   assert.equal(eventCalls[0].detail.context.requestId, result.requestId);
   assert.equal(eventCalls[0].detail.context.source, "titlebar_pointer");
+});
+
+test("communication tray can anchor below the Design review button", () => {
+  const trayEl = {
+    classList: {
+      contains() {
+        return false;
+      },
+      toggle() {},
+    },
+    style: {},
+    dataset: {},
+    offsetWidth: 220,
+    offsetHeight: 120,
+  };
+  const listEl = {
+    replaceChildren() {},
+  };
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const communicationTrayAnchorPlacement = instantiateFunction("communicationTrayAnchorPlacement");
+  const positionCommunicationProposalTrayElement = instantiateFunction("positionCommunicationProposalTrayElement", {
+    els: {
+      canvasWrap: { clientWidth: 900, clientHeight: 600 },
+    },
+    clamp,
+    communicationTrayAnchorPlacement,
+  });
+  const renderCommunicationProposalTray = instantiateFunction("renderCommunicationProposalTray", {
+    els: {
+      communicationProposalTray: trayEl,
+      communicationProposalSlotList: listEl,
+      canvasWrap: { clientWidth: 900, clientHeight: 600 },
+    },
+    buildCommunicationProposalTraySnapshot: () => ({
+      visible: true,
+      source: "titlebar_pointer",
+      anchor: {
+        trayPlacement: "below",
+        canvasOverlayBounds: {
+          x0: 710,
+          y0: -24,
+          w: 140,
+          h: 36,
+        },
+      },
+      slots: [
+        { index: 0, status: "planning", label: "Proposal 1", title: "T1", copy: "C1" },
+      ],
+    }),
+    communicationAnchorCanvasCss: () => ({ x: 780, y: -6 }),
+    communicationProposalSlotIsPending: () => true,
+    requestAnimationFrame: (callback) => callback(),
+    clamp,
+    document: {
+      createDocumentFragment() {
+        return {
+          append() {},
+        };
+      },
+      createElement() {
+        return {
+          className: "",
+          dataset: {},
+          setAttribute() {},
+          append() {},
+          textContent: "",
+        };
+      },
+    },
+    resolveCommunicationReviewAnchor: () => null,
+    positionCommunicationProposalTrayElement,
+  });
+
+  renderCommunicationProposalTray();
+
+  assert.equal(trayEl.dataset.anchorPlacement, "below");
+  assert.equal(trayEl.style.left, "630px");
+  assert.equal(trayEl.style.top, "24px");
 });
 
 test("bootstrap review-state sync keeps the communication tray authoritative and hides the fixed bootstrap tray", () => {
@@ -169,11 +260,13 @@ test("titlebar Design review primes the communication tray before bootstrap revi
   assert.match(app, /function suppressNextDesignReviewTitlebarClick\(\) \{/);
   assert.match(app, /function startBootstrapDesignReview\(request = null,\s*\{ source = "titlebar" \} = \{\}\) \{/);
   assert.match(app, /function triggerCommunicationDesignReviewFromTitlebar\(\{ source = "titlebar" \} = \{\}\) \{/);
+  assert.match(app, /function communicationTrayAnchorPinnedToTitlebar\(anchor = null\) \{/);
   assert.match(app, /els\.sessionTabDesignReview\.addEventListener\("pointerup",\s*\(event\)\s*=>\s*\{/);
   assert.match(app, /suppressNextDesignReviewTitlebarClick\(\);\s*triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar_pointer" \}\);/);
   assert.match(app, /els\.sessionTabDesignReview\.addEventListener\("keydown",\s*\(event\)\s*=>\s*\{/);
   assert.match(app, /triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar_keyboard" \}\);/);
   assert.match(app, /triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar" \}\);/);
+  assert.match(app, /!communicationTrayAnchorPinnedToTitlebar\(state\.communication\?\.proposalTray\?\.anchor\)/);
   assert.match(app, /window\.addEventListener\(DESIGN_REVIEW_BOOTSTRAP_STATE_EVENT,\s*\(event\)\s*=>\s*\{/);
 });
 
