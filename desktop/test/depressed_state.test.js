@@ -14,7 +14,7 @@ const rail = readFileSync(railPath, "utf8");
 
 test("Juggernaut rail: depressed class is applied only when an action is actively running", () => {
   assert.match(app, /const runningKey = currentRunningActionKey\(\);/);
-  assert.match(rail, /if \(button\.running\) toolEl\.classList\.add\("depressed"\);/);
+  assert.match(rail, /toolEl\.classList\.toggle\("depressed", Boolean\(button\.running\)\);/);
 });
 
 test("Action Grid: currentRunningActionKey maps pending actions to a single depressed key", () => {

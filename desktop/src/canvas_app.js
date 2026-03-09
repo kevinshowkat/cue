@@ -17,7 +17,16 @@ import {
 import { computeActionGridSlots } from "./action_grid_logic.js";
 import { createEffectsRuntime } from "./effects_runtime.js";
 import { effectTypeFromTokenType } from "./effect_specs.js";
-import { getJuggernautRailButtons, renderJuggernautRail } from "./juggernaut_shell/rail.js";
+import {
+  buildSingleImageRailButtons,
+  getSingleImageRailItem,
+  getSingleImageRailLabel,
+  getSingleImageRailMockRankedJobs,
+  renderJuggernautRail,
+  SINGLE_IMAGE_RAIL_CONTRACT,
+  SINGLE_IMAGE_RAIL_INVENTORY,
+  SINGLE_IMAGE_RAIL_MOCK_ADAPTER,
+} from "./juggernaut_shell/rail.js";
 import {
   mergeAmbientSuggestions,
   placeAmbientSuggestions,
@@ -58,10 +67,13 @@ import {
   TOOL_MANIFEST_SCHEMA,
   TOOL_INVOCATION_SCHEMA,
   TOOL_RUNTIME_BRIDGE_KEY,
+  buildSingleImageRailInvocation,
+  buildSingleImageRailJobEntries,
   buildToolInvocation,
   createInSessionToolRegistry,
   generateToolManifest,
 } from "./tool_runtime.js";
+import { rankSingleImageIntentJobs } from "./single_image_intent_ranking.js";
 import {
   nextMotherRealtimeIntentFailureAction,
 } from "./realtime_intent_recovery.js";
@@ -72,6 +84,21 @@ import { installCanvasPointerHandlers } from "./canvas_handlers/pointer_handlers
 import { installCanvasWheelHandlers } from "./canvas_handlers/wheel_handlers.js";
 import { POINTER_KINDS, isEffectTokenPath, isMotherRolePath } from "./canvas_handlers/pointer_paths.js";
 import { applyToolRuntimeRequest, installToolApplyBridge } from "./tool_apply_runtime.js";
+
+const SINGLE_IMAGE_RAIL_REGISTERED_ADAPTER = Object.freeze({
+  id: "single-image-rail-intent-runtime-v1",
+  kind: "registered_runtime",
+  mock: false,
+});
+const SINGLE_IMAGE_RAIL_CAPABILITY_EXECUTION_TIMEOUT_MS = 90_000;
+const SINGLE_IMAGE_RAIL_RECENT_SUCCESS_LIMIT = 3;
+const SINGLE_IMAGE_RAIL_CAPABILITY_SUPPORT = Object.freeze({
+  subject_isolation: false,
+  targeted_remove: true,
+  background_replace: true,
+  crop_or_outpaint: true,
+  identity_preserving_variation: true,
+});
 
 /*
 Compatibility sentinel for source-shape tests.
@@ -482,26 +509,9 @@ const REEL_PRESET = Object.freeze({
   height: 960,
 });
 const JUGGERNAUT_SHELL_BRIDGE_VERSION = "shell-canvas-v1";
-const JUGGERNAUT_SHELL_RAIL = Object.freeze([
-  Object.freeze({ key: "upload", label: "Import Image", requiresSelection: false }),
-  Object.freeze({ key: "select_subject", label: "Select Subject", requiresSelection: true }),
-  Object.freeze({ key: "background_swap", label: "Background Swap", requiresSelection: true }),
-  Object.freeze({ key: "cleanup", label: "Cleanup", requiresSelection: true }),
-  Object.freeze({ key: "variations", label: "Variations", requiresSelection: true }),
-  Object.freeze({ key: "create_tool", label: "Create Tool", requiresSelection: false }),
-  Object.freeze({ key: "export_psd", label: "Export PSD", requiresSelection: false }),
-]);
-const JUGGERNAUT_SELECTION_REQUIRED_TOOL_KEYS = new Set(
-  JUGGERNAUT_SHELL_RAIL.filter((item) => item.requiresSelection).map((item) => item.key)
-);
-const JUGGERNAUT_LOCALLY_BACKED_TOOL_KEYS = new Set([
-  "upload",
-  "select_subject",
-  "background_swap",
-  "cleanup",
-  "variations",
-  "export_psd",
-]);
+const JUGGERNAUT_SHELL_RAIL_CONTRACT = SINGLE_IMAGE_RAIL_CONTRACT;
+const JUGGERNAUT_SHELL_RAIL = Object.freeze(SINGLE_IMAGE_RAIL_INVENTORY.map((item) => Object.freeze({ ...item })));
+const JUGGERNAUT_LOCALLY_BACKED_TOOL_KEYS = new Set(["upload", "select"]);
 const JUGGERNAUT_RUNTIME_PIN_ASSISTANT_LS_KEY = "juggernaut.runtime.pinAssistantChrome.v1";
 const JUGGERNAUT_RUNTIME_SHOW_DIAGNOSTICS_LS_KEY = "juggernaut.runtime.showDiagnosticsChrome.v1";
 
@@ -1723,6 +1733,15 @@ const state = {
     selectedImageIds: [],
     selectedImage: null,
     visibleToolIds: [],
+    singleImageRail: {
+      contract: JUGGERNAUT_SHELL_RAIL_CONTRACT,
+      adapter: { ...SINGLE_IMAGE_RAIL_MOCK_ADAPTER },
+      rankedJobs: [],
+      visibleJobs: [],
+      recentSuccessfulJobs: [],
+      ranker: null,
+      mock: true,
+    },
     runtimeVisibility: {
       pinAssistant: false,
       assistantVisible: false,
@@ -10078,12 +10097,196 @@ function showToast(message, kind = "info", timeoutMs = 2400) {
 function juggernautShellToolLabel(toolKey) {
   const key = String(toolKey || "").trim();
   if (key === "export_psd") return "Export PSD";
-  const rec = JUGGERNAUT_SHELL_RAIL.find((item) => item.key === key);
-  return rec?.label || key || "Tool";
+  return getSingleImageRailLabel(key) || key || "Tool";
 }
 
 function juggernautToolButtons() {
   return Array.from(els.actionGrid?.querySelectorAll?.("button[data-tool-id], button[data-tool-key]") || []);
+}
+
+function singleImageRailRegionSelectionActive() {
+  return Boolean(getActiveImage() && Array.isArray(state.selection?.points) && state.selection.points.length >= 3);
+}
+
+function singleImageRailBusy() {
+  return Boolean(state.mother?.running || currentRunningActionKey());
+}
+
+function singleImageRailManipulationActive() {
+  return Boolean(state.pointer?.active || state.gestureZoom?.active);
+}
+
+function singleImageRailCapabilityAvailability() {
+  const availability = {};
+  const modeUnavailable = intentModeActive();
+  for (const [capability, supported] of Object.entries(SINGLE_IMAGE_RAIL_CAPABILITY_SUPPORT)) {
+    if (modeUnavailable) {
+      availability[capability] = {
+        available: false,
+        disabledReason: "unavailable_in_current_mode",
+      };
+      continue;
+    }
+    availability[capability] = supported
+      ? { available: true }
+      : {
+          available: false,
+          disabledReason: "capability_unavailable",
+        };
+  }
+  return availability;
+}
+
+function singleImageRailRecentSuccessfulJobs() {
+  const recent = Array.isArray(state.juggernautShell.singleImageRail.recentSuccessfulJobs)
+    ? state.juggernautShell.singleImageRail.recentSuccessfulJobs
+    : [];
+  return recent
+    .map((entry) =>
+      entry && typeof entry === "object"
+        ? {
+            jobId: String(entry.jobId || "").trim(),
+            capability: String(entry.capability || "").trim(),
+            ok: entry.ok !== false,
+          }
+        : null
+    )
+    .filter((entry) => entry?.ok && (entry.jobId || entry.capability));
+}
+
+function rememberSingleImageRailSuccess(result = {}) {
+  const next = [];
+  const seen = new Set();
+  const candidate = {
+    jobId: String(result?.jobId || result?.toolId || "").trim(),
+    capability: String(result?.capability || "").trim(),
+    ok: true,
+  };
+  for (const entry of [candidate, ...singleImageRailRecentSuccessfulJobs()]) {
+    if (!entry?.ok || (!entry.jobId && !entry.capability)) continue;
+    const key = `${entry.jobId}:${entry.capability}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    next.push(entry);
+    if (next.length >= SINGLE_IMAGE_RAIL_RECENT_SUCCESS_LIMIT) break;
+  }
+  state.juggernautShell.singleImageRail.recentSuccessfulJobs = next;
+}
+
+function buildSingleImageRailIntentInput(context = {}) {
+  const activeImage = getActiveImage();
+  return {
+    imageCount: activeImage ? 1 : 0,
+    hasActiveImage: Boolean(activeImage),
+    mode: "single",
+    busy: Boolean(context?.busy),
+    selectionPresent: Boolean(context?.hasRegionSelection),
+    selection: {
+      present: Boolean(context?.hasRegionSelection),
+      count: context?.hasRegionSelection ? 1 : 0,
+    },
+    activeImage: activeImage
+      ? {
+          id: activeImage.id,
+          path: activeImage.path,
+          width: activeImage?.img?.naturalWidth || activeImage?.width || null,
+          height: activeImage?.img?.naturalHeight || activeImage?.height || null,
+          supported: true,
+        }
+      : null,
+    capabilityAvailability: singleImageRailCapabilityAvailability(),
+    recentSuccessfulJobs: singleImageRailRecentSuccessfulJobs(),
+  };
+}
+
+function buildSingleImageRailRuntimeContext() {
+  const activeImage = getActiveImage();
+  return {
+    activeImageId: state.activeId || "",
+    selectedImageIds: getSelectedIds().slice(0, 3),
+    busy: singleImageRailBusy(),
+    mode: state.canvasMode || "single",
+    image: activeImage
+      ? {
+          id: activeImage.id,
+          path: activeImage.path,
+          width: activeImage?.img?.naturalWidth || activeImage?.width || null,
+          height: activeImage?.img?.naturalHeight || activeImage?.height || null,
+          supported: true,
+        }
+      : null,
+    capabilityAvailability: singleImageRailCapabilityAvailability(),
+    capabilityExecutorAvailable: true,
+  };
+}
+
+function normalizeSingleImageRailRankerPayload(rawPayload) {
+  const rawJobs = Array.isArray(rawPayload)
+    ? rawPayload
+    : Array.isArray(rawPayload?.rankedJobs)
+      ? rawPayload.rankedJobs
+      : [];
+  const rankedJobs = normalizeSingleImageRailJobs(rawJobs);
+  if (!rankedJobs.length) return null;
+  const rawAdapter = rawPayload && typeof rawPayload === "object" && !Array.isArray(rawPayload) ? rawPayload.adapter : null;
+  const adapter =
+    rawAdapter && typeof rawAdapter === "object"
+      ? {
+          id: String(rawAdapter.id || SINGLE_IMAGE_RAIL_REGISTERED_ADAPTER.id).trim() || SINGLE_IMAGE_RAIL_REGISTERED_ADAPTER.id,
+          kind: String(rawAdapter.kind || SINGLE_IMAGE_RAIL_REGISTERED_ADAPTER.kind).trim() || SINGLE_IMAGE_RAIL_REGISTERED_ADAPTER.kind,
+          mock: Boolean(rawAdapter.mock),
+        }
+      : { ...SINGLE_IMAGE_RAIL_REGISTERED_ADAPTER };
+  return {
+    adapter,
+    rankedJobs,
+    mock: Boolean(
+      rawPayload && typeof rawPayload === "object" && !Array.isArray(rawPayload)
+        ? rawPayload.mock ?? adapter.mock
+        : adapter.mock
+    ),
+  };
+}
+
+function normalizeSingleImageRailJobs(rawJobs) {
+  if (!Array.isArray(rawJobs)) return [];
+  return rawJobs
+    .map((job) => {
+      const item = getSingleImageRailItem(job?.jobId);
+      if (!item?.capability) return null;
+      return {
+        jobId: String(job?.jobId || item.key || "").trim(),
+        label: String(job?.label || item.label || "").trim() || item.label,
+        capability: String(job?.capability || item.capability || "").trim() || item.capability,
+        requiresSelection:
+          job?.requiresSelection == null ? Boolean(item.requiresSelection) : Boolean(job.requiresSelection),
+        enabled: job?.enabled !== false,
+        disabledReason: String(job?.disabledReason || "").trim(),
+        confidence: Number(job?.confidence) || 0,
+        reasonCodes: Array.isArray(job?.reasonCodes) ? job.reasonCodes.slice(0, 6) : [],
+        stickyKey: String(job?.stickyKey || item.stickyKey || item.key || "").trim() || String(item.key || ""),
+      };
+    })
+    .filter(Boolean);
+}
+
+function resolveSingleImageRailRankedJobs(context) {
+  const ranker = state.juggernautShell.singleImageRail.ranker;
+  if (typeof ranker === "function") {
+    try {
+      const normalized = normalizeSingleImageRailRankerPayload(ranker(context));
+      if (normalized?.rankedJobs?.length) {
+        return normalized;
+      }
+    } catch (error) {
+      console.error("Single-image rail ranker failed, falling back to mock adapter:", error);
+    }
+  }
+  return {
+    adapter: { ...SINGLE_IMAGE_RAIL_MOCK_ADAPTER },
+    rankedJobs: getSingleImageRailMockRankedJobs(context),
+    mock: true,
+  };
 }
 
 function buildJuggernautShellContext() {
@@ -10091,11 +10294,21 @@ function buildJuggernautShellContext() {
   const activeImage = getActiveImage();
   return {
     version: JUGGERNAUT_SHELL_BRIDGE_VERSION,
+    railContract: JUGGERNAUT_SHELL_RAIL_CONTRACT,
     runDir: state.runDir || null,
     canvasMode: state.canvasMode,
     imageCount: Array.isArray(state.images) ? state.images.length : 0,
     activeImageId: state.activeId || null,
     activeImagePath: activeImage?.path || null,
+    regionSelectionActive: singleImageRailRegionSelectionActive(),
+    regionSelectionPointCount: Array.isArray(state.selection?.points) ? state.selection.points.length : 0,
+    singleImageRail: {
+      contract: state.juggernautShell.singleImageRail.contract,
+      adapter: { ...state.juggernautShell.singleImageRail.adapter },
+      mock: Boolean(state.juggernautShell.singleImageRail.mock),
+      recentSuccessfulJobs: singleImageRailRecentSuccessfulJobs(),
+      visibleJobs: state.juggernautShell.singleImageRail.visibleJobs.map((job) => ({ ...job })),
+    },
     runtimeVisibility: runtimeChromeVisibilitySnapshot(),
     selectedImageIds: selectedIds,
     images: (state.images || []).map((item) => ({
@@ -10143,20 +10356,15 @@ function renderJuggernautShellChrome() {
 
   for (const btn of juggernautToolButtons()) {
     const key = String(btn.dataset?.toolId || btn.dataset?.toolKey || "").trim();
-    const needsSelection = JUGGERNAUT_SELECTION_REQUIRED_TOOL_KEYS.has(key);
+    const disabledReason = String(btn.dataset?.disabledReason || "").trim();
     const isLocallyBacked = JUGGERNAUT_LOCALLY_BACKED_TOOL_KEYS.has(key);
-    const isExport = key === "export_psd";
-    const missingSelection = needsSelection && !activeImage;
-    let title = juggernautShellToolLabel(key);
-    if (isExport && !state.images.length) title += " (upload an image first)";
-    else if (missingSelection) title += " (upload and select an image first)";
-    else if (isExport && !exportHookReady) title += " (export hook pending)";
-    else if (!isLocallyBacked && !toolHookReady) title += " (tool hook pending)";
-    btn.title = title;
-    btn.setAttribute("aria-label", title);
+    const isPending = !isLocallyBacked && disabledReason === "capability_unavailable" && !toolHookReady;
     btn.classList.toggle("is-active-request", String(state.juggernautShell.lastToolKey || "") === key);
-    btn.classList.toggle("is-pending-hook", isExport ? !exportHookReady : !isLocallyBacked && !toolHookReady);
-    btn.classList.toggle("is-selection-empty", isExport ? !state.images.length : missingSelection);
+    btn.classList.toggle("is-pending-hook", isPending);
+    btn.classList.toggle(
+      "is-selection-empty",
+      disabledReason === "selection_required" || (key === "select" && disabledReason === "unavailable_in_current_mode")
+    );
   }
 }
 
@@ -10174,17 +10382,34 @@ function installJuggernautShellBridge() {
   if (typeof window === "undefined") return;
   window.__JUGGERNAUT_SHELL__ = {
     version: JUGGERNAUT_SHELL_BRIDGE_VERSION,
+    railContract: JUGGERNAUT_SHELL_RAIL_CONTRACT,
     rail: JUGGERNAUT_SHELL_RAIL.map((item) => ({ ...item })),
+    singleImageRail: {
+      contract: state.juggernautShell.singleImageRail.contract,
+      adapter: { ...state.juggernautShell.singleImageRail.adapter },
+      mock: Boolean(state.juggernautShell.singleImageRail.mock),
+      recentSuccessfulJobs: singleImageRailRecentSuccessfulJobs(),
+    },
     runtimeVisibility: runtimeChromeVisibilitySnapshot(),
     applyJuggernautTool,
     exportJuggernautPsd,
     registerToolInvoker(fn) {
       state.juggernautShell.toolInvoker = typeof fn === "function" ? fn : null;
-      renderJuggernautShellChrome();
+      renderQuickActions();
       return () => {
         if (state.juggernautShell.toolInvoker === fn) {
           state.juggernautShell.toolInvoker = null;
-          renderJuggernautShellChrome();
+          renderQuickActions();
+        }
+      };
+    },
+    registerSingleImageRailRanker(fn) {
+      state.juggernautShell.singleImageRail.ranker = typeof fn === "function" ? fn : null;
+      renderQuickActions();
+      return () => {
+        if (state.juggernautShell.singleImageRail.ranker === fn) {
+          state.juggernautShell.singleImageRail.ranker = null;
+          renderQuickActions();
         }
       };
     },
@@ -10227,6 +10452,7 @@ function installJuggernautShellBridge() {
   };
   dispatchJuggernautShellEvent("juggernaut:shell-ready", {
     version: JUGGERNAUT_SHELL_BRIDGE_VERSION,
+    railContract: JUGGERNAUT_SHELL_RAIL_CONTRACT,
     rail: JUGGERNAUT_SHELL_RAIL.map((item) => ({ ...item })),
     context: buildJuggernautShellContext(),
   });
@@ -21225,6 +21451,14 @@ function syncJuggernautShellState() {
   if (typeof window !== "undefined") {
     window.__juggernautShellState = state.juggernautShell;
     if (window.__JUGGERNAUT_SHELL__) {
+      window.__JUGGERNAUT_SHELL__.railContract = state.juggernautShell.singleImageRail.contract;
+      window.__JUGGERNAUT_SHELL__.singleImageRail = {
+        contract: state.juggernautShell.singleImageRail.contract,
+        adapter: { ...state.juggernautShell.singleImageRail.adapter },
+        mock: Boolean(state.juggernautShell.singleImageRail.mock),
+        recentSuccessfulJobs: singleImageRailRecentSuccessfulJobs(),
+        visibleJobs: state.juggernautShell.singleImageRail.visibleJobs.map((job) => ({ ...job })),
+      };
       window.__JUGGERNAUT_SHELL__.runtimeVisibility = state.juggernautShell.runtimeVisibility;
     }
   }
@@ -24904,16 +25138,29 @@ function currentRunningActionKey() {
 }
 
 function juggernautActiveToolId() {
-  if (state.tool === "lasso") return "select_subject";
+  if (state.tool === "lasso") return "select";
   return "";
 }
 
 function juggernautRunningToolId() {
   const runningKey = currentRunningActionKey();
-  if (runningKey === "bg") return "background_swap";
-  if (runningKey === "remove_people") return "cleanup";
-  if (runningKey === "variations") return "variations";
+  if (runningKey === "bg") return "new_background";
+  if (runningKey === "remove_people") return "remove";
+  if (runningKey === "variations") return "variants";
+  if (runningKey === "crop_square" || runningKey === "recast") return "reframe";
   return "";
+}
+
+function singleImageRailJobMeta(toolKey) {
+  const key = String(toolKey || "").trim();
+  if (!key) return null;
+  const visible = state.juggernautShell.singleImageRail.visibleJobs.find((job) => job.jobId === key) || null;
+  const seed = getSingleImageRailItem(key);
+  if (!visible && !seed) return null;
+  return {
+    ...(seed || {}),
+    ...(visible || {}),
+  };
 }
 
 function dispatchJuggernautShellEvent(type, detail = {}) {
@@ -24928,16 +25175,25 @@ function dispatchJuggernautShellEvent(type, detail = {}) {
 }
 
 export async function applyJuggernautTool(toolId) {
-  const normalized = String(toolId || "")
+  const normalizedRaw = String(toolId || "")
     .trim()
     .toLowerCase();
+  const normalized = normalizedRaw === "select_subject" ? "select" : normalizedRaw;
   if (!normalized) return false;
   state.juggernautShell.lastToolKey = normalized;
   renderJuggernautShellChrome();
+  const railJob = singleImageRailJobMeta(normalized);
 
   const eventDetail = {
     toolId: normalized,
     label: juggernautShellToolLabel(normalized),
+    railContract: JUGGERNAUT_SHELL_RAIL_CONTRACT,
+    jobId: railJob?.jobId || null,
+    capability: railJob?.capability || null,
+    requiresSelection: railJob?.requiresSelection ?? null,
+    confidence: railJob?.confidence ?? null,
+    reasonCodes: Array.isArray(railJob?.reasonCodes) ? railJob.reasonCodes.slice(0, 6) : [],
+    stickyKey: railJob?.stickyKey || null,
     source: "shell",
     context: buildJuggernautShellContext(),
     requestedAt: Date.now(),
@@ -24954,7 +25210,7 @@ export async function applyJuggernautTool(toolId) {
       retryHint: "Choose supported image files and retry.",
     });
   }
-  if (normalized === "select_subject") {
+  if (normalized === "select") {
     setTool(state.tool === "lasso" ? "pan" : "lasso");
     return true;
   }
@@ -24966,8 +25222,7 @@ export async function applyJuggernautTool(toolId) {
       })) ?? true
     );
   }
-  if (normalized === "background_swap" || normalized === "cleanup" || normalized === "variations" || normalized === "create_tool") {
-    showToast(`${juggernautShellToolLabel(normalized)} hook ready for the matching branch.`, "tip", 2800);
+  if (railJob?.capability) {
     return false;
   }
   if (normalized === "export_psd") {
@@ -25000,6 +25255,156 @@ export async function exportJuggernautPsd() {
   }
   showToast("Export PSD hook ready for the export branch.", "tip", 2800);
   return false;
+}
+
+function isSingleImageRailCapabilityPlan(plan = {}) {
+  return Boolean(
+    plan?.capability ||
+      plan?.executionKind === "model_capability" ||
+      plan?.execution?.kind === "model_capability"
+  );
+}
+
+async function ensureSingleImageRailTargetLoaded(target = null) {
+  if (!target?.path || target?.img) return target?.img || null;
+  target.img = await loadImage(target.path);
+  target.width = target.img?.naturalWidth || target.width || null;
+  target.height = target.img?.naturalHeight || target.height || null;
+  return target.img || null;
+}
+
+function captureSingleImageRailArtifactSnapshot(imageId = "") {
+  const targetId = String(imageId || state.activeId || "").trim();
+  const target = targetId ? state.imagesById.get(targetId) || null : null;
+  const active = getActiveImage();
+  return {
+    targetImageId: targetId,
+    targetImagePath: target?.path || "",
+    activeImageId: active?.id || "",
+    activeImagePath: active?.path || "",
+    imageCount: Array.isArray(state.images) ? state.images.length : 0,
+  };
+}
+
+function resolveSingleImageRailArtifact(route, snapshot) {
+  if (String(route?.jobId || "").trim() === "variants") {
+    const active = getActiveImage();
+    const activeId = String(active?.id || "").trim();
+    const activePath = String(active?.path || "").trim();
+    if (!activeId || !activePath) return null;
+    if (
+      activeId !== String(snapshot?.activeImageId || "").trim() ||
+      activePath !== String(snapshot?.activeImagePath || "").trim() ||
+      (Array.isArray(state.images) ? state.images.length : 0) > Number(snapshot?.imageCount || 0)
+    ) {
+      return {
+        imageId: activeId,
+        outputPath: activePath,
+        receiptPath: active?.receiptPath || null,
+      };
+    }
+    return null;
+  }
+
+  const targetId = String(snapshot?.targetImageId || "").trim();
+  const target = targetId ? state.imagesById.get(targetId) || null : null;
+  const nextPath = String(target?.path || "").trim();
+  if (!targetId || !nextPath) return null;
+  if (nextPath === String(snapshot?.targetImagePath || "").trim()) return null;
+  return {
+    imageId: targetId,
+    outputPath: nextPath,
+    receiptPath: target?.receiptPath || null,
+  };
+}
+
+function singleImageRailExecutionPending() {
+  return Boolean(currentRunningActionKey() || state.expectingArtifacts);
+}
+
+async function waitForSingleImageRailArtifact(route, snapshot, { timeoutMs = SINGLE_IMAGE_RAIL_CAPABILITY_EXECUTION_TIMEOUT_MS } = {}) {
+  const startedAt = Date.now();
+  let sawPending = singleImageRailExecutionPending();
+  while (Date.now() - startedAt < timeoutMs) {
+    const artifact = resolveSingleImageRailArtifact(route, snapshot);
+    if (artifact) return artifact;
+    const pending = singleImageRailExecutionPending();
+    if (pending) sawPending = true;
+    if (!pending && sawPending && Date.now() - startedAt > 180) break;
+    if (!pending && !sawPending && Date.now() - startedAt > 400) break;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  }
+  const artifact = resolveSingleImageRailArtifact(route, snapshot);
+  if (artifact) return artifact;
+  throw new Error(`${route?.label || "This action"} did not produce an output artifact.`);
+}
+
+async function executeSingleImageRailCapability({ route, imageId, target }) {
+  const snapshot = captureSingleImageRailArtifactSnapshot(imageId);
+  if (route?.capability === "crop_or_outpaint") {
+    await ensureSingleImageRailTargetLoaded(target);
+  }
+
+  let runner = null;
+  if (route?.capability === "targeted_remove") {
+    runner = () => aiRemovePeople();
+  } else if (route?.capability === "background_replace") {
+    runner = () => applyBackground("white");
+  } else if (route?.capability === "crop_or_outpaint") {
+    runner = () => cropSquare();
+  } else if (route?.capability === "identity_preserving_variation") {
+    runner = () => runVariations();
+  }
+
+  if (typeof runner !== "function") {
+    throw new Error("Capability executor is unavailable.");
+  }
+
+  await runner();
+  return waitForSingleImageRailArtifact(route, snapshot);
+}
+
+function installBuiltInSingleImageRailIntegration() {
+  if (typeof window === "undefined") return;
+  const bridge = window.__JUGGERNAUT_SHELL__;
+  if (!bridge || typeof bridge !== "object") return;
+
+  if (typeof bridge.registerSingleImageRailRanker === "function") {
+    bridge.registerSingleImageRailRanker((shellContext = {}) =>
+      rankSingleImageIntentJobs(buildSingleImageRailIntentInput(shellContext)).rankedJobs
+    );
+  }
+
+  if (typeof bridge.registerToolInvoker === "function") {
+    bridge.registerToolInvoker(async (request = {}) => {
+      const toolKey = String(request?.toolKey || request?.jobId || request?.toolId || "").trim();
+      const railJob = singleImageRailJobMeta(toolKey);
+      if (!railJob?.capability) return null;
+
+      const runtimeContext = buildSingleImageRailRuntimeContext();
+      const invocation = buildSingleImageRailInvocation(railJob, {
+        activeImageId: request?.selectedImageId || runtimeContext.activeImageId,
+        selectedImageIds: Array.isArray(request?.selectedImageIds)
+          ? request.selectedImageIds.slice(0, 3)
+          : runtimeContext.selectedImageIds,
+        source: String(request?.source || "shell").trim() || "shell",
+        trigger: "click",
+        requestId: `single-image-rail-${state.toolInvocationSeq++}`,
+        confidence: railJob?.confidence || 0,
+        reasonCodes: Array.isArray(railJob?.reasonCodes) ? railJob.reasonCodes : [],
+        busy: runtimeContext.busy,
+        mode: runtimeContext.mode,
+        image: runtimeContext.image,
+        capabilityAvailability: runtimeContext.capabilityAvailability,
+        capabilityExecutorAvailable: true,
+      });
+      const result = await applyToolRuntimeEdit(invocation);
+      if (!result?.ok && result?.error) {
+        showToast(result.error, "error", 3200);
+      }
+      return Boolean(result?.ok);
+    });
+  }
 }
 
 function exposeJuggernautShellHooks() {
@@ -25312,14 +25717,45 @@ function renderCustomToolDock() {
 function renderActionGrid() {
   const root = els.actionGrid;
   if (!root) return;
-  const buttons = getJuggernautRailButtons({
-    hasImage: Boolean(getActiveImage()),
+  const hasImage = Boolean(getActiveImage());
+  const rerank = !singleImageRailManipulationActive();
+  const railContext = {
+    hasImage,
+    hasRegionSelection: singleImageRailRegionSelectionActive(),
+    busy: singleImageRailBusy(),
+    toolHookReady: typeof state.juggernautShell.toolInvoker === "function",
+    context: buildJuggernautShellContext(),
+  };
+  const rankResult = rerank
+    ? resolveSingleImageRailRankedJobs(railContext)
+    : {
+        adapter: state.juggernautShell.singleImageRail.adapter || { ...SINGLE_IMAGE_RAIL_MOCK_ADAPTER },
+        rankedJobs: state.juggernautShell.singleImageRail.rankedJobs,
+        mock: Boolean(state.juggernautShell.singleImageRail.mock),
+      };
+  const runtimeRankedJobs = rankResult.mock
+    ? rankResult.rankedJobs
+    : buildSingleImageRailJobEntries(rankResult.rankedJobs, buildSingleImageRailRuntimeContext());
+  const railState = buildSingleImageRailButtons({
+    hasImage,
+    hasRegionSelection: railContext.hasRegionSelection,
     activeToolId: juggernautActiveToolId(),
     runningToolId: juggernautRunningToolId(),
+    toolHookReady: railContext.toolHookReady,
+    busy: railContext.busy,
+    rankedJobs: runtimeRankedJobs,
+    previousVisibleJobs: state.juggernautShell.singleImageRail.visibleJobs,
+    rerank,
+    adapter: rankResult.adapter,
   });
-  state.juggernautShell.visibleToolIds = buttons.map((button) => button.toolId);
+  state.juggernautShell.singleImageRail.contract = railState.contractName;
+  state.juggernautShell.singleImageRail.adapter = { ...railState.adapter };
+  state.juggernautShell.singleImageRail.rankedJobs = railState.rankedJobs.map((job) => ({ ...job }));
+  state.juggernautShell.singleImageRail.visibleJobs = railState.visibleDynamicJobs.map((job) => ({ ...job }));
+  state.juggernautShell.singleImageRail.mock = Boolean(rankResult.mock);
+  state.juggernautShell.visibleToolIds = railState.buttons.map((button) => button.toolId);
   renderJuggernautRail(root, {
-    buttons,
+    buttons: railState.buttons,
     onPress: (button) => {
       bumpInteraction();
       if (state.mother?.running) {
@@ -27365,14 +27801,24 @@ async function applyToolRuntimeEdit(request = {}) {
       if (!state.runDir) await ensureRun();
     },
     beginApply: (plan) => {
+      if (isSingleImageRailCapabilityPlan(plan)) return;
       beginRunningAction("tool_apply_local");
       setImageFxActive(true, plan.label);
       setStatus(`Engine: applying ${String(plan.label || "tool").toLowerCase()}…`);
     },
     endApply: () => {
+      if (isSingleImageRailCapabilityPlan(request)) return;
       setImageFxActive(false);
       clearRunningAction("tool_apply_local");
     },
+    isBusy: () => singleImageRailBusy(),
+    getExecutionMode: () => state.canvasMode || "single",
+    getCapabilityAvailability: (capability) => {
+      const availability = singleImageRailCapabilityAvailability();
+      const key = String(capability || "").trim();
+      return key ? availability[key] || { available: false, disabledReason: "capability_unavailable" } : availability;
+    },
+    executeCapability: (payload = {}) => executeSingleImageRailCapability(payload),
     loadTargetImage: async (target) => {
       if (!target?.img && target?.path) {
         target.img = await loadImage(target.path);
@@ -27383,12 +27829,20 @@ async function applyToolRuntimeEdit(request = {}) {
     },
     createCanvas: () => document.createElement("canvas"),
     saveCanvasArtifact: (canvas, options) => saveCanvasAsArtifact(canvas, options),
-    afterApply: ({ plan }) => {
+    afterApply: ({ result, plan }) => {
+      if (isSingleImageRailCapabilityPlan(plan)) {
+        rememberSingleImageRailSuccess(result);
+        showToast(`${plan.label} complete.`, "tip", 1800);
+        renderQuickActions();
+        return;
+      }
       showToast(`Applied ${plan.label}.`, "tip", 1800);
     },
-    reportError: (error) => {
-      reportUserError("Tool apply", error, {
-        retryHint: "Select one image and use a supported local tool.",
+    reportError: (error, { plan } = {}) => {
+      reportUserError(isSingleImageRailCapabilityPlan(plan) ? "Left rail action" : "Tool apply", error, {
+        retryHint: isSingleImageRailCapabilityPlan(plan)
+          ? "Select one image and retry."
+          : "Select one image and use a supported local tool.",
       });
     },
     normalizeErrorMessage,
@@ -36103,6 +36557,7 @@ async function boot() {
   // Auto-create a run for speed; users can always "Open Run" later.
   await createRun();
   installJuggernautShellBridge();
+  installBuiltInSingleImageRailIntegration();
   applyRuntimeChromeVisibility({ source: "bridge_ready" });
   setTimeout(() => {
     maybeAutoOpenOpenRouterOnboarding();

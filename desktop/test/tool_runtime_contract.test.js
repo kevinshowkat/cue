@@ -5,10 +5,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  SINGLE_IMAGE_RAIL_CONTRACT,
   TOOL_INVOCATION_EVENT,
   TOOL_INVOCATION_SCHEMA,
   TOOL_MANIFEST_SCHEMA,
   TOOL_RUNTIME_BRIDGE_KEY,
+  buildSingleImageRailInvocation,
+  buildSingleImageRailJobEntries,
   buildToolInvocation,
   createInSessionToolRegistry,
   generateToolManifest,
@@ -98,4 +101,37 @@ test("Create Tool UI and browser bridge are wired into the desktop app", () => {
 test("tool runtime exports a stable bridge key and invocation event name", () => {
   assert.equal(TOOL_RUNTIME_BRIDGE_KEY, "__JUGGERNAUT_TOOL_RUNTIME__");
   assert.equal(TOOL_INVOCATION_EVENT, "juggernaut:tool-invoked");
+});
+
+test("single-image rail invocation uses the approved capability contract without exposing providers", () => {
+  const jobs = buildSingleImageRailJobEntries(
+    [{ jobId: "cut_out", confidence: 0.83, reasonCodes: ["subject_present"] }],
+    {
+      activeImageId: "img-1",
+      selectedImageIds: ["img-1"],
+      capabilityAvailability: {
+        subject_isolation: { available: true },
+      },
+    }
+  );
+
+  const invocation = buildSingleImageRailInvocation("cut_out", {
+    activeImageId: "img-1",
+    selectedImageIds: ["img-1"],
+    requestId: "single-image-7",
+    confidence: jobs[0].confidence,
+    reasonCodes: jobs[0].reasonCodes,
+    capabilityAvailability: {
+      subject_isolation: { available: true },
+    },
+  });
+
+  assert.equal(invocation.contract, SINGLE_IMAGE_RAIL_CONTRACT);
+  assert.equal(invocation.jobId, "cut_out");
+  assert.equal(invocation.capability, "subject_isolation");
+  assert.equal(invocation.execution.kind, "model_capability");
+  assert.equal(invocation.tool.toolId, "cut_out");
+  assert.equal(invocation.rail.stickyKey, "single-image-rail:cut_out");
+  assert.equal(invocation.availability.enabled, true);
+  assert.doesNotMatch(JSON.stringify(invocation), /openai|gemini|flux|imagen/i);
 });
