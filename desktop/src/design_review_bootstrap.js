@@ -17,7 +17,6 @@ import {
   createUploadAnalysisWarmupController,
 } from "./design_review_upload_analysis.js";
 import { invokeDesignReviewProviderRequest } from "./design_review_backend.js";
-import { TABBED_SESSIONS_CHANGED_EVENT } from "./tabbed_sessions.js";
 
 const REVIEW_CONSENT_ID = "design-review-consent";
 const REVIEW_STYLE_ID = "design-review-style";
@@ -722,6 +721,141 @@ function activeTrayAnchor(reviewPayload = {}, fallbackAnchor = null) {
   );
 }
 
+export function resolveDesignReviewRuntimeSessionKey({
+  shellContext = {},
+  reviewPayload = {},
+  request = {},
+  state = {},
+  detail = {},
+} = {}) {
+  const context = asRecord(shellContext) || asRecord(detail?.context) || {};
+  const payload = asRecord(reviewPayload) || {};
+  const reviewRequest = asRecord(request) || asRecord(state?.request) || {};
+  const activeTabId = readFirstString(
+    payload?.tabId,
+    context?.activeTabId
+  );
+  if (activeTabId) return `tab:${activeTabId}`;
+  const runDir = readFirstString(
+    payload?.runDir,
+    reviewRequest?.visibleCanvasContext?.runDir,
+    context?.runDir
+  );
+  if (runDir) return `run:${runDir}`;
+  const sessionId = readFirstString(reviewRequest?.sessionId);
+  if (sessionId) return `session:${sessionId}`;
+  const requestId = readFirstString(reviewRequest?.requestId, detail?.requestId);
+  if (requestId) return `request:${requestId}`;
+  return "";
+}
+
+export function createFreshDesignReviewRuntimeState(sessionKey = "") {
+  return {
+    sessionKey: readFirstString(sessionKey) || null,
+    lastCommunicationPayload: null,
+    lastReviewState: null,
+    lastTrayAnchor: null,
+    activeRequestId: null,
+    warmupTimer: null,
+  };
+}
+
+export function createDesignReviewRuntimeRegistry() {
+  const runtimeStateBySession = new Map();
+  const requestToSessionKey = new Map();
+
+  const stateForSession = (sessionKey = "", { create = true } = {}) => {
+    const normalizedSessionKey = readFirstString(sessionKey);
+    if (!normalizedSessionKey) return null;
+    let runtimeState = runtimeStateBySession.get(normalizedSessionKey) || null;
+    if (!runtimeState && create) {
+      runtimeState = createFreshDesignReviewRuntimeState(normalizedSessionKey);
+      runtimeStateBySession.set(normalizedSessionKey, runtimeState);
+    }
+    if (runtimeState && !runtimeState.sessionKey) {
+      runtimeState.sessionKey = normalizedSessionKey;
+    }
+    return runtimeState;
+  };
+
+  const rememberRequest = (requestId = "", sessionKey = "") => {
+    const normalizedRequestId = readFirstString(requestId);
+    const normalizedSessionKey = readFirstString(sessionKey);
+    if (!normalizedRequestId || !normalizedSessionKey) return null;
+    requestToSessionKey.set(normalizedRequestId, normalizedSessionKey);
+    const runtimeState = stateForSession(normalizedSessionKey);
+    if (runtimeState) {
+      runtimeState.activeRequestId = normalizedRequestId;
+    }
+    return normalizedSessionKey;
+  };
+
+  const sessionKeyForContext = (context = {}) =>
+    resolveDesignReviewRuntimeSessionKey({
+      shellContext: context,
+    });
+
+  const runtimeStateForReviewState = (reviewState = {}) => {
+    const requestId = readFirstString(reviewState?.request?.requestId);
+    const sessionKey =
+      (requestId && requestToSessionKey.get(requestId)) ||
+      resolveDesignReviewRuntimeSessionKey({
+        request: reviewState?.request,
+        state: reviewState,
+      });
+    if (!sessionKey) return null;
+    const runtimeState = stateForSession(sessionKey);
+    runtimeState.lastReviewState = reviewState && typeof reviewState === "object" ? reviewState : null;
+    if (requestId) {
+      rememberRequest(requestId, sessionKey);
+    }
+    return runtimeState;
+  };
+
+  const runtimeStateForActiveTrayEvent = (detail = {}) => {
+    const normalizedDetail = asRecord(detail) || {};
+    const tray = asRecord(normalizedDetail?.tray) || {};
+    if (tray.visible === false) return null;
+    const sessionKey = sessionKeyForContext(normalizedDetail?.context);
+    if (!sessionKey) return null;
+    const runtimeState = stateForSession(sessionKey, { create: false });
+    if (!runtimeState?.lastReviewState) return null;
+    const runtimeRequestId = readFirstString(
+      runtimeState.activeRequestId,
+      runtimeState.lastReviewState?.request?.requestId
+    );
+    const trayRequestId = readFirstString(tray?.requestId);
+    if (trayRequestId && runtimeRequestId && trayRequestId !== runtimeRequestId) {
+      return null;
+    }
+    return runtimeState;
+  };
+
+  return {
+    stateForSession,
+    rememberRequest,
+    sessionKeyForContext,
+    runtimeStateForReviewState,
+    runtimeStateForActiveTrayEvent,
+  };
+}
+
+function clearCommunicationTrayReviewDetails() {
+  const tray = communicationTrayRoot();
+  if (!tray) return false;
+  tray.classList.remove("is-design-review-runtime");
+  tray.dataset.reviewStatus = "idle";
+  const head = tray.querySelector(".communication-proposal-tray-head");
+  const title = tray.querySelector(".communication-proposal-tray-title");
+  const headGroup = head?.querySelector(".design-review-runtime-head") || null;
+  if (title && headGroup && title.parentElement === headGroup && head) {
+    head.prepend(title);
+  }
+  if (title) title.textContent = "Design Review";
+  headGroup?.remove();
+  return true;
+}
+
 function syncCommunicationTray(runtimeState, state = {}, onAccept = null) {
   const trayState = mapDesignReviewStateToCommunicationTray(state);
   const shell = shellBridge();
@@ -743,9 +877,17 @@ function syncCommunicationTray(runtimeState, state = {}, onAccept = null) {
 }
 
 function renderReviewFailure(runtimeState, request = null, errorMessage = "Design review failed.", onAccept = null) {
+  const failureRequest =
+    (request && typeof request === "object" && { ...request }) ||
+    (runtimeState?.activeRequestId || runtimeState?.sessionKey
+      ? {
+          requestId: runtimeState?.activeRequestId || null,
+          sessionId: runtimeState?.sessionKey || null,
+        }
+      : null);
   const nextState = {
     status: "failed",
-    request,
+    request: failureRequest,
     slots: [
       {
         rank: 1,
@@ -786,13 +928,7 @@ export async function installDesignReviewBootstrap() {
     getKeyStatus: () => invoke("get_key_status"),
   });
   const pathHashCache = new Map();
-  const runtimeState = {
-    lastCommunicationPayload: null,
-    lastReviewState: null,
-    lastTrayAnchor: null,
-    activeRequestId: null,
-    warmupTimer: null,
-  };
+  const runtimeRegistry = createDesignReviewRuntimeRegistry();
 
   const pipeline = createDesignReviewPipeline({
     providerRouter,
@@ -840,15 +976,32 @@ export async function installDesignReviewBootstrap() {
     });
   };
 
-  const queueWarmup = ({ snapshot = null, delayMs = 140 } = {}) => {
-    if (runtimeState.warmupTimer) {
-      window.clearTimeout(runtimeState.warmupTimer);
-      runtimeState.warmupTimer = null;
-    }
+  const clearWarmupTimer = (runtimeState = null) => {
+    if (!runtimeState?.warmupTimer) return;
+    window.clearTimeout(runtimeState.warmupTimer);
+    runtimeState.warmupTimer = null;
+  };
+
+  const queueWarmup = ({ snapshot = null, delayMs = 140, sessionKey = "" } = {}) => {
+    const shell = snapshot || shellSnapshot();
+    const resolvedSessionKey =
+      readFirstString(sessionKey) ||
+      resolveDesignReviewRuntimeSessionKey({
+        shellContext: shell,
+      });
+    if (!resolvedSessionKey) return false;
+    const runtimeState = runtimeRegistry.stateForSession(resolvedSessionKey);
+    clearWarmupTimer(runtimeState);
     runtimeState.warmupTimer = window.setTimeout(() => {
       runtimeState.warmupTimer = null;
-      void warmUploadAnalyses(snapshot);
+      const nextShell = snapshot || shellSnapshot();
+      const activeSessionKey = resolveDesignReviewRuntimeSessionKey({
+        shellContext: nextShell,
+      });
+      if (activeSessionKey !== resolvedSessionKey) return;
+      void warmUploadAnalyses(nextShell);
     }, Math.max(0, Number(delayMs) || 0));
+    return true;
   };
 
   const setConsent = async (value) => {
@@ -886,8 +1039,14 @@ export async function installDesignReviewBootstrap() {
   };
 
   pipeline.subscribe((state) => {
-    runtimeState.lastReviewState = state;
-    if (runtimeState.activeRequestId && readFirstString(state?.request?.requestId) === runtimeState.activeRequestId) {
+    const runtimeState = runtimeRegistry.runtimeStateForReviewState(state);
+    const activeSessionKey = runtimeRegistry.sessionKeyForContext(shellSnapshot());
+    if (
+      runtimeState &&
+      runtimeState.sessionKey === activeSessionKey &&
+      runtimeState.activeRequestId &&
+      readFirstString(state?.request?.requestId) === runtimeState.activeRequestId
+    ) {
       syncCommunicationTray(runtimeState, state, acceptProposal);
     }
     window.dispatchEvent(
@@ -905,12 +1064,20 @@ export async function installDesignReviewBootstrap() {
         source: detail?.source || "bridge_fallback",
       }) ||
       null;
+    const snapshot = shellSnapshot();
+    const sessionKey = resolveDesignReviewRuntimeSessionKey({
+      shellContext: snapshot,
+      reviewPayload,
+      detail,
+    });
+    const runtimeState =
+      runtimeRegistry.stateForSession(sessionKey || `request:${readFirstString(detail?.requestId)}`);
     runtimeState.lastCommunicationPayload = reviewPayload;
     runtimeState.lastTrayAnchor = activeTrayAnchor(reviewPayload, runtimeState.lastTrayAnchor);
     runtimeState.activeRequestId =
       readFirstString(detail?.requestId, reviewPayload?.requestId) || runtimeState.activeRequestId;
+    runtimeRegistry.rememberRequest(runtimeState.activeRequestId, runtimeState.sessionKey);
 
-    const snapshot = shellSnapshot();
     if (!snapshot?.images?.length) {
       return renderReviewFailure(
         runtimeState,
@@ -920,7 +1087,7 @@ export async function installDesignReviewBootstrap() {
       );
     }
 
-    queueWarmup({ snapshot, delayMs: 0 });
+    queueWarmup({ snapshot, delayMs: 0, sessionKey: runtimeState.sessionKey });
     const cachedImageAnalyses = await lookupCachedAnalyses(
       snapshot.images,
       uploadAnalysisCache,
@@ -942,6 +1109,7 @@ export async function installDesignReviewBootstrap() {
       cachedImageAnalyses,
       accountMemorySummary: memorySummary,
     });
+    runtimeRegistry.rememberRequest(request?.requestId, runtimeState.sessionKey);
 
     try {
       return await pipeline.startReview({ request });
@@ -959,13 +1127,13 @@ export async function installDesignReviewBootstrap() {
     const detail = asRecord(event?.detail) || {};
     void startReviewFromCommunication(detail);
   });
-  window.addEventListener(COMMUNICATION_PROPOSAL_TRAY_EVENT, () => {
-    if (runtimeState.lastReviewState) {
-      renderCommunicationTrayDetails(runtimeState.lastReviewState, acceptProposal);
+  window.addEventListener(COMMUNICATION_PROPOSAL_TRAY_EVENT, (event) => {
+    const runtimeState = runtimeRegistry.runtimeStateForActiveTrayEvent(event?.detail);
+    if (!runtimeState?.lastReviewState) {
+      clearCommunicationTrayReviewDetails();
+      return;
     }
-  });
-  window.addEventListener(TABBED_SESSIONS_CHANGED_EVENT, () => {
-    queueWarmup({ delayMs: 40 });
+    renderCommunicationTrayDetails(runtimeState.lastReviewState, acceptProposal);
   });
   window.addEventListener(
     "drop",
