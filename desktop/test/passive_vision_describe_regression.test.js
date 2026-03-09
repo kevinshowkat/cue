@@ -8,85 +8,88 @@ const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
 const app = readFileSync(appPath, "utf8");
 
-function loadNamedFunctionSource(name) {
-  const pattern = new RegExp(
-    `function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}\\n\\n(?:async\\s+)?function\\s+`,
-    "m"
-  );
-  const match = app.match(pattern);
-  assert.ok(match, `${name} function not found`);
-  return match[0].replace(/\n\n(?:async\s+)?function\s+[\s\S]*$/, "").trim();
+function extractFunctionSource(name) {
+  const markers = [`async function ${name}(`, `function ${name}(`];
+  const start = markers
+    .map((marker) => app.indexOf(marker))
+    .find((index) => index >= 0);
+  assert.notEqual(start, undefined, `Could not find function ${name}`);
+  const signatureStart = app.indexOf("(", start);
+  assert.notEqual(signatureStart, -1, `Could not find signature for ${name}`);
+  let parenDepth = 0;
+  let bodyStart = -1;
+  for (let index = signatureStart; index < app.length; index += 1) {
+    const char = app[index];
+    if (char === "(") parenDepth += 1;
+    if (char === ")") parenDepth -= 1;
+    if (parenDepth === 0 && char === "{") {
+      bodyStart = index;
+      break;
+    }
+  }
+  assert.notEqual(bodyStart, -1, `Could not find body for ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < app.length; index += 1) {
+    const char = app[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) {
+      return app.slice(start, index + 1);
+    }
+  }
+  throw new Error(`Could not extract function ${name}`);
 }
 
-function instantiateFunction(name, deps = {}) {
-  const source = loadNamedFunctionSource(name);
-  const keys = Object.keys(deps);
-  const values = Object.values(deps);
-  return new Function(...keys, `return (${source});`)(...values);
-}
-
-test("passive scheduleVisionDescribe leaves upload-time vision work unscheduled when the engine is absent", () => {
-  const state = {
-    ptySpawned: false,
-    images: [{ path: "/tmp/upload.png", visionDesc: null }],
-  };
-  const describeQueue = [];
-  const describeQueued = new Set();
-  const describeForceRefresh = new Set();
-  let processCalls = 0;
-  const scheduleVisionDescribe = instantiateFunction("scheduleVisionDescribe", {
-    state,
-    allowVisionDescribe: () => true,
-    allowVisionDescribeInCurrentMode: () => true,
-    describeHasInFlight: () => false,
-    describeQueued,
-    describeQueue,
-    describeForceRefresh,
-    syncDescribePendingPath: () => {
-      throw new Error("passive describe should not sync a queue when the engine is absent");
-    },
-    getActiveImage: () => null,
-    renderHudReadout: () => {
-      throw new Error("passive describe should not render HUD state when the engine is absent");
-    },
-    processDescribeQueue: () => {
-      processCalls += 1;
-    },
-  });
-
-  const scheduled = scheduleVisionDescribe("/tmp/upload.png", {
-    priority: true,
-    fallback: true,
-  });
-
-  assert.equal(scheduled, false);
-  assert.deepEqual(describeQueue, []);
-  assert.equal(describeQueued.size, 0);
-  assert.equal(describeForceRefresh.size, 0);
-  assert.equal(processCalls, 0);
+test("passive describe helpers are removed from canvas_app.js", () => {
+  for (const name of [
+    "scheduleVisionDescribe",
+    "scheduleVisionDescribeBurst",
+    "scheduleVisionDescribeAll",
+    "processDescribeQueue",
+    "_completeDescribeInFlight",
+    "allowVisionDescribe",
+    "allowVisionDescribeInCurrentMode",
+  ]) {
+    assert.equal(app.includes(`function ${name}(`), false, `${name} should be deleted`);
+    assert.equal(app.includes(`async function ${name}(`), false, `${name} should be deleted`);
+  }
 });
 
-test("processDescribeQueue clears passive work instead of spawning a vision engine", () => {
-  const calls = [];
-  const processDescribeQueue = instantiateFunction("processDescribeQueue", {
-    describeInFlightOrder: [],
-    DESCRIBE_MAX_IN_FLIGHT: 2,
-    state: {
-      actionQueueActive: false,
-      ptySpawned: false,
-    },
-    isEngineBusy: () => false,
-    allowVisionDescribe: () => true,
-    resetDescribeQueue: (opts) => calls.push(opts),
-    describeQueue: ["/tmp/upload.png"],
-  });
+test("upload/open/focus/switch hooks stay passive and do not auto-start the engine", () => {
+  const passiveOnlyFns = [
+    "addImage",
+    "importLocalPathsAtCanvasPoint",
+    "openExistingRun",
+    "setActiveImage",
+    "setCanvasMode",
+    "replaceImageInPlace",
+    "spawnEngine",
+    "motherV2VisionReadyForIntent",
+  ];
+  for (const name of passiveOnlyFns) {
+    const source = extractFunctionSource(name);
+    assert.doesNotMatch(source, /scheduleVisionDescribe(All|Burst)?\(/, `${name} should not schedule passive describe`);
+    assert.doesNotMatch(source, /scheduleAlwaysOnVision\(/, `${name} should not schedule always-on vision`);
+    assert.doesNotMatch(source, /scheduleAmbientIntentInference\(/, `${name} should not schedule ambient inference`);
+  }
 
-  processDescribeQueue();
-
-  assert.deepEqual(calls, [{ clearPending: true }]);
-  assert.doesNotMatch(loadNamedFunctionSource("processDescribeQueue"), /ensureEngineSpawned\(\{ reason: "vision" \}\)/);
+  for (const name of [
+    "addImage",
+    "importLocalPathsAtCanvasPoint",
+    "openExistingRun",
+    "setActiveImage",
+    "setCanvasMode",
+    "replaceImageInPlace",
+  ]) {
+    assert.doesNotMatch(
+      extractFunctionSource(name),
+      /ensureEngineSpawned\(/,
+      `${name} should not auto-start the engine`
+    );
+  }
 });
 
-test("_completeDescribeInFlight no longer toasts passive vision failures", () => {
-  assert.doesNotMatch(loadNamedFunctionSource("_completeDescribeInFlight"), /showToast\(errorMessage,\s*"error"/);
+test("normal upload flow stays free of passive vision toasts", () => {
+  const importSource = extractFunctionSource("importLocalPathsAtCanvasPoint");
+  assert.doesNotMatch(importSource, /showToast\([^)]*(vision|describe)/i);
 });

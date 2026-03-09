@@ -155,8 +155,6 @@ const OPENROUTER_ONBOARDING_LOGO_WHITE_SRC = new URL(
   "./assets/onboarding/openrouter_logo_mark_white.svg",
   import.meta.url
 ).href;
-const MOTHER_REALTIME_MIN_MS = 4000;
-const MOTHER_USER_HOT_IDLE_MS = 10_000;
 // Avoid brief watch-phase spikes from flashing realtime chrome/video.
 const MOTHER_RT_VISUAL_ON_DELAY_MS = 820;
 const MOTHER_RT_VISUAL_MIN_ON_MS = 2200;
@@ -607,9 +605,6 @@ const els = {
   memoryToggle: document.getElementById("memory-toggle"),
   alwaysOnVisionToggle: document.getElementById("always-on-vision-toggle"),
   alwaysOnVisionReadout: document.getElementById("always-on-vision-readout"),
-  autoAcceptSuggestedAbilityToggle: document.getElementById("auto-accept-suggested-ability-toggle"),
-  canvasContextSuggest: document.getElementById("canvas-context-suggest"),
-  canvasContextSuggestBtn: document.getElementById("canvas-context-suggest-btn"),
   textModel: document.getElementById("text-model"),
   imageModel: document.getElementById("image-model"),
   promptStrategyMode: document.getElementById("prompt-strategy-mode"),
@@ -1260,26 +1255,9 @@ function promptBenchmarkReset() {
   promptBenchmarkRenderReadout();
 }
 
-// Product direction: use Mother intent realtime only; disable always-on canvas context.
-const ALWAYS_ON_CANVAS_CONTEXT_ENABLED = false;
-
 const settings = {
   memory: localStorage.getItem("brood.memory") === "1",
-  alwaysOnVision: (() => {
-    if (!ALWAYS_ON_CANVAS_CONTEXT_ENABLED) {
-      try {
-        localStorage.setItem("brood.alwaysOnVision", "0");
-      } catch {
-        // ignore localStorage failures
-      }
-      return false;
-    }
-    const raw = localStorage.getItem("brood.alwaysOnVision");
-    // Default ON: Mother suggestions depend on realtime canvas context.
-    if (raw === null) return true;
-    return raw === "1";
-  })(),
-  autoAcceptSuggestedAbility: localStorage.getItem("brood.autoAcceptSuggestedAbility") === "1",
+  alwaysOnVision: false,
   textModel: localStorage.getItem("brood.textModel") || "gpt-5.2",
   imageModel: (() => {
     const storedRaw = String(localStorage.getItem("brood.imageModel") || "").trim();
@@ -2224,22 +2202,9 @@ const state = {
     pending: false,
     pendingPath: null,
     pendingAt: 0,
-    contentDirty: false,
-    dirtyReason: null,
-    lastSignature: null,
-    lastRunAt: 0,
     lastText: null,
     lastMeta: null, // { source, model, at, image_path }
-    rtState: settings.alwaysOnVision ? "connecting" : "off", // "off" | "connecting" | "ready" | "failed"
-    disabledReason: null, // string|null (set when auto-disabled due to a fatal realtime error)
-    portraitOverride: null, // { slot: "primary"|"secondary", provider, title, busy } | null
-  },
-  canvasContextSuggestion: null, // { action: string, why: string|null, at: number, source: string|null, model: string|null } | null
-  autoAcceptSuggestedAbility: {
-    enabled: settings.autoAcceptSuggestedAbility,
-    passes: 0,
-    lastAcceptedAt: 0, // rec.at of the most recently auto-accepted suggestion
-    inFlight: false,
+    rtState: "off", // "off" | "connecting" | "ready" | "failed"
   },
   imageFx: {
     active: false,
@@ -2458,15 +2423,9 @@ function createTabAlwaysOnVisionState() {
     pending: false,
     pendingPath: null,
     pendingAt: 0,
-    contentDirty: false,
-    dirtyReason: null,
-    lastSignature: null,
-    lastRunAt: 0,
     lastText: null,
     lastMeta: null,
-    rtState: settings.alwaysOnVision ? "connecting" : "off",
-    disabledReason: null,
-    portraitOverride: null,
+    rtState: "off",
   };
 }
 
@@ -2649,7 +2608,6 @@ function createFreshTabSession({ runDir = null, eventsPath = null } = {}) {
     intent: createTabIntentState(),
     intentAmbient: createTabIntentAmbientState(),
     alwaysOnVision: createTabAlwaysOnVisionState(),
-    canvasContextSuggestion: null,
     lastRecreatePrompt: null,
     lastAction: null,
     lastTipText: DEFAULT_TIP,
@@ -3746,10 +3704,6 @@ function renderHudReadout() {
   if (img?.visionDesc) {
     desc = String(img.visionDesc || "").trim();
     descFromVision = true;
-  } else if (img?.visionPending) {
-    desc = "ANALYZING…";
-  } else if (img?.path && describeQueued.has(img.path)) {
-    desc = state.ptySpawned ? "QUEUED…" : state.ptySpawning ? "STARTING…" : "ENGINE OFFLINE";
   } else {
     const allowVision = state.keyStatus
       ? Boolean(state.keyStatus.openai || state.keyStatus.gemini || state.keyStatus.openrouter)
@@ -3799,12 +3753,6 @@ function renderHudReadout() {
   renderJuggernautShellChrome();
 }
 
-// Give vision requests enough time to complete under normal network conditions.
-// (Engine-side OpenAI timeout is ~22s; keep a little buffer.)
-const DESCRIBE_TIMEOUT_MS = 30000;
-const DESCRIBE_MAX_IN_FLIGHT = 3;
-const UPLOAD_DESCRIBE_PRIORITY_BURST = 3;
-const VISION_FALLBACK_REFRESH_MIN_MS = 20000;
 const motherDispatchTransformExportCache = new Map(); // signature -> exported image path
 const motherDispatchTransformExportInFlight = new Map(); // signature -> Promise<string|null>
 let motherDispatchPayloadWarmState = {
@@ -3816,64 +3764,6 @@ let motherDispatchPayloadWarmState = {
 };
 let motherDispatchPayloadWarmTimer = null;
 let motherDispatchPayloadWarmToken = 0;
-let describeQueue = [];
-let describeQueued = new Set(); // path strings
-let describeForceRefresh = new Set(); // path strings queued to refresh existing labels
-let describeInFlightOrder = [];
-let describeInFlightTimers = new Map(); // path -> timeout id
-let ptyLineBuffer = "";
-
-function syncDescribePendingPath() {
-  let next = null;
-  for (const path of describeInFlightOrder) {
-    if (describeInFlightTimers.has(path)) {
-      next = path;
-      break;
-    }
-  }
-  if (!next && describeQueue.length) {
-    next = describeQueue[0] || null;
-  }
-  state.describePendingPath = next || null;
-}
-
-function describeHasInFlight(path) {
-  return describeInFlightTimers.has(path);
-}
-
-function clearDescribeInFlightPath(path) {
-  const target = String(path || "").trim();
-  if (!target) return false;
-  const timer = describeInFlightTimers.get(target);
-  if (timer) clearTimeout(timer);
-  const hadInFlight = describeInFlightTimers.delete(target);
-  if (hadInFlight) {
-    describeInFlightOrder = describeInFlightOrder.filter((queuedPath) => queuedPath !== target);
-  }
-  syncDescribePendingPath();
-  return hadInFlight;
-}
-
-function dropDescribeQueuedPath(path) {
-  const target = String(path || "").trim();
-  if (!target) return false;
-  const beforeLen = describeQueue.length;
-  describeQueue = describeQueue.filter((queuedPath) => queuedPath !== target);
-  const removedFromSet = describeQueued.delete(target);
-  describeForceRefresh.delete(target);
-  syncDescribePendingPath();
-  return removedFromSet || beforeLen !== describeQueue.length;
-}
-
-function oldestDescribeInFlightPath() {
-  while (describeInFlightOrder.length) {
-    const candidate = describeInFlightOrder[0];
-    if (describeInFlightTimers.has(candidate)) return candidate;
-    describeInFlightOrder.shift();
-  }
-  syncDescribePendingPath();
-  return null;
-}
 
 let ptyStatusPromise = null;
 function ptyStatusMatchesActiveRun(status) {
@@ -3954,38 +3844,7 @@ async function ensureEngineSpawned({ reason = "engine" } = {}) {
   return Boolean(state.ptySpawned);
 }
 
-function allowVisionDescribe() {
-  return state.keyStatus
-    ? Boolean(state.keyStatus.openai || state.keyStatus.gemini || state.keyStatus.openrouter)
-    : true;
-}
-
-function preferRealtimeVisionDescriptions() {
-  if (!INTENT_AMBIENT_ENABLED) return false;
-  const ambient = state.intentAmbient;
-  if (!ambient || !ambient.enabled) return false;
-  // Keep /describe as a fallback if realtime is known-bad.
-  if (ambient.rtState === "failed") return false;
-  return allowAmbientIntentRealtime();
-}
-
-function allowVisionDescribeInCurrentMode({ fallback = false } = {}) {
-  // Realtime intent labels are the default vision-description path.
-  // Keep /describe only for explicit fallback paths.
-  if (intentModeActive()) return false;
-  if (preferRealtimeVisionDescriptions()) return Boolean(fallback);
-  return true;
-}
-
 function resetDescribeQueue({ clearPending = false } = {}) {
-  describeQueue = [];
-  describeQueued.clear();
-  describeForceRefresh.clear();
-  for (const timer of describeInFlightTimers.values()) {
-    if (timer) clearTimeout(timer);
-  }
-  describeInFlightTimers.clear();
-  describeInFlightOrder = [];
   state.describePendingPath = null;
 
   if (!clearPending) return;
@@ -3998,237 +3857,13 @@ function resetDescribeQueue({ clearPending = false } = {}) {
 }
 
 function dropVisionDescribePath(path, { cancelInFlight = true } = {}) {
+  void cancelInFlight;
   const target = String(path || "").trim();
   if (!target) return;
-  const wasInFlight = describeHasInFlight(target);
-  dropDescribeQueuedPath(target);
-  if (cancelInFlight && wasInFlight) {
-    const item = state.images.find((img) => img?.path === target) || null;
-    if (item && item.visionPending && !item.visionDesc) item.visionPending = false;
-    clearDescribeInFlightPath(target);
-    processDescribeQueue();
-  }
+  const item = state.images.find((img) => img?.path === target) || null;
+  if (item && item.visionPending && !item.visionDesc) item.visionPending = false;
+  if (state.describePendingPath === target) state.describePendingPath = null;
 }
-
-function processDescribeQueue() {
-  if (describeInFlightOrder.length >= DESCRIBE_MAX_IN_FLIGHT) return;
-  // Treat describe as background work; don't compete with queued actions.
-  if (state.actionQueueActive || isEngineBusy()) return;
-  if (!allowVisionDescribe()) {
-    resetDescribeQueue({ clearPending: true });
-    return;
-  }
-  if (!state.ptySpawned) {
-    resetDescribeQueue({ clearPending: true });
-    return;
-  }
-
-  while (describeQueue.length && describeInFlightOrder.length < DESCRIBE_MAX_IN_FLIGHT) {
-    const path = describeQueue.shift();
-    if (typeof path !== "string" || !path) continue;
-    describeQueued.delete(path);
-    const forceRefresh = describeForceRefresh.delete(path);
-
-    const item = state.images.find((img) => img?.path === path) || null;
-    if (!item) continue;
-    if (item && item.visionDesc && !forceRefresh) {
-      item.visionPending = false;
-      continue;
-    }
-
-    if (item) {
-      item.visionPending = true;
-      item.visionPendingAt = Date.now();
-    }
-
-    describeInFlightOrder.push(path);
-    if (getActiveImage()?.path === path) renderHudReadout();
-    syncDescribePendingPath();
-
-    // NOTE: do not quote paths here. `/describe` uses a raw arg string (not shlex-split),
-    // so adding quotes would become part of the path and fail to resolve.
-    bumpSessionApiCalls();
-    invoke("write_pty", { data: `${PTY_COMMANDS.DESCRIBE} ${path}\n` }).catch(() => {
-      // Passive describe should fail soft; explicit engine-backed actions own reconnects.
-      state.ptySpawned = false;
-      _completeDescribeInFlight({
-        path,
-        description: null,
-        errorMessage: null,
-      });
-    });
-
-    const timer = setTimeout(() => {
-      if (!describeHasInFlight(path)) return;
-      const img = state.images.find((it) => it?.path === path) || null;
-      if (img && img.visionPending && !img.visionDesc) img.visionPending = false;
-      clearDescribeInFlightPath(path);
-      if (getActiveImage()?.path === path) renderHudReadout();
-      processDescribeQueue();
-    }, DESCRIBE_TIMEOUT_MS);
-    describeInFlightTimers.set(path, timer);
-  }
-}
-
-function scheduleVisionDescribe(path, { priority = false, fallback = false, refresh = false } = {}) {
-  if (!path) return false;
-  if (!allowVisionDescribe()) return false;
-  if (!allowVisionDescribeInCurrentMode({ fallback })) return false;
-  if (!state.ptySpawned) return false;
-
-  const item = state.images.find((img) => img?.path === path) || null;
-  if (!item) return false;
-  if (item && item.visionDesc && !refresh) return true;
-
-  if (describeHasInFlight(path)) return true;
-  if (describeQueued.has(path)) {
-    if (refresh) describeForceRefresh.add(path);
-    // If a user focuses an image, bump it to the front of the queue.
-    if (priority) {
-      describeQueue = [path, ...describeQueue.filter((p) => p !== path)];
-      syncDescribePendingPath();
-      processDescribeQueue();
-    }
-    return true;
-  }
-  if (priority) describeQueue.unshift(path);
-  else describeQueue.push(path);
-  describeQueued.add(path);
-  if (refresh) describeForceRefresh.add(path);
-  syncDescribePendingPath();
-  if (getActiveImage()?.path === path) renderHudReadout();
-  processDescribeQueue();
-  return true;
-}
-
-function scheduleVisionDescribeBurst(paths, { priority = true, maxConcurrent = UPLOAD_DESCRIBE_PRIORITY_BURST } = {}) {
-  const list = Array.isArray(paths) ? paths : [];
-  if (!list.length) return;
-  const burstLimit = Math.max(1, Number(maxConcurrent) || 1);
-  const unique = [];
-  const seen = new Set();
-  for (const rawPath of list) {
-    const path = String(rawPath || "").trim();
-    if (!path || seen.has(path)) continue;
-    seen.add(path);
-    unique.push(path);
-  }
-  if (!unique.length) return;
-  for (let i = 0; i < unique.length; i += 1) {
-    scheduleVisionDescribe(unique[i], { priority: Boolean(priority) && i < burstLimit, fallback: true });
-  }
-}
-
-function _completeDescribeInFlight({
-  path = null,
-  description = null,
-  meta = null, // { source, model }
-  errorMessage = null,
-} = {}) {
-  let inflight = typeof path === "string" ? path.trim() : "";
-  if (!inflight) inflight = oldestDescribeInFlightPath() || "";
-  if (!inflight) inflight = typeof state.describePendingPath === "string" ? state.describePendingPath.trim() : "";
-  if (!inflight) return;
-  const item = state.images.find((img) => img?.path === inflight) || null;
-  const cleanedDesc = typeof description === "string" ? description.trim() : "";
-  if (item) {
-    if (cleanedDesc) {
-      item.visionDesc = cleanedDesc;
-      item.visionDescMeta = {
-        source: meta?.source || null,
-        model: meta?.model || null,
-        at: Date.now(),
-      };
-    }
-    item.visionPending = false;
-  }
-  dropDescribeQueuedPath(inflight);
-  clearDescribeInFlightPath(inflight);
-
-  if (errorMessage) console.warn("Passive vision describe failed:", errorMessage);
-  if (cleanedDesc) {
-    // Persist new per-image descriptions into run artifacts.
-    scheduleVisualPromptWrite();
-    if (intentAmbientActive()) {
-      // Treat new vision descriptions as an intent signal.
-      scheduleAmbientIntentInference({ immediate: true, reason: "describe", imageIds: [item?.id] });
-    }
-  }
-  if (getActiveImage()?.path === inflight) renderHudReadout();
-  processDescribeQueue();
-}
-
-function _handlePtyLine(line) {
-  const trimmed = String(line || "").trim();
-  if (!trimmed) return;
-
-  // Successful describe output from engine:
-  //   Description (openai_vision, gpt-5-nano): Purple surface plastic
-  if (trimmed.startsWith("Description")) {
-    const parts = trimmed.split(":", 2);
-    if (parts.length >= 2) {
-      const metaPart = parts[0] || "";
-      const descPart = parts[1] || "";
-      const desc = descPart.trim();
-      if (!desc) return;
-
-      let source = null;
-      let model = null;
-      const openIdx = metaPart.indexOf("(");
-      const closeIdx = metaPart.indexOf(")");
-      if (openIdx >= 0 && closeIdx > openIdx) {
-        const raw = metaPart.slice(openIdx + 1, closeIdx);
-        const items = raw
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-        if (items.length >= 1) source = items[0];
-        if (items.length >= 2) model = items[1];
-      }
-
-      _completeDescribeInFlight({ description: desc, meta: { source, model } });
-    }
-    return;
-  }
-
-  // Common failure paths from engine when describe can't run.
-  if (trimmed.startsWith("Describe unavailable")) {
-    _completeDescribeInFlight({
-      description: null,
-      errorMessage: "Vision describe unavailable. Check OpenAI/Gemini/OpenRouter keys and network.",
-    });
-    return;
-  }
-  if (trimmed.startsWith("Describe failed")) {
-    _completeDescribeInFlight({
-      description: null,
-      errorMessage: trimmed,
-    });
-  }
-}
-
-function scheduleVisionDescribeAll() {
-  if (!allowVisionDescribe()) return;
-  if (!allowVisionDescribeInCurrentMode()) return;
-  const active = getActiveImage();
-  if (active?.path) scheduleVisionDescribe(active.path, { priority: true, fallback: true });
-  for (const item of state.images) {
-    if (!item?.path) continue;
-    if (active?.path && item.path === active.path) continue;
-    scheduleVisionDescribe(item.path, { fallback: true });
-  }
-}
-
-const ALWAYS_ON_VISION_DEBOUNCE_MS = 260;
-const ALWAYS_ON_VISION_THROTTLE_MS = 4000;
-const ALWAYS_ON_VISION_IDLE_MS = 1200;
-const ALWAYS_ON_VISION_URGENT_IDLE_MS = 180;
-const ALWAYS_ON_VISION_URGENT_THROTTLE_MS = 700;
-const ALWAYS_ON_VISION_TIMEOUT_MS = 45000;
-const ALWAYS_ON_VISION_URGENT_DIRTY_REASONS = new Set(["aov_enable", "image_replace"]);
-
-let alwaysOnVisionTimer = null;
-let alwaysOnVisionTimeout = null;
 
 let intentInferenceTimer = null;
 let intentInferenceTimeout = null;
@@ -4237,144 +3872,10 @@ let intentStateWriteTimer = null;
 let intentAmbientInferenceTimer = null;
 let intentAmbientInferenceTimeout = null;
 
-function extractCanvasContextSummary(text) {
-  const raw = String(text || "").trim();
-  if (!raw) return "";
-  const lines = raw.split(/\r?\n/).map((line) => String(line || "").trim());
-  const headerRe = /^(CANVAS|SUBJECTS|STYLE|NEXT ACTIONS)\s*:/i;
-  let idx = lines.findIndex((line) => /^CANVAS\s*:/i.test(line));
-  if (idx >= 0) {
-    const line = lines[idx] || "";
-    const inline = line.replace(/^CANVAS\s*:\s*/i, "").trim();
-    if (inline) return inline;
-    for (let j = idx + 1; j < lines.length; j += 1) {
-      const next = lines[j] || "";
-      if (!next) continue;
-      if (headerRe.test(next)) break;
-      return next;
-    }
-  }
-  // Fallback: first non-header, non-empty line.
-  for (const line of lines) {
-    if (!line) continue;
-    if (headerRe.test(line)) continue;
-    return line;
-  }
-  return "";
-}
-
-function extractCanvasContextTopAction(text) {
-  const raw = String(text || "").trim();
-  if (!raw) return null;
-  const lines = raw.split(/\r?\n/);
-  let nextIdx = -1;
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = String(lines[i] || "").trim();
-    if (/^NEXT ACTIONS\s*:/i.test(line)) {
-      nextIdx = i;
-      break;
-    }
-  }
-  if (nextIdx < 0) return null;
-
-  const extractListItemRest = (lineRaw) => {
-    const line = String(lineRaw || "").trim();
-    if (!line) return null;
-    // Bullets: "- Foo", "* Foo", "• Foo"
-    let match = line.match(/^(?:[-*•])\s+(.*)$/);
-    if (match) return String(match[1] || "").trim() || null;
-    // Numbered: "1. Foo", "2) Foo"
-    match = line.match(/^\d+\s*[\.\)]\s+(.*)$/);
-    if (match) return String(match[1] || "").trim() || null;
-    // Numbered: "1: Foo"
-    match = line.match(/^\d+\s*:\s+(.*)$/);
-    if (match) return String(match[1] || "").trim() || null;
-    // Numbered: "1 - Foo" / "1 — Foo"
-    match = line.match(/^\d+\s*[-—–]\s+(.*)$/);
-    if (match) return String(match[1] || "").trim() || null;
-    return null;
-  };
-
-  const parseActionLine = (restRaw) => {
-    const rest = String(restRaw || "").trim();
-    if (!rest) return null;
-
-    // Prefer matching exact action names (including ones with colons like "Background: White").
-    try {
-      const allowed = Array.isArray(CANVAS_CONTEXT_ALLOWED_ACTIONS) ? CANVAS_CONTEXT_ALLOWED_ACTIONS : [];
-      const sorted = allowed
-        .map((s) => String(s || ""))
-        .filter(Boolean)
-        .sort((a, b) => b.length - a.length);
-      const lower = rest.toLowerCase();
-      for (const candidate of sorted) {
-        const candLower = candidate.toLowerCase();
-        if (!lower.startsWith(candLower)) continue;
-        const boundary = rest.slice(candidate.length, candidate.length + 1);
-        // Reject partial-word matches (ex: "Bridgework" shouldn't match "Bridge").
-        if (boundary && /[a-z0-9]/i.test(boundary)) continue;
-
-        let remainder = rest.slice(candidate.length).trim();
-        remainder = remainder.replace(/^[\s:—–-]+/, "").trim();
-        return { action: candidate, why: remainder || null };
-      }
-    } catch (_) {
-      // ignore
-    }
-
-    // Fallback: treat "Action: why" as a hint, but don't over-parse (actions can contain colons).
-    const parts = rest.split(":", 2);
-    const action = String(parts[0] || "").trim();
-    const why = parts.length >= 2 ? String(parts[1] || "").trim() : "";
-    if (!action) return null;
-    return { action, why: why || null };
-  };
-
-  for (let i = nextIdx + 1; i < lines.length; i += 1) {
-    const rest = extractListItemRest(lines[i]);
-    if (!rest) continue;
-    const parsed = parseActionLine(rest);
-    if (!parsed?.action) continue;
-    return parsed;
-  }
-  return null;
-}
-
 function updateAlwaysOnVisionReadout() {
-  const aov = state.alwaysOnVision;
-  const meta = aov?.lastMeta || null;
-
-  const title =
-    meta && (meta.source || meta.model)
-      ? [meta.source, meta.model].filter(Boolean).join(" · ")
-      : "";
-
-  const hasOutput = typeof aov?.lastText === "string" && aov.lastText.trim();
-  let text = "";
-
-  if (!ALWAYS_ON_CANVAS_CONTEXT_ENABLED) {
-    text = "Disabled";
-  } else if (!aov?.enabled) {
-    if (aov?.disabledReason) {
-      const cleaned = String(aov.disabledReason || "").trim();
-      text = cleaned.length > 1400 ? `${cleaned.slice(0, 1399).trimEnd()}\n…` : cleaned;
-    } else {
-      text = "Off";
-    }
-  } else if (aov.rtState === "connecting" && !aov.pending && !hasOutput) {
-    text = "Connecting…";
-  } else if (aov.pending) {
-    text = "ANALYZING…";
-  } else if (hasOutput) {
-    const cleaned = aov.lastText.trim();
-    text = cleaned.length > 1400 ? `${cleaned.slice(0, 1399).trimEnd()}\n…` : cleaned;
-  } else {
-    text = getVisibleCanvasImages().length ? "On (waiting…)" : "On (no images loaded)";
-  }
-
   if (els.alwaysOnVisionReadout) {
-    els.alwaysOnVisionReadout.title = title;
-    els.alwaysOnVisionReadout.textContent = text;
+    els.alwaysOnVisionReadout.title = "";
+    els.alwaysOnVisionReadout.textContent = "Disabled";
   }
 
   renderMotherReadout();
@@ -4467,27 +3968,13 @@ function realtimePortraitProviderForScope(scope = "intent") {
   return "openai";
 }
 
-function allowAlwaysOnVision() {
-  if (!ALWAYS_ON_CANVAS_CONTEXT_ENABLED) return false;
-  if (intentModeActive()) return false;
-  if (!state.alwaysOnVision?.enabled) return false;
-  if (!getVisibleCanvasImages().length) return false;
-  if (!state.runDir) return false;
-  // Fail closed until key status resolves, then enforce provider-specific readiness.
-  if (!realtimeScopeReady("canvas_context")) return false;
-  return true;
-}
-
 function intentModeActive() {
   if (!INTENT_CANVAS_ENABLED) return false;
   return Boolean(state.intent && !state.intent.locked);
 }
 
 function intentAmbientActive() {
-  if (!INTENT_AMBIENT_ENABLED) return false;
-  const ambient = state.intentAmbient;
-  if (!ambient || !ambient.enabled) return false;
-  return true;
+  return false;
 }
 
 function normalizeIntentReason(reason) {
@@ -4637,8 +4124,7 @@ function syncIntentRealtimePortrait() {
 function syncIntentRealtimeClass() {
   if (!els.canvasWrap) return;
   els.canvasWrap.classList.toggle("intent-rt-active", intentRealtimePulseActive());
-  const ambientPulse = INTENT_AMBIENT_ICON_PLACEMENT_ENABLED && intentAmbientRealtimePulseActive();
-  els.canvasWrap.classList.toggle("intent-ambient-rt-active", ambientPulse);
+  els.canvasWrap.classList.remove("intent-ambient-rt-active");
   syncIntentRealtimePortrait();
 }
 
@@ -4819,99 +4305,6 @@ async function restoreIntentStateFromRunDir() {
   return false;
 }
 
-const CANVAS_CONTEXT_ENVELOPE_VERSION = 2;
-const CANVAS_CONTEXT_ALLOWED_ACTIONS = [
-  "Create Layers",
-  "Prompt Generate",
-  "Combine",
-  "Bridge",
-  "Swap DNA",
-  "Extract the Rule",
-  "Odd One Out",
-  "Triforce",
-  "Recast",
-  "Variations",
-  "Background: White",
-  "Background: Sweep",
-  "Crop: Square",
-  "Annotate",
-];
-
-const AUTO_ACCEPT_SUGGESTED_MAX_PASSES = 3;
-
-const CANVAS_CONTEXT_ACTION_GLOSSARY = [
-  {
-    action: "Create Layers",
-    what: "Generate semantic layer artifacts for background, main subject, and detachable props.",
-    requires: "Exactly 1 active/selected image.",
-  },
-  {
-    action: "Prompt Generate",
-    what: "Generate a brand-new image from a custom text prompt and selected model.",
-    requires: "No source image required.",
-  },
-  {
-    action: "Combine",
-    what: "Blend the two loaded photos into one output image.",
-    requires: "Exactly 2 photos loaded (multi-image action).",
-  },
-  {
-    action: "Bridge",
-    what: "Generate the aesthetic midpoint between two images (not a collage).",
-    requires: "Exactly 2 photos loaded (multi-image action).",
-  },
-  {
-    action: "Swap DNA",
-    what: "Use structure from one image and surface qualities from the other.",
-    requires: "Exactly 2 photos loaded (multi-image action).",
-  },
-  {
-    action: "Extract the Rule",
-    what: "Extract the shared invisible rule/pattern across three images.",
-    requires: "Exactly 3 photos loaded (multi-image action).",
-  },
-  {
-    action: "Odd One Out",
-    what: "Identify which of three images breaks the shared pattern, and explain why.",
-    requires: "Exactly 3 photos loaded (multi-image action).",
-  },
-  {
-    action: "Triforce",
-    what: "Generate the centroid: one image equidistant from all three references.",
-    requires: "Exactly 3 photos loaded (multi-image action).",
-  },
-  {
-    action: "Recast",
-    what: "Reimagine the image in a different medium/context.",
-    requires: "An active image.",
-  },
-  {
-    action: "Variations",
-    what: "Generate zero-prompt variations of the active image.",
-    requires: "An active image.",
-  },
-  {
-    action: "Background: White",
-    what: "Replace background with clean studio white (optionally uses lasso selection).",
-    requires: "An active image.",
-  },
-  {
-    action: "Background: Sweep",
-    what: "Replace background with a soft sweep gradient (optionally uses lasso selection).",
-    requires: "An active image.",
-  },
-  {
-    action: "Crop: Square",
-    what: "Crop the active image to a centered square.",
-    requires: "An active image that is not already square.",
-  },
-  {
-    action: "Annotate",
-    what: "Select the Annotate tool so the user can draw a box and type an instruction.",
-    requires: "An active image.",
-  },
-];
-
 function _canvasContextSidecarPath(snapshotPath) {
   const raw = String(snapshotPath || "").trim();
   if (!raw) return null;
@@ -4919,595 +4312,11 @@ function _canvasContextSidecarPath(snapshotPath) {
   if (dot <= 0) return `${raw}.ctx.json`;
   return `${raw.slice(0, dot)}.ctx.json`;
 }
-
-function _stableQuickActionLabel(label) {
-  return String(label || "")
-    .replace(/\s*\(running\.\.\.\)\s*$/i, "")
-    .replace(/\s*\(running…\)\s*$/i, "")
-    .trim();
-}
-
-function buildCanvasContextEnvelope() {
-  const activeId = getVisibleActiveId();
-  const active = activeId ? state.imagesById.get(activeId) || null : null;
-  const wrap = els.canvasWrap;
-  const dpr = getDpr();
-  const canvasCssW = wrap?.clientWidth || 0;
-  const canvasCssH = wrap?.clientHeight || 0;
-
-  ensureFreeformLayoutRectsCss(state.images || [], canvasCssW, canvasCssH);
-
-  const selectedIds = getVisibleSelectedIds();
-  const selectedSet = new Set(selectedIds);
-  const z = Array.isArray(state.freeformZOrder) ? state.freeformZOrder : [];
-  const images = [];
-  for (let idx = 0; idx < z.length; idx += 1) {
-    const imageId = String(z[idx] || "").trim();
-    if (!imageId) continue;
-    if (!isVisibleCanvasImageId(imageId)) continue;
-    const item = state.imagesById.get(imageId) || null;
-    const rect = state.freeformRects.get(imageId) || null;
-    if (!item?.path || !rect) continue;
-    const x = Number(rect.x) || 0;
-    const y = Number(rect.y) || 0;
-    const w = Math.max(1, Number(rect.w) || 1);
-    const h = Math.max(1, Number(rect.h) || 1);
-    const cx = x + w / 2;
-    const cy = y + h / 2;
-    images.push({
-      id: String(imageId),
-      file: basename(item.path),
-      z: idx,
-      is_active: Boolean(activeId && String(activeId) === String(imageId)),
-      is_selected: selectedSet.has(String(imageId)),
-      rect_css: { x, y, w, h, cx, cy },
-      rect_norm: {
-        x: canvasCssW ? x / canvasCssW : 0,
-        y: canvasCssH ? y / canvasCssH : 0,
-        w: canvasCssW ? w / canvasCssW : 0,
-        h: canvasCssH ? h / canvasCssH : 0,
-        cx: canvasCssW ? cx / canvasCssW : 0,
-        cy: canvasCssH ? cy / canvasCssH : 0,
-      },
-    });
-  }
-
-  const quickActions = (computeQuickActions() || [])
-    .filter((action) => action && action.id && action.label)
-    .map((action) => ({
-      id: String(action.id),
-      label: _stableQuickActionLabel(action.label),
-      enabled: !action.disabled,
-      title: action.title ? String(action.title) : null,
-    }));
-
-  const allowedAbilities = CANVAS_CONTEXT_ALLOWED_ACTIONS;
-  const glossary = CANVAS_CONTEXT_ACTION_GLOSSARY;
-
-  const nodes = Array.from(state.timelineNodes || []).sort((a, b) => (a?.createdAt || 0) - (b?.createdAt || 0));
-  const timelineRecent = nodes.slice(-12).map((node) => ({
-    at: node?.createdAt ? new Date(node.createdAt).toISOString() : null,
-    action: node?.action ? String(node.action) : null,
-    file: basename(node?.path),
-    label: node?.label ? String(node.label) : null,
-  }));
-
-  const recentEventSource =
-    Array.isArray(state.userTelemetryEvents) && state.userTelemetryEvents.length
-      ? state.userTelemetryEvents
-      : Array.isArray(state.userEvents)
-      ? state.userEvents
-      : [];
-  const eventsRecent = recentEventSource
-    .slice(-32)
-    .map((ev) => {
-      const out = {
-        at_ms: Number(ev?.at_ms) || null,
-        type: ev?.type ? String(ev.type) : null,
-      };
-      for (const key of ["tool", "key", "kind", "image_id", "corner", "canvas_mode", "active_id", "selected_ids", "file"]) {
-        if (ev && Object.prototype.hasOwnProperty.call(ev, key)) {
-          out[key] = ev[key];
-        }
-      }
-      // Best-effort deltas (used by move/resize) but keep it compact.
-      if (ev?.start && ev?.end) {
-        out.start = ev.start;
-        out.end = ev.end;
-      }
-      return out;
-    })
-    .filter((ev) => ev && ev.type);
-
-  const visibleImageCount = getVisibleCanvasImages().length;
-
-  return {
-    schema_version: CANVAS_CONTEXT_ENVELOPE_VERSION,
-    generated_at: new Date().toISOString(),
-    canvas: {
-      width_css: canvasCssW,
-      height_css: canvasCssH,
-      width_px: Math.max(0, Math.round(canvasCssW * dpr)),
-      height_px: Math.max(0, Math.round(canvasCssH * dpr)),
-      dpr,
-    },
-    canvas_mode: state.canvasMode,
-    tool: state.tool,
-    n_images: visibleImageCount,
-    active_image: active?.path ? basename(active.path) : null,
-    selection: {
-      active_id: activeId ? String(activeId) : null,
-      selected_ids: selectedIds.slice(0, 3),
-    },
-    images: images.slice(0, 12),
-    allowed_abilities: allowedAbilities,
-    abilities: quickActions,
-    ability_glossary: glossary,
-    timeline_recent: timelineRecent,
-    events_recent: eventsRecent,
-  };
-}
-
-async function writeCanvasContextEnvelope(snapshotPath) {
-  if (!state.runDir) return null;
-  const ctxPath = _canvasContextSidecarPath(snapshotPath);
-  if (!ctxPath) return null;
-  const envelope = buildCanvasContextEnvelope();
-  const payload = JSON.stringify(envelope);
-  await writeTextFile(ctxPath, payload);
-  return ctxPath;
-}
-
-function normalizeSuggestedActionName(name) {
-  return String(name || "")
-    .trim()
-    .replace(/\.+\s*$/g, "")
-    .trim();
-}
-
-function canvasContextAllowedActions() {
-  // Always-on realtime canvas context acts as a continual Diagnose; avoid exposing it as a suggestion.
-  if (state.alwaysOnVision?.enabled) {
-    return CANVAS_CONTEXT_ALLOWED_ACTIONS.filter((name) => name !== "Diagnose");
-  }
-  return CANVAS_CONTEXT_ALLOWED_ACTIONS;
-}
-
-function isCanvasContextAllowedAction(actionName) {
-  const cleaned = normalizeSuggestedActionName(actionName).toLowerCase();
-  if (!cleaned) return false;
-  return canvasContextAllowedActions().some((cand) => String(cand || "").toLowerCase() === cleaned);
-}
-
-function canonicalizeCanvasContextAction(actionName, whyHint = null) {
-  let cleaned = normalizeSuggestedActionName(actionName);
-  if (!cleaned) return "";
-  cleaned = cleaned.replace(/\s*:\s*/g, ": ").trim();
-
-  const why = typeof whyHint === "string" ? whyHint.trim() : "";
-  const lower = cleaned.toLowerCase();
-  const whyLower = why.toLowerCase();
-
-  // Common truncations: our action names include colons ("Background: White", "Crop: Square"),
-  // but the realtime text often uses "Action: Variant: ..." which can get parsed as "Background".
-  if (lower === "background" || lower === "background replace" || lower === "bg") {
-    if (whyLower.includes("sweep") || whyLower.includes("gradient")) return "Background: Sweep";
-    return "Background: White";
-  }
-  if (lower === "studio white") return "Background: White";
-  if (lower === "studio sweep") return "Background: Sweep";
-
-  if (lower === "crop" || lower === "crop square" || lower === "square crop") return "Crop: Square";
-
-  const compact = lower.replace(/\s+/g, " ").trim();
-  if (compact === "create layers" || compact === "layers" || compact === "split layers") return "Create Layers";
-  if (compact === "prompt generate" || compact === "prompt" || compact === "text to image") return "Prompt Generate";
-  if (compact === "extract rule" || compact === "extract the rule") return "Extract the Rule";
-  if (compact === "odd one out") return "Odd One Out";
-  if (compact === "swap dna" || compact.replace(/\s+/g, "") === "swapdna") return "Swap DNA";
-
-  // Preserve canonical casing when the action is in our allowlist.
-  const allow = CANVAS_CONTEXT_ALLOWED_ACTIONS.find((cand) => String(cand || "").toLowerCase() === lower);
-  if (allow) return allow;
-
-  return cleaned;
-}
-
-function _hideCanvasContextSuggestion(wrap, btn) {
-  wrap.classList.remove("is-visible");
-  wrap.setAttribute("aria-hidden", "true");
-  btn.textContent = "";
-  btn.disabled = true;
-  btn.classList.remove("is-unavailable");
-  btn.title = "";
-}
-
-function _canvasContextDisabledReason(action) {
-  const nSelected = selectedCount();
-  if (["Combine", "Bridge", "Swap DNA", "Argue"].includes(action)) {
-    if (nSelected !== 2) return `Requires exactly 2 selected images (you have ${nSelected}).`;
-    return "";
-  }
-  if (["Extract the Rule", "Odd One Out", "Triforce"].includes(action)) {
-    if (nSelected !== 3) return `Requires exactly 3 selected images (you have ${nSelected}).`;
-    return "";
-  }
-  if (action === "Create Layers") {
-    if (nSelected !== 1) return `Requires exactly 1 selected image (you have ${nSelected}).`;
-    return "";
-  }
-  if (action === "Prompt Generate") {
-    return "";
-  }
-  if (!getActiveImage()) return "No active image.";
-  if (action === "Crop: Square") {
-    const active = getActiveImage();
-    const iw = active?.img?.naturalWidth || active?.width || null;
-    const ih = active?.img?.naturalHeight || active?.height || null;
-    if (iw && ih && Math.abs(iw - ih) <= 8) return "Already square.";
-  }
-  return "";
-}
-
-function disableAutoAcceptSuggestedAbility(message = "") {
-  settings.autoAcceptSuggestedAbility = false;
-  localStorage.setItem("brood.autoAcceptSuggestedAbility", "0");
-  if (state.autoAcceptSuggestedAbility) {
-    state.autoAcceptSuggestedAbility.enabled = false;
-  }
-  if (els.autoAcceptSuggestedAbilityToggle) {
-    els.autoAcceptSuggestedAbilityToggle.checked = false;
-  }
-  if (message) showToast(message, "tip", 2400);
-}
-
-function maybeAutoAcceptCanvasContextSuggestion(action, rec) {
-  const auto = state.autoAcceptSuggestedAbility;
-  if (!auto?.enabled) return;
-  if (!rec?.at || !action) return;
-  const autoAction = normalizeSuggestedActionName(action) || String(action || "").trim();
-  // Prompt Generate requires manual prompt entry in a modal, so it is not safe to auto-accept.
-  if (autoAction === "Prompt Generate") return;
-  if (auto.inFlight) return;
-  if (auto.passes >= AUTO_ACCEPT_SUGGESTED_MAX_PASSES) {
-    disableAutoAcceptSuggestedAbility("Auto-accept: cap reached (3).");
-    return;
-  }
-  if (auto.lastAcceptedAt === rec.at) return;
-
-  auto.inFlight = true;
-  auto.lastAcceptedAt = rec.at;
-  auto.passes += 1;
-  if (auto.passes >= AUTO_ACCEPT_SUGGESTED_MAX_PASSES) {
-    // Disable after this pass to prevent runaway loops.
-    disableAutoAcceptSuggestedAbility("Auto-accept: cap reached (3).");
-  }
-
-  triggerCanvasContextSuggestedAction(autoAction)
-    .catch((err) => {
-      const msg = err?.message || String(err);
-      showToast(msg, "error", 2600);
-    })
-    .finally(() => {
-      auto.inFlight = false;
-    });
-}
-
-function renderCanvasContextSuggestion() {
-  const wrap = els.canvasContextSuggest;
-  const btn = els.canvasContextSuggestBtn;
-  if (!wrap || !btn) return;
-
-  const rec = state.canvasContextSuggestion;
-  if (!state.alwaysOnVision?.enabled || !rec?.action) {
-    _hideCanvasContextSuggestion(wrap, btn);
-    return;
-  }
-
-  const action = canonicalizeCanvasContextAction(rec.action, rec.why);
-  if (!action || !isCanvasContextAllowedAction(action)) {
-    _hideCanvasContextSuggestion(wrap, btn);
-    return;
-  }
-
-  // Only show enabled suggestions. If it's not currently usable (wrong image count, already in that mode),
-  // hide it entirely so the Abilities panel stays clean.
-  const disabledReason = _canvasContextDisabledReason(action);
-  if (disabledReason) {
-    _hideCanvasContextSuggestion(wrap, btn);
-    return;
-  }
-
-  wrap.classList.add("is-visible");
-  wrap.setAttribute("aria-hidden", "false");
-  btn.textContent = action;
-  btn.disabled = false;
-  btn.classList.remove("is-unavailable");
-  btn.title = String(rec.why || "").trim();
-
-  maybeAutoAcceptCanvasContextSuggestion(action, rec);
-}
-
-async function triggerCanvasContextSuggestedAction(actionName) {
-  const action = normalizeSuggestedActionName(actionName);
-  if (!action) return;
-  const active = getActiveImage();
-  const nSelected = selectedCount();
-  if (action === "Combine") {
-    if (nSelected !== 2) throw new Error(`Combine requires exactly 2 selected images (you have ${nSelected}).`);
-    if (state.canvasMode !== "multi") setCanvasMode("multi");
-    await runBlendPair();
-    return;
-  }
-  if (action === "Create Layers") {
-    if (nSelected !== 1) throw new Error(`Create Layers requires exactly 1 selected image (you have ${nSelected}).`);
-    await runCreateLayersFromSelection();
-    return;
-  }
-  if (action === "Prompt Generate") {
-    showPromptGeneratePanel();
-    return;
-  }
-  if (action === "Bridge") {
-    if (nSelected !== 2) throw new Error(`Bridge requires exactly 2 selected images (you have ${nSelected}).`);
-    if (state.canvasMode !== "multi") setCanvasMode("multi");
-    await runBridgePair();
-    return;
-  }
-  if (action === "Swap DNA") {
-    if (nSelected !== 2) throw new Error(`Swap DNA requires exactly 2 selected images (you have ${nSelected}).`);
-    if (state.canvasMode !== "multi") setCanvasMode("multi");
-    await runSwapDnaPair({ invert: false });
-    return;
-  }
-  if (action === "Extract the Rule") {
-    if (nSelected !== 3)
-      throw new Error(`Extract the Rule requires exactly 3 selected images (you have ${nSelected}).`);
-    if (state.canvasMode !== "multi") setCanvasMode("multi");
-    await runExtractRuleTriplet();
-    return;
-  }
-  if (action === "Odd One Out") {
-    if (nSelected !== 3) throw new Error(`Odd One Out requires exactly 3 selected images (you have ${nSelected}).`);
-    if (state.canvasMode !== "multi") setCanvasMode("multi");
-    await runOddOneOutTriplet();
-    return;
-  }
-  if (action === "Triforce") {
-    if (nSelected !== 3) throw new Error(`Triforce requires exactly 3 selected images (you have ${nSelected}).`);
-    if (state.canvasMode !== "multi") setCanvasMode("multi");
-    await runTriforceTriplet();
-    return;
-  }
-  if (action === "Recast") {
-    if (!active) throw new Error("Recast requires an active image.");
-    await runRecast();
-    return;
-  }
-  if (action === "Variations") {
-    if (!active) throw new Error("Variations requires an active image.");
-    await runVariations();
-    return;
-  }
-  if (action === "Background: White") {
-    if (!active) throw new Error("Background replace requires an active image.");
-    await applyBackground("white");
-    return;
-  }
-  if (action === "Background: Sweep") {
-    if (!active) throw new Error("Background replace requires an active image.");
-    await applyBackground("sweep");
-    return;
-  }
-  if (action === "Crop: Square") {
-    if (!active) throw new Error("Crop requires an active image.");
-    await cropSquare();
-    return;
-  }
-  if (action === "Annotate") {
-    if (!active) throw new Error("Annotate requires an active image.");
-    setTool("annotate");
-    showToast("Annotate tool selected.", "tip", 1800);
-    return;
-  }
-
-  // Fallback: attempt to route to an existing skill by label.
-  const match = (computeQuickActions() || []).find((qa) => {
-    const label = _stableQuickActionLabel(qa?.label);
-    return label && label.toLowerCase() === action.toLowerCase();
-  });
-  if (match && !match.disabled && typeof match.onClick === "function") {
-    match.onClick();
-    return;
-  }
-  throw new Error(`Unknown suggested action: ${action}`);
-}
-
 function requireIntentUnlocked(message = null) {
   if (!intentModeActive()) return true;
   const msg = message ? String(message) : "Lock an intent to unlock skills.";
   showToast(msg, "tip", 2200);
   return false;
-}
-
-function isForegroundActionRunning() {
-  return Boolean(
-    state.ptySpawning ||
-      state.actionQueueActive ||
-    state.pendingBlend ||
-      state.pendingSwapDna ||
-      state.pendingBridge ||
-      state.pendingExtractDna ||
-      state.pendingSoulLeech ||
-      state.pendingExtractRule ||
-      state.pendingOddOneOut ||
-      state.pendingTriforce ||
-      state.pendingRecast ||
-      state.pendingCreateLayers ||
-      state.pendingPromptGenerate ||
-      state.expectingArtifacts ||
-      state.pendingReplace
-  );
-}
-
-function computeCanvasSignature() {
-  const parts = [];
-  for (const item of state.images) {
-    const id = String(item?.id || "").trim();
-    if (!id || !isVisibleCanvasImageId(id)) continue;
-    parts.push(`id=${id}`);
-    if (item?.path) parts.push(item.path);
-  }
-  // Spatial layout is a first-class signal; include freeform rects so background inference
-  // reacts to user arrangement but ignore pure camera/view changes (pan/zoom/selection).
-  const z = Array.isArray(state.freeformZOrder) ? state.freeformZOrder : [];
-  for (const imageIdRaw of z) {
-    const imageId = String(imageIdRaw || "").trim();
-    if (!imageId || !isVisibleCanvasImageId(imageId)) continue;
-    const rect = imageId ? state.freeformRects.get(imageId) : null;
-    if (!rect) continue;
-    parts.push(
-      `rect:${imageId}:${Math.round(Number(rect.x) || 0)},${Math.round(Number(rect.y) || 0)},${Math.round(
-        Number(rect.w) || 0
-      )},${Math.round(Number(rect.h) || 0)}`
-    );
-  }
-  return parts.join("|");
-}
-
-function markAlwaysOnVisionDirty(reason = null) {
-  const aov = state.alwaysOnVision;
-  if (!aov) return;
-  aov.contentDirty = true;
-  aov.dirtyReason = reason ? String(reason) : null;
-}
-
-function isAlwaysOnVisionUrgentDirtyReason(reason = null) {
-  const key = String(reason || "")
-    .trim()
-    .toLowerCase();
-  if (!key) return false;
-  return ALWAYS_ON_VISION_URGENT_DIRTY_REASONS.has(key);
-}
-
-function scheduleAlwaysOnVision({ immediate = false, force = false } = {}) {
-  if (!allowAlwaysOnVision()) {
-    updateAlwaysOnVisionReadout();
-    return;
-  }
-  clearTimeout(alwaysOnVisionTimer);
-  const forced = Boolean(force);
-  const urgent = isAlwaysOnVisionUrgentDirtyReason(state.alwaysOnVision?.dirtyReason);
-  const delay = immediate ? 0 : urgent ? Math.min(ALWAYS_ON_VISION_DEBOUNCE_MS, 90) : ALWAYS_ON_VISION_DEBOUNCE_MS;
-  alwaysOnVisionTimer = setTimeout(() => {
-    alwaysOnVisionTimer = null;
-    if (!immediate && !urgent && "requestIdleCallback" in window) {
-      window.requestIdleCallback(
-        () => {
-          runAlwaysOnVisionOnce({ force: forced }).catch((err) => console.warn("Always-on vision failed:", err));
-        },
-        { timeout: 1200 }
-      );
-    } else {
-      runAlwaysOnVisionOnce({ force: forced }).catch((err) => console.warn("Always-on vision failed:", err));
-    }
-  }, delay);
-}
-
-async function runAlwaysOnVisionOnce({ force = false } = {}) {
-  if (!allowAlwaysOnVision()) {
-    updateAlwaysOnVisionReadout();
-    return false;
-  }
-  const aov = state.alwaysOnVision;
-  if (aov.pending) {
-    // Keep one pending refresh queued when canvas content changed during an in-flight pass.
-    if (force || aov.contentDirty) {
-      scheduleAlwaysOnVision({ force: force || aov.contentDirty });
-    }
-    return false;
-  }
-  if (!force && !aov.contentDirty) return false;
-
-  const urgent = isAlwaysOnVisionUrgentDirtyReason(aov.dirtyReason);
-  const now = Date.now();
-  const quietFor = now - (state.lastInteractionAt || 0);
-  const idleMs = urgent ? ALWAYS_ON_VISION_URGENT_IDLE_MS : ALWAYS_ON_VISION_IDLE_MS;
-  if (quietFor < idleMs) {
-    scheduleAlwaysOnVision({ force });
-    return false;
-  }
-  if (isForegroundActionRunning()) {
-    scheduleAlwaysOnVision({ force });
-    return false;
-  }
-
-  const since = now - (aov.lastRunAt || 0);
-  const throttleMs = urgent ? ALWAYS_ON_VISION_URGENT_THROTTLE_MS : ALWAYS_ON_VISION_THROTTLE_MS;
-  if (since < throttleMs) {
-    scheduleAlwaysOnVision({ force });
-    return false;
-  }
-
-  const signature = computeCanvasSignature();
-  if (!force && signature && aov.lastSignature === signature && aov.lastText) {
-    aov.contentDirty = false;
-    aov.dirtyReason = null;
-    return false;
-  }
-
-  await ensureRun();
-  const stamp = Date.now();
-  const snapshotPath = `${state.runDir}/alwayson-${stamp}.png`;
-  await waitForIntentImagesLoaded({ timeoutMs: 900 });
-  // Ensure the on-screen canvas is up to date before we capture a snapshot.
-  render();
-  await writeIntentSnapshot(snapshotPath, { maxDimPx: 900 });
-  await writeCanvasContextEnvelope(snapshotPath).catch((err) => {
-    console.warn("Failed to write canvas context envelope:", err);
-  });
-
-  const ok = await ensureEngineSpawned({ reason: "always-on vision" });
-  if (!ok) return false;
-
-  aov.pending = true;
-  aov.pendingPath = snapshotPath;
-  aov.pendingAt = now;
-  aov.lastRunAt = now;
-  aov.lastSignature = signature;
-  aov.contentDirty = false;
-  aov.dirtyReason = null;
-  updateAlwaysOnVisionReadout();
-
-  clearTimeout(alwaysOnVisionTimeout);
-  alwaysOnVisionTimeout = setTimeout(() => {
-    if (!state.alwaysOnVision?.pending) return;
-    state.alwaysOnVision.pending = false;
-    state.alwaysOnVision.pendingPath = null;
-    updateAlwaysOnVisionReadout();
-    processActionQueue().catch(() => {});
-  }, ALWAYS_ON_VISION_TIMEOUT_MS);
-
-  if (aov.rtState === "off") aov.rtState = "connecting";
-
-  // Ensure the canvas-context realtime backend is running before dispatching snapshot work.
-  await invoke("write_pty", { data: `${PTY_COMMANDS.CANVAS_CONTEXT_RT_START}\n` }).catch((err) => {
-    console.warn("Always-on vision canvas context start failed:", err);
-  });
-
-  try {
-    await invoke("write_pty", { data: `${PTY_COMMANDS.CANVAS_CONTEXT_RT} ${quoteForPtyArg(snapshotPath)}\n` });
-  } catch (err) {
-    console.warn("Always-on vision dispatch failed:", err);
-    aov.pending = false;
-    aov.pendingPath = null;
-    aov.contentDirty = true;
-    updateAlwaysOnVisionReadout();
-    processActionQueue().catch(() => {});
-    return false;
-  }
-  bumpSessionApiCalls();
-  return true;
 }
 
 function _ambientIntentViewportWorldBounds() {
@@ -5764,161 +4573,19 @@ function applyAmbientIntentFallback(reason, { message = null, hardDisable = fals
 }
 
 function allowAmbientIntentRealtime() {
-  if (!intentAmbientActive()) return false;
-  if (!getVisibleCanvasImages().length) return false;
-  if (!state.runDir) return false;
-  if (state.motherIdle?.pendingIntent && String(state.motherIdle.pendingIntentRealtimePath || "").trim()) return false;
-  if (!realtimeScopeReady("intent")) return false;
-  return true;
+  return false;
 }
 
 function scheduleAmbientIntentInference({ immediate = false, reason = null, imageIds = [] } = {}) {
-  const ambient = state.intentAmbient;
-  if (!ambient || !intentAmbientActive()) return false;
-  if (!getVisibleCanvasImages().length) return false;
-  if (state.motherIdle?.pendingIntent && String(state.motherIdle.pendingIntentRealtimePath || "").trim()) return false;
-  const why = String(reason || "")
-    .trim()
-    .toLowerCase();
-  if (!shouldScheduleAmbientIntent(why)) return false;
-  rememberAmbientTouchedImageIds(imageIds.length ? imageIds : [state.activeId]);
-
-  clearTimeout(intentAmbientInferenceTimer);
-  const delay = immediate ? 0 : INTENT_INFERENCE_DEBOUNCE_MS;
-  intentAmbientInferenceTimer = setTimeout(() => {
-    intentAmbientInferenceTimer = null;
-    runAmbientIntentInferenceOnce({ reason: why || (immediate ? "immediate" : "debounce") }).catch((err) => {
-      console.warn("Ambient intent inference failed:", err);
-    });
-  }, delay);
-  return true;
+  void immediate;
+  void reason;
+  void imageIds;
+  return false;
 }
 
 async function runAmbientIntentInferenceOnce({ reason = null } = {}) {
-  const ambient = state.intentAmbient;
-  if (!ambient || !intentAmbientActive()) return false;
-  if (!getVisibleCanvasImages().length) {
-    ambient.suggestions = [];
-    return false;
-  }
-
-  const reasonKey = normalizeIntentReason(reason);
-  const now = Date.now();
-  const signature = computeAmbientIntentSignature();
-  const since = now - (ambient.lastRunAt || 0);
-  if (signature && signature === ambient.lastSignature && ambient.iconState && since < 12_000 && ambient.rtState === "ready") {
-    return false;
-  }
-  if (!isIntentFastTrackReason(reasonKey) && since < INTENT_INFERENCE_THROTTLE_MS) {
-    clearTimeout(intentAmbientInferenceTimer);
-    intentAmbientInferenceTimer = setTimeout(() => {
-      intentAmbientInferenceTimer = null;
-      runAmbientIntentInferenceOnce({ reason: "throttle" }).catch((err) => console.warn("Ambient intent inference failed:", err));
-    }, Math.max(80, INTENT_INFERENCE_THROTTLE_MS - since));
-    return false;
-  }
-
-  await ensureRun();
-  if (!allowAmbientIntentRealtime()) {
-    const msg = realtimeScopeUnavailableMessage("intent");
-    applyAmbientIntentFallback("realtime_disabled", {
-      message: msg,
-      hardDisable: Boolean(!realtimeScopeReady("intent")),
-    });
-    appendIntentTrace({
-      kind: "ambient_inference_blocked",
-      reason: msg,
-      signature,
-      rt_state: ambient.rtState,
-    }).catch(() => {});
-    return false;
-  }
-
-  const ok = await ensureEngineSpawned({ reason: "ambient intent inference" });
-  if (!ok) {
-    const msg = "Intent engine unavailable.";
-    applyAmbientIntentFallback("engine_unavailable", { message: msg });
-    appendIntentTrace({
-      kind: "ambient_engine_unavailable",
-      reason: msg,
-      signature,
-      rt_state: ambient.rtState,
-    }).catch(() => {});
-    return false;
-  }
-
-  if (ambient.rtState === "off" || ambient.rtState === "failed") ambient.rtState = "connecting";
-  await invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_START}\n` }).catch(() => {});
-
-  ambient.frameSeq = (Number(ambient.frameSeq) || 0) + 1;
-  const stamp = Date.now();
-  const frameId = `intent-ambient-${stamp}-${ambient.frameSeq}`;
-  const snapshotPath = `${state.runDir}/intent-ambient-${stamp}.png`;
-
-  await waitForIntentImagesLoaded({ timeoutMs: intentSnapshotLoadTimeoutForReason(reasonKey) });
-  render();
-  await writeIntentSnapshot(snapshotPath, { maxDimPx: INTENT_SNAPSHOT_MAX_DIM_PX });
-  let ctxPath = null;
-  await writeIntentContextEnvelope(snapshotPath, frameId)
-    .then((path) => {
-      ctxPath = path;
-    })
-    .catch((err) => {
-      console.warn("Failed to write ambient intent envelope:", err);
-    });
-
-  appendIntentTrace({
-    kind: "ambient_inference_dispatch",
-    reason: reason ? String(reason) : null,
-    frame_id: frameId,
-    snapshot_path: snapshotPath,
-    ctx_path: ctxPath,
-    signature,
-  }).catch(() => {});
-
-  ambient.pending = true;
-  ambient.pendingPath = snapshotPath;
-  ambient.pendingAt = now;
-  ambient.pendingFrameId = frameId;
-  ambient.lastRunAt = now;
-  ambient.lastSignature = signature;
-  ambient.lastReason = reason ? String(reason) : null;
-  requestRender();
-
-  clearTimeout(intentAmbientInferenceTimeout);
-  intentAmbientInferenceTimeout = setTimeout(() => {
-    const cur = state.intentAmbient;
-    if (!cur) return;
-    if (!cur.pending || cur.pendingPath !== snapshotPath) return;
-    const msg = "Intent realtime timed out.";
-    applyAmbientIntentFallback("timeout", { message: msg });
-    appendIntentTrace({
-      kind: "ambient_inference_timeout",
-      reason: msg,
-      frame_id: frameId,
-      snapshot_path: snapshotPath,
-      rt_state: cur.rtState,
-    }).catch(() => {});
-  }, INTENT_INFERENCE_TIMEOUT_MS);
-
-  try {
-    await invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT} ${quoteForPtyArg(snapshotPath)}\n` });
-    bumpSessionApiCalls();
-  } catch (err) {
-    const msg = err?.message ? `Intent realtime failed: ${err.message}` : "Intent realtime failed.";
-    applyAmbientIntentFallback("dispatch_failed", { message: msg });
-    appendIntentTrace({
-      kind: "ambient_inference_dispatch_failed",
-      reason: msg,
-      frame_id: frameId,
-      snapshot_path: snapshotPath,
-      rt_state: ambient.rtState,
-    }).catch(() => {});
-    return false;
-  }
-
-  if (reason) setStatus(`Engine: ambient intent scan (${reason})`);
-  return true;
+  void reason;
+  return false;
 }
 
 function allowIntentRealtime() {
@@ -6989,51 +5656,6 @@ function shouldBackfillVisionLabel(raw) {
   const label = _normalizeVisionLabel(raw, { maxChars: 32 });
   // Keep fallback non-heuristic: only backfill when realtime provided no label.
   return !label;
-}
-
-function maybeScheduleVisionDescribeFallback(item, label) {
-  if (!item?.path) return;
-  if (!shouldBackfillVisionLabel(label)) return;
-  const now = Date.now();
-  const lastRequestedAt = Number(item.visionFallbackRequestedAt) || 0;
-  if (now - lastRequestedAt < VISION_FALLBACK_REFRESH_MIN_MS) return;
-  if (scheduleVisionDescribe(item.path, { priority: true, fallback: true, refresh: true })) {
-    item.visionFallbackRequestedAt = now;
-  }
-}
-
-function maybeScheduleVisionDescribeFallbackForAmbientRealtime(ambient, imageDescs = []) {
-  const seenIds = new Set();
-  for (const rec of Array.isArray(imageDescs) ? imageDescs : []) {
-    const id = rec?.image_id ? String(rec.image_id) : "";
-    if (id) seenIds.add(id);
-  }
-
-  const candidates = [];
-  const seenPaths = new Set();
-  const addCandidate = (item) => {
-    if (!item?.path) return;
-    if (seenPaths.has(item.path)) return;
-    if (seenIds.has(String(item.id || ""))) return;
-    seenPaths.add(item.path);
-    candidates.push(item);
-  };
-
-  if (ambient && Array.isArray(ambient.touchedImageIds)) {
-    for (const rawId of ambient.touchedImageIds) {
-      const id = String(rawId || "").trim();
-      if (!id) continue;
-      addCandidate(state.imagesById.get(id) || null);
-    }
-  }
-  if (!candidates.length) {
-    for (const item of getVisibleCanvasImages()) addCandidate(item);
-  }
-
-  for (const item of candidates) {
-    if (!shouldBackfillVisionLabel(item?.visionDesc)) continue;
-    maybeScheduleVisionDescribeFallback(item, item?.visionDesc || "");
-  }
 }
 
 function extractIntentImageDescriptions(parsed) {
@@ -13041,25 +11663,6 @@ function buildMotherText() {
     return `Cooling down ${sec}s`;
   }
 
-  const aov = state.alwaysOnVision;
-  const raw = typeof aov?.lastText === "string" ? aov.lastText.trim() : "";
-  const hasOutput = Boolean(raw);
-
-  if (aov?.enabled) {
-    if (aov.rtState === "connecting" && !aov.pending && !hasOutput) {
-      if (isReelSizeLocked()) return "";
-      return "Mother connecting…";
-    }
-    if (aov.pending) {
-      if (isReelSizeLocked()) return "";
-      return "Mother scanning…";
-    }
-    if (phase === MOTHER_IDLE_STATES.OBSERVING && motherIdleHasArmedCanvas()) {
-      return "";
-    }
-    return "Pause for intent hypothesis.";
-  }
-
   const fallback = typeof state.lastTipText === "string" ? state.lastTipText.trim() : "";
   return fallback || "Pause for intent hypothesis.";
 }
@@ -13248,9 +11851,6 @@ function renderMotherReadout() {
   }
   motherV2SyncLayeredPanel();
   const next = buildMotherText();
-  const aov = state.alwaysOnVision;
-  const isRealtime = realtimeSourceSupported(aov?.lastMeta?.source);
-  const hasOutput = typeof aov?.lastText === "string" && aov.lastText.trim();
   const proposalIconsHtml = motherV2ProposalIconsHtml(state.motherIdle?.intent || null, { phase });
   const draftStatusHtml = motherV2DraftStatusHtml({ phase });
   const statusText = motherV2StatusText();
@@ -13263,9 +11863,7 @@ function renderMotherReadout() {
   const currentPhaseCardKind = String(els.tipsText.dataset.phaseCardKind || "").trim();
   const phaseCardMissing = isPhaseCardState && !els.tipsText.querySelector(".mother-phase-icons.is-draft-card");
   const changed = phaseCardMissing || renderKey !== lastMotherRenderedText;
-  const shouldTypeout = Boolean(
-    phase === MOTHER_IDLE_STATES.OBSERVING && aov?.enabled && isRealtime && hasOutput && !aov.pending
-  );
+  const shouldTypeout = false;
 
   if (els.motherState) {
     const normalizedPhase = String(phase || "").trim();
@@ -13374,32 +11972,10 @@ function syncMotherPortrait() {
 
   const motherRunning = Boolean(state.mother?.running);
   const reelLocked = isReelSizeLocked();
-  const aov = state.alwaysOnVision;
   const now = Date.now();
   const mother = state.mother;
   const hasImages = Boolean(state.images && state.images.length);
-  const pending = Boolean(aov?.enabled && aov.pending);
-  const pendingAt = Math.max(0, Number(aov?.pendingAt) || 0);
-
-  // Presentability hack: keep the realtime "pulse" + video visible for a minimum duration
-  // so short calls still read as "alive", and subsequent calls don't restart it.
-  if (!aov?.enabled) {
-    mother.rtHoldUntil = 0;
-    clearTimeout(mother.rtHoldTimer);
-    mother.rtHoldTimer = null;
-  } else if (pending) {
-    const until = (pendingAt || now) + MOTHER_REALTIME_MIN_MS;
-    mother.rtHoldUntil = Math.max(Number(mother.rtHoldUntil) || 0, until);
-    clearTimeout(mother.rtHoldTimer);
-    mother.rtHoldTimer = null;
-  }
-
-  const holdUntil = Math.max(0, Number(mother.rtHoldUntil) || 0);
-  const held = Boolean(aov?.enabled && holdUntil && now < holdUntil);
-  const realtimeActive = Boolean(aov?.enabled && (pending || held));
-  const idleFor = now - (state.lastMotherHotAt || 0);
-  const userHot = Boolean(aov?.enabled && hasImages && idleFor < MOTHER_USER_HOT_IDLE_MS);
-  const userHotUntil = Math.max(0, Number(state.lastMotherHotAt) || 0) + MOTHER_USER_HOT_IDLE_MS;
+  mother.rtHoldUntil = 0;
   const idlePhase = state.motherIdle?.phase || motherIdleInitialState();
 
   // Realtime border/video is driven by Mother's idle suggestion flow window, with
@@ -13434,10 +12010,6 @@ function syncMotherPortrait() {
   }
 
   const refreshAts = [];
-  if (!pending) {
-    if (held) refreshAts.push(holdUntil);
-    if (userHot) refreshAts.push(userHotUntil);
-  }
   if (rawRealtime && !showRealtime && rawSince) {
     refreshAts.push(rawSince + MOTHER_RT_VISUAL_ON_DELAY_MS);
   }
@@ -14106,10 +12678,6 @@ function projectWorldRectToSurface(rect, projection) {
 
 function setTip(message) {
   state.lastTipText = String(message || "");
-  if (state.alwaysOnVision?.enabled) {
-    // Mother panel is reserved for CTX output while always-on vision is enabled.
-    return;
-  }
   renderMotherReadout();
 }
 
@@ -18146,12 +16714,7 @@ function motherV2PreferredTransformationModeHint() {
 }
 
 function motherV2CanvasContextSummaryHint() {
-  const raw = typeof state.alwaysOnVision?.lastText === "string" ? state.alwaysOnVision.lastText.trim() : "";
-  if (!raw) return null;
-  const summary = extractCanvasContextSummary(raw);
-  const normalized = String(summary || "").trim();
-  if (!normalized) return null;
-  return clampText(normalized, 240);
+  return null;
 }
 
 function motherV2BuildProposalContextForIntentPayload({
@@ -25082,9 +23645,6 @@ function ensureCanvasImageLoaded(item) {
           }
           invalidateActiveTabPreview("image_layout_settle");
           scheduleVisualPromptWrite();
-          if (intentAmbientActive()) {
-            scheduleAmbientIntentInference({ immediate: true, reason: "composition_change", imageIds: [item.id] });
-          }
           if (intentModeActive()) {
             scheduleIntentStateWrite();
           }
@@ -27098,7 +25658,6 @@ const ACTION_QUEUE_PRIORITY = {
 function isEngineBusy() {
   return Boolean(
     state.ptySpawning ||
-      state.alwaysOnVision?.pending ||
       state.pendingBlend ||
       state.pendingSwapDna ||
       state.pendingBridge ||
@@ -27242,15 +25801,6 @@ async function processActionQueue() {
     }
 
     while (!state.actionQueueActive && !isEngineBusy() && state.actionQueue.length) {
-      // Realtime canvas context drives Suggested Ability; when it's due, run it ahead of
-      // other queued API work so the UI stays responsive.
-      try {
-        const started = await runAlwaysOnVisionOnce();
-        if (started && isEngineBusy()) return;
-      } catch (err) {
-        console.warn("Always-on vision priority dispatch failed:", err);
-      }
-
       const idx = _pickNextQueuedActionIndex();
       if (idx < 0) return;
       const item = state.actionQueue.splice(idx, 1)[0];
@@ -28644,7 +27194,7 @@ async function setActiveImage(id, { preserveSelection = false, source = "system"
   syncActiveTabRecord({ capture: false, publish: true });
 }
 
-function addImage(item, { select = false, deferAlwaysOnVision = false, deferAmbientIntent = false } = {}) {
+function addImage(item, { select = false } = {}) {
   if (!item || !item.id || !item.path) return;
   if (state.imagesById.has(item.id)) return;
   const assignedPaletteIndex = Number(item.uiPaletteIndex);
@@ -28672,20 +27222,13 @@ function addImage(item, { select = false, deferAlwaysOnVision = false, deferAmbi
   }
   showDropHint(false);
   scheduleVisualPromptWrite();
-  if (!deferAlwaysOnVision) {
-    markAlwaysOnVisionDirty("image_add");
-    scheduleAlwaysOnVision();
-  }
   recordUserEvent("image_add", {
     image_id: String(item.id),
     kind: item.kind ? String(item.kind) : null,
     file: item.path ? basename(item.path) : null,
     n_images: state.images.length,
   });
-  if (!deferAmbientIntent && intentAmbientActive()) {
-    updateEmptyCanvasHint();
-    scheduleAmbientIntentInference({ immediate: true, reason: "add", imageIds: [item.id] });
-  }
+  updateEmptyCanvasHint();
   if (intentModeActive()) {
     scheduleIntentStateWrite();
   }
@@ -28824,8 +27367,6 @@ async function removeImageFromCanvas(imageId) {
     renderQuickActions();
     renderHudReadout();
     motherIdleSyncFromInteraction({ userInteraction: false });
-    state.alwaysOnVision.contentDirty = false;
-    state.alwaysOnVision.dirtyReason = null;
     requestRender();
     syncActiveTabRecord({ capture: false, publish: true });
     return true;
@@ -28835,9 +27376,6 @@ async function removeImageFromCanvas(imageId) {
 
   updateEmptyCanvasHint();
   scheduleVisualPromptWrite();
-  markAlwaysOnVisionDirty("image_remove");
-  scheduleAlwaysOnVision();
-  if (intentAmbientActive()) scheduleAmbientIntentInference({ immediate: true, reason: "remove" });
   scheduleIntentStateWrite();
   renderQuickActions();
   renderHudReadout();
@@ -28924,12 +27462,7 @@ async function replaceImageInPlace(
     requestRender();
   }
   scheduleVisualPromptWrite();
-  markAlwaysOnVisionDirty("image_replace");
-  scheduleAlwaysOnVision();
   motherIdleSyncFromInteraction({ userInteraction: false });
-  if (intentAmbientActive()) {
-    scheduleAmbientIntentInference({ immediate: true, reason: "replace", imageIds: [targetId] });
-  }
   return true;
 }
 
@@ -29312,11 +27845,7 @@ async function importLocalPathsAtCanvasPoint(
           receiptPath,
           label: basename(src),
         },
-        {
-          select: focusImported ? ok === 0 : ok === 0 && !state.activeId,
-          deferAlwaysOnVision: true,
-          deferAmbientIntent: true,
-        }
+        { select: focusImported ? ok === 0 : ok === 0 && !state.activeId }
       );
       importedIds.push(artifactId);
       ok += 1;
@@ -29367,19 +27896,6 @@ async function importLocalPathsAtCanvasPoint(
       }).catch(() => {});
     }
   }
-  const deferUploadVision =
-    Boolean(motherIdle) &&
-    ok >= MOTHER_V2_MIN_IMAGES_FOR_PROPOSAL &&
-    String(state.motherIdle?.phase || "") === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING;
-  markAlwaysOnVisionDirty("image_add_batch");
-  if (deferUploadVision) {
-    setTimeout(() => {
-      if (!state.images.length) return;
-      scheduleAlwaysOnVision();
-    }, MOTHER_V2_UPLOAD_VISION_DEFER_MS);
-  } else {
-    scheduleAlwaysOnVision();
-  }
   const suffix = failed ? ` (${failed} failed)` : "";
   setStatus(`Engine: imported ${ok} photo${ok === 1 ? "" : "s"}${suffix}`, failed > 0);
 
@@ -29399,20 +27915,6 @@ async function importLocalPathsAtCanvasPoint(
     updateEmptyCanvasHint();
     scheduleIntentInference({ immediate: true, reason: "import" });
     scheduleIntentStateWrite({ immediate: true });
-  }
-  if (intentAmbientActive()) {
-    const touched = importedIds.filter((id) => state.imagesById.has(id));
-    if (touched.length) {
-      setTimeout(() => {
-        const visibleTouched = touched.filter((id) => state.imagesById.has(id));
-        if (!visibleTouched.length) return;
-        scheduleAmbientIntentInference({
-          immediate: false,
-          reason: "import_batch",
-          imageIds: visibleTouched,
-        });
-      }, INTENT_AMBIENT_IMPORT_DELAY_MS);
-    }
   }
   requestRender();
   return { ok, failed, importedIds };
@@ -31386,10 +29888,6 @@ function captureActiveTabSession(session = null) {
     state.alwaysOnVision && typeof state.alwaysOnVision === "object"
       ? state.alwaysOnVision
       : createTabAlwaysOnVisionState();
-  next.canvasContextSuggestion =
-    state.canvasContextSuggestion && typeof state.canvasContextSuggestion === "object"
-      ? state.canvasContextSuggestion
-      : null;
   next.lastRecreatePrompt = state.lastRecreatePrompt ? String(state.lastRecreatePrompt) : null;
   next.lastAction = state.lastAction ? String(state.lastAction) : null;
   next.lastTipText = typeof state.lastTipText === "string" ? state.lastTipText : DEFAULT_TIP;
@@ -31497,10 +29995,6 @@ function bindTabSessionToState(session = null) {
   if (!state.alwaysOnVision.enabled && state.alwaysOnVision.rtState === "connecting") {
     state.alwaysOnVision.rtState = "off";
   }
-  state.canvasContextSuggestion =
-    current.canvasContextSuggestion && typeof current.canvasContextSuggestion === "object"
-      ? current.canvasContextSuggestion
-      : null;
   state.lastRecreatePrompt = current.lastRecreatePrompt ? String(current.lastRecreatePrompt) : null;
   state.lastAction = current.lastAction ? String(current.lastAction) : null;
   state.lastTipText = typeof current.lastTipText === "string" ? current.lastTipText : DEFAULT_TIP;
@@ -31629,7 +30123,6 @@ function suspendActiveTabRuntimeForSwitch() {
     state.motherIdle.hintFadeTimer = null;
   }
   invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_STOP}\n` }).catch(() => {});
-  invoke("write_pty", { data: `${PTY_COMMANDS.CANVAS_CONTEXT_RT_STOP}\n` }).catch(() => {});
   invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_MOTHER_STOP}\n` }).catch(() => {});
   hideImageMenu();
   hideAnnotatePanel();
@@ -32038,9 +30531,6 @@ async function openExistingRun() {
   if (activation?.hydration) await activation.hydration;
   await restoreIntentStateFromRunDir().catch(() => {});
   const restoredArtifacts = await loadExistingArtifacts();
-  if (intentAmbientActive() && getVisibleCanvasImages().length) {
-    scheduleAmbientIntentInference({ immediate: true, reason: "composition_change" });
-  }
   showToast(
     `Opened ${tabLabelForRunDir(selected)} in a new tab${restoredArtifacts ? ` (${restoredArtifacts} artifacts)` : ""}.`,
     "tip",
@@ -32165,7 +30655,6 @@ async function spawnEngine() {
     if (active?.path) {
       await invoke("write_pty", { data: `${PTY_COMMANDS.USE} ${active.path}\n` }).catch(() => {});
     }
-    processDescribeQueue();
     setStatus(`Engine: started (${state.engineLaunchMode})`);
   } catch (err) {
     console.error(err);
@@ -33051,105 +31540,11 @@ async function handleEventLegacy(event) {
     renderHudReadout();
     renderSessionApiCallsReadout();
   } else if (eventType === DESKTOP_EVENT_TYPES.CANVAS_CONTEXT) {
-    const text = event.text;
-    const isPartial = Boolean(event.partial);
-    if (isOpenAiRealtimeSignal({ source: event.source, model: event.model })) {
-      markOpenAiRealtimePortraitActivity();
-    }
-    if (!isPartial) {
+    if (!event.partial) {
       topMetricIngestRealtimeCostFromPayload(event, { render: true });
     }
-    const aov = state.alwaysOnVision;
-    if (aov) {
-      if (isPartial) {
-        // Keep the "pending" state while the realtime session is streaming partial text.
-        aov.pending = true;
-      } else {
-        aov.pending = false;
-        aov.pendingPath = null;
-        aov.pendingAt = 0;
-      }
-      if (typeof text === "string" && text.trim()) {
-        aov.lastText = text.trim();
-      }
-      aov.lastMeta = {
-        source: event.source || null,
-        model: event.model || null,
-        at: Date.now(),
-        image_path: event.image_path || null,
-        partial: isPartial,
-      };
-      const src = String(event.source || "");
-      if (realtimeSourceSupported(src)) {
-        aov.rtState = "ready";
-        aov.disabledReason = null;
-      }
-    }
-    if (!isPartial) {
-      clearTimeout(alwaysOnVisionTimeout);
-      alwaysOnVisionTimeout = null;
-    }
-    updateAlwaysOnVisionReadout();
-    if (!isPartial) {
-      processActionQueue().catch(() => {});
-    }
-    if (!isPartial && typeof text === "string" && text.trim()) {
-      const top = extractCanvasContextTopAction(text);
-      state.canvasContextSuggestion = top?.action
-        ? {
-            action: top.action,
-            why: top.why || null,
-            at: Date.now(),
-            source: event.source || null,
-            model: event.model || null,
-          }
-        : null;
-      renderQuickActions();
-    }
   } else if (eventType === DESKTOP_EVENT_TYPES.CANVAS_CONTEXT_FAILED) {
-    if (isOpenAiRealtimeSignal({ source: event.source, model: event.model })) {
-      markOpenAiRealtimePortraitActivity();
-    }
-    const aov = state.alwaysOnVision;
-    if (aov) {
-      aov.pending = false;
-      aov.pendingPath = null;
-      aov.pendingAt = 0;
-      const msg = event.error ? `Canvas context failed: ${event.error}` : "Canvas context failed.";
-      aov.lastText = msg;
-      aov.lastMeta = {
-        source: event.source || null,
-        model: event.model || null,
-        at: Date.now(),
-        image_path: event.image_path || null,
-      };
-      const src = String(event.source || "");
-      if (event.fatal && realtimeSourceSupported(src)) {
-        aov.enabled = false;
-        aov.rtState = "failed";
-        aov.disabledReason = event.error
-          ? `Always-on vision disabled: ${event.error}`
-          : `Always-on vision disabled (${src || "canvas context"} error).`;
-        settings.alwaysOnVision = false;
-        localStorage.setItem("brood.alwaysOnVision", "0");
-        if (els.alwaysOnVisionToggle) els.alwaysOnVisionToggle.checked = false;
-
-        clearTimeout(alwaysOnVisionTimer);
-        alwaysOnVisionTimer = null;
-
-        // Best-effort shutdown; the engine will ignore if not running.
-        if (state.ptySpawned) {
-          invoke("write_pty", { data: `${PTY_COMMANDS.CANVAS_CONTEXT_RT_STOP}\n` }).catch(() => {});
-        }
-        setStatus("Engine: always-on vision disabled (canvas context failure)", true);
-      }
-    }
-    state.canvasContextSuggestion = null;
-    clearTimeout(alwaysOnVisionTimeout);
-    alwaysOnVisionTimeout = null;
     updateAlwaysOnVisionReadout();
-    renderQuickActions();
-    processActionQueue().catch(() => {});
   } else if (event.type === DESKTOP_EVENT_TYPES.INTENT_ICONS) {
     const intent = state.intent;
     const ambient = state.intentAmbient;
@@ -33322,9 +31717,6 @@ async function handleEventLegacy(event) {
         // Capture per-image vision labels from the intent realtime response so we can
         // use them as signals without issuing separate /describe calls.
         const imageDescs = !isPartial ? extractIntentImageDescriptions(parsed) : [];
-        if (!isPartial && matchAmbient) {
-          maybeScheduleVisionDescribeFallbackForAmbientRealtime(ambient, imageDescs);
-        }
         let wroteVision = false;
         if (!isPartial && imageDescs.length) {
           for (const rec of imageDescs) {
@@ -33341,10 +31733,7 @@ async function handleEventLegacy(event) {
             if (keepExplicitDescribe) {
               continue;
             }
-            if (prevLabel && prevLabel === label) {
-              maybeScheduleVisionDescribeFallback(imgItem, prevLabel);
-              continue;
-            }
+            if (prevLabel && prevLabel === label) continue;
             imgItem.visionDesc = label;
             imgItem.visionPending = false;
             imgItem.visionDescMeta = {
@@ -33352,9 +31741,8 @@ async function handleEventLegacy(event) {
               model: event.model || null,
               at: Date.now(),
             };
-            maybeScheduleVisionDescribeFallback(imgItem, label);
             wroteVision = true;
-            if (intentModeActive() || intentAmbientActive()) {
+            if (intentModeActive()) {
               appendIntentTrace({
                 kind: "vision_description",
                 image_id: imageId,
@@ -33389,11 +31777,7 @@ async function handleEventLegacy(event) {
           ambient.disabledReason = null;
           ambient.lastError = null;
           ambient.lastErrorAt = 0;
-          if (!isPartial) {
-            const touched = imageDescs.map((rec) => String(rec?.image_id || "")).filter(Boolean);
-            if (touched.length) rememberAmbientTouchedImageIds(touched);
-            rebuildAmbientIntentSuggestions(parsed, { reason: "realtime", nowMs: parsedAt });
-          }
+          if (!isPartial) rebuildAmbientIntentSuggestions(parsed, { reason: "realtime", nowMs: parsedAt });
         }
         if (matchMother && motherIdle && !isPartial) {
           const payloadForMother = motherIdle.pendingIntentPayload && typeof motherIdle.pendingIntentPayload === "object"
@@ -33505,7 +31889,6 @@ async function handleEventLegacy(event) {
         }
         if (matchAmbient && ambient) {
           applyAmbientIntentFallback("parse_failed", { message: intentParseMessage });
-          maybeScheduleVisionDescribeFallbackForAmbientRealtime(ambient, []);
         }
         if (matchMother && motherIdle) {
           const fallbackMessage = parseReason === "truncated_json"
@@ -33699,7 +32082,6 @@ async function handleEventLegacy(event) {
     }
     if (matchAmbient && ambient) {
       applyAmbientIntentFallback("failed", { message: msg, hardDisable });
-      maybeScheduleVisionDescribeFallbackForAmbientRealtime(ambient, []);
     }
     if (matchMother && motherIdle) {
       appendMotherTraceLog({
@@ -33732,9 +32114,6 @@ async function handleEventLegacy(event) {
     requestRender();
     renderQuickActions();
 
-    if (matchAmbient && ambient && !hardDisable) {
-      scheduleAmbientIntentInference({ immediate: false, reason: "composition_change" });
-    }
     if (!hardDisable && matchIntent && intentModeActive() && intent && !intent.forceChoice) {
       scheduleIntentInference({ immediate: false, reason: "retry" });
     }
@@ -33755,28 +32134,8 @@ async function handleEventLegacy(event) {
 	          break;
 	        }
 	      }
-	      dropDescribeQueuedPath(path);
-	      const releasedSlot = clearDescribeInFlightPath(path);
-	      if (releasedSlot) processDescribeQueue();
 	      // Persist the new per-image description into run artifacts.
 	      scheduleVisualPromptWrite();
-	
-	      if (intentAmbientActive()) {
-	        appendIntentTrace({
-	          kind: "ambient_vision_description",
-	          image_path: path,
-	          description: cleaned,
-	          source: event.source || null,
-	          model: event.model || null,
-	        }).catch(() => {});
-	        const touched = state.images
-	          .filter((img) => img?.path === path)
-	          .map((img) => String(img.id || ""))
-	          .filter(Boolean);
-	        // Vision-derived labels are useful intent signals; schedule a refresh so the
-	        // suggested branch can tighten as these descriptions arrive.
-	        scheduleAmbientIntentInference({ immediate: true, reason: "describe", imageIds: touched });
-	      }
 	      if (getActiveImage()?.path === path) renderHudReadout();
 	    }
 	  } else if (event.type === DESKTOP_EVENT_TYPES.IMAGE_DNA_EXTRACTED) {
@@ -35389,65 +33748,6 @@ function hitTestIntentUi(ptCanvas) {
   return null;
 }
 
-function hitTestAmbientIntentNudge(ptCanvas) {
-  if (!INTENT_AMBIENT_ICON_PLACEMENT_ENABLED) return null;
-  if (state.mother?.running) return null;
-  const ambient = state.intentAmbient;
-  if (!ambient || !ptCanvas) return null;
-  const hits = Array.isArray(ambient.uiHits) ? ambient.uiHits : [];
-  for (let i = hits.length - 1; i >= 0; i -= 1) {
-    const hit = hits[i];
-    const rect = hit?.rect;
-    if (!rect) continue;
-    const x0 = Number(rect.x) || 0;
-    const y0 = Number(rect.y) || 0;
-    const w = Number(rect.w) || 0;
-    const h = Number(rect.h) || 0;
-    if (ptCanvas.x >= x0 && ptCanvas.x <= x0 + w && ptCanvas.y >= y0 && ptCanvas.y <= y0 + h) return hit;
-  }
-  return null;
-}
-
-function activateAmbientIntentNudge(hit) {
-  if (!INTENT_AMBIENT_ICON_PLACEMENT_ENABLED) return false;
-  const ambient = state.intentAmbient;
-  if (!ambient || !hit) return false;
-
-  const branchId = String(hit.branchId || "").trim();
-  const assetKey = String(hit.assetKey || "").trim();
-  const anchorIds = Array.isArray(hit.anchorImageIds)
-    ? hit.anchorImageIds.map((id) => String(id || "").trim()).filter(Boolean)
-    : [];
-
-  let selectedId = "";
-  for (const id of anchorIds) {
-    if (state.imagesById.has(id)) {
-      selectedId = id;
-      break;
-    }
-  }
-  if (!selectedId && state.activeId && state.imagesById.has(state.activeId)) {
-    selectedId = String(state.activeId);
-  }
-
-  if (selectedId) {
-    selectCanvasImage(selectedId, { toggle: false }).catch(() => {});
-  }
-  rememberAmbientTouchedImageIds(selectedId ? [selectedId] : anchorIds);
-  scheduleAmbientIntentInference({
-    immediate: true,
-    reason: "composition_change",
-    imageIds: selectedId ? [selectedId] : anchorIds,
-  });
-
-  const usecase = assetKey || _intentUseCaseKeyFromBranchId(branchId);
-  const title = _intentUseCaseTitle(usecase);
-  if (title) {
-    showToast(`Mother nudge: ${title}`, "tip", 1300);
-  }
-  return true;
-}
-
 function _sevenSegSegmentsForDigit(ch) {
   const d = String(ch || "");
   const map = {
@@ -36177,115 +34477,11 @@ function _ambientWorldRectToCanvasRect(rectWorld) {
 }
 
 function renderAmbientIntentNudges(octx, canvasW, canvasH) {
+  void octx;
+  void canvasW;
+  void canvasH;
   const ambient = state.intentAmbient;
-  if (!INTENT_AMBIENT_ICON_PLACEMENT_ENABLED) {
-    if (ambient) ambient.uiHits = [];
-    return;
-  }
-  if (!ambient || !intentAmbientActive()) return;
-  if (state.mother?.running) {
-    ambient.uiHits = [];
-    return;
-  }
-  const suggestions = Array.isArray(ambient.suggestions) ? ambient.suggestions : [];
-  if (!suggestions.length) {
-    ambient.uiHits = [];
-    return;
-  }
-
-  const dpr = getDpr();
-  const minPx = Math.max(28, Math.round(72 * dpr));
-  const maxPx = Math.max(minPx, Math.round(164 * dpr));
-  const edge = Math.round(8 * dpr);
-  const now = Date.now();
-  let needsFadeTick = false;
-  const hits = [];
-
-  for (const suggestion of suggestions.slice(0, INTENT_AMBIENT_MAX_NUDGES)) {
-    if (!suggestion || typeof suggestion !== "object") continue;
-    const mapped = _ambientWorldRectToCanvasRect(suggestion.world_rect);
-    if (!mapped) continue;
-
-    const cx = mapped.x + mapped.w * 0.5;
-    const cy = mapped.y + mapped.h * 0.5;
-    const drawSize = clamp(Math.min(mapped.w, mapped.h), minPx, maxPx);
-    if (drawSize <= 2) continue;
-
-    let x = cx - drawSize * 0.5;
-    let y = cy - drawSize * 0.5;
-    x = clamp(x, edge, Math.max(edge, canvasW - drawSize - edge));
-    y = clamp(y, edge, Math.max(edge, canvasH - drawSize - edge));
-
-    const createdAt = Number(suggestion.created_at_ms) || now;
-    const updatedAt = Number(suggestion.updated_at_ms) || createdAt;
-    const fade = clamp((now - createdAt) / INTENT_AMBIENT_FADE_IN_MS, 0.12, 1);
-    if (fade < 0.999) needsFadeTick = true;
-    const refresh = 1 - clamp((now - updatedAt) / 1100, 0, 1);
-    const alpha = clamp(0.26 + 0.62 * fade * (0.84 + refresh * 0.16), 0.18, 0.9);
-
-    const conf = typeof suggestion.confidence === "number" && Number.isFinite(suggestion.confidence)
-      ? clamp(Number(suggestion.confidence), 0, 1)
-      : null;
-    const assetType = String(suggestion.asset_type || "icon");
-    const assetKey = suggestion.asset_key ? String(suggestion.asset_key) : "";
-    const iconImg = assetType === "icon" ? intentUiIcons.usecases?.[assetKey] || null : null;
-
-    octx.save();
-    octx.globalAlpha = alpha;
-    octx.shadowColor = "rgba(0, 0, 0, 0.44)";
-    octx.shadowBlur = Math.round(12 * dpr);
-    octx.fillStyle = "rgba(8, 10, 14, 0.62)";
-    octx.strokeStyle = "rgba(82, 255, 148, 0.24)";
-    octx.lineWidth = Math.max(1, Math.round(1.1 * dpr));
-    octx.beginPath();
-    octx.arc(x + drawSize * 0.5, y + drawSize * 0.5, drawSize * 0.52, 0, Math.PI * 2);
-    octx.fill();
-    octx.stroke();
-    octx.shadowBlur = 0;
-
-    if (assetType === "icon" && iconImg && iconImg.complete && iconImg.naturalWidth > 0) {
-      octx.imageSmoothingEnabled = true;
-      octx.imageSmoothingQuality = "high";
-      octx.drawImage(iconImg, Math.round(x), Math.round(y), Math.round(drawSize), Math.round(drawSize));
-    } else if (assetType === "icon") {
-      _drawIntentUseCaseGlyph(octx, assetKey, x + drawSize * 0.5, y + drawSize * 0.5, drawSize * 0.78, { alpha: 0.9 });
-    } else {
-      // Placeholder for upcoming generated-image nudges.
-      octx.strokeStyle = "rgba(100, 210, 255, 0.68)";
-      octx.lineWidth = Math.max(1, Math.round(1.4 * dpr));
-      octx.strokeRect(
-        Math.round(x + drawSize * 0.18),
-        Math.round(y + drawSize * 0.18),
-        Math.round(drawSize * 0.64),
-        Math.round(drawSize * 0.64)
-      );
-    }
-
-    if (conf !== null) {
-      const barW = Math.max(10, Math.round(drawSize * 0.58));
-      const barH = Math.max(1, Math.round(2 * dpr));
-      const barX = Math.round(x + (drawSize - barW) * 0.5);
-      const barY = Math.round(y + drawSize + Math.max(2, Math.round(3 * dpr)));
-      octx.fillStyle = "rgba(8, 10, 14, 0.62)";
-      octx.fillRect(barX, barY, barW, barH);
-      octx.fillStyle = "rgba(82, 255, 148, 0.68)";
-      octx.fillRect(barX, barY, Math.round(barW * conf), barH);
-    }
-
-    hits.push({
-      kind: "ambient_nudge",
-      id: String(suggestion.id || ""),
-      rect: { x, y, w: drawSize, h: drawSize },
-      branchId: suggestion.branch_id ? String(suggestion.branch_id) : "",
-      assetKey: assetKey || "",
-      anchorImageIds: Array.isArray(suggestion.anchor?.image_ids) ? suggestion.anchor.image_ids.slice(0, 3) : [],
-    });
-
-    octx.restore();
-  }
-
-  ambient.uiHits = hits;
-  if (needsFadeTick) requestRender();
+  if (ambient) ambient.uiHits = [];
 }
 
 function reelTouchPulseFromCanvasPoint(pt, { down = false, lingerMs = REEL_TOUCH_MOVE_VISIBLE_MS } = {}) {
@@ -36874,7 +35070,6 @@ function render() {
 
   renderCommunicationOverlay(octx);
   renderIntentOverlay(octx, work.width, work.height);
-  renderAmbientIntentNudges(octx, work.width, work.height);
   renderMotherDraftingPlaceholder(octx, work.width, work.height);
   renderPromptGeneratePlaceholder(octx, work.width, work.height);
   renderReelTouchIndicator(octx, work.width, work.height);
@@ -37127,13 +35322,6 @@ function installCanvasHandlers() {
           // Initial pointer-down in multi-canvas is often a focus change (selection). Treat as
           // non-semantic; real arrangement changes are still marked semantic during pointermove.
           bumpInteraction({ semantic: false });
-          const ambientHit = intentAmbientActive() ? hitTestAmbientIntentNudge(p) : null;
-
-          if (ambientHit) {
-            activateAmbientIntentNudge(ambientHit);
-            requestRender();
-            return;
-          }
 
 		          if (intentActive) {
 	            const uiHit = hitTestIntentUi(p);
@@ -37515,11 +35703,6 @@ function installCanvasHandlers() {
       const draftingPreviewHit = hitTestMotherDraftingPreviewRect(p, { padPx: Math.round(8 * getDpr()) });
       if (draftingPreviewHit) {
         setOverlayCursor("grab");
-        return;
-      }
-      const ambientHit = intentAmbientActive() ? hitTestAmbientIntentNudge(p) : null;
-      if (ambientHit) {
-        setOverlayCursor("pointer");
         return;
       }
       const communicationTool = communicationToolId();
@@ -38035,8 +36218,6 @@ function installCanvasHandlers() {
 			          },
 			        });
 		      }
-          markAlwaysOnVisionDirty(kind === POINTER_KINDS.FREEFORM_MOVE ? "image_move" : "image_resize");
-          scheduleAlwaysOnVision();
 		    }
         if (moved && (kind === POINTER_KINDS.FREEFORM_ROTATE || kind === POINTER_KINDS.FREEFORM_SKEW) && imageId) {
           invalidateActiveTabPreview("layout_transform");
@@ -38051,27 +36232,6 @@ function installCanvasHandlers() {
               rotate_start_deg: transformStartRotateDeg,
               skew_start_deg: transformStartSkewXDeg,
             });
-          }
-          markAlwaysOnVisionDirty("image_transform");
-          scheduleAlwaysOnVision();
-        }
-        if (
-          moved &&
-          imageId &&
-          intentAmbientActive() &&
-          (
-            kind === POINTER_KINDS.FREEFORM_MOVE ||
-            kind === POINTER_KINDS.FREEFORM_RESIZE ||
-            kind === POINTER_KINDS.FREEFORM_ROTATE ||
-            kind === POINTER_KINDS.FREEFORM_SKEW
-          )
-        ) {
-          if (kind === POINTER_KINDS.FREEFORM_MOVE) {
-            scheduleAmbientIntentInference({ reason: "move", imageIds: [imageId] });
-          } else if (kind === POINTER_KINDS.FREEFORM_RESIZE) {
-            scheduleAmbientIntentInference({ reason: "resize", imageIds: [imageId] });
-          } else {
-            scheduleAmbientIntentInference({ reason: "composition_change", imageIds: [imageId] });
           }
         }
 
@@ -39269,18 +37429,6 @@ function installUi() {
     }
   });
 
-  if (els.canvasContextSuggestBtn) {
-    els.canvasContextSuggestBtn.addEventListener("click", () => {
-      bumpInteraction();
-      const rec = state.canvasContextSuggestion;
-      if (!rec?.action) return;
-      triggerCanvasContextSuggestedAction(rec.action).catch((err) => {
-        const msg = err?.message || String(err);
-        showToast(msg, "error", 2600);
-      });
-    });
-  }
-
   if (els.dropHint) {
     const openPicker = (event) => {
       if (els.dropHint.classList.contains("hidden")) return;
@@ -39581,82 +37729,26 @@ function installUi() {
   }
   renderInstallTelemetryStatus();
   if (els.alwaysOnVisionToggle) {
-    els.alwaysOnVisionToggle.checked = settings.alwaysOnVision;
-    if (!ALWAYS_ON_CANVAS_CONTEXT_ENABLED) {
-      els.alwaysOnVisionToggle.checked = false;
-      els.alwaysOnVisionToggle.disabled = true;
-      els.alwaysOnVisionToggle.title = "Always-on canvas context is disabled. Mother intent realtime remains active.";
-      settings.alwaysOnVision = false;
-      if (state.alwaysOnVision) {
-        state.alwaysOnVision.enabled = false;
-        state.alwaysOnVision.pending = false;
-        state.alwaysOnVision.pendingPath = null;
-        state.alwaysOnVision.pendingAt = 0;
-        state.alwaysOnVision.contentDirty = false;
-        state.alwaysOnVision.dirtyReason = null;
-        state.alwaysOnVision.disabledReason = null;
-        state.alwaysOnVision.rtState = "off";
-        state.alwaysOnVision.lastText = null;
-      }
-      state.canvasContextSuggestion = null;
-      updateAlwaysOnVisionReadout();
-      renderQuickActions();
-    } else {
-      els.alwaysOnVisionToggle.disabled = false;
-      els.alwaysOnVisionToggle.title = "";
-      els.alwaysOnVisionToggle.addEventListener("change", () => {
-        bumpInteraction();
-        settings.alwaysOnVision = els.alwaysOnVisionToggle.checked;
-        localStorage.setItem("brood.alwaysOnVision", settings.alwaysOnVision ? "1" : "0");
-        if (state.alwaysOnVision) {
-          state.alwaysOnVision.enabled = settings.alwaysOnVision;
-          state.alwaysOnVision.pending = false;
-          state.alwaysOnVision.pendingPath = null;
-          state.alwaysOnVision.pendingAt = 0;
-          state.alwaysOnVision.contentDirty = false;
-          state.alwaysOnVision.dirtyReason = null;
-          state.alwaysOnVision.disabledReason = null;
-          state.alwaysOnVision.rtState = settings.alwaysOnVision ? "connecting" : "off";
-          if (!settings.alwaysOnVision) state.alwaysOnVision.lastText = null;
-        }
-        state.canvasContextSuggestion = null;
-        updateAlwaysOnVisionReadout();
-        renderQuickActions();
-        if (settings.alwaysOnVision) {
-          setStatus("Engine: always-on vision enabled");
-          markAlwaysOnVisionDirty("aov_enable");
-          ensureEngineSpawned({ reason: "always-on vision" })
-            .then((ok) => {
-              if (!ok) return;
-              return invoke("write_pty", { data: `${PTY_COMMANDS.CANVAS_CONTEXT_RT_START}\n` }).catch(() => {});
-            })
-            .catch(() => {});
-          scheduleAlwaysOnVision({ immediate: true });
-        } else {
-          setStatus("Engine: always-on vision disabled");
-          updatePortraitIdle({ fromSettings: true });
-          if (state.ptySpawned) {
-            invoke("write_pty", { data: `${PTY_COMMANDS.CANVAS_CONTEXT_RT_STOP}\n` }).catch(() => {});
-          }
-        }
-      });
+    els.alwaysOnVisionToggle.checked = false;
+    els.alwaysOnVisionToggle.disabled = true;
+    els.alwaysOnVisionToggle.title = "Always-on vision is not part of the launch-slice runtime.";
+    settings.alwaysOnVision = false;
+    if (state.alwaysOnVision) {
+      state.alwaysOnVision.enabled = false;
+      state.alwaysOnVision.pending = false;
+      state.alwaysOnVision.pendingPath = null;
+      state.alwaysOnVision.pendingAt = 0;
+      state.alwaysOnVision.rtState = "off";
+      state.alwaysOnVision.lastText = null;
     }
+    updateAlwaysOnVisionReadout();
   }
-  if (els.autoAcceptSuggestedAbilityToggle) {
-    els.autoAcceptSuggestedAbilityToggle.checked = settings.autoAcceptSuggestedAbility;
-    els.autoAcceptSuggestedAbilityToggle.addEventListener("change", () => {
-      bumpInteraction();
-      settings.autoAcceptSuggestedAbility = els.autoAcceptSuggestedAbilityToggle.checked;
-      localStorage.setItem("brood.autoAcceptSuggestedAbility", settings.autoAcceptSuggestedAbility ? "1" : "0");
-      if (state.autoAcceptSuggestedAbility) {
-        state.autoAcceptSuggestedAbility.enabled = settings.autoAcceptSuggestedAbility;
-        state.autoAcceptSuggestedAbility.passes = 0;
-        state.autoAcceptSuggestedAbility.lastAcceptedAt = 0;
-        state.autoAcceptSuggestedAbility.inFlight = false;
-      }
-      // If there's already a suggestion visible, the next render will auto-accept.
-      renderCanvasContextSuggestion();
-    });
+  const autoAcceptSuggestedAbilityToggle = document.getElementById("auto-accept-suggested-ability-toggle");
+  if (autoAcceptSuggestedAbilityToggle) {
+    autoAcceptSuggestedAbilityToggle.checked = false;
+    autoAcceptSuggestedAbilityToggle.disabled = true;
+    autoAcceptSuggestedAbilityToggle.title = "Passive canvas-context suggestions are not part of the launch-slice runtime.";
+    localStorage.removeItem("brood.autoAcceptSuggestedAbility");
   }
   if (els.textModel) {
     els.textModel.value = settings.textModel;
@@ -40351,20 +38443,6 @@ async function boot() {
 
   await listen("pty-exit", async () => {
     await handleEnginePtyExit();
-  });
-
-  // Consume PTY stdout as a fallback for vision describe completion/errors.
-  // Desktop normally uses `events.jsonl`, but if event polling is disrupted, this
-  // keeps the HUD "DESC" from getting stuck at ANALYZING.
-  await listen("pty-data", (event) => {
-    const chunk = event?.payload;
-    if (typeof chunk !== "string" || !chunk) return;
-    ptyLineBuffer += chunk;
-    const lines = ptyLineBuffer.split("\n");
-    ptyLineBuffer = lines.pop() || "";
-    for (const line of lines) {
-      _handlePtyLine(line);
-    }
   });
 
   await listen("desktop-automation", (event) => {
