@@ -23,6 +23,8 @@ test("design review bootstrap follows the communication review request path inst
 
 test("design review bootstrap keeps the integrated communication tray light and decorates it in place", () => {
   assert.match(bootstrap, /#communication-proposal-tray\.is-design-review-runtime/);
+  assert.match(bootstrap, /width:\s*min\(360px,\s*calc\(100vw - 40px\)\);/);
+  assert.match(bootstrap, /min-width:\s*280px;/);
   assert.match(bootstrap, /renderCommunicationTrayDetails/);
   assert.match(bootstrap, /communication-proposal-tray-title/);
   assert.doesNotMatch(bootstrap, /design-review-tray/);

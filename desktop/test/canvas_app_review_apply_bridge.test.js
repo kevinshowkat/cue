@@ -82,10 +82,13 @@ function buildReviewApplyHarness({
     activeTabId,
     runDir: "/runs/a",
     communication: {
+      tool: "marker",
       proposalTray: {
         requestId: pendingRequestId,
       },
     },
+    canvasMode: "multi",
+    tool: "lasso",
     designReviewApply: {
       status: "running",
       sessionKey: pendingSessionKey,
@@ -122,6 +125,17 @@ function buildReviewApplyHarness({
           source: "upload",
           label: "Hero",
           timelineNodeId: "tl-1",
+        },
+      ],
+      [
+        "img-2",
+        {
+          id: "img-2",
+          path: "/tmp/ref.png",
+          kind: "upload",
+          source: "upload",
+          label: "Ref",
+          timelineNodeId: "tl-ref",
         },
       ],
     ]),
@@ -178,6 +192,9 @@ function buildReviewApplyHarness({
   const statusCalls = [];
   const toastCalls = [];
   const topMetricCalls = [];
+  const removeImageCalls = [];
+  const communicationToolCalls = [];
+  const toolCalls = [];
   let requestRenderCalls = 0;
   let processActionQueueCalls = 0;
 
@@ -208,6 +225,21 @@ function buildReviewApplyHarness({
   const ingestTopMetricsFromReceiptPath = async (...args) => {
     topMetricCalls.push(args);
   };
+  const removeImageFromCanvas = async (imageId) => {
+    removeImageCalls.push(imageId);
+    state.imagesById.delete(String(imageId || ""));
+    return true;
+  };
+  const setCommunicationTool = (tool = null, options = {}) => {
+    communicationToolCalls.push({ tool, options });
+    state.communication.tool = tool;
+    return tool;
+  };
+  const setTool = (tool) => {
+    toolCalls.push(tool);
+    state.tool = tool;
+    return tool;
+  };
   const setStatus = (message, isError = false) => {
     statusCalls.push({ message, isError });
   };
@@ -236,6 +268,10 @@ function buildReviewApplyHarness({
     recordTimelineNode,
     updateDesignReviewApplyCostLatency,
     ingestTopMetricsFromReceiptPath,
+    uniqueStringList,
+    removeImageFromCanvas,
+    setCommunicationTool,
+    setTool,
     clearDesignReviewApplyState,
     dismissCommunicationProposalTrayAfterReviewApply,
     setStatus,
@@ -258,6 +294,9 @@ function buildReviewApplyHarness({
     statusCalls,
     toastCalls,
     topMetricCalls,
+    removeImageCalls,
+    communicationToolCalls,
+    toolCalls,
     get requestRenderCalls() {
       return requestRenderCalls;
     },
@@ -314,6 +353,16 @@ test("review apply success replaces the target image in place and records a time
   assert.equal(harness.timelineCalls[0].imageId, "img-1");
   assert.equal(harness.state.imagesById.get("img-1")?.source, "design_review_apply");
   assert.equal(harness.state.imagesById.get("img-1")?.timelineNodeId, "tl-2");
+  assert.deepEqual(harness.removeImageCalls, ["img-2"]);
+  assert.equal(harness.state.imagesById.has("img-2"), false);
+  assert.deepEqual(harness.communicationToolCalls, [
+    {
+      tool: null,
+      options: { source: "review_apply_success" },
+    },
+  ]);
+  assert.deepEqual(harness.toolCalls, ["pan"]);
+  assert.equal(harness.state.tool, "pan");
   assert.equal(harness.state.lastCostLatency?.provider, "google");
   assert.equal(harness.state.lastCostLatency?.model, "gemini-nano-banana-2");
   assert.equal(harness.clearCalls.length, 1);
@@ -353,6 +402,137 @@ test("review apply completion events for another tab are ignored", async () => {
   assert.equal(harness.requestRenderCalls, 0);
   assert.equal(harness.processActionQueueCalls, 0);
   assert.equal(harness.state.imagesById.get("img-1")?.path, "/tmp/source.png");
+});
+
+test("review apply detail falls back to request-visible reference images and parses ISO timestamps", () => {
+  const state = {
+    activeTabId: "tab-a",
+    runDir: "/runs/a",
+    communication: {
+      proposalTray: {
+        requestId: "review-1",
+      },
+    },
+  };
+  const cloneToolRuntimeValue = (value) => (value == null ? value : JSON.parse(JSON.stringify(value)));
+  const asRecord = instantiateFunction("asRecord");
+  const readFirstString = instantiateFunction("readFirstString");
+  const readFirstNumber = instantiateFunction("readFirstNumber");
+  const uniqueStringList = instantiateFunction("uniqueStringList", { readFirstString, Set });
+  const createFreshDesignReviewApplyState = instantiateFunction("createFreshDesignReviewApplyState");
+  const cloneDesignReviewApplyState = instantiateFunction("cloneDesignReviewApplyState", {
+    asRecord,
+    readFirstString,
+    readFirstNumber,
+    uniqueStringList,
+    cloneToolRuntimeValue,
+    createFreshDesignReviewApplyState,
+  });
+  const currentDesignReviewApplySessionKey = instantiateFunction("currentDesignReviewApplySessionKey", {
+    readFirstString,
+    state,
+  });
+  const normalizeDesignReviewApplyEventDetail = instantiateFunction("normalizeDesignReviewApplyEventDetail", {
+    asRecord,
+    cloneToolRuntimeValue,
+    cloneDesignReviewApplyState,
+    readFirstString,
+    readFirstNumber,
+    uniqueStringList,
+    currentDesignReviewApplySessionKey,
+    state,
+  });
+
+  const normalized = normalizeDesignReviewApplyEventDetail({
+    requestId: "review-1",
+    targetImageId: "img-target",
+    startedAt: "2026-03-09T18:15:20.000Z",
+    completedAt: "2026-03-09T18:15:24.000Z",
+    request: {
+      requestId: "review-1",
+      primaryImageId: "img-target",
+      selectedImageIds: ["img-target", "img-ref-a"],
+      visibleCanvasContext: {
+        images: [
+          { id: "img-target", path: "/tmp/target.png" },
+          { id: "img-ref-a", path: "/tmp/ref-a.png" },
+          { id: "img-ref-b", path: "/tmp/ref-b.png" },
+        ],
+      },
+    },
+  });
+
+  assert.deepEqual(normalized.referenceImageIds, ["img-ref-a", "img-ref-b"]);
+  assert.equal(normalized.startedAt, Date.parse("2026-03-09T18:15:20.000Z"));
+  assert.equal(normalized.completedAt, Date.parse("2026-03-09T18:15:24.000Z"));
+});
+
+test("entering multi-canvas normalizes the edit tool back to pan", () => {
+  const state = {
+    canvasMode: "single",
+    activeId: "img-1",
+    multiRects: new Map([["img-1", { x: 0, y: 0, w: 10, h: 10 }]]),
+    multiView: {
+      scale: 2,
+      offsetX: 40,
+      offsetY: 28,
+    },
+    pointer: {
+      active: true,
+    },
+    selection: { points: [] },
+    lassoDraft: [{ x: 1, y: 1 }],
+    annotateDraft: { imageId: "img-1" },
+    annotateBox: { x0: 0, y0: 0, x1: 1, y1: 1 },
+    circleDraft: { imageId: "img-1" },
+  };
+  const uiDirtyCalls = [];
+  const recordCalls = [];
+  const selectedIds = [];
+  const toolCalls = [];
+  let renderCalls = 0;
+  const setCanvasMode = instantiateFunction("setCanvasMode", {
+    state,
+    markActiveTabUiDirty: (payload) => {
+      uiDirtyCalls.push(payload);
+    },
+    recordUserEvent: (name, payload) => {
+      recordCalls.push({ name, payload });
+    },
+    selectedCount: () => selectedIds.length,
+    setSelectedIds: (next) => {
+      selectedIds.splice(0, selectedIds.length, ...next);
+    },
+    invalidateActiveTabPreview: () => {},
+    hideAnnotatePanel: () => {},
+    hideMarkPanel: () => {},
+    setTool: (tool) => {
+      toolCalls.push(tool);
+      state.tool = tool;
+    },
+    chooseSpawnNodes: () => {},
+    renderFilmstrip: () => {},
+    renderSelectionMeta: () => {},
+    scheduleVisualPromptWrite: () => {},
+    motherIdleSyncFromInteraction: () => {},
+    effectsRuntime: null,
+    document: { hidden: false },
+    requestRender: () => {
+      renderCalls += 1;
+    },
+  });
+
+  setCanvasMode("multi");
+
+  assert.equal(state.canvasMode, "multi");
+  assert.deepEqual(toolCalls, ["pan"]);
+  assert.equal(state.tool, "pan");
+  assert.deepEqual(selectedIds, ["img-1"]);
+  assert.equal(renderCalls, 1);
+  assert.deepEqual(uiDirtyCalls, [{ spawn: true, quickActions: true }]);
+  assert.deepEqual(recordCalls, [
+    { name: "canvas_mode_set", payload: { prev: "single", next: "multi" } },
+  ]);
 });
 
 test("canvas runtime binds the unified review-apply lifecycle event", () => {
