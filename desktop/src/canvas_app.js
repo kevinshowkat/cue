@@ -119,7 +119,9 @@ const COMMUNICATION_STATE_CHANGED_EVENT = "juggernaut:communication-state-change
 const COMMUNICATION_REVIEW_REQUESTED_EVENT = "juggernaut:design-review-requested";
 const COMMUNICATION_PROPOSAL_TRAY_EVENT = "juggernaut:communication-proposal-tray-changed";
 const DESIGN_REVIEW_BOOTSTRAP_STATE_EVENT = "juggernaut:design-review-state";
+const DESIGN_REVIEW_APPLY_EVENT = "juggernaut:design-review-apply";
 const DESIGN_REVIEW_BOOTSTRAP_TRAY_ID = "design-review-tray";
+const DESIGN_REVIEW_APPLY_SOURCE = "design_review_apply";
 const COMMUNICATION_MARK_STROKE = "rgba(255, 94, 190, 0.96)";
 const COMMUNICATION_REGION_ACTIVE = "rgba(100, 210, 255, 0.94)";
 const COMMUNICATION_REGION_IDLE = "rgba(100, 210, 255, 0.34)";
@@ -1659,6 +1661,7 @@ const openrouterOnboardingState = {
 };
 
 let communicationReviewBootstrapBridgeBound = false;
+let designReviewApplyBridgeBound = false;
 
 function normalizeCommunicationProposalSlotStatus(rawStatus = "") {
   const value = String(rawStatus || "").trim().toLowerCase();
@@ -1732,6 +1735,108 @@ function createCommunicationProposalSlot(index = 0, slot = {}) {
     actionType: slot?.actionType ? String(slot.actionType) : null,
     targetRegionId: slot?.targetRegionId ? String(slot.targetRegionId) : null,
     previewStatus: slot?.previewStatus ? String(slot.previewStatus) : null,
+  };
+}
+
+function asRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value;
+}
+
+function readFirstString(...values) {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function readFirstNumber(...values) {
+  for (const value of values) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return null;
+}
+
+function uniqueStringList(values = [], { exclude = [] } = {}) {
+  const blocked = new Set(
+    (Array.isArray(exclude) ? exclude : [exclude]).map((value) => String(value || "").trim()).filter(Boolean)
+  );
+  const out = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const text = readFirstString(value);
+    if (!text || blocked.has(text) || out.includes(text)) continue;
+    out.push(text);
+  }
+  return out;
+}
+
+function createFreshDesignReviewApplyState() {
+  return {
+    status: "idle",
+    sessionKey: null,
+    tabId: null,
+    requestId: null,
+    proposalId: null,
+    targetImageId: null,
+    referenceImageIds: [],
+    outputPath: null,
+    error: null,
+    startedAt: 0,
+    completedAt: 0,
+    proposal: null,
+    request: null,
+    debugInfo: null,
+    provider: null,
+    requestedModel: null,
+    normalizedModel: null,
+    costTotalUsd: null,
+    latencyPerImageS: null,
+  };
+}
+
+function cloneDesignReviewApplyState(value = null) {
+  const current = asRecord(value) || {};
+  const fresh = createFreshDesignReviewApplyState();
+  return {
+    ...fresh,
+    ...cloneToolRuntimeValue(current),
+    status: readFirstString(current.status, fresh.status) || "idle",
+    sessionKey: readFirstString(current.sessionKey, current.session_id) || null,
+    tabId: readFirstString(current.tabId, current.tab_id) || null,
+    requestId: readFirstString(current.requestId, current.request_id, current.request?.requestId) || null,
+    proposalId: readFirstString(current.proposalId, current.proposal_id, current.proposal?.proposalId, current.proposal?.id) || null,
+    targetImageId: readFirstString(
+      current.targetImageId,
+      current.target_image_id,
+      current.proposal?.imageId,
+      current.request?.primaryImageId
+    ) || null,
+    referenceImageIds: uniqueStringList(current.referenceImageIds || current.reference_image_ids || []),
+    outputPath: readFirstString(current.outputPath, current.output_path) || null,
+    error: readFirstString(current.error, current.failureReason, current.failure_reason) || null,
+    startedAt: Math.max(0, Number(current.startedAt) || 0),
+    completedAt: Math.max(0, Number(current.completedAt) || 0),
+    proposal: asRecord(current.proposal) ? cloneToolRuntimeValue(current.proposal) : null,
+    request: asRecord(current.request) ? cloneToolRuntimeValue(current.request) : null,
+    debugInfo: asRecord(current.debugInfo) ? cloneToolRuntimeValue(current.debugInfo) : null,
+    provider: readFirstString(current.provider, current.debugInfo?.provider, current.debugInfo?.route?.provider) || null,
+    requestedModel: readFirstString(
+      current.requestedModel,
+      current.requested_model,
+      current.model,
+      current.debugInfo?.requestedModel,
+      current.debugInfo?.providerRequest?.model
+    ) || null,
+    normalizedModel: readFirstString(
+      current.normalizedModel,
+      current.normalized_model,
+      current.debugInfo?.normalizedModel,
+      current.debugInfo?.route?.normalizedModel
+    ) || null,
+    costTotalUsd: readFirstNumber(current.costTotalUsd, current.cost_total_usd),
+    latencyPerImageS: readFirstNumber(current.latencyPerImageS, current.latency_per_image_s),
   };
 }
 
@@ -1905,6 +2010,7 @@ const state = {
     offsetY: 0,
   },
   communication: createFreshCommunicationState(),
+  designReviewApply: createFreshDesignReviewApplyState(),
   tool: "pan",
   pointer: {
     active: false,
@@ -2576,6 +2682,7 @@ function createFreshTabSession({ runDir = null, eventsPath = null } = {}) {
     view: { scale: 1, offsetX: 0, offsetY: 0 },
     multiView: { scale: 1, offsetX: 0, offsetY: 0 },
     communication: createFreshCommunicationState(),
+    designReviewApply: createFreshDesignReviewApplyState(),
     selection: null,
     lassoDraft: [],
     annotateDraft: null,
@@ -9367,7 +9474,7 @@ function singleImageRailRegionSelectionActive() {
 }
 
 function singleImageRailBusy() {
-  return Boolean(state.mother?.running || currentRunningActionKey());
+  return Boolean(state.mother?.running || state.designReviewApply?.status === "running" || currentRunningActionKey());
 }
 
 function singleImageRailManipulationActive() {
@@ -22032,6 +22139,310 @@ function bindCommunicationReviewBootstrapBridge() {
   });
 }
 
+function currentDesignReviewApplySessionKey() {
+  const tabId = readFirstString(state.activeTabId);
+  if (tabId) return `tab:${tabId}`;
+  const runDir = readFirstString(state.runDir);
+  if (runDir) return `run:${runDir}`;
+  return "";
+}
+
+function designReviewApplyActionLabel(detail = {}) {
+  return readFirstString(detail?.proposal?.label, detail?.proposal?.actionType) || "Design Review Apply";
+}
+
+function normalizeDesignReviewApplyEventDetail(detail = {}, { fallbackState = null, status = "" } = {}) {
+  const record = asRecord(detail) || {};
+  const fallback = cloneDesignReviewApplyState(fallbackState);
+  const proposal =
+    asRecord(record.proposal)
+      ? cloneToolRuntimeValue(record.proposal)
+      : fallback.proposal
+        ? cloneToolRuntimeValue(fallback.proposal)
+        : null;
+  const request =
+    asRecord(record.request)
+      ? cloneToolRuntimeValue(record.request)
+      : asRecord(record.requestSnapshot)
+        ? cloneToolRuntimeValue(record.requestSnapshot)
+        : fallback.request
+          ? cloneToolRuntimeValue(fallback.request)
+          : null;
+  const sessionKey =
+    readFirstString(
+      record.sessionKey,
+      record.session_id,
+      request?.sessionId,
+      fallback.sessionKey,
+      currentDesignReviewApplySessionKey()
+    ) || null;
+  const tabId =
+    readFirstString(
+      record.tabId,
+      record.tab_id,
+      record.activeTabId,
+      record.active_tab_id,
+      sessionKey && sessionKey.startsWith("tab:") ? sessionKey.slice(4) : "",
+      fallback.tabId
+    ) || null;
+  const targetImageId =
+    readFirstString(
+      record.targetImageId,
+      record.target_image_id,
+      proposal?.imageId,
+      request?.primaryImageId,
+      fallback.targetImageId
+    ) || null;
+  const referenceImageIds = uniqueStringList(
+    [
+      ...(Array.isArray(record.referenceImageIds) ? record.referenceImageIds : []),
+      ...(Array.isArray(record.reference_image_ids) ? record.reference_image_ids : []),
+      ...((Array.isArray(record.referenceImages) ? record.referenceImages : []).map((image) =>
+        readFirstString(image?.imageId, image?.image_id, image?.id)
+      )),
+      ...(Array.isArray(fallback.referenceImageIds) ? fallback.referenceImageIds : []),
+    ],
+    { exclude: [targetImageId] }
+  );
+  const debugInfo =
+    asRecord(record.debugInfo)
+      ? cloneToolRuntimeValue(record.debugInfo)
+      : asRecord(record.debug_info)
+        ? cloneToolRuntimeValue(record.debug_info)
+        : fallback.debugInfo
+          ? cloneToolRuntimeValue(fallback.debugInfo)
+          : null;
+  return {
+    ...fallback,
+    status: readFirstString(status, record.status, fallback.status) || "idle",
+    sessionKey,
+    tabId,
+    requestId:
+      readFirstString(
+        record.requestId,
+        record.request_id,
+        request?.requestId,
+        fallback.requestId,
+        state.communication?.proposalTray?.requestId
+      ) || null,
+    proposalId:
+      readFirstString(record.proposalId, record.proposal_id, proposal?.proposalId, proposal?.id, fallback.proposalId) || null,
+    targetImageId,
+    referenceImageIds,
+    outputPath: readFirstString(record.outputPath, record.output_path, fallback.outputPath) || null,
+    error: readFirstString(record.error, record.failureReason, record.failure_reason, fallback.error) || null,
+    startedAt: Math.max(0, Number(record.startedAt || fallback.startedAt || Date.now()) || 0),
+    completedAt: Math.max(0, Number(record.completedAt || Date.now()) || 0),
+    proposal,
+    request,
+    debugInfo,
+    provider:
+      readFirstString(record.provider, debugInfo?.provider, debugInfo?.route?.provider, fallback.provider) || null,
+    requestedModel:
+      readFirstString(
+        record.requestedModel,
+        record.requested_model,
+        record.model,
+        debugInfo?.requestedModel,
+        debugInfo?.providerRequest?.model,
+        fallback.requestedModel
+      ) || null,
+    normalizedModel:
+      readFirstString(
+        record.normalizedModel,
+        record.normalized_model,
+        debugInfo?.normalizedModel,
+        debugInfo?.route?.normalizedModel,
+        fallback.normalizedModel
+      ) || null,
+    costTotalUsd: readFirstNumber(record.costTotalUsd, record.cost_total_usd, fallback.costTotalUsd),
+    latencyPerImageS: readFirstNumber(record.latencyPerImageS, record.latency_per_image_s, fallback.latencyPerImageS),
+  };
+}
+
+function designReviewApplyEventMatchesActiveTab(detail = {}, fallbackState = null) {
+  const normalized = cloneDesignReviewApplyState(detail);
+  const fallback = cloneDesignReviewApplyState(fallbackState);
+  const activeSessionKey = currentDesignReviewApplySessionKey();
+  const activeTabId = readFirstString(state.activeTabId) || null;
+  if (normalized.sessionKey && activeSessionKey && normalized.sessionKey !== activeSessionKey) return false;
+  if (normalized.tabId && activeTabId && normalized.tabId !== activeTabId) return false;
+  if (fallback.sessionKey && normalized.sessionKey && fallback.sessionKey !== normalized.sessionKey) return false;
+  if (fallback.requestId && normalized.requestId && fallback.requestId !== normalized.requestId) return false;
+  if (fallback.proposalId && normalized.proposalId && fallback.proposalId !== normalized.proposalId) return false;
+  return true;
+}
+
+function setDesignReviewApplyState(nextState = null, { capture = true, publish = true } = {}) {
+  state.designReviewApply = cloneDesignReviewApplyState(nextState);
+  syncActiveTabRecord({ capture, publish });
+  syncJuggernautShellState();
+  renderQuickActions();
+  renderHudReadout();
+  return state.designReviewApply;
+}
+
+function clearDesignReviewApplyState({ capture = true, publish = true } = {}) {
+  return setDesignReviewApplyState(createFreshDesignReviewApplyState(), { capture, publish });
+}
+
+function markDesignReviewApplyRunning(detail = {}) {
+  const previous = cloneDesignReviewApplyState(state.designReviewApply);
+  const normalized = normalizeDesignReviewApplyEventDetail(detail, {
+    fallbackState: previous,
+    status: "running",
+  });
+  if (!designReviewApplyEventMatchesActiveTab(normalized, previous)) return false;
+  normalized.completedAt = 0;
+  setDesignReviewApplyState(normalized, { capture: true, publish: true });
+  setStatus("Engine: applying accepted review…");
+  return true;
+}
+
+function updateDesignReviewApplyCostLatency(detail = {}) {
+  const provider = readFirstString(detail.provider) || null;
+  const model = readFirstString(detail.normalizedModel, detail.requestedModel) || null;
+  const costTotalUsd = readFirstNumber(detail.costTotalUsd);
+  const latencyPerImageS = readFirstNumber(detail.latencyPerImageS);
+  if (!provider && !model && costTotalUsd == null && latencyPerImageS == null) return false;
+  state.lastCostLatency = {
+    provider,
+    model,
+    cost_total_usd: costTotalUsd,
+    cost_per_1k_images_usd: null,
+    latency_per_image_s: latencyPerImageS,
+    at: Date.now(),
+  };
+  return true;
+}
+
+async function applyAcceptedDesignReviewOutput(detail = {}) {
+  const pending = cloneDesignReviewApplyState(state.designReviewApply);
+  const normalized = normalizeDesignReviewApplyEventDetail(detail, {
+    fallbackState: pending,
+    status: "succeeded",
+  });
+  if ((!pending.sessionKey && !normalized.sessionKey && !pending.requestId) || !designReviewApplyEventMatchesActiveTab(normalized, pending)) {
+    return false;
+  }
+  const targetId = readFirstString(normalized.targetImageId);
+  const outputPath = readFirstString(normalized.outputPath);
+  if (!targetId || !outputPath) return false;
+  const target = state.imagesById.get(targetId) || null;
+  const actionLabel = designReviewApplyActionLabel(normalized);
+  if (!target?.path) {
+    clearDesignReviewApplyState({ capture: true, publish: true });
+    setStatus(`Engine: ${actionLabel.toLowerCase()} failed (target image missing).`, true);
+    showToast("Review apply failed: target image missing.", "error", 3200);
+    return false;
+  }
+  const targetSnapshot = {
+    id: targetId,
+    path: String(target.path || ""),
+    receiptPath: target.receiptPath ? String(target.receiptPath) : null,
+    kind: target.kind ? String(target.kind) : null,
+    source: target.source ? String(target.source) : null,
+    label: target.label ? String(target.label) : basename(outputPath),
+    timelineNodeId: target.timelineNodeId ? String(target.timelineNodeId) : null,
+  };
+  const receiptPath = await writeDesignReviewApplyReceipt({
+    outputPath,
+    targetBefore: targetSnapshot,
+    targetImageId: targetId,
+    referenceImageIds: normalized.referenceImageIds,
+    proposal: normalized.proposal,
+    request: normalized.request,
+    debugInfo: normalized.debugInfo,
+    provider: normalized.provider,
+    requestedModel: normalized.requestedModel,
+    normalizedModel: normalized.normalizedModel,
+    costTotalUsd: normalized.costTotalUsd,
+    latencyPerImageS: normalized.latencyPerImageS,
+  }).catch((error) => {
+    console.error("Failed to write design-review apply receipt:", error);
+    return null;
+  });
+  const ok = await replaceImageInPlace(targetId, {
+    path: outputPath,
+    receiptPath,
+    kind: "engine",
+    label: targetSnapshot.label || basename(outputPath),
+  }).catch((error) => {
+    console.error(error);
+    return false;
+  });
+  if (!ok) {
+    if (receiptPath) removeFile(receiptPath).catch(() => {});
+    clearDesignReviewApplyState({ capture: true, publish: true });
+    setStatus(`Engine: ${actionLabel.toLowerCase()} failed (replace failed).`, true);
+    showToast("Review apply failed to replace the target image.", "error", 3200);
+    return false;
+  }
+  const nodeId = recordTimelineNode({
+    imageId: targetId,
+    path: outputPath,
+    receiptPath,
+    label: targetSnapshot.label || basename(outputPath),
+    action: actionLabel,
+    parents: targetSnapshot.timelineNodeId ? [targetSnapshot.timelineNodeId] : [],
+  });
+  const item = state.imagesById.get(targetId) || null;
+  if (item) {
+    item.source = DESIGN_REVIEW_APPLY_SOURCE;
+    if (nodeId) item.timelineNodeId = nodeId;
+  }
+  updateDesignReviewApplyCostLatency(normalized);
+  if (receiptPath) {
+    ingestTopMetricsFromReceiptPath(receiptPath, {
+      allowCostFallback: true,
+      allowLatencyFallback: true,
+    }).catch(() => {});
+  }
+  clearDesignReviewApplyState({ capture: true, publish: true });
+  setStatus("Engine: ready");
+  showToast(`${actionLabel} applied.`, "tip", 2200);
+  processActionQueue().catch(() => {});
+  return true;
+}
+
+function handleDesignReviewApplyFailure(detail = {}) {
+  const pending = cloneDesignReviewApplyState(state.designReviewApply);
+  const normalized = normalizeDesignReviewApplyEventDetail(detail, {
+    fallbackState: pending,
+    status: "failed",
+  });
+  if ((!pending.sessionKey && !normalized.sessionKey && !pending.requestId) || !designReviewApplyEventMatchesActiveTab(normalized, pending)) {
+    return false;
+  }
+  const actionLabel = designReviewApplyActionLabel(normalized);
+  const message = readFirstString(normalized.error, normalized.debugInfo?.error) || "Review apply failed.";
+  clearDesignReviewApplyState({ capture: true, publish: true });
+  setStatus(`Engine: ${actionLabel.toLowerCase()} failed (${message})`, true);
+  showToast(message, "error", 3200);
+  processActionQueue().catch(() => {});
+  return true;
+}
+
+function bindDesignReviewApplyRuntimeBridge() {
+  if (designReviewApplyBridgeBound || typeof window === "undefined") return;
+  designReviewApplyBridgeBound = true;
+  window.addEventListener(DESIGN_REVIEW_APPLY_EVENT, (event) => {
+    const detail = event?.detail || {};
+    const phase = readFirstString(detail?.phase, detail?.status).toLowerCase();
+    if (phase === "started" || phase === "starting" || phase === "running") {
+      markDesignReviewApplyRunning(detail);
+      return;
+    }
+    if (phase === "succeeded" || phase === "success" || phase === "complete" || phase === "completed") {
+      void applyAcceptedDesignReviewOutput(detail);
+      return;
+    }
+    if (phase === "failed" || phase === "error") {
+      handleDesignReviewApplyFailure(detail);
+    }
+  });
+}
+
 function dropCommunicationStateForImageId(imageId) {
   const id = String(imageId || "").trim();
   if (!id) return;
@@ -25658,6 +26069,7 @@ const ACTION_QUEUE_PRIORITY = {
 function isEngineBusy() {
   return Boolean(
     state.ptySpawning ||
+      state.designReviewApply?.status === "running" ||
       state.pendingBlend ||
       state.pendingSwapDna ||
       state.pendingBridge ||
@@ -27537,6 +27949,126 @@ async function writeLocalReceipt({ artifactId, imagePath, operation, meta = {} }
     warnings: [],
     artifacts: { image_path: imagePath, receipt_path: receiptPath },
     result_metadata: { operation, ...meta, created_at: new Date().toISOString() },
+  };
+  await writeTextFile(receiptPath, JSON.stringify(payload, null, 2));
+  return receiptPath;
+}
+
+function resolveDesignReviewApplyRequestImagePath(request = null, imageId = "") {
+  const normalizedImageId = readFirstString(imageId);
+  if (!normalizedImageId) return "";
+  const images = Array.isArray(request?.visibleCanvasContext?.images)
+    ? request.visibleCanvasContext.images
+    : Array.isArray(request?.imagesInView)
+      ? request.imagesInView
+      : [];
+  for (const image of images) {
+    const candidateId = readFirstString(image?.id, image?.imageId, image?.image_id);
+    if (!candidateId || candidateId !== normalizedImageId) continue;
+    return readFirstString(image?.path, image?.imagePath, image?.image_path);
+  }
+  return "";
+}
+
+async function writeDesignReviewApplyReceipt({
+  outputPath,
+  targetBefore = null,
+  targetImageId = null,
+  referenceImageIds = [],
+  proposal = null,
+  request = null,
+  debugInfo = null,
+  provider = null,
+  requestedModel = null,
+  normalizedModel = null,
+  costTotalUsd = null,
+  latencyPerImageS = null,
+} = {}) {
+  if (!state.runDir || !outputPath) return null;
+  const receiptPath = `${state.runDir}/receipt-review-apply-${Date.now()}.json`;
+  const actionLabel = readFirstString(proposal?.label, proposal?.actionType) || "Design Review Apply";
+  const referencePaths = uniqueStringList(
+    referenceImageIds.map((imageId) => resolveDesignReviewApplyRequestImagePath(request, imageId))
+  );
+  const payload = {
+    schema_version: 1,
+    request: {
+      prompt: readFirstString(proposal?.applyBrief) || "",
+      mode: "design_review_apply",
+      size: null,
+      n: 1,
+      seed: null,
+      output_format: extname(outputPath).replace(".", "") || "png",
+      inputs: {
+        init_image: targetBefore?.path ? String(targetBefore.path) : null,
+        mask: null,
+        reference_images: referencePaths,
+      },
+      provider: readFirstString(provider, debugInfo?.provider, debugInfo?.route?.provider) || null,
+      model: readFirstString(requestedModel, debugInfo?.requestedModel, debugInfo?.providerRequest?.model) || null,
+      provider_options: {},
+      out_dir: state.runDir,
+      metadata: {
+        operation: "design_review_apply",
+        action: actionLabel,
+        request_id: readFirstString(request?.requestId) || null,
+        proposal_id: readFirstString(proposal?.proposalId, proposal?.id) || null,
+        proposal_label: readFirstString(proposal?.label) || null,
+        action_type: readFirstString(proposal?.actionType) || null,
+        target_image_id: readFirstString(targetImageId) || null,
+        reference_image_ids: uniqueStringList(referenceImageIds),
+        target_region: asRecord(proposal?.targetRegion) ? cloneToolRuntimeValue(proposal.targetRegion) : null,
+        negative_constraints: Array.isArray(proposal?.negativeConstraints) ? proposal.negativeConstraints.slice() : [],
+      },
+    },
+    resolved: {
+      provider: readFirstString(provider, debugInfo?.provider, debugInfo?.route?.provider) || null,
+      model: readFirstString(
+        normalizedModel,
+        requestedModel,
+        debugInfo?.normalizedModel,
+        debugInfo?.route?.normalizedModel,
+        debugInfo?.providerRequest?.model
+      ) || null,
+      size: null,
+      width: null,
+      height: null,
+      output_format: extname(outputPath).replace(".", "") || "png",
+      background: null,
+      seed: null,
+      n: 1,
+      user: null,
+      prompt: readFirstString(proposal?.applyBrief) || "",
+      inputs: {
+        init_image: targetBefore?.path ? String(targetBefore.path) : null,
+        mask: null,
+        reference_images: referencePaths,
+      },
+      stream: false,
+      partial_images: null,
+      provider_params: {},
+      warnings: [],
+    },
+    provider_request: asRecord(debugInfo?.providerRequest) ? cloneToolRuntimeValue(debugInfo.providerRequest) : {},
+    provider_response: {
+      output_path: outputPath ? String(outputPath) : null,
+      debug_info: asRecord(debugInfo) ? cloneToolRuntimeValue(debugInfo) : null,
+    },
+    warnings: [],
+    artifacts: { image_path: outputPath, receipt_path: receiptPath },
+    result_metadata: {
+      operation: "design_review_apply",
+      action: actionLabel,
+      request_id: readFirstString(request?.requestId) || null,
+      proposal_id: readFirstString(proposal?.proposalId, proposal?.id) || null,
+      proposal_label: readFirstString(proposal?.label) || null,
+      action_type: readFirstString(proposal?.actionType) || null,
+      target_image_id: readFirstString(targetImageId) || null,
+      reference_image_ids: uniqueStringList(referenceImageIds),
+      cost_total_usd: readFirstNumber(costTotalUsd),
+      latency_per_image_s: readFirstNumber(latencyPerImageS),
+      created_at: new Date().toISOString(),
+    },
   };
   await writeTextFile(receiptPath, JSON.stringify(payload, null, 2));
   return receiptPath;
@@ -29787,6 +30319,7 @@ function tabLabelForRunDir(runDir, fallback = "Run") {
 
 function currentTabSwitchBlockReason() {
   if (state.pointer?.active || state.gestureZoom?.active) return "manipulating_canvas";
+  if (state.designReviewApply?.status === "running") return "review_apply";
   if (state.mother?.running || state.motherIdle?.commitMutationInFlight) return "assistant_busy";
   if (state.actionQueueActive || state.actionQueue.length) return "queued_actions";
   if (isEngineBusy()) return "engine_busy";
@@ -29796,6 +30329,7 @@ function currentTabSwitchBlockReason() {
 function currentTabSwitchBlockMessage(reason = currentTabSwitchBlockReason()) {
   const normalized = String(reason || "").trim();
   if (normalized === "manipulating_canvas") return "Finish the current canvas gesture before switching tabs.";
+  if (normalized === "review_apply") return "Wait for the accepted review edit to finish before switching tabs.";
   if (normalized === "assistant_busy") return "Wait for the current tab to finish drafting before switching tabs.";
   if (normalized === "queued_actions") return "Wait for queued actions to finish before switching tabs.";
   if (normalized === "engine_busy") return "Wait for the active run to finish before switching tabs.";
@@ -29830,6 +30364,7 @@ function captureActiveTabSession(session = null) {
       : { scale: 1, offsetX: 0, offsetY: 0 };
   next.communication =
     state.communication && typeof state.communication === "object" ? state.communication : createFreshCommunicationState();
+  next.designReviewApply = cloneDesignReviewApplyState(state.designReviewApply);
   next.selection = state.selection && typeof state.selection === "object" ? state.selection : null;
   next.lassoDraft = Array.isArray(state.lassoDraft) ? state.lassoDraft.slice() : [];
   next.annotateDraft = state.annotateDraft && typeof state.annotateDraft === "object" ? state.annotateDraft : null;
@@ -29937,6 +30472,7 @@ function bindTabSessionToState(session = null) {
     current.communication && typeof current.communication === "object"
       ? current.communication
       : createFreshCommunicationState();
+  state.designReviewApply = cloneDesignReviewApplyState(current.designReviewApply);
   state.selection = current.selection && typeof current.selection === "object" ? current.selection : null;
   state.lassoDraft = Array.isArray(current.lassoDraft) ? current.lassoDraft.slice() : [];
   state.annotateDraft = current.annotateDraft && typeof current.annotateDraft === "object" ? current.annotateDraft : null;
@@ -38493,6 +39029,7 @@ async function boot() {
 }
 
 bindCommunicationReviewBootstrapBridge();
+bindDesignReviewApplyRuntimeBridge();
 exposeJuggernautShellHooks();
 syncJuggernautShellState();
 
