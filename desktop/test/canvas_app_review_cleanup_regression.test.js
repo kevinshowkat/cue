@@ -47,22 +47,32 @@ function instantiateFunction(name, deps = {}) {
   return new Function(...keys, `return (${source});`)(...values);
 }
 
-test("normal editing flows no longer schedule passive describe work", () => {
+test("normal editing flows stay passive and do not auto-start the engine", () => {
   for (const name of [
+    "openExistingRun",
     "importLocalPathsAtCanvasPoint",
     "addImage",
-    "loadExistingArtifacts",
     "setActiveImage",
     "setCanvasMode",
     "replaceImageInPlace",
     "spawnEngine",
     "motherV2VisionReadyForIntent",
   ]) {
-    assert.doesNotMatch(
-      extractFunctionSource(name),
-      /scheduleVisionDescribe(All|Burst)?\(/,
-      `${name} should not enqueue passive /describe work`
-    );
+    const source = extractFunctionSource(name);
+    assert.doesNotMatch(source, /scheduleVisionDescribe(All|Burst)?\(/, `${name} should not enqueue passive /describe work`);
+    assert.doesNotMatch(source, /scheduleAlwaysOnVision\(/, `${name} should not enqueue passive vision work`);
+    assert.doesNotMatch(source, /scheduleAmbientIntentInference\(/, `${name} should not enqueue ambient intent work`);
+  }
+
+  for (const name of [
+    "openExistingRun",
+    "importLocalPathsAtCanvasPoint",
+    "addImage",
+    "setActiveImage",
+    "setCanvasMode",
+    "replaceImageInPlace",
+  ]) {
+    assert.doesNotMatch(extractFunctionSource(name), /ensureEngineSpawned\(/, `${name} should not auto-start the engine`);
   }
 });
 
