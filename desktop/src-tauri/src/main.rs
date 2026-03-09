@@ -49,6 +49,12 @@ const MENU_CANVAS_SETTINGS: &str = "canvas_settings";
 const NATIVE_MENU_ACTION_EVENT: &str = "native-menu-action";
 const DESIGN_REVIEW_PLANNER_MODEL: &str = "gpt-5.4";
 const DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL: &str = "openai/gpt-5.4";
+const REVIEW_OPENAI_RESPONSES_WS_TRANSPORT: &str = "responses_websocket";
+const REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT: &str = "responses_http_fallback";
+const REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT: &str = "chat_completions";
+const REVIEW_OPENAI_RESPONSES_WS_IO_TIMEOUT: Duration = Duration::from_secs(20);
+const REVIEW_OPENAI_RESPONSES_WS_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(20);
+const REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT: Duration = Duration::from_secs(60);
 
 fn build_app_menu(app_name: &str) -> Menu {
     let import = CustomMenuItem::new(MENU_CANVAS_IMPORT.to_string(), "Import Photos")
@@ -2309,6 +2315,34 @@ struct ReviewResponsesWsSession {
     last_response_id: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReviewPlannerRequestErrorKind {
+    Transport,
+    Remote,
+}
+
+#[derive(Clone, Debug)]
+struct ReviewPlannerRequestError {
+    kind: ReviewPlannerRequestErrorKind,
+    message: String,
+}
+
+impl ReviewPlannerRequestError {
+    fn transport(message: String) -> Self {
+        Self {
+            kind: ReviewPlannerRequestErrorKind::Transport,
+            message,
+        }
+    }
+
+    fn remote(message: String) -> Self {
+        Self {
+            kind: ReviewPlannerRequestErrorKind::Remote,
+            message,
+        }
+    }
+}
+
 static REVIEW_RESPONSES_WS_SESSION: OnceLock<Mutex<ReviewResponsesWsSession>> = OnceLock::new();
 
 fn review_responses_ws_session() -> &'static Mutex<ReviewResponsesWsSession> {
@@ -2347,6 +2381,7 @@ fn review_set_stream_timeouts(
 fn review_drop_responses_ws_session(session: &mut ReviewResponsesWsSession) {
     session.socket = None;
     session.connected_at = None;
+    session.last_response_id = None;
 }
 
 fn review_extract_openai_output_text(payload: &serde_json::Value) -> String {
@@ -2568,6 +2603,126 @@ fn review_format_planner_http_error(
     )
 }
 
+fn review_provider_label(provider: &str) -> &'static str {
+    match provider {
+        "openrouter" => "OpenRouter",
+        "openai" => "OpenAI",
+        _ => "Planner",
+    }
+}
+
+fn review_format_planner_http_error_for_transport(
+    provider: &str,
+    normalized_model: &str,
+    transport: &str,
+    status: u16,
+    body: &str,
+) -> String {
+    let base = review_format_planner_http_error(provider, normalized_model, status, body);
+    let status_tag = format!(", status={status}");
+    if let Some((prefix, suffix)) = base.split_once(&status_tag) {
+        return format!("{prefix}, transport={transport}{status_tag}{suffix}");
+    }
+    format!("{base} (transport={transport})")
+}
+
+fn review_is_transport_io_error_kind(kind: std::io::ErrorKind) -> bool {
+    matches!(
+        kind,
+        std::io::ErrorKind::WouldBlock
+            | std::io::ErrorKind::TimedOut
+            | std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::BrokenPipe
+            | std::io::ErrorKind::UnexpectedEof
+            | std::io::ErrorKind::NotConnected
+    )
+}
+
+fn review_is_openai_ws_timeout_error(error: &tungstenite::Error) -> bool {
+    matches!(
+        error,
+        tungstenite::Error::Io(io_error)
+            if matches!(
+                io_error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            )
+    )
+}
+
+fn review_is_openai_ws_transport_error(error: &tungstenite::Error) -> bool {
+    match error {
+        tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed => true,
+        tungstenite::Error::Io(io_error) => review_is_transport_io_error_kind(io_error.kind()),
+        tungstenite::Error::Tls(_) => true,
+        _ => false,
+    }
+}
+
+fn review_format_planner_transport_timeout(
+    provider: &str,
+    normalized_model: &str,
+    transport: &str,
+    stage: &str,
+    timeout: Duration,
+    detail: &str,
+) -> String {
+    let provider_label = review_provider_label(provider);
+    let trimmed = detail.trim();
+    if trimmed.is_empty() {
+        return format!(
+            "{provider_label} planner transport timed out (provider={provider}, normalized model={normalized_model}, transport={transport}, stage={stage}, timeout_seconds={}).",
+            timeout.as_secs()
+        );
+    }
+    format!(
+        "{provider_label} planner transport timed out (provider={provider}, normalized model={normalized_model}, transport={transport}, stage={stage}, timeout_seconds={}): {trimmed}",
+        timeout.as_secs()
+    )
+}
+
+fn review_format_planner_transport_failure(
+    provider: &str,
+    normalized_model: &str,
+    transport: &str,
+    stage: &str,
+    detail: &str,
+) -> String {
+    let provider_label = review_provider_label(provider);
+    let trimmed = detail.trim();
+    if trimmed.is_empty() {
+        return format!(
+            "{provider_label} planner transport failed (provider={provider}, normalized model={normalized_model}, transport={transport}, stage={stage})."
+        );
+    }
+    format!(
+        "{provider_label} planner transport failed (provider={provider}, normalized model={normalized_model}, transport={transport}, stage={stage}): {trimmed}"
+    )
+}
+
+fn review_format_planner_remote_failure(
+    provider: &str,
+    normalized_model: &str,
+    transport: &str,
+    stage: &str,
+    detail: &str,
+) -> String {
+    let provider_label = review_provider_label(provider);
+    let trimmed = detail.trim();
+    if trimmed.is_empty() {
+        return format!(
+            "{provider_label} planner request failed (provider={provider}, normalized model={normalized_model}, transport={transport}, stage={stage})."
+        );
+    }
+    format!(
+        "{provider_label} planner request failed (provider={provider}, normalized model={normalized_model}, transport={transport}, stage={stage}): {trimmed}"
+    )
+}
+
+fn review_should_fallback_openai_ws_error(error: &ReviewPlannerRequestError) -> bool {
+    error.kind == ReviewPlannerRequestErrorKind::Transport
+}
+
 fn review_build_openai_planner_payload(
     prompt: &str,
     image_urls: &[String],
@@ -2686,16 +2841,38 @@ fn review_openai_planner_http_fallback(
         .send()
         .map_err(|error| {
             if error.is_timeout() {
-                return "OpenAI planner HTTP fallback timed out after 90 seconds.".to_string();
+                return review_format_planner_transport_timeout(
+                    "openai",
+                    normalized_model,
+                    REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT,
+                    "request",
+                    Duration::from_secs(90),
+                    "OpenAI planner HTTP fallback request exceeded the bounded wait.",
+                );
             }
-            format!("OpenAI planner HTTP fallback request failed: {error}")
+            review_format_planner_transport_failure(
+                "openai",
+                normalized_model,
+                REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT,
+                "request",
+                &error.to_string(),
+            )
         })?;
     let status = response.status();
-    let body = response.text().map_err(|e| e.to_string())?;
-    if !status.is_success() {
-        return Err(review_format_planner_http_error(
+    let body = response.text().map_err(|e| {
+        review_format_planner_transport_failure(
             "openai",
             normalized_model,
+            REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT,
+            "read_body",
+            &e.to_string(),
+        )
+    })?;
+    if !status.is_success() {
+        return Err(review_format_planner_http_error_for_transport(
+            "openai",
+            normalized_model,
+            REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT,
             status.as_u16(),
             &body,
         ));
@@ -2705,7 +2882,7 @@ fn review_openai_planner_http_fallback(
     Ok(serde_json::json!({
         "provider": "openai",
         "model": normalized_model,
-        "transport": "responses_http_fallback",
+        "transport": REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT,
         "text": review_extract_openai_output_text(&parsed),
         "response_id": review_extract_openai_ws_response_id(&parsed),
         "raw": parsed,
@@ -2715,7 +2892,8 @@ fn review_openai_planner_http_fallback(
 fn review_openai_ws_connect(
     session: &mut ReviewResponsesWsSession,
     api_key: &str,
-) -> Result<(), String> {
+    normalized_model: &str,
+) -> Result<(), ReviewPlannerRequestError> {
     let needs_reconnect = session
         .connected_at
         .map(|connected_at| connected_at.elapsed() >= Duration::from_secs(55 * 60))
@@ -2727,14 +2905,45 @@ fn review_openai_ws_connect(
     review_drop_responses_ws_session(session);
     let mut request = "wss://api.openai.com/v1/responses"
         .into_client_request()
-        .map_err(|e| e.to_string())?;
-    let auth_header = format!("Bearer {api_key}")
-        .parse()
-        .map_err(|e| format!("invalid websocket auth header: {e}"))?;
+        .map_err(|e| {
+            ReviewPlannerRequestError::transport(review_format_planner_transport_failure(
+                "openai",
+                normalized_model,
+                REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+                "connect_request",
+                &e.to_string(),
+            ))
+        })?;
+    let auth_header = format!("Bearer {api_key}").parse().map_err(|e| {
+        ReviewPlannerRequestError::transport(review_format_planner_transport_failure(
+            "openai",
+            normalized_model,
+            REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+            "connect_auth",
+            &format!("invalid websocket auth header: {e}"),
+        ))
+    })?;
     request.headers_mut().insert("Authorization", auth_header);
-    let (mut socket, _) =
-        connect(request).map_err(|e| format!("OpenAI planner websocket connect failed: {e}"))?;
-    review_set_stream_timeouts(socket.get_mut(), Duration::from_secs(90))?;
+    let (mut socket, _) = connect(request).map_err(|e| {
+        ReviewPlannerRequestError::transport(review_format_planner_transport_failure(
+            "openai",
+            normalized_model,
+            REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+            "connect",
+            &e.to_string(),
+        ))
+    })?;
+    review_set_stream_timeouts(socket.get_mut(), REVIEW_OPENAI_RESPONSES_WS_IO_TIMEOUT).map_err(
+        |e| {
+            ReviewPlannerRequestError::transport(review_format_planner_transport_failure(
+                "openai",
+                normalized_model,
+                REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+                "connect_timeout_setup",
+                &e,
+            ))
+        },
+    )?;
     session.connected_at = Some(Instant::now());
     session.socket = Some(socket);
     Ok(())
@@ -2746,7 +2955,7 @@ fn review_openai_planner_ws_request_inner(
     image_urls: &[String],
     normalized_model: &str,
     previous_response_id: Option<&str>,
-) -> Result<(String, Option<String>, serde_json::Value), String> {
+) -> Result<(String, Option<String>, serde_json::Value), ReviewPlannerRequestError> {
     let event = review_build_openai_planner_ws_event(
         prompt,
         image_urls,
@@ -2755,13 +2964,88 @@ fn review_openai_planner_ws_request_inner(
     );
     socket
         .send(Message::Text(event.to_string().into()))
-        .map_err(|e| format!("OpenAI planner websocket send failed: {e}"))?;
+        .map_err(|e| {
+            ReviewPlannerRequestError::transport(review_format_planner_transport_failure(
+                "openai",
+                normalized_model,
+                REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+                "send",
+                &e.to_string(),
+            ))
+        })?;
 
     let mut streamed_text = String::new();
+    let started_at = Instant::now();
+    let mut last_event_at = started_at;
+    let mut saw_any_event = false;
     loop {
+        if started_at.elapsed() >= REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT {
+            let detail = if streamed_text.trim().is_empty() {
+                "OpenAI planner websocket did not reach response.completed within the bounded wait."
+            } else {
+                "OpenAI planner websocket produced partial planner output but did not reach response.completed within the bounded wait."
+            };
+            return Err(ReviewPlannerRequestError::transport(
+                review_format_planner_transport_timeout(
+                    "openai",
+                    normalized_model,
+                    REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+                    "completion_wait",
+                    REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT,
+                    detail,
+                ),
+            ));
+        }
+
         let message = socket.read().map_err(|e| {
-            format!("OpenAI planner websocket read failed or timed out after 90 seconds: {e}")
+            if review_is_openai_ws_timeout_error(&e) {
+                let (stage, timeout, detail) = if saw_any_event {
+                    (
+                        "read_idle",
+                        REVIEW_OPENAI_RESPONSES_WS_IO_TIMEOUT,
+                        format!(
+                            "OpenAI planner websocket stopped delivering events for {} seconds after planner activity: {e}",
+                            last_event_at.elapsed().as_secs()
+                        ),
+                    )
+                } else {
+                    (
+                        "warmup",
+                        REVIEW_OPENAI_RESPONSES_WS_FIRST_EVENT_TIMEOUT,
+                        format!(
+                            "OpenAI planner websocket delivered no planner events within {} seconds: {e}",
+                            started_at.elapsed().as_secs()
+                        ),
+                    )
+                };
+                ReviewPlannerRequestError::transport(review_format_planner_transport_timeout(
+                    "openai",
+                    normalized_model,
+                    REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+                    stage,
+                    timeout,
+                    &detail,
+                ))
+            } else if review_is_openai_ws_transport_error(&e) {
+                ReviewPlannerRequestError::transport(review_format_planner_transport_failure(
+                    "openai",
+                    normalized_model,
+                    REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+                    "read",
+                    &e.to_string(),
+                ))
+            } else {
+                ReviewPlannerRequestError::remote(review_format_planner_remote_failure(
+                    "openai",
+                    normalized_model,
+                    REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+                    "read",
+                    &e.to_string(),
+                ))
+            }
         })?;
+        saw_any_event = true;
+        last_event_at = Instant::now();
         match message {
             Message::Text(raw) => {
                 let parsed: serde_json::Value =
@@ -2805,15 +3089,29 @@ fn review_openai_planner_ws_request_inner(
                         ));
                     }
                     "response.failed" | "response.incomplete" | "error" => {
-                        return Err(review_extract_openai_ws_error(&parsed));
+                        return Err(ReviewPlannerRequestError::remote(
+                            review_format_planner_remote_failure(
+                                "openai",
+                                normalized_model,
+                                REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+                                event_type,
+                                &review_extract_openai_ws_error(&parsed),
+                            ),
+                        ));
                     }
                     _ => {}
                 }
             }
             Message::Ping(payload) => {
-                socket
-                    .send(Message::Pong(payload))
-                    .map_err(|e| format!("OpenAI planner websocket ping reply failed: {e}"))?;
+                socket.send(Message::Pong(payload)).map_err(|e| {
+                    ReviewPlannerRequestError::transport(review_format_planner_transport_failure(
+                        "openai",
+                        normalized_model,
+                        REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+                        "ping_reply",
+                        &e.to_string(),
+                    ))
+                })?;
             }
             Message::Close(frame) => {
                 let detail = frame
@@ -2821,8 +3119,14 @@ fn review_openai_planner_ws_request_inner(
                     .map(|value| value.reason.to_string())
                     .filter(|value| !value.trim().is_empty())
                     .unwrap_or_else(|| "connection closed".to_string());
-                return Err(format!(
-                    "OpenAI planner websocket closed before completion: {detail}"
+                return Err(ReviewPlannerRequestError::transport(
+                    review_format_planner_transport_failure(
+                        "openai",
+                        normalized_model,
+                        REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+                        "closed",
+                        &detail,
+                    ),
                 ));
             }
             _ => {}
@@ -2836,10 +3140,18 @@ fn review_openai_planner_ws_request(
     image_urls: &[String],
     normalized_model: &str,
     previous_response_id: Option<&str>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, ReviewPlannerRequestError> {
     let result = {
         let Some(socket) = session.socket.as_mut() else {
-            return Err("OpenAI planner websocket session is unavailable.".to_string());
+            return Err(ReviewPlannerRequestError::transport(
+                review_format_planner_transport_failure(
+                    "openai",
+                    normalized_model,
+                    REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+                    "session",
+                    "OpenAI planner websocket session is unavailable.",
+                ),
+            ));
         };
         review_openai_planner_ws_request_inner(
             socket,
@@ -2855,7 +3167,7 @@ fn review_openai_planner_ws_request(
             Ok(serde_json::json!({
                 "provider": "openai",
                 "model": normalized_model,
-                "transport": "responses_websocket",
+                "transport": REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
                 "text": text,
                 "response_id": response_id,
                 "previous_response_id": previous_response_id,
@@ -3090,17 +3402,19 @@ fn run_design_review_planner_request(
                 .lock()
                 .map_err(|_| "OpenAI planner websocket session lock is poisoned.".to_string())?;
             let mut session = session_lock;
-            match review_openai_ws_connect(&mut session, &api_key).and_then(|_| {
-                review_openai_planner_ws_request(
-                    &mut session,
-                    &prompt,
-                    &image_urls,
-                    &normalized_model,
-                    previous_response_id,
-                )
-            }) {
+            match review_openai_ws_connect(&mut session, &api_key, &normalized_model).and_then(
+                |_| {
+                    review_openai_planner_ws_request(
+                        &mut session,
+                        &prompt,
+                        &image_urls,
+                        &normalized_model,
+                        previous_response_id,
+                    )
+                },
+            ) {
                 Ok(result) => return Ok(result),
-                Err(ws_error) => {
+                Err(ws_error) if review_should_fallback_openai_ws_error(&ws_error) => {
                     let mut fallback = review_openai_planner_http_fallback(
                         &client,
                         &api_key,
@@ -3110,14 +3424,23 @@ fn run_design_review_planner_request(
                     )
                     .map_err(|http_error| {
                         format!(
-                            "OpenAI planner websocket request failed: {ws_error} HTTP fallback also failed: {http_error}"
+                            "{} HTTP fallback also failed: {http_error}",
+                            ws_error.message
                         )
                     })?;
                     if let Some(object) = fallback.as_object_mut() {
-                        object.insert("fallback_reason".to_string(), serde_json::json!(ws_error));
+                        object.insert(
+                            "fallback_reason".to_string(),
+                            serde_json::json!(ws_error.message),
+                        );
+                        object.insert(
+                            "fallback_from_transport".to_string(),
+                            serde_json::json!(REVIEW_OPENAI_RESPONSES_WS_TRANSPORT),
+                        );
                     }
                     return Ok(fallback);
                 }
+                Err(ws_error) => return Err(ws_error.message),
             }
         }
     }
@@ -3156,13 +3479,30 @@ fn run_design_review_planner_request(
             let response = review_apply_openrouter_headers(request, vars)
                 .json(&payload)
                 .send()
-                .map_err(|e| format!("OpenRouter planner request failed: {e}"))?;
+                .map_err(|e| {
+                    review_format_planner_transport_failure(
+                        "openrouter",
+                        &normalized_model,
+                        REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT,
+                        "request",
+                        &e.to_string(),
+                    )
+                })?;
             let status = response.status();
-            let body = response.text().map_err(|e| e.to_string())?;
-            if !status.is_success() {
-                return Err(review_format_planner_http_error(
+            let body = response.text().map_err(|e| {
+                review_format_planner_transport_failure(
                     "openrouter",
                     &normalized_model,
+                    REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT,
+                    "read_body",
+                    &e.to_string(),
+                )
+            })?;
+            if !status.is_success() {
+                return Err(review_format_planner_http_error_for_transport(
+                    "openrouter",
+                    &normalized_model,
+                    REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT,
                     status.as_u16(),
                     &body,
                 ));
@@ -3172,7 +3512,7 @@ fn run_design_review_planner_request(
             return Ok(serde_json::json!({
                 "provider": "openrouter",
                 "model": normalized_model,
-                "transport": "chat_completions",
+                "transport": REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT,
                 "text": review_extract_openrouter_text(&parsed),
                 "raw": parsed,
             }));
@@ -4032,8 +4372,12 @@ mod tests {
         encode_flattened_psd_rgba, is_native_engine_placeholder, push_native_path_candidate,
         resolve_existing_env_binary_path, review_build_openai_planner_payload,
         review_build_openai_planner_ws_event, review_format_planner_http_error,
-        review_normalize_planner_model, EngineProgramCandidate,
+        review_format_planner_http_error_for_transport, review_format_planner_remote_failure,
+        review_format_planner_transport_timeout, review_normalize_planner_model,
+        review_should_fallback_openai_ws_error, EngineProgramCandidate, ReviewPlannerRequestError,
         DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL, DESIGN_REVIEW_PLANNER_MODEL,
+        REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT, REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+        REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT,
     };
 
     #[test]
@@ -4234,5 +4578,59 @@ mod tests {
         assert!(message.contains("invalid model id"));
         assert!(message.contains("provider openrouter"));
         assert!(message.contains("normalized model=openai/gpt-5.4-vision"));
+    }
+
+    #[test]
+    fn planner_ws_timeout_shape_includes_provider_model_transport_and_stage() {
+        let message = review_format_planner_transport_timeout(
+            "openai",
+            DESIGN_REVIEW_PLANNER_MODEL,
+            REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+            "completion_wait",
+            REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT,
+            "OpenAI planner websocket did not reach response.completed within the bounded wait.",
+        );
+
+        assert!(message.contains("provider=openai"));
+        assert!(message.contains("normalized model=gpt-5.4"));
+        assert!(message.contains("transport=responses_websocket"));
+        assert!(message.contains("stage=completion_wait"));
+        assert!(message.contains("timeout_seconds=60"));
+    }
+
+    #[test]
+    fn planner_ws_fallback_is_retained_only_for_transport_errors() {
+        let transport_error = ReviewPlannerRequestError::transport("transport".to_string());
+        let remote_error = ReviewPlannerRequestError::remote("remote".to_string());
+
+        assert!(review_should_fallback_openai_ws_error(&transport_error));
+        assert!(!review_should_fallback_openai_ws_error(&remote_error));
+    }
+
+    #[test]
+    fn planner_transport_messages_preserve_provider_model_and_transport_details() {
+        let http_message = review_format_planner_http_error_for_transport(
+            "openrouter",
+            DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL,
+            REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT,
+            401,
+            r#"{"error":{"message":"User not found"}}"#,
+        );
+        let ws_message = review_format_planner_remote_failure(
+            "openai",
+            DESIGN_REVIEW_PLANNER_MODEL,
+            REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
+            "response.failed",
+            "planner rejected request",
+        );
+
+        assert!(http_message.contains("provider=openrouter"));
+        assert!(http_message.contains("normalized model=openai/gpt-5.4"));
+        assert!(http_message.contains("transport=chat_completions"));
+
+        assert!(ws_message.contains("provider=openai"));
+        assert!(ws_message.contains("normalized model=gpt-5.4"));
+        assert!(ws_message.contains("transport=responses_websocket"));
+        assert!(ws_message.contains("stage=response.failed"));
     }
 }
