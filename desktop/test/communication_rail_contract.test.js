@@ -40,10 +40,27 @@ test("communication state is tab-local and design review is exposed through the 
 
 test("communication input layer intercepts marker, magic select, eraser, and titlebar review", () => {
   assert.match(app, /COMMUNICATION_POINTER_KINDS = Object\.freeze\(\{/);
+  assert.match(app, /function handleCommunicationCanvasPointerDown\(event, p, pCss\) \{/);
+  assert.equal((app.match(/handleCommunicationCanvasPointerDown\(event, p, pCss\)/g) || []).length, 3);
   assert.match(app, /if \(communicationTool === "eraser"\) \{/);
+  assert.match(app, /function beginCommunicationMarkerStroke\(event, p, pCss, communicationImageId = null\) \{/);
   assert.match(app, /state\.pointer\.kind = COMMUNICATION_POINTER_KINDS\.MARKER;/);
+  assert.match(app, /function beginCommunicationMagicSelectStroke\(event, p, pCss, communicationImageId = null\) \{/);
   assert.match(app, /state\.pointer\.kind = COMMUNICATION_POINTER_KINDS\.MAGIC_SELECT;/);
   assert.match(app, /function requestCommunicationDesignReview\(\{ source = "titlebar" \} = \{\}\) \{/);
   assert.match(app, /els\.sessionTabDesignReview\.addEventListener\("click", \(\) => \{/);
   assert.match(app, /requestCommunicationDesignReview\(\{ source: "titlebar" \}\);/);
+});
+
+test("communication marker keeps the draft in screen space, commits canvas marks, and renders a smoothed freehand path", () => {
+  assert.match(app, /canvasMarks:\s*\[\]/);
+  assert.match(app, /screenPoints:\s*\[/);
+  assert.match(app, /if \(typeof event\.getCoalescedEvents === "function"\) \{/);
+  assert.match(app, /const committedPoints = communicationCommittedPointsFromDraft\(draft\);/);
+  assert.match(app, /coordinateSpace:\s*imageId \? "image" : "canvas_world"/);
+  assert.match(app, /kind:\s*"freehand_marker"/);
+  assert.match(app, /function traceCommunicationMarkPath\(octx, points = \[\]\) \{/);
+  assert.match(app, /octx\.quadraticCurveTo\(/);
+  assert.doesNotMatch(app, /Math\.PI \/ 7/);
+  assert.doesNotMatch(app, /kind:\s*"freehand_arrow"/);
 });
