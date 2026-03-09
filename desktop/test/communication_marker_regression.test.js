@@ -67,8 +67,18 @@ test("marker pointer down consumes blank-canvas drags and seeds a screen-space d
     beginCommunicationMagicSelectStroke: () => false,
   });
 
+  const event = {
+    button: 0,
+    pointerId: 7,
+    preventDefault() {
+      calls.push(["prevent"]);
+    },
+    stopPropagation() {
+      calls.push(["stop"]);
+    },
+  };
   const consumed = handleCommunicationCanvasPointerDown(
-    { button: 0, pointerId: 7 },
+    event,
     { x: 40, y: 60 },
     { x: 20, y: 30 }
   );
@@ -76,10 +86,12 @@ test("marker pointer down consumes blank-canvas drags and seeds a screen-space d
   assert.equal(consumed, true);
   assert.equal(state.pointer.kind, COMMUNICATION_POINTER_KINDS.MARKER);
   assert.equal(state.pointer.imageId, null);
-  assert.equal(state.communication.markDraft.coordinateSpace, "canvas_world");
+  assert.equal(state.communication.markDraft.coordinateSpace, "canvas_overlay");
   assert.deepEqual(state.communication.markDraft.screenPoints, [{ x: 20, y: 30 }]);
   assert.equal(calls.filter(([name]) => name === "dispatch").length, 0);
   assert.equal(calls.filter(([name]) => name === "capture").length, 1);
+  assert.equal(calls.filter(([name]) => name === "prevent").length, 1);
+  assert.equal(calls.filter(([name]) => name === "stop").length, 1);
 });
 
 test("marker drag samples include coalesced pointer events when available", () => {
@@ -108,12 +120,12 @@ test("marker drag samples include coalesced pointer events when available", () =
   ]);
 });
 
-test("blank-canvas marker commits stay in the canvas mark bucket", () => {
+test("blank-canvas marker commits stay in the overlay mark bucket with raw points", () => {
   const state = {
     communication: {
       markDraft: {
         imageId: null,
-        coordinateSpace: "canvas_world",
+        coordinateSpace: "canvas_overlay",
         screenPoints: [
           { x: 12, y: 18 },
           { x: 40, y: 56 },
@@ -129,10 +141,7 @@ test("blank-canvas marker commits stay in the canvas mark bucket", () => {
     communicationDraftScreenPoints: (draft) => draft.screenPoints,
     communicationPolylineLength: () => 42,
     COMMUNICATION_MARK_MIN_DRAG_PX: 6,
-    communicationCommittedPointsFromDraft: () => [
-      { x: 2, y: 4 },
-      { x: 6, y: 8 },
-    ],
+    communicationCommittedPointsFromDraft: (draft) => draft.screenPoints,
     COMMUNICATION_MARK_STROKE: "rgba(255, 94, 190, 0.96)",
     COMMUNICATION_MARK_MAX_POINTS: 240,
     communicationMarksForImage: () => [],
@@ -147,12 +156,130 @@ test("blank-canvas marker commits stay in the canvas mark bucket", () => {
   const mark = commitCommunicationMarkDraft();
 
   assert.equal(mark.imageId, null);
-  assert.equal(mark.coordinateSpace, "canvas_world");
+  assert.equal(mark.sourceImageId, null);
+  assert.equal(mark.coordinateSpace, "canvas_overlay");
   assert.equal(mark.kind, "freehand_marker");
+  assert.deepEqual(mark.points, [
+    { x: 12, y: 18 },
+    { x: 40, y: 56 },
+  ]);
   assert.equal(state.communication.marksByImageId.size, 0);
   assert.equal(state.communication.canvasMarks.length, 1);
   assert.equal(state.communication.markDraft, null);
   assert.equal(state.communication.lastAnchor?.markId, mark.id);
+});
+
+test("image-hit marker commits preserve overlay-space geometry and avoid image buckets", () => {
+  const state = {
+    communication: {
+      markDraft: {
+        imageId: "img-1",
+        coordinateSpace: "canvas_overlay",
+        screenPoints: [
+          { x: 18, y: 24 },
+          { x: 48, y: 72 },
+        ],
+      },
+      marksByImageId: new Map(),
+      canvasMarks: [],
+      lastAnchor: null,
+    },
+  };
+  const commitCommunicationMarkDraft = instantiateFunction("commitCommunicationMarkDraft", {
+    state,
+    communicationDraftScreenPoints: (draft) => draft.screenPoints,
+    communicationPolylineLength: () => 64,
+    COMMUNICATION_MARK_MIN_DRAG_PX: 6,
+    communicationCommittedPointsFromDraft: (draft) => draft.screenPoints,
+    COMMUNICATION_MARK_STROKE: "rgba(255, 94, 190, 0.96)",
+    COMMUNICATION_MARK_MAX_POINTS: 240,
+    communicationMarksForImage: () => [],
+    communicationCanvasMarks: () => state.communication.canvasMarks,
+    communicationAnchorFromMark: (mark) => ({
+      kind: "mark",
+      imageId: null,
+      sourceImageId: mark.sourceImageId,
+      markId: mark.id,
+    }),
+  });
+
+  const mark = commitCommunicationMarkDraft();
+
+  assert.equal(mark.coordinateSpace, "canvas_overlay");
+  assert.equal(mark.imageId, "img-1");
+  assert.equal(mark.sourceImageId, "img-1");
+  assert.deepEqual(mark.points, [
+    { x: 18, y: 24 },
+    { x: 48, y: 72 },
+  ]);
+  assert.equal(state.communication.marksByImageId.size, 0);
+  assert.equal(state.communication.canvasMarks.length, 1);
+  assert.equal(state.communication.canvasMarks[0].id, mark.id);
+});
+
+test("review targeting resolves an overlay mark onto the overlapping visible image", () => {
+  const communicationPointsBounds = instantiateFunction("communicationPointsBounds");
+  const communicationRectCssPolygon = instantiateFunction("communicationRectCssPolygon", {
+    transformPointForRect: (point) => point,
+  });
+  const communicationPointInPolygon = instantiateFunction("communicationPointInPolygon");
+  const communicationSegmentCross = instantiateFunction("communicationSegmentCross");
+  const communicationPointOnSegment = instantiateFunction("communicationPointOnSegment", {
+    communicationSegmentCross,
+  });
+  const communicationSegmentsIntersect = instantiateFunction("communicationSegmentsIntersect", {
+    communicationSegmentCross,
+    communicationPointOnSegment,
+  });
+  const communicationPolylinePolygonOverlapScore = instantiateFunction(
+    "communicationPolylinePolygonOverlapScore",
+    {
+      communicationPointInPolygon,
+      communicationSegmentsIntersect,
+    }
+  );
+  const resolveCommunicationMarkOverlapTarget = instantiateFunction(
+    "resolveCommunicationMarkOverlapTarget",
+    {
+      communicationMarkPointsToCanvasCss: (mark) => mark.points,
+      communicationPointsBounds,
+      buildCommunicationVisibleImagesPayload: () => [
+        {
+          id: "img-1",
+          active: true,
+          selected: true,
+          width: 100,
+          height: 80,
+          rectCss: {
+            left: 10,
+            top: 10,
+            width: 100,
+            height: 80,
+            rotateDeg: 0,
+            skewXDeg: 0,
+          },
+        },
+      ],
+      buildCommunicationRegionsPayload: () => [],
+      communicationRegionBoundsCssPolygon: () => [],
+      communicationPolylinePolygonOverlapScore,
+      communicationRectCssPolygon,
+    }
+  );
+
+  const target = resolveCommunicationMarkOverlapTarget({
+    id: "mark-1",
+    coordinateSpace: "canvas_overlay",
+    points: [
+      { x: 18, y: 20 },
+      { x: 84, y: 42 },
+    ],
+  });
+
+  assert.equal(target.kind, "image");
+  assert.equal(target.imageId, "img-1");
+  assert.equal(target.markId, "mark-1");
+  assert.equal(target.source, "mark_overlap_image");
 });
 
 test("marker render traces a smoothed quadratic freehand path", () => {

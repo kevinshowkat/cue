@@ -36,6 +36,7 @@ test("communication state is tab-local and design review is exposed through the 
   assert.match(app, /requestDesignReview\(meta = \{\}\)/);
   assert.match(app, /communicationReview:\s*\{[\s\S]*getPayload\(meta = \{\}\)/);
   assert.match(app, /COMMUNICATION_REVIEW_REQUESTED_EVENT/);
+  assert.match(app, /resolvedTarget:\s*resolveCommunicationReviewTarget\(\)/);
 });
 
 test("communication input layer intercepts marker, magic select, eraser, and titlebar review", () => {
@@ -57,10 +58,23 @@ test("communication marker keeps the draft in screen space, commits canvas marks
   assert.match(app, /screenPoints:\s*\[/);
   assert.match(app, /if \(typeof event\.getCoalescedEvents === "function"\) \{/);
   assert.match(app, /const committedPoints = communicationCommittedPointsFromDraft\(draft\);/);
-  assert.match(app, /coordinateSpace:\s*imageId \? "image" : "canvas_world"/);
+  assert.match(app, /coordinateSpace:\s*"canvas_overlay"/);
+  assert.match(app, /state\.communication\.canvasMarks = communicationCanvasMarks\(\)\.concat\(next\);/);
   assert.match(app, /kind:\s*"freehand_marker"/);
   assert.match(app, /function traceCommunicationMarkPath\(octx, points = \[\]\) \{/);
   assert.match(app, /octx\.quadraticCurveTo\(/);
   assert.doesNotMatch(app, /Math\.PI \/ 7/);
   assert.doesNotMatch(app, /kind:\s*"freehand_arrow"/);
+});
+
+test("communication marker interception happens before move or pan branches", () => {
+  const multiHandleIndex = app.indexOf("if (handleCommunicationCanvasPointerDown(event, p, pCss)) {");
+  const multiMoveIndex = app.indexOf("let hit = hitTestMulti(p);", multiHandleIndex);
+  const singleHandleIndex = app.lastIndexOf("if (handleCommunicationCanvasPointerDown(event, p, pCss)) {");
+  const singleTransformIndex = app.indexOf("const transformUiHit = hitTestActiveImageTransformUi(p);", singleHandleIndex);
+
+  assert.ok(multiHandleIndex >= 0);
+  assert.ok(multiMoveIndex > multiHandleIndex);
+  assert.ok(singleHandleIndex >= 0);
+  assert.ok(singleTransformIndex > singleHandleIndex);
 });
