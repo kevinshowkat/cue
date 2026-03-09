@@ -113,13 +113,12 @@ const COMMUNICATION_POINTER_KINDS = Object.freeze({
 const COMMUNICATION_PROPOSAL_SLOT_COUNT = 3;
 const COMMUNICATION_REGION_CANDIDATE_COUNT = 3;
 const COMMUNICATION_MARK_MIN_DRAG_PX = 6;
-const COMMUNICATION_MARK_MIN_POINT_SPACING_PX = 8;
-const COMMUNICATION_MARK_MAX_POINTS = 72;
+const COMMUNICATION_MARK_MIN_POINT_SPACING_PX = 4;
+const COMMUNICATION_MARK_MAX_POINTS = 240;
 const COMMUNICATION_STATE_CHANGED_EVENT = "juggernaut:communication-state-changed";
 const COMMUNICATION_REVIEW_REQUESTED_EVENT = "juggernaut:design-review-requested";
 const COMMUNICATION_PROPOSAL_TRAY_EVENT = "juggernaut:communication-proposal-tray-changed";
 const COMMUNICATION_MARK_STROKE = "rgba(255, 94, 190, 0.96)";
-const COMMUNICATION_MARK_FILL = "rgba(255, 94, 190, 0.14)";
 const COMMUNICATION_REGION_ACTIVE = "rgba(100, 210, 255, 0.94)";
 const COMMUNICATION_REGION_IDLE = "rgba(100, 210, 255, 0.34)";
 
@@ -1707,6 +1706,7 @@ function createFreshCommunicationState() {
     tool: null,
     markDraft: null,
     marksByImageId: new Map(),
+    canvasMarks: [],
     regionProposalsByImageId: new Map(),
     lastAnchor: null,
     proposalTray: {
@@ -22072,6 +22072,10 @@ function communicationToolId() {
   return COMMUNICATION_TOOL_IDS.includes(raw) ? raw : null;
 }
 
+function communicationCanvasMarks() {
+  return Array.isArray(state.communication?.canvasMarks) ? state.communication.canvasMarks : [];
+}
+
 function communicationToolArmed() {
   return Boolean(communicationToolId());
 }
@@ -22125,10 +22129,129 @@ function communicationPolylineLength(points = []) {
   return total;
 }
 
+function communicationScreenCssPointToCanvas(ptCss = null) {
+  const dpr = Math.max(0.0001, getDpr());
+  return {
+    x: (Number(ptCss?.x) || 0) * dpr,
+    y: (Number(ptCss?.y) || 0) * dpr,
+  };
+}
+
+function communicationDraftScreenPoints(draft = null) {
+  return Array.isArray(draft?.screenPoints)
+    ? draft.screenPoints.map((point) => ({
+        x: Number(point?.x) || 0,
+        y: Number(point?.y) || 0,
+      }))
+    : [];
+}
+
+function communicationDraftPointsToCanvas(draft = null) {
+  return communicationDraftScreenPoints(draft).map((point) => communicationScreenCssPointToCanvas(point));
+}
+
+function communicationCoalescedScreenPoints(event) {
+  if (!event) return [];
+  const out = [];
+  const pushSample = (sampleEvent) => {
+    if (!sampleEvent) return;
+    const sample = canvasCssPointFromEvent(sampleEvent);
+    const next = {
+      x: Number(sample?.x) || 0,
+      y: Number(sample?.y) || 0,
+    };
+    const last = out[out.length - 1] || null;
+    if (last && Math.hypot(next.x - last.x, next.y - last.y) < 0.01) return;
+    out.push(next);
+  };
+  if (typeof event.getCoalescedEvents === "function") {
+    for (const sampleEvent of event.getCoalescedEvents()) {
+      pushSample(sampleEvent);
+    }
+  }
+  pushSample(event);
+  return out;
+}
+
+function communicationAppendDraftScreenPoints(points = [], samples = []) {
+  const next = Array.isArray(points)
+    ? points.map((point) => ({
+        x: Number(point?.x) || 0,
+        y: Number(point?.y) || 0,
+      }))
+    : [];
+  for (const sample of Array.isArray(samples) ? samples : []) {
+    const point = {
+      x: Number(sample?.x) || 0,
+      y: Number(sample?.y) || 0,
+    };
+    const last = next[next.length - 1] || null;
+    if (
+      !last ||
+      Math.hypot(point.x - last.x, point.y - last.y) >= COMMUNICATION_MARK_MIN_POINT_SPACING_PX
+    ) {
+      next.push(point);
+      if (next.length > COMMUNICATION_MARK_MAX_POINTS) {
+        next.splice(0, next.length - COMMUNICATION_MARK_MAX_POINTS);
+      }
+      continue;
+    }
+    next[next.length - 1] = point;
+  }
+  return next;
+}
+
+function communicationCommittedPointsFromDraft(draft = null) {
+  const screenPoints = communicationDraftScreenPoints(draft);
+  if (!screenPoints.length) return [];
+  const imageId = String(draft?.imageId || "").trim();
+  if (imageId) {
+    return screenPoints
+      .map((point) => canvasToImageForImageId(communicationScreenCssPointToCanvas(point), imageId))
+      .filter(Boolean)
+      .map((point) => ({
+        x: Number(point?.x) || 0,
+        y: Number(point?.y) || 0,
+      }));
+  }
+  return screenPoints
+    .map((point) => canvasScreenCssToWorldCss(point))
+    .filter(Boolean)
+    .map((point) => ({
+      x: Number(point?.x) || 0,
+      y: Number(point?.y) || 0,
+    }));
+}
+
+function communicationMarkPointsToCanvas(mark = null) {
+  const points = Array.isArray(mark?.points) ? mark.points : [];
+  if (!points.length) return [];
+  if (String(mark?.coordinateSpace || "").trim() === "canvas_world" || !String(mark?.imageId || "").trim()) {
+    return points
+      .map((point) => {
+        const css = canvasWorldCssToScreenCss(point);
+        return css ? communicationScreenCssPointToCanvas(css) : null;
+      })
+      .filter(Boolean);
+  }
+  return points
+    .map((point) => imageToCanvasForImageId(mark.imageId, point))
+    .filter(Boolean);
+}
+
 function communicationAnchorFromMark(mark = null) {
-  if (!mark || !mark.imageId || !Array.isArray(mark.points) || !mark.points.length) return null;
+  if (!mark || !Array.isArray(mark.points) || !mark.points.length) return null;
   const bounds = communicationPointsBounds(mark.points);
   const tail = mark.points[mark.points.length - 1] || null;
+  if (String(mark?.coordinateSpace || "").trim() === "canvas_world" || !String(mark?.imageId || "").trim()) {
+    return {
+      kind: "mark",
+      imageId: null,
+      markId: String(mark.id || ""),
+      canvasWorldPoint: tail ? { x: Number(tail.x) || 0, y: Number(tail.y) || 0 } : null,
+      canvasWorldBounds: bounds,
+    };
+  }
   return {
     kind: "mark",
     imageId: String(mark.imageId || ""),
@@ -22164,7 +22287,7 @@ function communicationAnchorFromRegionGroup(group = null) {
 
 function resolveCommunicationReviewAnchor() {
   const last = state.communication?.lastAnchor;
-  if (last?.imageId && state.imagesById.has(String(last.imageId || ""))) return last;
+  if (last && (!last.imageId || state.imagesById.has(String(last.imageId || "")))) return last;
   for (const [, group] of Array.from(state.communication?.regionProposalsByImageId?.entries?.() || [])) {
     const anchor = communicationAnchorFromRegionGroup(group);
     if (anchor) return anchor;
@@ -22174,11 +22297,30 @@ function resolveCommunicationReviewAnchor() {
     const anchor = communicationAnchorFromMark(list[list.length - 1] || null);
     if (anchor) return anchor;
   }
+  const canvasMarks = communicationCanvasMarks();
+  if (canvasMarks.length) {
+    return communicationAnchorFromMark(canvasMarks[canvasMarks.length - 1]);
+  }
   return null;
 }
 
 function communicationAnchorCanvasCss(anchor = resolveCommunicationReviewAnchor()) {
-  if (!anchor?.imageId) return null;
+  if (!anchor) return null;
+  if (!anchor.imageId) {
+    if (anchor.canvasWorldPoint) {
+      return clampCanvasCssPoint(canvasWorldCssToScreenCss(anchor.canvasWorldPoint));
+    }
+    const bounds = anchor.canvasWorldBounds;
+    if (bounds) {
+      return clampCanvasCssPoint(
+        canvasWorldCssToScreenCss({
+          x: (Number(bounds.x0) || 0) + Math.max(1, Number(bounds.w) || 1) * 0.5,
+          y: (Number(bounds.y0) || 0) + Math.max(1, Number(bounds.h) || 1) * 0.5,
+        })
+      );
+    }
+    return null;
+  }
   const dpr = Math.max(0.0001, getDpr());
   if (anchor.imagePoint) {
     const point = imageToCanvasForImageId(anchor.imageId, anchor.imagePoint);
@@ -22228,17 +22370,25 @@ function hitTestCommunicationMark(ptCanvas) {
     const list = Array.isArray(marks) ? marks : [];
     for (let i = list.length - 1; i >= 0; i -= 1) {
       const mark = list[i];
-      const points = Array.isArray(mark?.points)
-        ? mark.points
-            .map((point) => imageToCanvasForImageId(imageId, point))
-            .filter(Boolean)
-        : [];
+      const points = communicationMarkPointsToCanvas({ ...mark, imageId });
       if (points.length < 2) continue;
       for (let j = 1; j < points.length; j += 1) {
         const distance = communicationSegmentDistancePx(ptCanvas, points[j - 1], points[j]);
         if (distance <= tolerance) {
           return { imageId: String(imageId || ""), mark };
         }
+      }
+    }
+  }
+  const canvasMarks = communicationCanvasMarks();
+  for (let i = canvasMarks.length - 1; i >= 0; i -= 1) {
+    const mark = canvasMarks[i];
+    const points = communicationMarkPointsToCanvas(mark);
+    if (points.length < 2) continue;
+    for (let j = 1; j < points.length; j += 1) {
+      const distance = communicationSegmentDistancePx(ptCanvas, points[j - 1], points[j]);
+      if (distance <= tolerance) {
+        return { imageId: null, mark };
       }
     }
   }
@@ -22268,6 +22418,82 @@ function hitTestCommunicationRegionCandidate(ptCanvas) {
     }
   }
   return null;
+}
+
+function beginCommunicationMarkerStroke(event, p, pCss, communicationImageId = null) {
+  const imageId = communicationImageId ? String(communicationImageId || "") : null;
+  bumpInteraction({ semantic: false });
+  els.overlayCanvas.setPointerCapture(event.pointerId);
+  state.pointer.active = true;
+  state.pointer.kind = COMMUNICATION_POINTER_KINDS.MARKER;
+  state.pointer.imageId = imageId;
+  state.pointer.startX = Number(p?.x) || 0;
+  state.pointer.startY = Number(p?.y) || 0;
+  state.pointer.lastX = Number(p?.x) || 0;
+  state.pointer.lastY = Number(p?.y) || 0;
+  state.pointer.startCssX = Number(pCss?.x) || 0;
+  state.pointer.startCssY = Number(pCss?.y) || 0;
+  state.pointer.wheelOnTap = false;
+  state.pointer.moved = false;
+  state.communication.markDraft = {
+    imageId,
+    coordinateSpace: imageId ? "image" : "canvas_world",
+    screenPoints: [
+      {
+        x: Number(pCss?.x) || 0,
+        y: Number(pCss?.y) || 0,
+      },
+    ],
+    createdAt: Date.now(),
+  };
+  requestRender();
+}
+
+function beginCommunicationMagicSelectStroke(event, p, pCss, communicationImageId = null) {
+  const imageId = String(communicationImageId || "").trim();
+  if (!imageId) return false;
+  bumpInteraction({ semantic: false });
+  els.overlayCanvas.setPointerCapture(event.pointerId);
+  state.pointer.active = true;
+  state.pointer.kind = COMMUNICATION_POINTER_KINDS.MAGIC_SELECT;
+  state.pointer.imageId = imageId;
+  state.pointer.startX = Number(p?.x) || 0;
+  state.pointer.startY = Number(p?.y) || 0;
+  state.pointer.lastX = Number(p?.x) || 0;
+  state.pointer.lastY = Number(p?.y) || 0;
+  state.pointer.startCssX = Number(pCss?.x) || 0;
+  state.pointer.startCssY = Number(pCss?.y) || 0;
+  state.pointer.wheelOnTap = false;
+  state.pointer.moved = false;
+  requestRender();
+  return true;
+}
+
+function handleCommunicationCanvasPointerDown(event, p, pCss) {
+  const communicationTool = communicationToolId();
+  if (event.button !== 0 || !communicationTool) return false;
+  if (communicationTool === "eraser") {
+    const erased = eraseCommunicationAtCanvasPoint(p);
+    if (erased) {
+      dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
+        source: "canvas_eraser",
+        communication: buildCommunicationBridgeSnapshot(),
+        context: buildJuggernautShellContext(),
+      });
+      requestRender();
+      return true;
+    }
+  }
+  const communicationImageId = hitTestVisibleCanvasImage(p);
+  if (communicationTool === "marker") {
+    beginCommunicationMarkerStroke(event, p, pCss, communicationImageId);
+    return true;
+  }
+  const imagePoint = communicationImageId ? canvasToImageForImageId(p, communicationImageId) : null;
+  if (communicationTool === "magic_select" && communicationImageId && imagePoint) {
+    return beginCommunicationMagicSelectStroke(event, p, pCss, communicationImageId);
+  }
+  return false;
 }
 
 function setCommunicationTool(tool = null, { source = "communication_rail" } = {}) {
@@ -22378,30 +22604,41 @@ function applyCommunicationMagicSelectAtPoint(imageId, imagePoint) {
 
 function commitCommunicationMarkDraft() {
   const draft = state.communication?.markDraft;
-  if (!draft?.imageId || !Array.isArray(draft.points) || draft.points.length < 2) {
+  const screenPoints = communicationDraftScreenPoints(draft);
+  if (screenPoints.length < 2) {
     state.communication.markDraft = null;
     return null;
   }
-  const totalLength = communicationPolylineLength(draft.points);
+  const totalLength = communicationPolylineLength(screenPoints);
   if (totalLength < COMMUNICATION_MARK_MIN_DRAG_PX) {
+    state.communication.markDraft = null;
+    return null;
+  }
+  const committedPoints = communicationCommittedPointsFromDraft(draft);
+  if (committedPoints.length < 2) {
     state.communication.markDraft = null;
     return null;
   }
   const imageId = String(draft.imageId || "").trim();
   const next = {
     id: `mark-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-    imageId,
-    kind: "freehand_arrow",
+    imageId: imageId || null,
+    kind: "freehand_marker",
+    coordinateSpace: imageId ? "image" : "canvas_world",
     color: COMMUNICATION_MARK_STROKE,
-    points: draft.points.slice(0, COMMUNICATION_MARK_MAX_POINTS).map((point) => ({
+    points: committedPoints.slice(0, COMMUNICATION_MARK_MAX_POINTS).map((point) => ({
       x: Number(point?.x) || 0,
       y: Number(point?.y) || 0,
     })),
     createdAt: Date.now(),
   };
-  const list = communicationMarksForImage(imageId).slice();
-  list.push(next);
-  state.communication.marksByImageId.set(imageId, list);
+  if (imageId) {
+    const list = communicationMarksForImage(imageId).slice();
+    list.push(next);
+    state.communication.marksByImageId.set(imageId, list);
+  } else {
+    state.communication.canvasMarks = communicationCanvasMarks().concat(next);
+  }
   state.communication.markDraft = null;
   state.communication.lastAnchor = communicationAnchorFromMark(next);
   return next;
@@ -22411,9 +22648,15 @@ function eraseCommunicationAtCanvasPoint(ptCanvas) {
   const markHit = hitTestCommunicationMark(ptCanvas);
   if (markHit?.mark?.id) {
     const imageId = String(markHit.imageId || "");
-    const next = communicationMarksForImage(imageId).filter((mark) => String(mark?.id || "") !== String(markHit.mark.id || ""));
-    if (next.length) state.communication.marksByImageId.set(imageId, next);
-    else state.communication.marksByImageId.delete(imageId);
+    if (imageId) {
+      const next = communicationMarksForImage(imageId).filter((mark) => String(mark?.id || "") !== String(markHit.mark.id || ""));
+      if (next.length) state.communication.marksByImageId.set(imageId, next);
+      else state.communication.marksByImageId.delete(imageId);
+    } else {
+      state.communication.canvasMarks = communicationCanvasMarks().filter(
+        (mark) => String(mark?.id || "") !== String(markHit.mark.id || "")
+      );
+    }
     if (state.communication.lastAnchor?.markId === String(markHit.mark.id || "")) {
       state.communication.lastAnchor = resolveCommunicationReviewAnchor();
     }
@@ -22487,8 +22730,9 @@ function buildCommunicationMarksPayload() {
       const bounds = communicationPointsBounds(mark?.points || []);
       out.push({
         id: String(mark?.id || ""),
-        type: String(mark?.kind || "freehand_arrow"),
-        imageId: String(imageId || ""),
+        type: String(mark?.kind || "freehand_marker"),
+        imageId: String(imageId || "") || null,
+        coordinateSpace: String(mark?.coordinateSpace || "image"),
         color: String(mark?.color || COMMUNICATION_MARK_STROKE),
         createdAt: Number(mark?.createdAt) || Date.now(),
         points: Array.isArray(mark?.points)
@@ -22500,6 +22744,24 @@ function buildCommunicationMarksPayload() {
         bounds,
       });
     }
+  }
+  for (const mark of communicationCanvasMarks()) {
+    const bounds = communicationPointsBounds(mark?.points || []);
+    out.push({
+      id: String(mark?.id || ""),
+      type: String(mark?.kind || "freehand_marker"),
+      imageId: null,
+      coordinateSpace: "canvas_world",
+      color: String(mark?.color || COMMUNICATION_MARK_STROKE),
+      createdAt: Number(mark?.createdAt) || Date.now(),
+      points: Array.isArray(mark?.points)
+        ? mark.points.map((point) => ({
+            x: Number(point?.x) || 0,
+            y: Number(point?.y) || 0,
+          }))
+        : [],
+      bounds,
+    });
   }
   return out;
 }
@@ -22739,6 +23001,32 @@ function dropCommunicationStateForImageId(imageId) {
   }
 }
 
+function traceCommunicationMarkPath(octx, points = []) {
+  if (!octx || !Array.isArray(points) || points.length < 2) return false;
+  octx.beginPath();
+  octx.moveTo(Number(points[0]?.x) || 0, Number(points[0]?.y) || 0);
+  if (points.length === 2) {
+    octx.lineTo(Number(points[1]?.x) || 0, Number(points[1]?.y) || 0);
+    return true;
+  }
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const current = points[i];
+    const next = points[i + 1];
+    const midX = ((Number(current?.x) || 0) + (Number(next?.x) || 0)) * 0.5;
+    const midY = ((Number(current?.y) || 0) + (Number(next?.y) || 0)) * 0.5;
+    octx.quadraticCurveTo(Number(current?.x) || 0, Number(current?.y) || 0, midX, midY);
+  }
+  const penultimate = points[points.length - 2];
+  const tail = points[points.length - 1];
+  octx.quadraticCurveTo(
+    Number(penultimate?.x) || 0,
+    Number(penultimate?.y) || 0,
+    Number(tail?.x) || 0,
+    Number(tail?.y) || 0
+  );
+  return true;
+}
+
 function renderCommunicationOverlay(octx) {
   if (!octx) return;
   const dpr = getDpr();
@@ -22768,41 +23056,17 @@ function renderCommunicationOverlay(octx) {
   }
 
   const drawMark = (mark, { draft = false } = {}) => {
-    const points = Array.isArray(mark?.points)
-      ? mark.points
-          .map((point) => imageToCanvasForImageId(mark.imageId, point))
-          .filter(Boolean)
-      : [];
+    const points = draft ? communicationDraftPointsToCanvas(mark) : communicationMarkPointsToCanvas(mark);
     if (points.length < 2) return;
     octx.save();
     octx.lineCap = "round";
     octx.lineJoin = "round";
-    octx.lineWidth = Math.max(2, Math.round((draft ? 2.2 : 2.8) * dpr));
+    octx.lineWidth = Math.max(3, Math.round((draft ? 6.5 : 8.5) * dpr));
     octx.strokeStyle = COMMUNICATION_MARK_STROKE;
-    octx.shadowColor = "rgba(255, 94, 190, 0.26)";
-    octx.shadowBlur = Math.round(12 * dpr);
-    if (draft) octx.setLineDash([Math.round(8 * dpr), Math.round(6 * dpr)]);
-    octx.beginPath();
-    octx.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i += 1) {
-      octx.lineTo(points[i].x, points[i].y);
-    }
-    octx.stroke();
-    const tail = points[points.length - 1];
-    const prev = points[points.length - 2];
-    const angle = Math.atan2((tail.y || 0) - (prev.y || 0), (tail.x || 0) - (prev.x || 0));
-    const head = Math.max(10, Math.round(12 * dpr));
-    octx.setLineDash([]);
-    octx.beginPath();
-    octx.moveTo(tail.x, tail.y);
-    octx.lineTo(tail.x - Math.cos(angle - Math.PI / 7) * head, tail.y - Math.sin(angle - Math.PI / 7) * head);
-    octx.moveTo(tail.x, tail.y);
-    octx.lineTo(tail.x - Math.cos(angle + Math.PI / 7) * head, tail.y - Math.sin(angle + Math.PI / 7) * head);
-    octx.stroke();
-    octx.beginPath();
-    octx.fillStyle = COMMUNICATION_MARK_FILL;
-    octx.arc(points[0].x, points[0].y, Math.max(3, Math.round(4 * dpr)), 0, Math.PI * 2);
-    octx.fill();
+    octx.globalAlpha = draft ? 0.55 : 0.8;
+    octx.shadowColor = "rgba(255, 94, 190, 0.18)";
+    octx.shadowBlur = Math.round(8 * dpr);
+    if (traceCommunicationMarkPath(octx, points)) octx.stroke();
     octx.restore();
   };
 
@@ -22811,6 +23075,9 @@ function renderCommunicationOverlay(octx) {
     for (const mark of list.slice(-12)) {
       drawMark(mark);
     }
+  }
+  for (const mark of communicationCanvasMarks().slice(-12)) {
+    drawMark(mark);
   }
   if (state.communication?.markDraft) {
     drawMark(state.communication.markDraft, { draft: true });
@@ -36391,68 +36658,8 @@ function installCanvasHandlers() {
             requestRender();
             return;
           }
-          const communicationTool = communicationToolId();
-          if (event.button === 0 && communicationTool) {
-            if (communicationTool === "eraser") {
-              const erased = eraseCommunicationAtCanvasPoint(p);
-              if (erased) {
-                dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
-                  source: "canvas_eraser",
-                  communication: buildCommunicationBridgeSnapshot(),
-                  context: buildJuggernautShellContext(),
-                });
-                requestRender();
-                return;
-              }
-            }
-            const communicationImageId = hitTestVisibleCanvasImage(p);
-            if (communicationImageId) {
-              const imagePoint = canvasToImageForImageId(p, communicationImageId);
-              if (communicationTool === "marker" && imagePoint) {
-                bumpInteraction({ semantic: false });
-                els.overlayCanvas.setPointerCapture(event.pointerId);
-                state.pointer.active = true;
-                state.pointer.kind = COMMUNICATION_POINTER_KINDS.MARKER;
-                state.pointer.imageId = String(communicationImageId || "");
-                state.pointer.startX = p.x;
-                state.pointer.startY = p.y;
-                state.pointer.lastX = p.x;
-                state.pointer.lastY = p.y;
-                state.pointer.startCssX = pCss.x;
-                state.pointer.startCssY = pCss.y;
-                state.pointer.wheelOnTap = false;
-                state.pointer.moved = false;
-                state.communication.markDraft = {
-                  imageId: String(communicationImageId || ""),
-                  points: [
-                    {
-                      x: Number(imagePoint.x) || 0,
-                      y: Number(imagePoint.y) || 0,
-                    },
-                  ],
-                  createdAt: Date.now(),
-                };
-                requestRender();
-                return;
-              }
-              if (communicationTool === "magic_select" && imagePoint) {
-                bumpInteraction({ semantic: false });
-                els.overlayCanvas.setPointerCapture(event.pointerId);
-                state.pointer.active = true;
-                state.pointer.kind = COMMUNICATION_POINTER_KINDS.MAGIC_SELECT;
-                state.pointer.imageId = String(communicationImageId || "");
-                state.pointer.startX = p.x;
-                state.pointer.startY = p.y;
-                state.pointer.lastX = p.x;
-                state.pointer.lastY = p.y;
-                state.pointer.startCssX = pCss.x;
-                state.pointer.startCssY = pCss.y;
-                state.pointer.wheelOnTap = false;
-                state.pointer.moved = false;
-                requestRender();
-                return;
-              }
-            }
+          if (handleCommunicationCanvasPointerDown(event, p, pCss)) {
+            return;
           }
           // Initial pointer-down in multi-canvas is often a focus change (selection). Treat as
           // non-semantic; real arrangement changes are still marked semantic during pointermove.
@@ -36704,66 +36911,8 @@ function installCanvasHandlers() {
           reelTouchPulseFromCanvasPoint(p, { down: event.button === 0, lingerMs: REEL_TOUCH_TAP_VISIBLE_MS });
           requestRender();
         }
-        const communicationTool = communicationToolId();
-        if (event.button === 0 && communicationTool) {
-          if (communicationTool === "eraser") {
-            const erased = eraseCommunicationAtCanvasPoint(p);
-            if (erased) {
-              dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
-                source: "canvas_eraser",
-                communication: buildCommunicationBridgeSnapshot(),
-                context: buildJuggernautShellContext(),
-              });
-              requestRender();
-              return;
-            }
-          }
-          const communicationImageId = hitTestVisibleCanvasImage(p);
-          const imagePoint = communicationImageId ? canvasToImageForImageId(p, communicationImageId) : null;
-          if (communicationTool === "marker" && communicationImageId && imagePoint) {
-            bumpInteraction({ semantic: false });
-            els.overlayCanvas.setPointerCapture(event.pointerId);
-            state.pointer.active = true;
-            state.pointer.kind = COMMUNICATION_POINTER_KINDS.MARKER;
-            state.pointer.imageId = String(communicationImageId || "");
-            state.pointer.startX = p.x;
-            state.pointer.startY = p.y;
-            state.pointer.lastX = p.x;
-            state.pointer.lastY = p.y;
-            state.pointer.startCssX = pCss.x;
-            state.pointer.startCssY = pCss.y;
-            state.pointer.wheelOnTap = false;
-            state.pointer.moved = false;
-            state.communication.markDraft = {
-              imageId: String(communicationImageId || ""),
-              points: [
-                {
-                  x: Number(imagePoint.x) || 0,
-                  y: Number(imagePoint.y) || 0,
-                },
-              ],
-              createdAt: Date.now(),
-            };
-            requestRender();
-            return;
-          }
-          if (communicationTool === "magic_select" && communicationImageId && imagePoint) {
-            bumpInteraction({ semantic: false });
-            els.overlayCanvas.setPointerCapture(event.pointerId);
-            state.pointer.active = true;
-            state.pointer.kind = COMMUNICATION_POINTER_KINDS.MAGIC_SELECT;
-            state.pointer.imageId = String(communicationImageId || "");
-            state.pointer.startX = p.x;
-            state.pointer.startY = p.y;
-            state.pointer.lastX = p.x;
-            state.pointer.lastY = p.y;
-            state.pointer.startCssX = pCss.x;
-            state.pointer.startCssY = pCss.y;
-            state.pointer.wheelOnTap = false;
-            state.pointer.moved = false;
-            requestRender();
-            return;
-          }
+        if (handleCommunicationCanvasPointerDown(event, p, pCss)) {
+          return;
         }
         const transformUiHit = hitTestActiveImageTransformUi(p);
         if (transformUiHit && event.button === 0) {
@@ -36917,7 +37066,7 @@ function installCanvasHandlers() {
             setOverlayCursor("cell");
             return;
           }
-        } else if (hitTestVisibleCanvasImage(p)) {
+        } else if (communicationTool === "marker" || hitTestVisibleCanvasImage(p)) {
           setOverlayCursor("crosshair");
           return;
         }
@@ -37078,36 +37227,14 @@ function installCanvasHandlers() {
       return;
     }
     if (state.pointer.kind === COMMUNICATION_POINTER_KINDS.MARKER) {
-      const imageId = String(state.pointer.imageId || "").trim();
-      const imagePoint = imageId ? canvasToImageForImageId(p, imageId) : null;
       const draft = state.communication?.markDraft;
-      if (!draft || !imagePoint || !imageId) return;
+      if (!draft) return;
       const distancePx = Math.hypot((Number(pCss.x) || 0) - state.pointer.startCssX, (Number(pCss.y) || 0) - state.pointer.startCssY);
       if (distancePx > COMMUNICATION_MARK_MIN_DRAG_PX) {
         state.pointer.moved = true;
       }
-      const points = Array.isArray(draft.points) ? draft.points : [];
-      const last = points[points.length - 1] || null;
-      const lastCanvas = last ? imageToCanvasForImageId(imageId, last) : null;
-      const shouldAppend =
-        !lastCanvas ||
-        Math.hypot((Number(p.x) || 0) - (Number(lastCanvas.x) || 0), (Number(p.y) || 0) - (Number(lastCanvas.y) || 0)) >=
-          COMMUNICATION_MARK_MIN_POINT_SPACING_PX;
-      if (shouldAppend) {
-        points.push({
-          x: Number(imagePoint.x) || 0,
-          y: Number(imagePoint.y) || 0,
-        });
-        if (points.length > COMMUNICATION_MARK_MAX_POINTS) {
-          points.splice(0, points.length - COMMUNICATION_MARK_MAX_POINTS);
-        }
-      } else {
-        points[points.length - 1] = {
-          x: Number(imagePoint.x) || 0,
-          y: Number(imagePoint.y) || 0,
-        };
-      }
-      draft.points = points;
+      const samples = communicationCoalescedScreenPoints(event);
+      draft.screenPoints = communicationAppendDraftScreenPoints(draft.screenPoints, samples);
       requestRender();
       return;
     }
