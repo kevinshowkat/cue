@@ -338,6 +338,209 @@ test("review bootstrap renders runtime tray details before shell positioning to 
   assert.equal(runtimeState.lastTrayAnchor?.kind, "titlebar_button");
 });
 
+test("review bootstrap shows only the active proposal card while apply is running in the collapsed tray", () => {
+  const readFirstString = instantiateFunction("readFirstString");
+  const clampText = instantiateFunction("clampText");
+  const proposalEffectText = instantiateFunction("proposalEffectText", {
+    clampText,
+    readFirstString,
+  });
+  const slotSummaryText = instantiateFunction("slotSummaryText", {
+    clampText,
+    readFirstString,
+    proposalEffectText,
+  });
+  const slotStatusLabel = instantiateFunction("slotStatusLabel", {
+    readFirstString,
+  });
+  const shouldCollapseReviewTray = instantiateFunction("shouldCollapseReviewTray", {
+    readFirstString,
+  });
+  const slotCanAcceptProposal = instantiateFunction("slotCanAcceptProposal");
+
+  const createClassList = () => {
+    const tokens = new Set();
+    return {
+      add(...names) {
+        names.forEach((name) => tokens.add(String(name)));
+      },
+      toggle(name, force) {
+        if (force === undefined) {
+          if (tokens.has(name)) tokens.delete(name);
+          else tokens.add(name);
+          return tokens.has(name);
+        }
+        if (force) tokens.add(name);
+        else tokens.delete(name);
+        return Boolean(force);
+      },
+      contains(name) {
+        return tokens.has(name);
+      },
+    };
+  };
+
+  const createNode = (className = "") => {
+    const node = {
+      className,
+      classList: createClassList(),
+      dataset: {},
+      attributes: {},
+      style: {},
+      children: [],
+      textContent: "",
+      parentElement: null,
+      append(...children) {
+        children.forEach((child) => {
+          if (!child) return;
+          child.parentElement = this;
+          this.children.push(child);
+        });
+      },
+      appendChild(child) {
+        if (!child) return child;
+        child.parentElement = this;
+        this.children.push(child);
+        return child;
+      },
+      prepend(child) {
+        if (!child) return child;
+        child.parentElement = this;
+        this.children.unshift(child);
+        return child;
+      },
+      setAttribute(name, value) {
+        this.attributes[name] = value;
+      },
+      addEventListener() {},
+      remove() {
+        this.removed = true;
+      },
+      querySelector(selector) {
+        if (!selector.startsWith(".")) return null;
+        const classToken = selector.slice(1);
+        const search = (current) => {
+          for (const child of current.children || []) {
+            const names = String(child.className || "")
+              .split(/\s+/)
+              .filter(Boolean);
+            if (names.includes(classToken)) return child;
+            const nested = search(child);
+            if (nested) return nested;
+          }
+          return null;
+        };
+        return search(this);
+      },
+      replaceChildren(...children) {
+        if (children.length === 1 && children[0]?.isFragment) {
+          this.children = children[0].children.slice();
+          this.children.forEach((child) => {
+            child.parentElement = this;
+          });
+          return;
+        }
+        this.children = children.filter(Boolean);
+        this.children.forEach((child) => {
+          child.parentElement = this;
+        });
+      },
+    };
+    if (className) node.classList.add(...className.split(/\s+/).filter(Boolean));
+    return node;
+  };
+
+  const trayTitle = createNode("communication-proposal-tray-title");
+  const trayHead = createNode("communication-proposal-tray-head");
+  trayHead.appendChild(trayTitle);
+  const tray = createNode("communication-proposal-tray");
+  tray.dataset.anchorKind = "titlebar_button";
+  tray.appendChild(trayHead);
+  const list = createNode("communication-proposal-slot-list");
+
+  const renderCommunicationTrayDetails = instantiateFunction("renderCommunicationTrayDetails", {
+    document: {
+      createDocumentFragment() {
+        return {
+          isFragment: true,
+          children: [],
+          appendChild(child) {
+            if (!child) return child;
+            child.parentElement = this;
+            this.children.push(child);
+            return child;
+          },
+        };
+      },
+      createElement() {
+        return createNode();
+      },
+    },
+    ensureReviewStyle() {},
+    communicationTrayRoot: () => tray,
+    communicationTraySlotList: () => list,
+    shouldCollapseReviewTray,
+    readFirstString,
+    EDIT_PROPOSALS_LABEL: "Try Edits",
+    slotCanAcceptProposal,
+    convertFileSrc: (value) => value,
+    clampText,
+    slotStatusLabel,
+    slotSummaryText,
+    requestAnimationFrame: (callback) => callback(),
+    clampTrayIntoCanvasWrap() {
+      throw new Error("clamp should not run for a titlebar-anchored tray");
+    },
+  });
+
+  renderCommunicationTrayDetails({
+    status: "apply_running",
+    request: { requestId: "review-1" },
+    activeApply: {
+      requestId: "review-1",
+      proposalId: "proposal-2",
+      status: "running",
+    },
+    slots: [
+      {
+        rank: 1,
+        status: "ready",
+        proposal: {
+          proposalId: "proposal-1",
+          label: "Warm the lighting",
+          previewBrief: "Shift the color temperature warmer.",
+        },
+      },
+      {
+        rank: 2,
+        status: "apply_running",
+        proposal: {
+          proposalId: "proposal-2",
+          label: "Swap the backdrop",
+          previewBrief: "Replace the backdrop with a clean studio wall.",
+        },
+      },
+      {
+        rank: 3,
+        status: "ready",
+        proposal: {
+          proposalId: "proposal-3",
+          label: "Tighten the crop",
+          previewBrief: "Crop closer around the subject.",
+        },
+      },
+    ],
+  });
+
+  assert.equal(tray.classList.contains("is-collapsed"), true);
+  assert.equal(list.children.length, 1);
+  assert.equal(list.children[0].dataset.slotIndex, "1");
+  assert.equal(
+    list.children[0].children[0].children[1].children[1].textContent,
+    "Swap the backdrop"
+  );
+});
+
 test("review bootstrap seeds a pending runtime tray before async review work starts", () => {
   assert.match(
     bootstrap,

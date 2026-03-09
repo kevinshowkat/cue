@@ -54,7 +54,7 @@ test("design review bootstrap makes proposal cards directly clickable for apply"
   assert.match(bootstrap, /card\.tabIndex = canAcceptSlot \? 0 : -1/);
   assert.match(bootstrap, /card\.addEventListener\("click", \(\) => \{\s*handleAccept\(\);/s);
   assert.match(bootstrap, /card\.addEventListener\("keydown", \(event\) => \{\s*if \(event\.key !== "Enter" && event\.key !== " "\) return;/s);
-  assert.match(bootstrap, /hint\.textContent = "Click anywhere on this proposal to apply\.";/);
+  assert.doesNotMatch(bootstrap, /Click anywhere on this proposal to apply\./);
   assert.match(bootstrap, /accept\.addEventListener\("click", \(event\) => \{\s*event\.stopPropagation\(\);/s);
   assert.match(bootstrap, /: "Apply";/);
   assert.doesNotMatch(bootstrap, /"Apply via Runtime"/);

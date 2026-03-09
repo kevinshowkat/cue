@@ -282,7 +282,7 @@ test("image-hit marker commits preserve overlay-space geometry and avoid image b
   assert.equal(state.communication.canvasMarks[0].id, mark.id);
 });
 
-test("communication overlay renders all committed annotations instead of truncating early marks", () => {
+test("communication overlay renders each annotation with a felt-tip shoulder and core stroke", () => {
   const rendered = [];
   const marks = Array.from({ length: 15 }, (_, index) => ({
     id: `mark-${index + 1}`,
@@ -303,7 +303,11 @@ test("communication overlay renders all committed annotations instead of truncat
     save() {},
     restore() {},
     stroke() {
-      rendered.push("stroke");
+      rendered.push({
+        lineWidth: this.lineWidth,
+        strokeStyle: this.strokeStyle,
+        globalAlpha: this.globalAlpha,
+      });
     },
   };
   const renderCommunicationOverlay = instantiateFunction("renderCommunicationOverlay", {
@@ -322,7 +326,17 @@ test("communication overlay renders all committed annotations instead of truncat
 
   renderCommunicationOverlay(octx);
 
-  assert.equal(rendered.length, 15);
+  assert.equal(rendered.length, 30);
+  assert.deepEqual(rendered[0], {
+    lineWidth: 12,
+    strokeStyle: "rgba(255, 94, 190, 0.16)",
+    globalAlpha: 1,
+  });
+  assert.deepEqual(rendered[1], {
+    lineWidth: 8,
+    strokeStyle: "rgba(255, 94, 190, 0.94)",
+    globalAlpha: 1,
+  });
 });
 
 test("review targeting resolves an overlay mark onto the overlapping visible image", () => {

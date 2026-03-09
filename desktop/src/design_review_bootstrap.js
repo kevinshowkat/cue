@@ -1021,8 +1021,9 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
   const tray = communicationTrayRoot();
   const list = communicationTraySlotList();
   if (!tray || !list) return;
+  const collapsed = shouldCollapseReviewTray(state);
   tray.classList.add("is-design-review-runtime");
-  tray.classList.toggle("is-collapsed", shouldCollapseReviewTray(state));
+  tray.classList.toggle("is-collapsed", collapsed);
   tray.dataset.reviewStatus = readFirstString(state?.status) || "idle";
 
   const head = tray.querySelector(".communication-proposal-tray-head");
@@ -1052,8 +1053,26 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
     readFirstString(state?.activeApply?.requestId) ===
       readFirstString(state?.request?.requestId)
   );
+  const slotEntries = slots.map((slot, index) => ({ index, slot }));
+  const activeApplyProposalId = readFirstString(state?.activeApply?.proposalId);
+  let visibleSlotEntries = slotEntries;
+  if (collapsed && readFirstString(state?.status).toLowerCase() === "apply_running") {
+    const applyingEntries = activeApplyProposalId
+      ? slotEntries.filter(
+          ({ slot }) => readFirstString(slot?.proposal?.proposalId) === activeApplyProposalId
+        )
+      : [];
+    const runningEntries = slotEntries.filter(
+      ({ slot }) => readFirstString(slot?.status).toLowerCase() === "apply_running"
+    );
+    visibleSlotEntries = applyingEntries.length
+      ? applyingEntries
+      : runningEntries.length
+        ? runningEntries
+        : slotEntries;
+  }
   const fragment = document.createDocumentFragment();
-  slots.forEach((slot, index) => {
+  visibleSlotEntries.forEach(({ slot, index }) => {
     const card = document.createElement("div");
     const canAcceptSlot = slotCanAcceptProposal(slot, requestApplyLocked);
     card.className = "communication-proposal-slot";
@@ -1129,12 +1148,6 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
     why.textContent = slotSummaryText(slot);
 
     copy.append(row, titleNode, why);
-    if (canAcceptSlot) {
-      const hint = document.createElement("div");
-      hint.className = "design-review-runtime-hint";
-      hint.textContent = "Click anywhere on this proposal to apply.";
-      copy.appendChild(hint);
-    }
 
     if (slot?.proposal) {
       const actions = document.createElement("div");

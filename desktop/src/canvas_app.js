@@ -128,7 +128,7 @@ const DESIGN_REVIEW_APPLY_SOURCE = "design_review_apply";
 const DESIGN_REVIEW_TRAY_DISMISS_MS = 180;
 const DESIGN_REVIEW_APPLY_SHIMMER_LOOP_MS = 1350;
 const EDIT_PROPOSALS_LABEL = "Try Edits";
-const COMMUNICATION_MARK_STROKE = "rgba(255, 94, 190, 0.96)";
+const COMMUNICATION_MARK_STROKE = "rgba(235, 76, 52, 0.94)";
 const COMMUNICATION_REGION_ACTIVE = "rgba(100, 210, 255, 0.94)";
 const COMMUNICATION_REGION_IDLE = "rgba(100, 210, 255, 0.34)";
 const IMAGE_SELECTION_INACTIVE_STROKE = "rgba(118, 211, 255, 0.56)";
@@ -22997,6 +22997,17 @@ function traceCommunicationMarkPath(octx, points = []) {
 function renderCommunicationOverlay(octx) {
   if (!octx) return;
   const dpr = getDpr();
+  const markerStrokeVariant = (color, alpha) => {
+    const rawColor = String(color || COMMUNICATION_MARK_STROKE).trim();
+    const match = rawColor.match(/^rgba?\(([^)]+)\)$/i);
+    if (!match) return rawColor;
+    const parts = match[1].split(",").map((part) => Number.parseFloat(part.trim()));
+    const r = Number.isFinite(parts[0]) ? parts[0] : 235;
+    const g = Number.isFinite(parts[1]) ? parts[1] : 76;
+    const b = Number.isFinite(parts[2]) ? parts[2] : 52;
+    const a = Math.max(0, Math.min(1, Number(alpha)));
+    return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${a})`;
+  };
   for (const [imageId, group] of Array.from(state.communication?.regionProposalsByImageId?.entries?.() || [])) {
     const candidates = Array.isArray(group?.candidates) ? group.candidates : [];
     const activeIndex = Math.max(0, Number(group?.activeCandidateIndex) || 0);
@@ -23025,14 +23036,20 @@ function renderCommunicationOverlay(octx) {
   const drawMark = (mark, { draft = false } = {}) => {
     const points = draft ? communicationDraftPointsToCanvas(mark) : communicationMarkPointsToCanvas(mark);
     if (points.length < 2) return;
+    const markerColor = String(mark?.color || COMMUNICATION_MARK_STROKE);
+    const markerShoulderColor = markerStrokeVariant(markerColor, draft ? 0.26 : 0.16);
+    const markerCoreColor = markerStrokeVariant(markerColor, draft ? 0.68 : 0.94);
     octx.save();
     octx.lineCap = "round";
     octx.lineJoin = "round";
-    octx.lineWidth = Math.max(3, Math.round((draft ? 6.5 : 8.5) * dpr));
-    octx.strokeStyle = COMMUNICATION_MARK_STROKE;
-    octx.globalAlpha = draft ? 0.55 : 0.8;
-    octx.shadowColor = "rgba(255, 94, 190, 0.18)";
-    octx.shadowBlur = Math.round(8 * dpr);
+    octx.globalAlpha = 1;
+    octx.shadowColor = "transparent";
+    octx.shadowBlur = 0;
+    octx.lineWidth = Math.max(4, Math.round((draft ? 8.5 : 11.5) * dpr));
+    octx.strokeStyle = markerShoulderColor;
+    if (traceCommunicationMarkPath(octx, points)) octx.stroke();
+    octx.lineWidth = Math.max(3, Math.round((draft ? 5.75 : 8.25) * dpr));
+    octx.strokeStyle = markerCoreColor;
     if (traceCommunicationMarkPath(octx, points)) octx.stroke();
     octx.restore();
   };
