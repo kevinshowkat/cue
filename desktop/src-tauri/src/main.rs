@@ -3966,6 +3966,7 @@ fn apply_macos_native_window_polish(window: &tauri::Window) -> Result<(), String
 }
 
 fn main() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let pty_state: SharedPtyState = Arc::new(Mutex::new(PtyState::new()));
     let context = tauri::generate_context!();
     let menu = build_app_menu(&context.package_info().name);
