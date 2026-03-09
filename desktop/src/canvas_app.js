@@ -1714,6 +1714,8 @@ const state = {
     activateTabFastPathMs: 0,
     deferredHydrationMs: 0,
     filmstripRefreshMs: 0,
+    tabPreviewPaintMs: 0,
+    tabFullRenderAfterPreviewMs: 0,
   },
   // Hide the filmstrip by default (keeps the UI focused on the canvas). The feature remains
   // implemented; set `localStorage.brood.showFilmstrip = "1"` to re-enable in dev.
@@ -1858,6 +1860,9 @@ const state = {
   activeCircle: null, // { imageId, id } | null
   tripletRuleAnnotations: new Map(), // imageId -> [{ x: number, y: number, label: string }]
   tripletOddOneOutId: null, // string|null
+  tabPreviewState: createFreshTabPreviewState(),
+  tabPreviewDirty: true,
+  pendingTabSwitchPreview: null, // { tabId, reason, requestedAt }
   needsEngineModelResync: false, // restore `/image_model` to settings after one-off overrides.
   engineImageModelRestore: null, // string|null
   needsRender: false,
@@ -2334,6 +2339,21 @@ function createTabAlwaysOnVisionState() {
   };
 }
 
+function createFreshTabPreviewState() {
+  return {
+    version: 0,
+    valid: false,
+  };
+}
+
+function normalizeTabPreviewState(preview = null) {
+  const current = preview && typeof preview === "object" ? preview : {};
+  return {
+    version: Math.max(0, Number(current.version) || 0),
+    valid: Boolean(current.valid),
+  };
+}
+
 function createFreshTabUiMeta() {
   return {
     metadataVersion: 0,
@@ -2510,6 +2530,7 @@ function createFreshTabSession({ runDir = null, eventsPath = null } = {}) {
     lastStatusError: false,
     juggernautShellRecentSuccessfulJobs: [],
     juggernautShellLastToolKey: "",
+    tabPreviewState: createFreshTabPreviewState(),
     tabUiMeta: createFreshTabUiMeta(),
   };
 }
@@ -2537,11 +2558,19 @@ let flushDeferredEnginePtyExit = async () => {};
 let activeEventsPollToken = 0;
 let releaseSessionTabStripSubscription = null;
 const TAB_HYDRATION_IDLE_TIMEOUT_MS = 180;
+const TAB_PREVIEW_CAPTURE_SETTLE_MS = 120;
+const TAB_PREVIEW_MAX_EDGE_PX = 1280;
 const PTY_STATUS_CACHE_TTL_MS = 1200;
 let tabHydrationToken = 0;
 let tabHydrationRaf = 0;
 let tabHydrationTimer = null;
 let tabHydrationIdle = null;
+let tabPreviewCaptureRaf = 0;
+let tabPreviewCaptureTimer = null;
+let pendingTabPreviewCapture = null;
+let tabSwitchFullRenderRaf = 0;
+let pendingTabSwitchFullRenderSample = null;
+const tabPreviewCache = new Map();
 let ptyStatusCache = {
   status: null,
   fetchedAt: 0,
@@ -21783,7 +21812,18 @@ function hitTestCircleMarks(ptCanvas, circles) {
   return null;
 }
 
-function requestRender() {
+function requestRender({ allowTabSwitchPreview = false, reason = "render" } = {}) {
+  if (allowTabSwitchPreview) {
+    const normalizedTabId = String(state.activeTabId || "").trim();
+    if (normalizedTabId) {
+      clearPendingTabSwitchFullRender({ stale: true });
+      state.pendingTabSwitchPreview = {
+        tabId: normalizedTabId,
+        reason: String(reason || "render"),
+        requestedAt: Date.now(),
+      };
+    }
+  }
   if (state.needsRender) return;
   state.needsRender = true;
   requestAnimationFrame(() => {
@@ -23186,6 +23226,7 @@ async function selectCanvasImage(imageId, { toggle = false } = {}) {
 
   setSelectedIds(next);
   const nextActive = next.includes(id) ? id : next[next.length - 1] || null;
+  invalidateActiveTabPreview("selection_change");
   recordUserEvent("selection_change", {
     canvas_mode: state.canvasMode,
     active_id: nextActive || state.activeId || null,
@@ -23227,6 +23268,7 @@ function setCanvasMode(_mode) {
   state.lassoDraft = [];
   state.annotateDraft = null;
   state.annotateBox = null;
+  invalidateActiveTabPreview("canvas_mode_change");
   hideAnnotatePanel();
   state.circleDraft = null;
   hideMarkPanel();
@@ -23279,6 +23321,7 @@ function ensureCanvasImageLoaded(item) {
             rect.h = clamped.h;
             rect.autoAspect = clamped.autoAspect;
           }
+          invalidateActiveTabPreview("image_layout_settle");
           scheduleVisualPromptWrite();
           if (intentAmbientActive()) {
             scheduleAmbientIntentInference({ immediate: true, reason: "composition_change", imageIds: [item.id] });
@@ -23294,6 +23337,7 @@ function ensureCanvasImageLoaded(item) {
     })
     .finally(() => {
       item.imgLoading = false;
+      invalidateActiveTabPreview("image_decode_ready");
       requestRender();
     });
 }
@@ -23764,6 +23808,7 @@ function resetViewToFit() {
     Math.abs(nextOffsetX - prevOffsetX) > 0.5 ||
     Math.abs(nextOffsetY - prevOffsetY) > 0.5;
   if (fitChanged) {
+    invalidateActiveTabPreview("viewport_fit_change");
     recordUserEvent("canvas_fit", {
       actor: "system",
       source: "reset_view_to_fit",
@@ -23992,6 +24037,7 @@ function clearSelection() {
   state.annotateDraft = null;
   state.annotateBox = null;
   state.circleDraft = null;
+  invalidateActiveTabPreview("selection_clear");
   hideMarkPanel();
   hideAnnotatePanel();
   hidePromptGeneratePanel();
@@ -26803,6 +26849,7 @@ async function setActiveImage(id, { preserveSelection = false, source = "system"
   } else {
     setSelectedIds([id]);
   }
+  invalidateActiveTabPreview("active_image_change");
   if (prevActive !== id) {
     const eventActor = activeImageEventActorForSource(source, actor);
     recordUserEvent("active_image_change", {
@@ -26857,6 +26904,7 @@ function addImage(item, { select = false, deferAlwaysOnVision = false, deferAmbi
   }
   state.imagesById.set(item.id, item);
   state.images.push(item);
+  invalidateActiveTabPreview("image_add");
   markActiveTabUiDirty({ filmstrip: true, timeline: true, spawn: true, quickActions: true, publishTabs: true });
   if (!state.freeformZOrder.includes(item.id)) {
     state.freeformZOrder.push(item.id);
@@ -26931,6 +26979,7 @@ async function removeImageFromCanvas(imageId) {
   // Remove from collections.
   state.imagesById.delete(id);
   state.images = (state.images || []).filter((item) => item?.id !== id);
+  invalidateActiveTabPreview("image_remove");
   markActiveTabUiDirty({ filmstrip: true, timeline: true, spawn: true, quickActions: true });
   state.freeformRects.delete(id);
   state.freeformZOrder = (state.freeformZOrder || []).filter((v) => v !== id);
@@ -27066,6 +27115,7 @@ async function replaceImageInPlace(
   const item = state.imagesById.get(targetId);
   if (!item || !path) return false;
   clearEffectTokenForImageId(targetId);
+  invalidateActiveTabPreview("image_replace");
   const oldPath = item.path;
   if (oldPath && oldPath !== path) {
     invalidateImageCache(oldPath);
@@ -29070,6 +29120,423 @@ function finishPerfSample(sample, metricKey = null, detail = null) {
   return duration;
 }
 
+function disposeTabPreviewCacheEntry(entry = null) {
+  if (!entry || typeof entry !== "object") return;
+  if (entry.bitmap && typeof entry.bitmap.close === "function") {
+    try {
+      entry.bitmap.close();
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function tabPreviewStateForTab(tabId = state.activeTabId || null) {
+  const normalizedTabId = String(tabId || "").trim();
+  if (!normalizedTabId) return createFreshTabPreviewState();
+  if (normalizedTabId === String(state.activeTabId || "").trim()) {
+    return normalizeTabPreviewState(state.tabPreviewState);
+  }
+  const record = tabbedSessions.getTab(normalizedTabId);
+  return normalizeTabPreviewState(record?.session?.tabPreviewState);
+}
+
+function writeTabPreviewStateForTab(tabId = state.activeTabId || null, preview = null) {
+  const normalizedTabId = String(tabId || "").trim();
+  if (!normalizedTabId) return createFreshTabPreviewState();
+  const next = normalizeTabPreviewState(preview);
+  if (normalizedTabId === String(state.activeTabId || "").trim()) {
+    state.tabPreviewState = next;
+    state.tabPreviewDirty = !next.valid;
+  }
+  const record = tabbedSessions.getTab(normalizedTabId);
+  if (record?.session && typeof record.session === "object") {
+    record.session.tabPreviewState = { ...next };
+  }
+  return next;
+}
+
+function previewViewportNumber(value, decimals = 3) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "0";
+  return numeric.toFixed(decimals);
+}
+
+function buildTabPreviewViewportKey() {
+  if (state.canvasMode === "multi") {
+    return [
+      "multi",
+      previewViewportNumber(state.multiView?.scale, 4),
+      previewViewportNumber(state.multiView?.offsetX, 1),
+      previewViewportNumber(state.multiView?.offsetY, 1),
+      String(state.activeId || ""),
+    ].join(":");
+  }
+  return [
+    "single",
+    previewViewportNumber(state.view?.scale, 4),
+    previewViewportNumber(state.view?.offsetX, 1),
+    previewViewportNumber(state.view?.offsetY, 1),
+    String(state.activeId || ""),
+  ].join(":");
+}
+
+function buildTabPreviewDescriptor(tabId = state.activeTabId || null) {
+  const normalizedTabId = String(tabId || "").trim();
+  const work = els.workCanvas;
+  const previewState = tabPreviewStateForTab(normalizedTabId);
+  return {
+    tabId: normalizedTabId,
+    canvasWidth: Math.max(0, Number(work?.width) || 0),
+    canvasHeight: Math.max(0, Number(work?.height) || 0),
+    dpr: getDpr(),
+    viewportKey: buildTabPreviewViewportKey(),
+    visualVersion: Math.max(0, Number(previewState.version) || 0),
+  };
+}
+
+function canUseTabPreviewEntry(entry = null, descriptor = buildTabPreviewDescriptor()) {
+  if (!entry || typeof entry !== "object") return false;
+  if (!descriptor || typeof descriptor !== "object") return false;
+  return (
+    String(entry.tabId || "") === String(descriptor.tabId || "") &&
+    Math.max(0, Number(entry.canvasWidth) || 0) === Math.max(0, Number(descriptor.canvasWidth) || 0) &&
+    Math.max(0, Number(entry.canvasHeight) || 0) === Math.max(0, Number(descriptor.canvasHeight) || 0) &&
+    Math.abs((Number(entry.dpr) || 0) - (Number(descriptor.dpr) || 0)) < 0.001 &&
+    String(entry.viewportKey || "") === String(descriptor.viewportKey || "") &&
+    Math.max(0, Number(entry.visualVersion) || 0) === Math.max(0, Number(descriptor.visualVersion) || 0) &&
+    Boolean(entry.bitmap || entry.canvas)
+  );
+}
+
+function getUsableTabPreviewEntry(tabId = state.activeTabId || null) {
+  const descriptor = buildTabPreviewDescriptor(tabId);
+  if (!descriptor.tabId) return null;
+  const entry = tabPreviewCache.get(descriptor.tabId) || null;
+  return canUseTabPreviewEntry(entry, descriptor) ? entry : null;
+}
+
+function syncActiveTabPreviewRuntime() {
+  const normalizedTabId = String(state.activeTabId || "").trim();
+  if (!normalizedTabId) {
+    state.tabPreviewState = createFreshTabPreviewState();
+    state.tabPreviewDirty = true;
+    return state.tabPreviewState;
+  }
+  const next = {
+    ...tabPreviewStateForTab(normalizedTabId),
+    valid: Boolean(getUsableTabPreviewEntry(normalizedTabId)),
+  };
+  return writeTabPreviewStateForTab(normalizedTabId, next);
+}
+
+function clearScheduledTabPreviewCapture() {
+  if (tabPreviewCaptureRaf && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
+    window.cancelAnimationFrame(tabPreviewCaptureRaf);
+  }
+  tabPreviewCaptureRaf = 0;
+  if (tabPreviewCaptureTimer) clearTimeout(tabPreviewCaptureTimer);
+  tabPreviewCaptureTimer = null;
+  pendingTabPreviewCapture = null;
+}
+
+function finishPendingTabSwitchFullRender(detail = null) {
+  if (!pendingTabSwitchFullRenderSample) return 0;
+  const pending = pendingTabSwitchFullRenderSample;
+  pendingTabSwitchFullRenderSample = null;
+  return finishPerfSample(pending.sample, "tabFullRenderAfterPreviewMs", {
+    previewHit: Boolean(pending.previewHit),
+    reason: pending.reason,
+    renderedTabId: state.activeTabId || null,
+    tabId: pending.tabId,
+    ...(detail && typeof detail === "object" ? detail : null),
+  });
+}
+
+function clearPendingTabSwitchFullRender({ stale = false } = {}) {
+  if (tabSwitchFullRenderRaf && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
+    window.cancelAnimationFrame(tabSwitchFullRenderRaf);
+  }
+  tabSwitchFullRenderRaf = 0;
+  if (pendingTabSwitchFullRenderSample && stale) {
+    finishPendingTabSwitchFullRender({ stale: true });
+  } else if (!stale) {
+    pendingTabSwitchFullRenderSample = null;
+  }
+}
+
+function currentTabPreviewCaptureBlockedReason() {
+  if (!String(state.activeTabId || "").trim()) return "missing_tab";
+  if (state.pendingTabSwitchPreview) return "switch_preview_pending";
+  if (state.pointer?.active || state.gestureZoom?.active) return "manipulating_canvas";
+  if (shouldAnimateEffectVisuals()) return "animating_effects";
+  const now = Date.now();
+  const visibleUntil = Number(state.reelTouch?.visibleUntil) || 0;
+  const downUntil = Number(state.reelTouch?.downUntil) || 0;
+  if (now < visibleUntil || now < downUntil) return "touch_feedback";
+  return null;
+}
+
+function invalidateActiveTabPreview(reason = "visual_mutation") {
+  const normalizedTabId = String(state.activeTabId || "").trim();
+  if (!normalizedTabId) return null;
+  clearScheduledTabPreviewCapture();
+  const previous = normalizeTabPreviewState(state.tabPreviewState);
+  const nextVersion = state.tabPreviewDirty
+    ? Math.max(0, Number(previous.version) || 0)
+    : Math.max(0, Number(previous.version) || 0) + 1;
+  const next = {
+    version: nextVersion,
+    valid: false,
+  };
+  writeTabPreviewStateForTab(normalizedTabId, next);
+  state.tabPreviewDirty = true;
+  const existing = tabPreviewCache.get(normalizedTabId) || null;
+  if (existing) {
+    tabPreviewCache.delete(normalizedTabId);
+    disposeTabPreviewCacheEntry(existing);
+  }
+  return {
+    reason: String(reason || "visual_mutation"),
+    tabId: normalizedTabId,
+    version: next.version,
+  };
+}
+
+function createTabPreviewCaptureSurface(width, height) {
+  const w = Math.max(1, Math.round(Number(width) || 1));
+  const h = Math.max(1, Math.round(Number(height) || 1));
+  if (typeof OffscreenCanvas === "function") {
+    try {
+      return new OffscreenCanvas(w, h);
+    } catch {
+      // ignore
+    }
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  return canvas;
+}
+
+function buildCurrentTabPreviewSurface() {
+  const work = els.workCanvas;
+  const overlay = els.overlayCanvas;
+  if (!work || !overlay) return null;
+  const canvasWidth = Math.max(0, Number(work.width) || 0);
+  const canvasHeight = Math.max(0, Number(work.height) || 0);
+  if (!canvasWidth || !canvasHeight) return null;
+  const scale = Math.min(1, TAB_PREVIEW_MAX_EDGE_PX / Math.max(canvasWidth, canvasHeight, 1));
+  const captureWidth = Math.max(1, Math.round(canvasWidth * scale));
+  const captureHeight = Math.max(1, Math.round(canvasHeight * scale));
+  const surface = createTabPreviewCaptureSurface(captureWidth, captureHeight);
+  const ctx = surface?.getContext?.("2d", { alpha: false, desynchronized: true });
+  if (!surface || !ctx) return null;
+  ctx.clearRect(0, 0, captureWidth, captureHeight);
+  ctx.drawImage(work, 0, 0, captureWidth, captureHeight);
+  if (els.effectsCanvas?.width && els.effectsCanvas?.height) {
+    ctx.drawImage(els.effectsCanvas, 0, 0, captureWidth, captureHeight);
+  }
+  ctx.drawImage(overlay, 0, 0, captureWidth, captureHeight);
+  return {
+    surface,
+    captureWidth,
+    captureHeight,
+    canvasWidth,
+    canvasHeight,
+  };
+}
+
+async function captureActiveTabPreview({
+  tabId = state.activeTabId || null,
+  reason = "stable_render",
+  descriptor = buildTabPreviewDescriptor(tabId),
+} = {}) {
+  const normalizedTabId = String(tabId || "").trim();
+  if (!normalizedTabId || normalizedTabId !== String(state.activeTabId || "").trim()) return false;
+  if (currentTabPreviewCaptureBlockedReason()) return false;
+  if (!descriptor.canvasWidth || !descriptor.canvasHeight) return false;
+  if (Math.max(0, Number(tabPreviewStateForTab(normalizedTabId).version) || 0) !== Math.max(0, Number(descriptor.visualVersion) || 0)) {
+    return false;
+  }
+  const surfaceState = buildCurrentTabPreviewSurface();
+  if (!surfaceState) return false;
+  let nextEntry = {
+    tabId: normalizedTabId,
+    canvasWidth: descriptor.canvasWidth,
+    canvasHeight: descriptor.canvasHeight,
+    dpr: descriptor.dpr,
+    viewportKey: descriptor.viewportKey,
+    visualVersion: descriptor.visualVersion,
+    reason: String(reason || "stable_render"),
+    policy: "merged-canvas-v1",
+    bitmap: null,
+    canvas: surfaceState.surface,
+    captureWidth: surfaceState.captureWidth,
+    captureHeight: surfaceState.captureHeight,
+    capturedAt: Date.now(),
+    kind: "canvas",
+  };
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bitmap = await createImageBitmap(surfaceState.surface);
+      nextEntry = {
+        ...nextEntry,
+        bitmap,
+        canvas: null,
+        kind: "bitmap",
+      };
+    } catch {
+      // Canvas fallback is acceptable.
+    }
+  }
+  if (Math.max(0, Number(tabPreviewStateForTab(normalizedTabId).version) || 0) !== Math.max(0, Number(descriptor.visualVersion) || 0)) {
+    disposeTabPreviewCacheEntry(nextEntry);
+    return false;
+  }
+  const previous = tabPreviewCache.get(normalizedTabId) || null;
+  if (previous) disposeTabPreviewCacheEntry(previous);
+  tabPreviewCache.set(normalizedTabId, nextEntry);
+  writeTabPreviewStateForTab(normalizedTabId, {
+    version: descriptor.visualVersion,
+    valid: true,
+  });
+  if (normalizedTabId === String(state.activeTabId || "").trim()) {
+    state.tabPreviewDirty = false;
+  }
+  return true;
+}
+
+function scheduleActiveTabPreviewCapture(reason = "stable_render") {
+  const normalizedTabId = String(state.activeTabId || "").trim();
+  if (!normalizedTabId || !state.tabPreviewDirty) return;
+  if (currentTabPreviewCaptureBlockedReason()) return;
+  const descriptor = buildTabPreviewDescriptor(normalizedTabId);
+  if (!descriptor.canvasWidth || !descriptor.canvasHeight) return;
+  if (
+    pendingTabPreviewCapture &&
+    pendingTabPreviewCapture.tabId === normalizedTabId &&
+    pendingTabPreviewCapture.descriptor?.viewportKey === descriptor.viewportKey &&
+    pendingTabPreviewCapture.descriptor?.visualVersion === descriptor.visualVersion
+  ) {
+    return;
+  }
+  clearScheduledTabPreviewCapture();
+  pendingTabPreviewCapture = {
+    tabId: normalizedTabId,
+    reason: String(reason || "stable_render"),
+    descriptor,
+  };
+  const runCapture = () => {
+    const pending = pendingTabPreviewCapture;
+    pendingTabPreviewCapture = null;
+    if (!pending) return;
+    void captureActiveTabPreview(pending).catch(() => {});
+  };
+  if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    tabPreviewCaptureRaf = window.requestAnimationFrame(() => {
+      tabPreviewCaptureRaf = 0;
+      tabPreviewCaptureTimer = setTimeout(() => {
+        tabPreviewCaptureTimer = null;
+        runCapture();
+      }, TAB_PREVIEW_CAPTURE_SETTLE_MS);
+    });
+    return;
+  }
+  tabPreviewCaptureTimer = setTimeout(() => {
+    tabPreviewCaptureTimer = null;
+    runCapture();
+  }, TAB_PREVIEW_CAPTURE_SETTLE_MS);
+}
+
+function paintTabPreviewEntry(entry = null) {
+  const work = els.workCanvas;
+  const overlay = els.overlayCanvas;
+  if (!work || !overlay || !entry) return false;
+  const wctx = work.getContext("2d");
+  const octx = overlay.getContext("2d");
+  if (!wctx || !octx) return false;
+  const source = entry.bitmap || entry.canvas || null;
+  if (!source) return false;
+  wctx.clearRect(0, 0, work.width, work.height);
+  if (els.effectsCanvas) {
+    const fxCtx = els.effectsCanvas.getContext("2d");
+    fxCtx?.clearRect(0, 0, els.effectsCanvas.width, els.effectsCanvas.height);
+  }
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  state.motherOverlayUiHits = [];
+  state.activeImageTransformUiHits = [];
+  hideImageFxOverlays();
+  wctx.imageSmoothingEnabled = true;
+  wctx.imageSmoothingQuality = "high";
+  wctx.drawImage(source, 0, 0, work.width, work.height);
+  return true;
+}
+
+function scheduleTabSwitchFullRender(tabId, reason, { previewHit = false } = {}) {
+  const normalizedTabId = String(tabId || "").trim();
+  if (!normalizedTabId) return;
+  clearPendingTabSwitchFullRender({ stale: true });
+  const sample = startPerfSample("tab:full-render-after-preview", {
+    previewHit: Boolean(previewHit),
+    reason,
+    tabId: normalizedTabId,
+  });
+  if (previewHit && typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    tabSwitchFullRenderRaf = window.requestAnimationFrame(() => {
+      tabSwitchFullRenderRaf = 0;
+      pendingTabSwitchFullRenderSample = {
+        sample,
+        tabId: normalizedTabId,
+        previewHit: Boolean(previewHit),
+        reason,
+      };
+      requestRender();
+    });
+    return;
+  }
+  pendingTabSwitchFullRenderSample = {
+    sample,
+    tabId: normalizedTabId,
+    previewHit: Boolean(previewHit),
+    reason,
+  };
+}
+
+function renderPendingTabSwitchPreview() {
+  const pending = state.pendingTabSwitchPreview;
+  if (!pending || typeof pending !== "object") return false;
+  const normalizedTabId = String(pending.tabId || "").trim();
+  state.pendingTabSwitchPreview = null;
+  const perfSample = startPerfSample("tab:preview-paint", {
+    reason: pending.reason,
+    tabId: normalizedTabId,
+  });
+  const entry = getUsableTabPreviewEntry(normalizedTabId);
+  if (!entry) {
+    finishPerfSample(perfSample, "tabPreviewPaintMs", {
+      cacheHit: false,
+      reason: pending.reason,
+      tabId: normalizedTabId,
+    });
+    scheduleTabSwitchFullRender(normalizedTabId, pending.reason, { previewHit: false });
+    return false;
+  }
+  const painted = paintTabPreviewEntry(entry);
+  finishPerfSample(perfSample, "tabPreviewPaintMs", {
+    cacheHit: Boolean(painted),
+    previewKind: entry.kind,
+    reason: pending.reason,
+    tabId: normalizedTabId,
+  });
+  if (!painted) {
+    scheduleTabSwitchFullRender(normalizedTabId, pending.reason, { previewHit: false });
+    return false;
+  }
+  scheduleTabSwitchFullRender(normalizedTabId, pending.reason, { previewHit: true });
+  return true;
+}
+
 function tabLabelForRunDir(runDir, fallback = "Run") {
   const label = basename(String(runDir || "").trim());
   return label || String(fallback || "Run");
@@ -29153,6 +29620,7 @@ function captureActiveTabSession(session = null) {
   next.tripletRuleAnnotations =
     state.tripletRuleAnnotations instanceof Map ? state.tripletRuleAnnotations : new Map();
   next.tripletOddOneOutId = state.tripletOddOneOutId ? String(state.tripletOddOneOutId) : null;
+  next.tabPreviewState = normalizeTabPreviewState(state.tabPreviewState);
   next.motherResultDetailsOpenId = state.motherResultDetailsOpenId ? String(state.motherResultDetailsOpenId) : null;
   next.wheelMenu = {
     open: false,
@@ -29254,6 +29722,9 @@ function bindTabSessionToState(session = null) {
   state.tripletRuleAnnotations =
     current.tripletRuleAnnotations instanceof Map ? current.tripletRuleAnnotations : new Map();
   state.tripletOddOneOutId = current.tripletOddOneOutId ? String(current.tripletOddOneOutId) : null;
+  state.tabPreviewState = normalizeTabPreviewState(current.tabPreviewState);
+  state.tabPreviewDirty = !Boolean(state.tabPreviewState.valid);
+  state.pendingTabSwitchPreview = null;
   state.motherResultDetailsOpenId = current.motherResultDetailsOpenId ? String(current.motherResultDetailsOpenId) : null;
   state.wheelMenu =
     current.wheelMenu && typeof current.wheelMenu === "object"
@@ -29433,7 +29904,7 @@ function currentTabHydrationMatches(tabId, hydrationToken) {
   return normalizedTabId === String(state.activeTabId || "").trim() && hydrationToken === tabHydrationToken;
 }
 
-function publishActiveTabVisibleState() {
+function publishActiveTabVisibleState({ allowTabSwitchPreview = false, reason = "visible_state" } = {}) {
   setRunInfo(state.runDir ? `Run: ${state.runDir}` : "No run");
   setTip(state.lastTipText || DEFAULT_TIP);
   setDirectorText(state.lastDirectorText, state.lastDirectorMeta);
@@ -29441,7 +29912,7 @@ function publishActiveTabVisibleState() {
   if (els.timelineOverlay) {
     els.timelineOverlay.classList.toggle("hidden", !state.timelineOpen);
   }
-  requestRender();
+  requestRender({ allowTabSwitchPreview, reason });
 }
 
 function scheduleTabHydration(tabId, reason, { spawnEngine = false } = {}) {
@@ -29603,6 +30074,7 @@ async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate"
   }
   const waitForHydration = Boolean(arguments[1]?.waitForHydration);
   if (normalized === String(state.activeTabId || "").trim()) {
+    syncActiveTabPreviewRuntime();
     publishActiveTabVisibleState();
     const hydration = scheduleTabHydration(normalized, reason, { spawnEngine });
     if (waitForHydration) await hydration;
@@ -29626,8 +30098,9 @@ async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate"
   target.session = target.session || createFreshTabSession({ runDir: target.runDir || null, eventsPath: target.eventsPath || null });
   bindTabSessionToState(target.session);
   tabbedSessions.setActiveTab(normalized);
+  syncActiveTabPreviewRuntime();
   syncActiveTabRecord({ capture: false, publish: true });
-  publishActiveTabVisibleState();
+  publishActiveTabVisibleState({ allowTabSwitchPreview: true, reason });
   const hydration = scheduleTabHydration(normalized, reason, { spawnEngine });
   if (waitForHydration) await hydration;
   return finalize(
@@ -29673,14 +30146,25 @@ async function closeTab(tabId) {
     }
     const closed = tabbedSessions.closeTab(normalized, { activateNeighbor: true });
     if (closed?.nextActiveId) {
-      publishActiveTabVisibleState();
+      syncActiveTabPreviewRuntime();
+      publishActiveTabVisibleState({ allowTabSwitchPreview: true, reason: "close_tab" });
       void scheduleTabHydration(closed.nextActiveId, "close_tab", { spawnEngine: false });
     }
     showToast(`Closed ${tabLabelForRunDir(closed?.closed?.runDir, "tab")}.`, "tip", 1800);
+    const previewEntry = tabPreviewCache.get(normalized) || null;
+    if (previewEntry) {
+      tabPreviewCache.delete(normalized);
+      disposeTabPreviewCacheEntry(previewEntry);
+    }
     return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: getTabsSnapshot().tabs };
   }
   const closed = tabbedSessions.closeTab(normalized, { activateNeighbor: false });
   showToast(`Closed ${tabLabelForRunDir(closed?.closed?.runDir, "tab")}.`, "tip", 1800);
+  const previewEntry = tabPreviewCache.get(normalized) || null;
+  if (previewEntry) {
+    tabPreviewCache.delete(normalized);
+    disposeTabPreviewCacheEntry(previewEntry);
+  }
   return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: getTabsSnapshot().tabs };
 }
 
@@ -34440,6 +34924,9 @@ function render() {
   const work = els.workCanvas;
   const overlay = els.overlayCanvas;
   if (!work || !overlay) return;
+  if (renderPendingTabSwitchPreview()) {
+    return;
+  }
   // Keep CSS-only intent effects (cursor/border) in sync with realtime activity.
   syncIntentRealtimeClass();
   renderJuggernautShellChrome();
@@ -34641,6 +35128,10 @@ function render() {
   renderPromptGeneratePlaceholder(octx, work.width, work.height);
   renderReelTouchIndicator(octx, work.width, work.height);
   renderMotherRolePreview();
+  finishPendingTabSwitchFullRender({
+    stale: String(state.activeTabId || "").trim() !== String(pendingTabSwitchFullRenderSample?.tabId || "").trim(),
+  });
+  scheduleActiveTabPreviewCapture("render_complete");
   if (!effectsRuntime && !document.hidden && shouldAnimateEffectVisuals()) {
     requestRender();
   }
@@ -35731,6 +36222,7 @@ function installCanvasHandlers() {
         }
 
 		    if (moved && (kind === POINTER_KINDS.FREEFORM_MOVE || kind === POINTER_KINDS.FREEFORM_RESIZE) && imageId) {
+          invalidateActiveTabPreview(kind === POINTER_KINDS.FREEFORM_MOVE ? "layout_move" : "layout_resize");
 		      const start = startRectCss && typeof startRectCss === "object" ? startRectCss : null;
 		      const end = state.freeformRects.get(imageId) || null;
 		      if (start && end) {
@@ -35755,6 +36247,7 @@ function installCanvasHandlers() {
           scheduleAlwaysOnVision();
 		    }
         if (moved && (kind === POINTER_KINDS.FREEFORM_ROTATE || kind === POINTER_KINDS.FREEFORM_SKEW) && imageId) {
+          invalidateActiveTabPreview("layout_transform");
           const end = state.freeformRects.get(imageId) || null;
           if (end) {
             recordUserEvent("image_transform", {
@@ -35821,6 +36314,9 @@ function installCanvasHandlers() {
                 });
               }
             }
+          }
+          if (moved && kind === POINTER_KINDS.SINGLE_PAN) {
+            invalidateActiveTabPreview("viewport_pan");
           }
           if (isMotherRolePath(kind)) {
             bumpInteraction({ semantic: false });
@@ -35931,9 +36427,11 @@ function installCanvasHandlers() {
               const list = _getCircles(img.id).slice();
               list.push(entry);
               state.circlesByImageId.set(img.id, list);
+              invalidateActiveTabPreview("selection_overlay_change");
               showMarkPanelForCircle(entry);
               scheduleVisualPromptWrite();
 	            } else {
+	              invalidateActiveTabPreview("selection_overlay_change");
 	              hideMarkPanel();
 	            }
 	            requestRender();
@@ -35946,10 +36444,12 @@ function installCanvasHandlers() {
 	        const h = Math.abs((normalized?.y1 || 0) - (normalized?.y0 || 0));
 	        if (normalized && w >= 8 && h >= 8) {
 		          state.annotateBox = normalized;
+                  invalidateActiveTabPreview("selection_overlay_change");
 		          showAnnotatePanelForBox();
               scheduleVisualPromptWrite();
 		        } else {
 		          state.annotateBox = null;
+                  invalidateActiveTabPreview("selection_overlay_change");
 		          hideAnnotatePanel();
               scheduleVisualPromptWrite();
 		        }
@@ -35962,6 +36462,7 @@ function installCanvasHandlers() {
 	      } else {
 	        state.selection = null;
 	      }
+          invalidateActiveTabPreview("selection_overlay_change");
 	      state.lassoDraft = [];
 	      renderSelectionMeta();
 	      chooseSpawnNodes();
@@ -36026,6 +36527,7 @@ function installCanvasHandlers() {
 	          state.view.offsetX = (Number(state.view?.offsetX) || 0) - panX;
 	          state.view.offsetY = (Number(state.view?.offsetY) || 0) - panY;
 	        }
+          invalidateActiveTabPreview("viewport_pan");
 	        renderHudReadout();
 	        requestRender();
 	        return;
@@ -36042,6 +36544,7 @@ function installCanvasHandlers() {
 	
 	      // Ignore tiny vertical noise during a mostly-horizontal gesture.
 	      if (absDy <= 0.01 || absDx > absDy * 1.1) {
+          if (absDx > 0.01) invalidateActiveTabPreview("viewport_pan");
 	        renderHudReadout();
 	        requestRender();
 	        return;
@@ -36066,6 +36569,7 @@ function installCanvasHandlers() {
 	        state.view.offsetX = p.x - before.x * state.view.scale;
 	        state.view.offsetY = p.y - before.y * state.view.scale;
 	      }
+          invalidateActiveTabPreview("viewport_zoom");
 		      renderHudReadout();
 		      scheduleVisualPromptWrite();
 		      requestRender();
@@ -36125,6 +36629,7 @@ function installCanvasHandlers() {
         state.view.offsetX = p.x - before.x * state.view.scale;
         state.view.offsetY = p.y - before.y * state.view.scale;
       }
+      invalidateActiveTabPreview("viewport_zoom");
       renderHudReadout();
       scheduleVisualPromptWrite();
       requestRender();

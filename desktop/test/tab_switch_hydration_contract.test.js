@@ -44,18 +44,30 @@ test("tab switching keeps the visual swap on the fast path and defers hydration 
   const activateTabSource = extractFunctionSource("activateTab");
   const attachSource = extractFunctionSource("attachActiveTabRuntime");
   const scheduleSource = extractFunctionSource("scheduleTabHydration");
+  const renderSource = extractFunctionSource("render");
+  const previewSource = extractFunctionSource("renderPendingTabSwitchPreview");
+  const descriptorSource = extractFunctionSource("buildTabPreviewDescriptor");
 
   assert.match(scheduleSource, /requestAnimationFrame\(\(\) => \{/);
   assert.match(scheduleSource, /setTimeout\(\(\) => \{/);
   assert.match(scheduleSource, /requestIdleCallback/);
   assert.match(
     activateTabSource,
-    /bindTabSessionToState\(target\.session\);[\s\S]*tabbedSessions\.setActiveTab\(normalized\);[\s\S]*publishActiveTabVisibleState\(\);[\s\S]*const hydration = scheduleTabHydration\(normalized, reason, \{ spawnEngine \}\);/
+    /bindTabSessionToState\(target\.session\);[\s\S]*tabbedSessions\.setActiveTab\(normalized\);[\s\S]*syncActiveTabPreviewRuntime\(\);[\s\S]*publishActiveTabVisibleState\(\{\s*allowTabSwitchPreview:\s*true,\s*reason\s*\}\);[\s\S]*const hydration = scheduleTabHydration\(normalized, reason, \{ spawnEngine \}\);/
   );
   assert.match(
     attachSource,
     /renderFilmstrip\(\);[\s\S]*chooseSpawnNodes\(\);[\s\S]*renderTimeline\(\);[\s\S]*await syncActiveRunPtyBinding\(\{ useCache: true \}\);[\s\S]*startEventsPolling\(\);/
   );
+  assert.match(renderSource, /if \(renderPendingTabSwitchPreview\(\)\) \{\s*return;\s*\}/);
+  assert.match(previewSource, /scheduleTabSwitchFullRender\(normalizedTabId,\s*pending\.reason,\s*\{\s*previewHit:\s*true\s*\}\)/);
+  assert.match(previewSource, /scheduleTabSwitchFullRender\(normalizedTabId,\s*pending\.reason,\s*\{\s*previewHit:\s*false\s*\}\)/);
+  assert.match(descriptorSource, /tabId:\s*normalizedTabId/);
+  assert.match(descriptorSource, /canvasWidth:\s*Math\.max\(0,\s*Number\(work\?\.width\) \|\| 0\)/);
+  assert.match(descriptorSource, /canvasHeight:\s*Math\.max\(0,\s*Number\(work\?\.height\) \|\| 0\)/);
+  assert.match(descriptorSource, /dpr:\s*getDpr\(\)/);
+  assert.match(descriptorSource, /viewportKey:\s*buildTabPreviewViewportKey\(\)/);
+  assert.match(descriptorSource, /visualVersion:\s*Math\.max\(0,\s*Number\(previewState\.version\) \|\| 0\)/);
 });
 
 test("deferred tab hydration uses a token guard so stale async work cannot complete after a newer switch", () => {
@@ -130,6 +142,24 @@ test("tab activation keeps tab metadata off the fast path while explicit switch-
   assert.match(activateSource, /syncActiveTabRecord\(\{ capture: true, publish: true \}\);/);
   assert.match(activateSource, /syncActiveTabRecord\(\{ capture: false, publish: true \}\);/);
   assert.match(closeSource, /syncActiveTabRecord\(\{ capture: true, publish: true \}\);/);
+});
+
+test("preview invalidation clears stale merged snapshots and marks the session preview invalid", () => {
+  const invalidateSource = extractFunctionSource("invalidateActiveTabPreview");
+  const paintSource = extractFunctionSource("paintTabPreviewEntry");
+  const entrySource = extractFunctionSource("canUseTabPreviewEntry");
+
+  assert.match(invalidateSource, /clearScheduledTabPreviewCapture\(\)/);
+  assert.match(invalidateSource, /tabPreviewCache\.delete\(normalizedTabId\)/);
+  assert.match(invalidateSource, /valid:\s*false/);
+  assert.match(invalidateSource, /state\.tabPreviewDirty = true/);
+  assert.match(paintSource, /wctx\.drawImage\(source,\s*0,\s*0,\s*work\.width,\s*work\.height\)/);
+  assert.match(paintSource, /hideImageFxOverlays\(\)/);
+  assert.match(entrySource, /entry\.canvasWidth/);
+  assert.match(entrySource, /entry\.canvasHeight/);
+  assert.match(entrySource, /entry\.dpr/);
+  assert.match(entrySource, /entry\.viewportKey/);
+  assert.match(entrySource, /entry\.visualVersion/);
 });
 
 test("deferred hydration surfaces are individually gated by stable render signatures", () => {
