@@ -2748,7 +2748,7 @@ fn review_build_openai_planner_payload(
             "verbosity": "low",
         },
         "reasoning": {
-            "effort": "xhigh",
+            "effort": "medium",
         },
         "input": [{
             "role": "user",
@@ -2782,7 +2782,7 @@ fn review_build_openai_planner_ws_event(
             "verbosity": "low",
         },
         "reasoning": {
-            "effort": "xhigh",
+            "effort": "medium",
         },
         "input": [{
             "type": "message",
@@ -4472,7 +4472,7 @@ mod tests {
     }
 
     #[test]
-    fn openai_planner_payload_uses_low_text_verbosity_xhigh_reasoning_and_high_detail_images() {
+    fn openai_planner_payload_uses_low_text_verbosity_medium_reasoning_and_high_detail_images() {
         let payload = review_build_openai_planner_payload(
             "Plan the next edit.",
             &[
@@ -4496,7 +4496,7 @@ mod tests {
             payload
                 .pointer("/reasoning/effort")
                 .and_then(|value| value.as_str()),
-            Some("xhigh")
+            Some("medium")
         );
         assert_eq!(
             payload
@@ -4534,6 +4534,12 @@ mod tests {
                 .pointer("/text/verbosity")
                 .and_then(|value| value.as_str()),
             Some("low")
+        );
+        assert_eq!(
+            event
+                .pointer("/reasoning/effort")
+                .and_then(|value| value.as_str()),
+            Some("medium")
         );
         assert_eq!(
             event
