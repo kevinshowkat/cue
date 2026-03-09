@@ -9661,6 +9661,7 @@ function buildJuggernautShellContext() {
     version: JUGGERNAUT_SHELL_BRIDGE_VERSION,
     railContract: JUGGERNAUT_SHELL_RAIL_CONTRACT,
     runDir: state.runDir || null,
+    activeTabId: state.activeTabId || null,
     canvasMode: state.canvasMode,
     imageCount: Array.isArray(state.images) ? state.images.length : 0,
     activeImageId: state.activeId || null,
