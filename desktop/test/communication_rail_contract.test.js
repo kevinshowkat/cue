@@ -33,6 +33,7 @@ test("communication state is tab-local and design review is exposed through the 
   assert.match(app, /selection:\s*null/);
   assert.match(app, /next\.communication =[\s\S]*createFreshCommunicationState\(\);/);
   assert.match(app, /state\.communication =[\s\S]*createFreshCommunicationState\(\);/);
+  assert.match(app, /function buildJuggernautShellContext\(\) \{[\s\S]*activeTabId:\s*state\.activeTabId \|\| null,/);
   assert.match(app, /getCommunicationReviewPayload\(meta = \{\}\)/);
   assert.match(app, /requestDesignReview\(meta = \{\}\)/);
   assert.match(app, /communicationReview:\s*\{[\s\S]*getPayload\(meta = \{\}\)/);
