@@ -6684,6 +6684,226 @@ button.ghost:hover {
     0 12px 18px rgba(0, 0, 0, 0.44);
 }
 
+.communication-rail {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  z-index: 12;
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 22px;
+  border: 1px solid rgba(18, 30, 44, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(240, 244, 250, 0.94)),
+    linear-gradient(135deg, rgba(255, 94, 190, 0.07), rgba(100, 210, 255, 0.08));
+  box-shadow:
+    0 18px 42px rgba(6, 18, 34, 0.18),
+    0 2px 0 rgba(255, 255, 255, 0.72) inset,
+    0 -1px 0 rgba(18, 30, 44, 0.06) inset;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  backdrop-filter: blur(18px);
+}
+
+.communication-tool {
+  position: relative;
+  min-width: 118px;
+  min-height: 72px;
+  padding: 10px 14px 12px;
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  border: 1px solid rgba(18, 30, 44, 0.10);
+  border-radius: 16px;
+  background:
+    radial-gradient(120px 60px at 50% 0%, rgba(255, 255, 255, 0.72), transparent 68%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(233, 239, 247, 0.96));
+  color: rgba(18, 30, 44, 0.84);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.communication-tool svg {
+  width: 24px;
+  height: 24px;
+}
+
+.communication-tool:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 94, 190, 0.24);
+  box-shadow:
+    0 16px 26px rgba(17, 31, 48, 0.12),
+    0 0 0 1px rgba(255, 255, 255, 0.64) inset;
+}
+
+.communication-tool:active {
+  transform: translateY(1px);
+}
+
+.communication-tool.is-active {
+  border-color: rgba(255, 94, 190, 0.32);
+  background:
+    radial-gradient(150px 70px at 50% 0%, rgba(255, 255, 255, 0.72), transparent 64%),
+    linear-gradient(180deg, rgba(255, 239, 248, 0.98), rgba(232, 244, 255, 0.98));
+  color: rgba(168, 36, 109, 0.94);
+  box-shadow:
+    0 18px 32px rgba(17, 31, 48, 0.14),
+    0 0 0 1px rgba(255, 94, 190, 0.14) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.72);
+}
+
+.communication-tool.is-active::after {
+  content: "";
+  position: absolute;
+  inset: auto 16px 8px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 94, 190, 0.96), rgba(100, 210, 255, 0.96));
+}
+
+.communication-tool-label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.communication-proposal-tray {
+  position: absolute;
+  z-index: 13;
+  width: min(360px, calc(100vw - 40px));
+  min-width: 280px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(18, 30, 44, 0.12);
+  background:
+    radial-gradient(220px 110px at 20% 0%, rgba(255, 94, 190, 0.10), transparent 62%),
+    radial-gradient(220px 120px at 100% 12%, rgba(100, 210, 255, 0.10), transparent 64%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(239, 244, 250, 0.96));
+  box-shadow:
+    0 24px 50px rgba(12, 22, 34, 0.18),
+    0 1px 0 rgba(255, 255, 255, 0.84) inset;
+  pointer-events: auto;
+  transform-origin: top left;
+}
+
+.communication-proposal-tray::after {
+  content: "";
+  position: absolute;
+  left: 22px;
+  bottom: -10px;
+  width: 20px;
+  height: 20px;
+  background: inherit;
+  border-right: 1px solid rgba(18, 30, 44, 0.08);
+  border-bottom: 1px solid rgba(18, 30, 44, 0.08);
+  transform: rotate(45deg);
+  border-bottom-right-radius: 4px;
+}
+
+.communication-proposal-tray-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.communication-proposal-tray-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(168, 36, 109, 0.86);
+}
+
+.communication-proposal-tray-close {
+  border: 0;
+  background: transparent;
+  color: rgba(40, 60, 84, 0.68);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.communication-proposal-slot-list {
+  display: grid;
+  gap: 8px;
+}
+
+.communication-proposal-slot {
+  position: relative;
+  overflow: hidden;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(18, 30, 44, 0.10);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(232, 239, 246, 0.92));
+  box-shadow: 0 12px 24px rgba(17, 31, 48, 0.08);
+}
+
+.communication-proposal-slot.is-skeleton::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.56) 45%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: translateX(-120%);
+  animation: communication-slot-shimmer 1.35s linear infinite;
+}
+
+.communication-proposal-slot.is-failed {
+  border-color: rgba(214, 72, 72, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 244, 244, 0.96), rgba(248, 235, 235, 0.96));
+}
+
+.communication-proposal-slot-eyebrow {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(83, 104, 128, 0.74);
+}
+
+.communication-proposal-slot-title {
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(18, 30, 44, 0.92);
+}
+
+.communication-proposal-slot-copy {
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(54, 74, 96, 0.78);
+}
+
+@keyframes communication-slot-shimmer {
+  100% {
+    transform: translateX(120%);
+  }
+}
+
 .spawn-action:disabled {
   opacity: 0.55;
   cursor: not-allowed;
