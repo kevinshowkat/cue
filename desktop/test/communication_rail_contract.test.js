@@ -19,7 +19,7 @@ test("communication rail markup exposes bottom rail tools and proposal tray scaf
   assert.match(html, /id="communication-tool-marker"/);
   assert.match(html, /id="communication-tool-magic-select"/);
   assert.match(html, /id="communication-tool-eraser"/);
-  assert.match(html, /id="communication-tool-marker"[\s\S]*d="M12 2\.7c1\.4 1\.1 2\.7 2\.9 3\.55 5\.25l\.5 1\.4c\.22\.58\.06 1\.24-.4 1\.7l-1\.2 1\.18c-.42\.41-.64\.98-.61 1\.57l\.12 3\.04c\.04\.92-.69 1\.69-1\.61 1\.69h-.7c-.92 0-1\.65-.77-1\.61-1\.69l\.12-3\.04c\.03-.59-.19-1\.16-.61-1\.57l-1\.2-1\.18c-.46-.46-.62-1\.12-.4-1\.7l\.5-1\.4c\.85-2\.35 2\.15-4\.15 3\.55-5\.25z"/);
+  assert.match(html, /id="communication-tool-marker"[\s\S]*d="M12 1\.6c\.42 0 \.8\.22 1\.11\.66l2\.03 2\.87c\.42\.59\.64 1\.28\.64 2v12\.07c0 1\.24-1\.01 2\.25-2\.25 2\.25h-3\.06c-1\.24 0-2\.25-1\.01-2\.25-2\.25V7\.13c0-.72\.22-1\.41\.64-2l2\.03-2\.87c\.31-.44\.69-.66 1\.11-.66z"[\s\S]*fill="rgba\(14, 16, 20, 0\.96\)"/);
 });
 
 test("communication rail css anchors the rail at the bottom and keeps the proposal tray floating", () => {
