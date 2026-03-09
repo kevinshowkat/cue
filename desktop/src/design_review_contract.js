@@ -539,6 +539,7 @@ export function buildDesignReviewApplyPrompt({ request = {}, proposal = {} } = {
   return [
     "Apply this accepted Juggernaut design-review proposal to exactly one editable image.",
     "Edit only targetImage.",
+    "Preserve the targetImage framing and aspect ratio unless the proposal explicitly reframes or outpaints it.",
     "Use referenceImages[] as guidance only and do not modify or return separate outputs for them.",
     "Return exactly one final rendered image for targetImage.",
     "Treat negativeConstraints as hard requirements.",

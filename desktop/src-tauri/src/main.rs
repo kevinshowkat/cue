@@ -3448,6 +3448,75 @@ fn review_normalize_apply_model(raw: &str) -> String {
     without_google.to_string()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ReviewApplyImageConfig {
+    aspect_ratio: &'static str,
+    image_size: &'static str,
+}
+
+const REVIEW_APPLY_SUPPORTED_ASPECT_RATIOS: [(&str, f64); 8] = [
+    ("1:1", 1.0),
+    ("2:3", 2.0 / 3.0),
+    ("3:2", 3.0 / 2.0),
+    ("3:4", 3.0 / 4.0),
+    ("4:3", 4.0 / 3.0),
+    ("9:16", 9.0 / 16.0),
+    ("16:9", 16.0 / 9.0),
+    ("21:9", 21.0 / 9.0),
+];
+
+const REVIEW_APPLY_SUPPORTED_IMAGE_SIZES: [(&str, u32); 3] =
+    [("1K", 1024), ("2K", 2048), ("4K", 4096)];
+
+fn review_read_image_dimensions(path: &str) -> Option<(u32, u32)> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    image::image_dimensions(trimmed).ok()
+}
+
+fn review_choose_apply_aspect_ratio(target_width: u32, target_height: u32) -> &'static str {
+    let width = f64::from(target_width.max(1));
+    let height = f64::from(target_height.max(1));
+    let target_log_aspect = (width / height).ln();
+    let mut best = REVIEW_APPLY_SUPPORTED_ASPECT_RATIOS[0];
+    let mut best_score = f64::INFINITY;
+    for candidate in REVIEW_APPLY_SUPPORTED_ASPECT_RATIOS {
+        let score = (target_log_aspect - candidate.1.ln()).abs();
+        if score + f64::EPSILON < best_score {
+            best = candidate;
+            best_score = score;
+        }
+    }
+    best.0
+}
+
+fn review_choose_apply_image_size(target_width: u32, target_height: u32) -> &'static str {
+    let target_long_side = target_width.max(target_height);
+    let mut best = REVIEW_APPLY_SUPPORTED_IMAGE_SIZES[0];
+    let mut best_diff = u32::MAX;
+    for candidate in REVIEW_APPLY_SUPPORTED_IMAGE_SIZES {
+        let diff = candidate.1.abs_diff(target_long_side);
+        if diff < best_diff || (diff == best_diff && candidate.1 > best.1) {
+            best = candidate;
+            best_diff = diff;
+        }
+    }
+    best.0
+}
+
+fn review_resolve_apply_image_config(target_image_path: &str) -> Option<ReviewApplyImageConfig> {
+    let (target_width, target_height) = review_read_image_dimensions(target_image_path)?;
+    if target_width == 0 || target_height == 0 {
+        return None;
+    }
+    Some(ReviewApplyImageConfig {
+        aspect_ratio: review_choose_apply_aspect_ratio(target_width, target_height),
+        image_size: review_choose_apply_image_size(target_width, target_height),
+    })
+}
+
 fn review_apply_debug_payload(
     provider: &str,
     requested_model: &str,
@@ -3691,6 +3760,7 @@ fn run_design_review_apply_request(
             &output_path,
         ));
     }
+    let target_image_config = review_resolve_apply_image_config(&target_image_path);
 
     if resolved_provider == "google" {
         let api_key = gemini_api_key.as_deref().ok_or_else(|| {
@@ -3723,6 +3793,16 @@ fn run_design_review_apply_request(
         let endpoint_base = review_first_non_empty(vars, &["GEMINI_API_BASE"])
             .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string());
         let endpoint = format!("{endpoint_base}/models/{normalized_model}:generateContent");
+        let image_config = if let Some(config) = target_image_config {
+            serde_json::json!({
+                "imageSize": config.image_size,
+                "aspectRatio": config.aspect_ratio,
+            })
+        } else {
+            serde_json::json!({
+                "imageSize": "2K",
+            })
+        };
         let payload = serde_json::json!({
             "contents": [{
                 "role": "user",
@@ -3731,9 +3811,7 @@ fn run_design_review_apply_request(
             "generationConfig": {
                 "candidateCount": 1,
                 "responseModalities": ["IMAGE"],
-                "imageConfig": {
-                    "imageSize": "2K",
-                },
+                "imageConfig": image_config,
                 "temperature": 0.2,
             }
         });
@@ -3881,6 +3959,10 @@ fn run_design_review_apply_request(
             "referenceImagePaths": reference_image_paths,
             "outputPath": output_path,
             "mimeType": mime_type,
+            "targetOutputConfig": target_image_config.map(|config| serde_json::json!({
+                "imageSize": config.image_size,
+                "aspectRatio": config.aspect_ratio,
+            })),
             "raw": parsed,
         }));
     }
@@ -3922,8 +4004,15 @@ fn run_design_review_apply_request(
         }],
         "modalities": ["text", "image"],
         "stream": false,
-        "image_config": {
-            "image_size": "2K",
+        "image_config": if let Some(config) = target_image_config {
+            serde_json::json!({
+                "image_size": config.image_size,
+                "aspect_ratio": config.aspect_ratio,
+            })
+        } else {
+            serde_json::json!({
+                "image_size": "2K",
+            })
         }
     });
     let endpoint = format!(
@@ -4075,6 +4164,10 @@ fn run_design_review_apply_request(
         "referenceImagePaths": reference_image_paths,
         "outputPath": output_path,
         "mimeType": mime_type,
+        "targetOutputConfig": target_image_config.map(|config| serde_json::json!({
+            "imageSize": config.image_size,
+            "aspectRatio": config.aspect_ratio,
+        })),
         "raw": parsed,
     }))
 }
@@ -5114,7 +5207,8 @@ mod tests {
         encode_flattened_psd_rgba, is_native_engine_placeholder, push_native_path_candidate,
         resolve_existing_env_binary_path, review_build_google_apply_parts,
         review_build_openai_planner_payload,
-        review_normalize_apply_model, run_design_review_apply_request,
+        review_choose_apply_aspect_ratio, review_choose_apply_image_size,
+        review_normalize_apply_model, review_resolve_apply_image_config, run_design_review_apply_request,
         review_build_openai_planner_ws_event, review_format_planner_http_error,
         review_format_planner_http_error_for_transport, review_format_planner_remote_failure,
         review_format_planner_transport_timeout, review_normalize_planner_model,
@@ -5411,6 +5505,33 @@ mod tests {
             review_normalize_apply_model("google/gemini-3.1-flash-image-preview"),
             DESIGN_REVIEW_APPLY_MODEL
         );
+    }
+
+    #[test]
+    fn apply_image_config_prefers_supported_aspect_ratio_and_closest_size_bucket() {
+        assert_eq!(review_choose_apply_aspect_ratio(1600, 900), "16:9");
+        assert_eq!(review_choose_apply_image_size(1600, 900), "2K");
+        assert_eq!(review_choose_apply_aspect_ratio(900, 1600), "9:16");
+        assert_eq!(review_choose_apply_image_size(900, 1600), "2K");
+        assert_eq!(review_choose_apply_aspect_ratio(1080, 1080), "1:1");
+        assert_eq!(review_choose_apply_image_size(1080, 1080), "1K");
+    }
+
+    #[test]
+    fn apply_image_config_reads_target_dimensions_from_disk() {
+        let target_path = temp_file_path("review-apply-target-dimensions.png");
+        let _ = std::fs::remove_file(&target_path);
+        let image = image::RgbaImage::from_pixel(1600, 900, image::Rgba([18, 24, 36, 255]));
+        image
+            .save_with_format(&target_path, image::ImageFormat::Png)
+            .expect("write target png");
+
+        let config = review_resolve_apply_image_config(&target_path.to_string_lossy())
+            .expect("resolve apply config");
+        assert_eq!(config.aspect_ratio, "16:9");
+        assert_eq!(config.image_size, "2K");
+
+        let _ = std::fs::remove_file(target_path);
     }
 
     #[test]

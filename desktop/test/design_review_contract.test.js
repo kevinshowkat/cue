@@ -190,6 +190,7 @@ test("design review apply prompt explicitly constrains edits to targetImage and 
   });
 
   assert.match(prompt, /Edit only targetImage\./);
+  assert.match(prompt, /Preserve the targetImage framing and aspect ratio unless the proposal explicitly reframes or outpaints it\./);
   assert.match(prompt, /Use referenceImages\[\] as guidance only/);
   assert.match(prompt, /Return exactly one final rendered image for targetImage\./);
   assert.match(prompt, /"requestSnapshot"/);
