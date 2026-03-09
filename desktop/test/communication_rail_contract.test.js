@@ -29,7 +29,8 @@ test("communication rail css anchors the rail at the bottom and keeps the propos
 
 test("communication state is tab-local and design review is exposed through the shell bridge", () => {
   assert.match(app, /function createFreshCommunicationState\(\) \{/);
-  assert.match(app, /communication:\s*createFreshCommunicationState\(\),\s*selection:/);
+  assert.match(app, /communication:\s*createFreshCommunicationState\(\)/);
+  assert.match(app, /selection:\s*null/);
   assert.match(app, /next\.communication =[\s\S]*createFreshCommunicationState\(\);/);
   assert.match(app, /state\.communication =[\s\S]*createFreshCommunicationState\(\);/);
   assert.match(app, /getCommunicationReviewPayload\(meta = \{\}\)/);

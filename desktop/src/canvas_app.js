@@ -21980,28 +21980,33 @@ function renderCommunicationProposalTray() {
   const visible = Boolean(tray.visible && anchorCss);
   trayEl.classList.toggle("hidden", !visible);
   if (!visible) return;
-  const fragment = document.createDocumentFragment();
-  for (const slot of tray.slots) {
-    if (slot.status === "hidden") continue;
-    const pending = communicationProposalSlotIsPending(slot.status);
-    const card = document.createElement("div");
-    card.className = `communication-proposal-slot ${pending ? "is-skeleton" : ""} ${slot.status === "failed" ? "is-failed" : ""}`.trim();
-    card.dataset.slotIndex = String(slot.index);
-    card.dataset.slotState = String(slot.status || "skeleton");
-    card.setAttribute("role", "listitem");
-    const eyebrow = document.createElement("div");
-    eyebrow.className = "communication-proposal-slot-eyebrow";
-    eyebrow.textContent = slot.label;
-    const title = document.createElement("div");
-    title.className = "communication-proposal-slot-title";
-    title.textContent = slot.title;
-    const copy = document.createElement("div");
-    copy.className = "communication-proposal-slot-copy";
-    copy.textContent = slot.copy;
-    card.append(eyebrow, title, copy);
-    fragment.append(card);
+  const runtimeOwnsSlotList =
+    trayEl.classList.contains("is-design-review-runtime") &&
+    String(tray.source || "").trim().startsWith("review_runtime");
+  if (!runtimeOwnsSlotList) {
+    const fragment = document.createDocumentFragment();
+    for (const slot of tray.slots) {
+      if (slot.status === "hidden") continue;
+      const pending = communicationProposalSlotIsPending(slot.status);
+      const card = document.createElement("div");
+      card.className = `communication-proposal-slot ${pending ? "is-skeleton" : ""} ${slot.status === "failed" ? "is-failed" : ""}`.trim();
+      card.dataset.slotIndex = String(slot.index);
+      card.dataset.slotState = String(slot.status || "skeleton");
+      card.setAttribute("role", "listitem");
+      const eyebrow = document.createElement("div");
+      eyebrow.className = "communication-proposal-slot-eyebrow";
+      eyebrow.textContent = slot.label;
+      const title = document.createElement("div");
+      title.className = "communication-proposal-slot-title";
+      title.textContent = slot.title;
+      const copy = document.createElement("div");
+      copy.className = "communication-proposal-slot-copy";
+      copy.textContent = slot.copy;
+      card.append(eyebrow, title, copy);
+      fragment.append(card);
+    }
+    listEl.replaceChildren(fragment);
   }
-  listEl.replaceChildren(fragment);
   trayEl.style.left = `${Math.round(Number(anchorCss.x) || 0)}px`;
   trayEl.style.top = `${Math.round(Number(anchorCss.y) || 0)}px`;
   requestAnimationFrame(() => {
