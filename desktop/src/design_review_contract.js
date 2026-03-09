@@ -205,20 +205,17 @@ export function buildDesignReviewRequest({
 
 export function buildDesignReviewPlannerPrompt(request = {}) {
   const normalized = asRecord(request) || {};
-  const reviewEnvelope = {
-    request: normalized,
-    instructions: {
-      objective: "Return 2-3 ranked action-first design review proposals for the visible canvas.",
-      constraints: [
-        "Use the whole visible canvas as context, not just the local mark area.",
-        "Treat marks and the chosen region candidate as focus hints, not crop-only constraints.",
-        "Prefer edits that can plausibly route through the normal execution layer later.",
-        "Return JSON only.",
-      ],
-      response_shape: {
+  const slotCount = clamp(normalized.slotCount, 2, 3);
+  return [
+    "You are Juggernaut's action-first design review planner.",
+    "Read the canvas image and visible marks only.",
+    "Use low verbosity.",
+    `Return ${slotCount} ranked proposals as JSON only.`,
+    JSON.stringify(
+      {
         proposals: [
           {
-            label: "short action-first label",
+            label: "short action label",
             imageId: "target image id",
             targetRegion: {
               markIds: ["optional mark ids"],
@@ -226,19 +223,16 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
               bounds: { x: 0, y: 0, width: 0, height: 0 },
             },
             actionType: "provider-agnostic action intent",
-            why: "single concise rationale",
-            previewBrief: "brief for low-res preview renderer",
-            applyBrief: "brief for the normal execution layer if accepted",
-            negativeConstraints: ["hard constraints to preserve"],
+            why: "short rationale",
+            previewBrief: "short preview instruction",
+            applyBrief: "short apply instruction",
+            negativeConstraints: ["short hard constraint"],
           },
         ],
       },
-    },
-  };
-  return [
-    "You are Juggernaut's action-first design review planner.",
-    "Read the visual context and return only JSON.",
-    JSON.stringify(reviewEnvelope, null, 2),
+      null,
+      2
+    ),
   ].join("\n\n");
 }
 

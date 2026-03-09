@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildDesignReviewRequest,
+  buildDesignReviewPlannerPrompt,
   createDesignReviewSkeletonSlots,
   parseDesignReviewPlannerResponse,
 } from "../src/design_review_contract.js";
@@ -95,4 +96,19 @@ test("design review skeleton slots reserve 2-3 preview slots immediately", () =>
   assert.equal(slots.length, 3);
   assert.equal(slots.every((slot) => slot.status === "skeleton"), true);
   assert.equal(slots.every((slot) => slot.previewJob.status === "queued"), true);
+});
+
+test("design review planner prompt stays compact and low-verbosity", () => {
+  const prompt = buildDesignReviewPlannerPrompt({
+    requestId: "review-compact",
+    visibleCanvasRef: "/tmp/review-visible.png",
+    markIds: ["mark-1"],
+    slotCount: 3,
+  });
+
+  assert.match(prompt, /Read the canvas image and visible marks only\./);
+  assert.match(prompt, /Use low verbosity\./);
+  assert.match(prompt, /Return 3 ranked proposals as JSON only\./);
+  assert.doesNotMatch(prompt, /"requestId": "review-compact"/);
+  assert.doesNotMatch(prompt, /"visibleCanvasRef": "\/tmp\/review-visible\.png"/);
 });
