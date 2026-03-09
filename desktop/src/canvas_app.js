@@ -559,6 +559,11 @@ const els = {
   topMetricRender: document.getElementById("top-metric-render"),
   topMetricRenderValue: document.getElementById("top-metric-render-value"),
   brandStrip: document.querySelector(".brand-strip"),
+  sessionTabStrip: document.getElementById("session-tab-strip"),
+  sessionTabList: document.getElementById("session-tab-list"),
+  sessionTabOpen: document.getElementById("session-tab-open"),
+  sessionTabNew: document.getElementById("session-tab-new"),
+  sessionTabDesignReview: document.getElementById("session-tab-design-review"),
   appMenuToggle: document.getElementById("app-menu-toggle"),
   appMenu: document.getElementById("app-menu"),
   runtimePinAssistantToggle: null,
@@ -2403,6 +2408,7 @@ promptBenchmarkHydrateState();
 
 let flushDeferredEnginePtyExit = async () => {};
 let activeEventsPollToken = 0;
+let releaseSessionTabStripSubscription = null;
 
 const DEFAULT_TIP = "Click Studio White to replace the background. Use 4 (Lasso) if you want a manual mask.";
 const VISUAL_PROMPT_FILENAME = "visual_prompt.json";
@@ -28987,7 +28993,7 @@ function suspendActiveTabRuntimeForSwitch() {
   }
 }
 
-async function attachActiveTabRuntime({ spawnEngine = true, reason = "tab_activate" } = {}) {
+async function attachActiveTabRuntime({ spawnEngine: shouldSpawnEngine = true, reason = "tab_activate" } = {}) {
   setRunInfo(state.runDir ? `Run: ${state.runDir}` : "No run");
   setTip(state.lastTipText || DEFAULT_TIP);
   setDirectorText(state.lastDirectorText, state.lastDirectorMeta);
@@ -29012,7 +29018,7 @@ async function attachActiveTabRuntime({ spawnEngine = true, reason = "tab_activa
   }
   requestRender();
   scheduleVisualPromptWrite({ immediate: true });
-  if (spawnEngine && state.runDir) {
+  if (shouldSpawnEngine && state.runDir) {
     await spawnEngine();
     startEventsPolling();
     if (state.ptySpawned) setStatus("Engine: ready");
@@ -35707,6 +35713,181 @@ function installJuggernautShellUi() {
   renderJuggernautShellChrome();
 }
 
+function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
+  const tabId = String(tab?.tabId || "").trim();
+  const record = tabId ? tabbedSessions.getTab(tabId) : null;
+  const session = record?.session && typeof record.session === "object" ? record.session : null;
+  const title = String(tab?.label || record?.label || tabLabelForRunDir(tab?.runDir, "Run"));
+  const runDir = record?.runDir ? String(record.runDir) : tab?.runDir ? String(tab.runDir) : "";
+  const imageCount = Array.isArray(session?.images) ? session.images.length : 0;
+  const toolCount = Array.isArray(session?.sessionTools) ? session.sessionTools.length : 0;
+  const timelineCount = Array.isArray(session?.timelineNodes) ? session.timelineNodes.length : 0;
+  const isDirty = imageCount > 0 || toolCount > 0 || timelineCount > 0;
+  return {
+    tabId,
+    title,
+    runDir,
+    isActive: Boolean(tab?.active),
+    isBusy: Boolean(tab?.busy),
+    isDirty,
+    canClose: totalTabs > 1,
+  };
+}
+
+function createSessionTabStripItem(tab = null, totalTabs = 0) {
+  const summary = buildSessionTabUiSummary(tab, totalTabs);
+  const item = document.createElement("div");
+  item.className = "session-tab-item";
+  if (summary.isActive) item.classList.add("is-active");
+  if (summary.isBusy) item.classList.add("is-busy");
+  if (summary.isDirty) item.classList.add("is-dirty");
+  item.dataset.tabId = summary.tabId;
+  item.dataset.title = summary.title;
+  item.dataset.runDir = summary.runDir;
+  item.dataset.active = summary.isActive ? "true" : "false";
+  item.dataset.busy = summary.isBusy ? "true" : "false";
+  item.dataset.dirty = summary.isDirty ? "true" : "false";
+  item.dataset.canClose = summary.canClose ? "true" : "false";
+
+  const hit = document.createElement("button");
+  hit.className = "session-tab-hit";
+  hit.type = "button";
+  hit.setAttribute("role", "tab");
+  hit.setAttribute("aria-selected", summary.isActive ? "true" : "false");
+  hit.tabIndex = summary.isActive ? 0 : -1;
+  hit.title = summary.runDir ? `${summary.title}\n${summary.runDir}` : summary.title;
+
+  const labels = document.createElement("span");
+  labels.className = "session-tab-labels";
+
+  const title = document.createElement("span");
+  title.className = "session-tab-title";
+  title.textContent = summary.title;
+  labels.append(title);
+
+  const runDir = document.createElement("span");
+  runDir.className = "session-tab-run-dir";
+  runDir.textContent = summary.runDir;
+  labels.append(runDir);
+
+  const flags = document.createElement("span");
+  flags.className = "session-tab-flags";
+  flags.setAttribute("aria-hidden", "true");
+
+  const busyIndicator = document.createElement("span");
+  busyIndicator.className = "session-tab-busy-indicator";
+  flags.append(busyIndicator);
+
+  const dirtyDot = document.createElement("span");
+  dirtyDot.className = "session-tab-dirty-dot";
+  flags.append(dirtyDot);
+
+  hit.append(labels, flags);
+  item.append(hit);
+
+  const close = document.createElement("button");
+  close.className = "session-tab-close";
+  close.type = "button";
+  close.setAttribute("aria-label", `Close ${summary.title}`);
+  close.title = `Close ${summary.title}`;
+  close.hidden = !summary.canClose;
+  close.disabled = !summary.canClose;
+  close.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M7 7l10 10M17 7 7 17"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+      />
+    </svg>
+  `;
+  item.append(close);
+  return item;
+}
+
+function renderSessionTabStrip(snapshot = null) {
+  if (!els.sessionTabList) return;
+  const tabs = Array.isArray(snapshot?.tabs) ? snapshot.tabs : listTabs();
+  const fragment = document.createDocumentFragment();
+  for (const tab of tabs) {
+    fragment.append(createSessionTabStripItem(tab, tabs.length));
+  }
+  els.sessionTabList.replaceChildren(fragment);
+}
+
+function installSessionTabStripUi() {
+  if (!els.sessionTabStrip || !els.sessionTabList) return;
+  renderSessionTabStrip();
+  if (!releaseSessionTabStripSubscription) {
+    releaseSessionTabStripSubscription = subscribeTabs((snapshot) => {
+      renderSessionTabStrip(snapshot);
+    });
+  }
+
+  if (els.sessionTabList.dataset.bound !== "1") {
+    els.sessionTabList.dataset.bound = "1";
+    els.sessionTabList.addEventListener("click", (event) => {
+      const target = event?.target;
+      const closeButton = target?.closest ? target.closest(".session-tab-close") : null;
+      if (closeButton && els.sessionTabList.contains(closeButton)) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (closeButton.disabled) return;
+        const item = closeButton.closest(".session-tab-item");
+        const tabId = String(item?.dataset?.tabId || "").trim();
+        if (!tabId) return;
+        bumpInteraction();
+        void closeTab(tabId).catch((err) => {
+          console.error(err);
+          showToast(err?.message || "Could not close tab.", "error", 2600);
+        });
+        return;
+      }
+      const hit = target?.closest ? target.closest(".session-tab-hit") : null;
+      if (!hit || !els.sessionTabList.contains(hit)) return;
+      event.preventDefault();
+      const item = hit.closest(".session-tab-item");
+      const tabId = String(item?.dataset?.tabId || "").trim();
+      if (!tabId) return;
+      bumpInteraction();
+      void activateTab(tabId, { spawnEngine: true, reason: "titlebar_tab_click" }).catch((err) => {
+        console.error(err);
+        showToast(err?.message || "Could not switch tabs.", "error", 2600);
+      });
+    });
+  }
+
+  if (els.sessionTabOpen && els.sessionTabOpen.dataset.bound !== "1") {
+    els.sessionTabOpen.dataset.bound = "1";
+    els.sessionTabOpen.addEventListener("click", () => {
+      bumpInteraction();
+      void runWithUserError("Open session", () => openExistingRun(), {
+        retryHint: "Choose a valid run folder and retry.",
+      });
+    });
+  }
+
+  if (els.sessionTabNew && els.sessionTabNew.dataset.bound !== "1") {
+    els.sessionTabNew.dataset.bound = "1";
+    els.sessionTabNew.addEventListener("click", () => {
+      bumpInteraction();
+      void runWithUserError("New session", () => createRun(), {
+        retryHint: "Check permissions and try again.",
+      });
+    });
+  }
+
+  if (els.sessionTabDesignReview && els.sessionTabDesignReview.dataset.bound !== "1") {
+    els.sessionTabDesignReview.dataset.bound = "1";
+    els.sessionTabDesignReview.addEventListener("click", () => {
+      bumpInteraction();
+      showToast("Design review coming soon.", "tip", 1800);
+    });
+  }
+}
+
 function buildRuntimeChromeMenuToggle({ id, menuKey, label, ariaLabel, title }) {
   const row = document.createElement("label");
   row.className = "app-menu-toggle-row";
@@ -35762,6 +35943,7 @@ function ensureRuntimeChromeMenu() {
 
 function installUi() {
   ensureRuntimeChromeMenu();
+  installSessionTabStripUi();
   if (els.appMenuToggle && els.appMenu) {
     const toggle = els.appMenuToggle;
     const menu = els.appMenu;
