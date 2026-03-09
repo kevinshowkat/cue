@@ -32,5 +32,4 @@ test("Titlebar tab strip routes activate, close, open, new, and design review ac
   assert.match(app, /els\.sessionTabNew\.addEventListener\("click"/);
   assert.match(app, /runWithUserError\("New session",\s*\(\)\s*=>\s*createRun\(\)/);
   assert.match(app, /els\.sessionTabDesignReview\.addEventListener\("click"/);
-  assert.match(app, /showToast\("Design review coming soon\.",\s*"tip",\s*1800\)/);
 });

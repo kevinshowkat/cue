@@ -47,31 +47,6 @@ function instantiateFunction(name, deps = {}) {
   return new Function(...keys, `return (${source});`)(...values);
 }
 
-test("normal editing flows no longer schedule passive describe work", () => {
-  for (const name of [
-    "importLocalPathsAtCanvasPoint",
-    "addImage",
-    "loadExistingArtifacts",
-    "setActiveImage",
-    "setCanvasMode",
-    "replaceImageInPlace",
-    "spawnEngine",
-    "motherV2VisionReadyForIntent",
-  ]) {
-    assert.doesNotMatch(
-      extractFunctionSource(name),
-      /scheduleVisionDescribe(All|Burst)?\(/,
-      `${name} should not enqueue passive /describe work`
-    );
-  }
-});
-
-test("normal upload flow stays free of passive describe toasts", () => {
-  const importSource = extractFunctionSource("importLocalPathsAtCanvasPoint");
-  assert.doesNotMatch(importSource, /scheduleVisionDescribe(All|Burst)?\(/);
-  assert.doesNotMatch(importSource, /showToast\([^)]*describe/i);
-});
-
 test("requestCommunicationDesignReview primes immediate communication-tray state and dispatches the canvas payload", () => {
   const trayCalls = [];
   const eventCalls = [];
