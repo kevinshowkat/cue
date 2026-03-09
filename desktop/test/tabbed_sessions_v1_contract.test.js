@@ -66,7 +66,7 @@ test("canvas app routes New Run and Open Run into fresh tabs instead of wiping t
   );
   assert.match(
     app,
-    /if \(state\.activeTabId\) \{[\s\S]*suspendActiveTabRuntimeForSwitch\(\);[\s\S]*syncActiveTabRecord\(\{ capture: true \}\);[\s\S]*\}/
+    /if \(state\.activeTabId\) \{[\s\S]*suspendActiveTabRuntimeForSwitch\(\);[\s\S]*syncActiveTabRecord\(\{ capture: true, publish: true \}\);[\s\S]*\}/
   );
 });
 
@@ -92,11 +92,11 @@ test("busy active tabs block tab switching with the implemented v1 reasons", () 
   );
   assert.match(
     app,
-    /async function activateTab\(tabId, \{ spawnEngine = false, reason = "tab_activate" \} = \{\}\) \{[\s\S]*const blockReason = currentTabSwitchBlockReason\(\);[\s\S]*showToast\(currentTabSwitchBlockMessage\(blockReason\), "tip", 2200\);[\s\S]*return \{ ok: false, reason: blockReason, activeTabId: state\.activeTabId \|\| null, tabs: listTabs\(\) \};/
+    /async function activateTab\(tabId, \{ spawnEngine = false, reason = "tab_activate" \} = \{\}\) \{[\s\S]*const blockReason = currentTabSwitchBlockReason\(\);[\s\S]*showToast\(currentTabSwitchBlockMessage\(blockReason\), "tip", 2200\);[\s\S]*return finalize\(\s*\{ ok: false, reason: blockReason, activeTabId: state\.activeTabId \|\| null \},\s*\{ ok: false, reason: blockReason \}\s*\);/
   );
   assert.match(
     app,
-    /async function closeTab\(tabId\) \{[\s\S]*if \(normalized === String\(state\.activeTabId \|\| ""\)\.trim\(\)\) \{[\s\S]*const blockReason = currentTabSwitchBlockReason\(\);[\s\S]*showToast\(currentTabSwitchBlockMessage\(blockReason\), "tip", 2200\);[\s\S]*return \{ ok: false, reason: blockReason, tabs: listTabs\(\) \};/
+    /async function closeTab\(tabId\) \{[\s\S]*if \(normalized === String\(state\.activeTabId \|\| ""\)\.trim\(\)\) \{[\s\S]*const blockReason = currentTabSwitchBlockReason\(\);[\s\S]*showToast\(currentTabSwitchBlockMessage\(blockReason\), "tip", 2200\);[\s\S]*return \{ ok: false, reason: blockReason, tabs: snapshot\.tabs \};/
   );
 });
 
