@@ -4,6 +4,11 @@ import {
   buildDesignReviewPreviewPrompt,
 } from "./design_review_contract.js";
 
+const VALID_PLANNER_PROVIDERS = new Set(["openai", "openrouter"]);
+const VALID_PREVIEW_PROVIDERS = new Set(["google", "openrouter"]);
+const DESIGN_REVIEW_PLANNER_PROVIDER_ERROR =
+  "Design review planner requires OPENAI_API_KEY or OPENROUTER_API_KEY.";
+
 function readFirstString(...values) {
   for (const value of values) {
     const text = String(value ?? "").trim();
@@ -17,18 +22,39 @@ function asRecord(value) {
   return value;
 }
 
+function normalizeProviderPreference(value, validProviders) {
+  const provider = readFirstString(value).toLowerCase();
+  return validProviders.has(provider) ? provider : "";
+}
+
 export function resolveDesignReviewProviderSelection({
   keyStatus = {},
   preferredPlannerProvider = "",
   preferredPreviewProvider = "",
 } = {}) {
   const status = asRecord(keyStatus) || {};
-  const plannerProvider =
-    readFirstString(preferredPlannerProvider) ||
-    (status.openai ? "openai" : status.openrouter ? "openrouter" : status.gemini ? "google" : "auto");
+  const preferredPlanner = normalizeProviderPreference(preferredPlannerProvider, VALID_PLANNER_PROVIDERS);
+  const preferredPreview = normalizeProviderPreference(preferredPreviewProvider, VALID_PREVIEW_PROVIDERS);
+
+  let plannerProvider = "missing";
+  if (preferredPlanner === "openai" && status.openai) {
+    plannerProvider = "openai";
+  } else if (preferredPlanner === "openrouter" && status.openrouter) {
+    plannerProvider = "openrouter";
+  } else if (status.openai) {
+    plannerProvider = "openai";
+  } else if (status.openrouter) {
+    plannerProvider = "openrouter";
+  }
+
   const previewProvider =
-    readFirstString(preferredPreviewProvider) ||
-    (status.gemini ? "google" : status.openrouter ? "openrouter" : "auto");
+    (preferredPreview === "google" && status.gemini) || (preferredPreview === "openrouter" && status.openrouter)
+      ? preferredPreview
+      : status.gemini
+        ? "google"
+        : status.openrouter
+          ? "openrouter"
+          : "auto";
   return {
     plannerProvider,
     previewProvider,
@@ -54,9 +80,16 @@ export function createDesignReviewProviderRouter({
     return requestProvider(request);
   }
 
+  function assertPlannerProviderAvailable() {
+    if (!VALID_PLANNER_PROVIDERS.has(providerSelection.plannerProvider)) {
+      throw new Error(DESIGN_REVIEW_PLANNER_PROVIDER_ERROR);
+    }
+  }
+
   return {
     providerSelection,
     async runPlanner({ request = {}, prompt = "", images = [] } = {}) {
+      assertPlannerProviderAvailable();
       return runProviderRequest({
         kind: "planner",
         provider: providerSelection.plannerProvider,
@@ -67,6 +100,7 @@ export function createDesignReviewProviderRouter({
       });
     },
     async runUploadAnalysis({ image = {}, prompt = "" } = {}) {
+      assertPlannerProviderAvailable();
       return runProviderRequest({
         kind: "upload_analysis",
         provider: providerSelection.plannerProvider,

@@ -5,7 +5,7 @@ export const DESIGN_REVIEW_PROPOSAL_SCHEMA = "design-review-proposal-v1";
 export const DESIGN_REVIEW_PREVIEW_JOB_SCHEMA = "proposal-preview-job-v1";
 export const DESIGN_REVIEW_ACCOUNT_MEMORY_SCHEMA = "design-review-account-memory-v1";
 export const DESIGN_REVIEW_UPLOAD_ANALYSIS_SCHEMA = "design-review-upload-analysis-v1";
-export const DESIGN_REVIEW_PLANNER_MODEL = "gpt-5.4-vision";
+export const DESIGN_REVIEW_PLANNER_MODEL = "gpt-5.4";
 export const DESIGN_REVIEW_PREVIEW_MODEL = "gemini-3.1-flash-image-preview";
 export const DESIGN_REVIEW_TRIGGER = "design_review_button";
 
