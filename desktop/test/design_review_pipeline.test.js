@@ -315,6 +315,67 @@ test("design review pipeline applies an accepted proposal and emits structured a
   assert.ok(String(applyEvents[1].outputPath || "").includes("review-apply"));
 });
 
+test("design review pipeline resolves apply target from visible image context when proposal and request omit primary image", async () => {
+  const applyCalls = [];
+  const pipeline = createDesignReviewPipeline({
+    providerRouter: {
+      async runPlanner() {
+        return {
+          text: JSON.stringify({
+            proposals: [
+              {
+                label: "Cool scene tint",
+                actionType: "recolor_global",
+                why: "Use the visible image as the apply target.",
+                previewBrief: "Preview a cooler blue palette.",
+                applyBrief: "Apply a subtle cooler tint.",
+              },
+            ],
+          }),
+        };
+      },
+      async runPreview({ proposal, outputPath }) {
+        return {
+          outputPath: outputPath || `/tmp/${proposal.proposalId}.png`,
+        };
+      },
+    },
+    runApply: async (payload) => {
+      applyCalls.push(payload);
+      return {
+        outputPath: payload.outputPath || "/tmp/review-apply-output.png",
+      };
+    },
+  });
+
+  const review = await pipeline.startReview({
+    request: {
+      requestId: "review-apply-target-fallback",
+      primaryImageId: null,
+      visibleCanvasRef: "/tmp/review-visible.png",
+      imageIdsInView: ["img-sq"],
+      selectedImageIds: [],
+      visibleCanvasContext: {
+        runDir: "/tmp/review-run",
+        activeImageId: "img-sq",
+        images: [
+          {
+            id: "img-sq",
+            path: "/tmp/squidward.png",
+          },
+        ],
+      },
+    },
+  });
+
+  const applyResult = await pipeline.applyProposal(review.proposals[0].proposalId);
+
+  assert.equal(applyResult.ok, true);
+  assert.equal(applyCalls.length, 1);
+  assert.equal(applyCalls[0].targetImageId, "img-sq");
+  assert.equal(applyCalls[0].targetImage?.path, "/tmp/squidward.png");
+});
+
 test("design review pipeline blocks duplicate applies while one proposal is already running", async () => {
   let resolveApply;
   const applyPromise = new Promise((resolve) => {

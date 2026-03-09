@@ -141,7 +141,28 @@ function findImageRecordById(request = {}, imageId = "") {
 }
 
 function resolveProposalTargetImageId(request = {}, proposal = {}) {
-  return readFirstString(proposal?.imageId, request?.primaryImageId) || null;
+  const visibleCanvasContext = asRecord(request?.visibleCanvasContext) || {};
+  const imageCatalog = imageCatalogFromRequest(request);
+  const firstVisibleImageId =
+    imageCatalog
+      .map((image) => readFirstString(image?.id, image?.imageId, image?.image_id))
+      .find(Boolean) || null;
+  return (
+    readFirstString(
+      proposal?.imageId,
+      proposal?.image_id,
+      proposal?.targetImageId,
+      proposal?.target_image_id,
+      proposal?.targetRegion?.imageId,
+      proposal?.targetRegion?.image_id,
+      request?.primaryImageId,
+      visibleCanvasContext?.activeImageId,
+      visibleCanvasContext?.canvas?.active_image_id,
+      request?.selectedImageIds?.[0],
+      request?.imageIdsInView?.[0],
+      firstVisibleImageId
+    ) || null
+  );
 }
 
 function resolveProposalReferenceImageIds(request = {}, proposal = {}, targetImageId = null) {
