@@ -50,7 +50,9 @@ function loadAttachActiveTabRuntimeHarness({ runDir = "/runs/tab-a", ptySpawned 
     "const renderMotherMoodStatus = record('renderMotherMoodStatus');",
     "const requestRender = record('requestRender');",
     "const scheduleVisualPromptWrite = record('scheduleVisualPromptWrite');",
-    "async function spawnEngine() { calls.push({ name: 'spawnEngine', args: [] }); }",
+    "async function spawnEngine() { calls.push({ name: 'spawnEngine', args: [] }); state.ptySpawned = true; }",
+    "async function ensureEngineSpawned(options = {}) { calls.push({ name: 'ensureEngineSpawned', args: [options] }); await spawnEngine(); return true; }",
+    "async function syncActiveRunPtyBinding() { calls.push({ name: 'syncActiveRunPtyBinding', args: [] }); return Boolean(state.ptySpawned); }",
     "function startEventsPolling() { calls.push({ name: 'startEventsPolling', args: [] }); }",
     "const setStatus = record('setStatus');",
     attachSource,
@@ -69,14 +71,19 @@ test("attachActiveTabRuntime keeps the public spawnEngine option while calling t
   await harness.run({ spawnEngine: true, reason: "new_run_tab" });
 
   assert.equal(
+    harness.calls.filter((entry) => entry.name === "ensureEngineSpawned").length,
+    1,
+    "expected the runtime attach path to call ensureEngineSpawned() once"
+  );
+  assert.equal(
     harness.calls.filter((entry) => entry.name === "spawnEngine").length,
     1,
-    "expected the real spawnEngine() helper to run once"
+    "expected the real spawnEngine() helper to still run once under ensureEngineSpawned()"
   );
   assert.equal(
     harness.calls.filter((entry) => entry.name === "startEventsPolling").length,
-    1,
-    "expected event polling to start after spawning"
+    0,
+    "expected attachActiveTabRuntime to leave polling orchestration to ensureEngineSpawned() on spawn"
   );
   assert.deepEqual(
     harness.calls.find((entry) => entry.name === "applyRuntimeChromeVisibility")?.args[0],
@@ -87,13 +94,23 @@ test("attachActiveTabRuntime keeps the public spawnEngine option while calling t
   await skipHarness.run({ spawnEngine: false, reason: "open_run_tab" });
 
   assert.equal(
+    skipHarness.calls.filter((entry) => entry.name === "ensureEngineSpawned").length,
+    0,
+    "expected ensureEngineSpawned() to stay skipped when callers pass false"
+  );
+  assert.equal(
     skipHarness.calls.filter((entry) => entry.name === "spawnEngine").length,
     0,
     "expected spawnEngine() to stay skipped when callers pass false"
   );
   assert.equal(
+    skipHarness.calls.filter((entry) => entry.name === "syncActiveRunPtyBinding").length,
+    1,
+    "expected attachActiveTabRuntime to validate the current PTY binding when spawn is skipped"
+  );
+  assert.equal(
     skipHarness.calls.filter((entry) => entry.name === "startEventsPolling").length,
-    0,
-    "expected polling not to start when engine spawn is skipped"
+    1,
+    "expected polling to resume for the active tab even when engine spawn is skipped"
   );
 });
