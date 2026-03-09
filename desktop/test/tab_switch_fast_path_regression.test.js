@@ -18,7 +18,7 @@ const importLocalPathsChunk = app.slice(
 function extractFunctionSource(pattern, label) {
   const match = app.match(pattern);
   assert.ok(match, `${label} function not found`);
-  return match[0].replace(/\n\nasync function\s+[\s\S]*$/, "").trim();
+  return match[0].replace(/\n\n(?:async\s+)?function\s+[\s\S]*$/, "").trim();
 }
 
 function createDeferred() {
@@ -103,12 +103,17 @@ function loadActivateTabHarness({ attachGate = null } = {}) {
     "  state.eventsPath = session?.eventsPath || null;",
     "  state.images = Array.isArray(session?.images) ? session.images.slice() : [];",
     "}",
-    "function publishActiveTabVisibleState() {",
+    "function syncActiveTabPreviewRuntime() {",
+    "  calls.push({ name: 'syncActiveTabPreviewRuntime', activeTabId: state.activeTabId });",
+    "  return { version: 0, valid: false };",
+    "}",
+    "function publishActiveTabVisibleState(options = {}) {",
     "  calls.push({",
     "    name: 'publishActiveTabVisibleState',",
     "    activeTabId: state.activeTabId,",
     "    runDir: state.runDir,",
     "    imageIds: (state.images || []).map((image) => image.id),",
+    "    options: { ...options },",
     "  });",
     "}",
     "function currentTabHydrationMatches(tabId, hydrationToken) {",
@@ -160,6 +165,82 @@ function loadActivateTabHarness({ attachGate = null } = {}) {
   return new Function("createTabbedSessionsStore", "attachGate", harnessSource)(createTabbedSessionsStore, attachGate);
 }
 
+function loadRenderPendingTabSwitchPreviewHarness({ previewEntry = null, paintSucceeds = true } = {}) {
+  const previewSource = extractFunctionSource(
+    /function renderPendingTabSwitchPreview\([\s\S]*?\n\}\n\nfunction tabLabelForRunDir/,
+    "renderPendingTabSwitchPreview"
+  );
+  const harnessSource = [
+    "const calls = [];",
+    "const state = { pendingTabSwitchPreview: { tabId: 'tab-b', reason: 'titlebar_tab_click' } };",
+    "function startPerfSample(label, detail = null) {",
+    "  calls.push({ name: 'startPerfSample', label, detail });",
+    "  return { label, detail, startedAt: 0, id: `${label}:test` };",
+    "}",
+    "function finishPerfSample(sample, metricKey = null, detail = null) {",
+    "  calls.push({ name: 'finishPerfSample', sample, metricKey, detail });",
+    "  return 0;",
+    "}",
+    "function getUsableTabPreviewEntry() {",
+    "  calls.push({ name: 'getUsableTabPreviewEntry' });",
+    "  return previewEntry;",
+    "}",
+    "function paintTabPreviewEntry(entry) {",
+    "  calls.push({ name: 'paintTabPreviewEntry', entry });",
+    "  return Boolean(paintSucceeds && entry);",
+    "}",
+    "function scheduleTabSwitchFullRender(tabId, reason, options = {}) {",
+    "  calls.push({ name: 'scheduleTabSwitchFullRender', tabId, reason, options: { ...options } });",
+    "}",
+    previewSource,
+    "return { calls, state, renderPendingTabSwitchPreview };",
+  ].join("\n");
+  return new Function("previewEntry", "paintSucceeds", harnessSource)(previewEntry, paintSucceeds);
+}
+
+function loadInvalidateActiveTabPreviewHarness({ version = 2, dirty = false } = {}) {
+  const invalidateSource = extractFunctionSource(
+    /function invalidateActiveTabPreview\([\s\S]*?\n\}\n\nfunction createTabPreviewCaptureSurface/,
+    "invalidateActiveTabPreview"
+  );
+  const harnessSource = [
+    "let cleared = false;",
+    "const disposed = [];",
+    "const state = {",
+    "  activeTabId: 'tab-b',",
+    `  tabPreviewState: { version: ${version}, valid: true },`,
+    `  tabPreviewDirty: ${dirty ? "true" : "false"},`,
+    "};",
+    "const session = { tabPreviewState: null };",
+    "const tabPreviewCache = new Map([['tab-b', { id: 'preview-entry' }]]);",
+    "function clearScheduledTabPreviewCapture() {",
+    "  cleared = true;",
+    "}",
+    "function normalizeTabPreviewState(value = null) {",
+    "  const current = value && typeof value === 'object' ? value : {};",
+    "  return { version: Math.max(0, Number(current.version) || 0), valid: Boolean(current.valid) };",
+    "}",
+    "function writeTabPreviewStateForTab(_tabId, preview = null) {",
+    "  const next = normalizeTabPreviewState(preview);",
+    "  state.tabPreviewState = next;",
+    "  state.tabPreviewDirty = !next.valid;",
+    "  session.tabPreviewState = { ...next };",
+    "  return next;",
+    "}",
+    "const tabbedSessions = {",
+    "  getTab(tabId) {",
+    "    return String(tabId || '') === 'tab-b' ? { session } : null;",
+    "  },",
+    "};",
+    "function disposeTabPreviewCacheEntry(entry) {",
+    "  disposed.push(entry);",
+    "}",
+    invalidateSource,
+    "return { state, session, tabPreviewCache, disposed, wasCleared: () => cleared, invalidateActiveTabPreview };",
+  ].join("\n");
+  return new Function(harnessSource)();
+}
+
 test("blank-tab imports provision the active tab instead of opening a separate run tab", () => {
   assert.match(importLocalPathsChunk, /await ensureRun\(\);[\s\S]*const inputsDir = `\$\{state\.runDir\}\/inputs`;/);
   assert.equal(ensureRunChunk.includes("const activeTabId = String(state.activeTabId || \"\").trim();"), true);
@@ -200,12 +281,20 @@ test("activateTab swaps the visible tab state before engine attach resolves", as
   const visibleStateIndex = harness.calls.findIndex(
     (entry) => entry.name === "publishActiveTabVisibleState" && entry.runDir === "/runs/b"
   );
+  const previewIndex = harness.calls.findIndex((entry) => entry.name === "syncActiveTabPreviewRuntime");
   const attachIndex = harness.calls.findIndex((entry) => entry.name === "attachActiveTabRuntime:start");
   assert.ok(bindIndex >= 0, "expected the tab switch to bind tab-b state");
   assert.ok(visibleStateIndex >= 0, "expected the tab switch to publish visible tab state immediately");
+  assert.ok(previewIndex >= 0, "expected the tab switch to refresh preview cache state before publishing visibility");
   assert.ok(attachIndex >= 0, "expected the tab switch to start runtime attach");
   assert.ok(bindIndex < visibleStateIndex, "expected session binding before visible-state publication");
   assert.ok(visibleStateIndex < attachIndex, "expected the visible tab swap to happen before deferred attach work");
+  assert.equal(
+    harness.calls[visibleStateIndex]?.options?.allowTabSwitchPreview,
+    true,
+    "expected the visible-state publication to arm preview-first rendering on warm switches"
+  );
+  assert.equal(harness.calls[visibleStateIndex]?.options?.reason, "titlebar_tab_click");
 
   gate.resolve();
   await activation;
@@ -279,4 +368,51 @@ test("late completion from an earlier tab attach does not revert a newer tab sel
     harness.calls.filter((entry) => entry.name === "scheduleTabHydration").length,
     2
   );
+});
+
+test("cached preview hit on a warm tab switch paints the merged snapshot before deferring the full render", () => {
+  const harness = loadRenderPendingTabSwitchPreviewHarness({
+    previewEntry: { kind: "bitmap", tabId: "tab-b" },
+    paintSucceeds: true,
+  });
+
+  const result = harness.renderPendingTabSwitchPreview();
+
+  assert.equal(result, true);
+  assert.equal(harness.state.pendingTabSwitchPreview, null);
+  assert.equal(harness.calls.some((entry) => entry.name === "paintTabPreviewEntry"), true);
+  const scheduleCall = harness.calls.find((entry) => entry.name === "scheduleTabSwitchFullRender");
+  assert.deepEqual(scheduleCall?.options, { previewHit: true });
+  const finishCall = harness.calls.find((entry) => entry.name === "finishPerfSample");
+  assert.equal(finishCall?.detail?.cacheHit, true);
+});
+
+test("preview cache miss falls back to the deferred full-render path", () => {
+  const harness = loadRenderPendingTabSwitchPreviewHarness({
+    previewEntry: null,
+    paintSucceeds: false,
+  });
+
+  const result = harness.renderPendingTabSwitchPreview();
+
+  assert.equal(result, false);
+  assert.equal(harness.calls.some((entry) => entry.name === "paintTabPreviewEntry"), false);
+  const scheduleCall = harness.calls.find((entry) => entry.name === "scheduleTabSwitchFullRender");
+  assert.deepEqual(scheduleCall?.options, { previewHit: false });
+  const finishCall = harness.calls.find((entry) => entry.name === "finishPerfSample");
+  assert.equal(finishCall?.detail?.cacheHit, false);
+});
+
+test("preview invalidation after a visual mutation clears the stale tab snapshot and bumps the version", () => {
+  const harness = loadInvalidateActiveTabPreviewHarness({ version: 2, dirty: false });
+
+  const result = harness.invalidateActiveTabPreview("image_replace");
+
+  assert.equal(result?.version, 3);
+  assert.equal(result?.reason, "image_replace");
+  assert.equal(harness.wasCleared(), true);
+  assert.equal(harness.tabPreviewCache.has("tab-b"), false);
+  assert.equal(harness.disposed.length, 1);
+  assert.deepEqual(harness.state.tabPreviewState, { version: 3, valid: false });
+  assert.deepEqual(harness.session.tabPreviewState, { version: 3, valid: false });
 });
