@@ -1697,6 +1697,24 @@ const state = {
   selectedIds: [], // imageId[] (multi-select in multi canvas; last entry is "active")
   imageCache: new Map(), // path -> { url: string|null, urlPromise: Promise<string>|null, imgPromise: Promise<HTMLImageElement>|null }
   thumbsById: new Map(), // artifactId -> { rootEl, imgEl, labelEl }
+  tabMetadataVersion: 0,
+  filmstripVersion: 0,
+  timelineVersion: 0,
+  spawnNodesVersion: 0,
+  quickActionsVersion: 0,
+  customToolDockVersion: 0,
+  lastRenderedFilmstripKey: "",
+  lastRenderedFilmstripSelectionKey: "",
+  lastRenderedFilmstripActiveId: null,
+  lastRenderedTimelineKey: "",
+  lastRenderedSpawnNodesKey: "",
+  lastRenderedQuickActionsKey: "",
+  lastRenderedCustomToolDockKey: "",
+  perfTimings: {
+    activateTabFastPathMs: 0,
+    deferredHydrationMs: 0,
+    filmstripRefreshMs: 0,
+  },
   // Hide the filmstrip by default (keeps the UI focused on the canvas). The feature remains
   // implemented; set `localStorage.brood.showFilmstrip = "1"` to re-enable in dev.
   filmstripVisible: localStorage.getItem("brood.showFilmstrip") === "1",
@@ -2316,6 +2334,114 @@ function createTabAlwaysOnVisionState() {
   };
 }
 
+function createFreshTabUiMeta() {
+  return {
+    metadataVersion: 0,
+    filmstripVersion: 0,
+    timelineVersion: 0,
+    spawnVersion: 0,
+    quickActionsVersion: 0,
+    customToolDockVersion: 0,
+    imageCount: 0,
+    toolCount: 0,
+    timelineCount: 0,
+    isDirty: false,
+    thumbnailPath: null,
+  };
+}
+
+function normalizeTabUiMeta(meta = null) {
+  const current = meta && typeof meta === "object" ? meta : {};
+  return {
+    metadataVersion: Math.max(0, Number(current.metadataVersion) || 0),
+    filmstripVersion: Math.max(0, Number(current.filmstripVersion) || 0),
+    timelineVersion: Math.max(0, Number(current.timelineVersion) || 0),
+    spawnVersion: Math.max(0, Number(current.spawnVersion) || 0),
+    quickActionsVersion: Math.max(0, Number(current.quickActionsVersion) || 0),
+    customToolDockVersion: Math.max(0, Number(current.customToolDockVersion) || 0),
+    imageCount: Math.max(0, Number(current.imageCount) || 0),
+    toolCount: Math.max(0, Number(current.toolCount) || 0),
+    timelineCount: Math.max(0, Number(current.timelineCount) || 0),
+    isDirty: Boolean(current.isDirty),
+    thumbnailPath: current.thumbnailPath ? String(current.thumbnailPath) : null,
+  };
+}
+
+function tabUiMetaSignature(meta = null) {
+  const current = normalizeTabUiMeta(meta);
+  return [
+    current.metadataVersion,
+    current.filmstripVersion,
+    current.timelineVersion,
+    current.spawnVersion,
+    current.quickActionsVersion,
+    current.customToolDockVersion,
+    current.imageCount,
+    current.toolCount,
+    current.timelineCount,
+    current.isDirty ? 1 : 0,
+    current.thumbnailPath || "",
+  ].join("|");
+}
+
+function applyTabUiMetaToState(meta = null) {
+  const current = normalizeTabUiMeta(meta);
+  state.tabMetadataVersion = current.metadataVersion;
+  state.filmstripVersion = current.filmstripVersion;
+  state.timelineVersion = current.timelineVersion;
+  state.spawnNodesVersion = current.spawnVersion;
+  state.quickActionsVersion = current.quickActionsVersion;
+  state.customToolDockVersion = current.customToolDockVersion;
+}
+
+function buildActiveTabUiMeta(existing = null) {
+  const previous = normalizeTabUiMeta(existing);
+  const imageCount = Array.isArray(state.images) ? state.images.length : 0;
+  const toolCount = Array.isArray(state.sessionTools) ? state.sessionTools.length : 0;
+  const timelineCount = Array.isArray(state.timelineNodes) ? state.timelineNodes.length : 0;
+  const activeImage = getActiveImage();
+  return {
+    metadataVersion: Math.max(previous.metadataVersion, Number(state.tabMetadataVersion) || 0),
+    filmstripVersion: Math.max(previous.filmstripVersion, Number(state.filmstripVersion) || 0),
+    timelineVersion: Math.max(previous.timelineVersion, Number(state.timelineVersion) || 0),
+    spawnVersion: Math.max(previous.spawnVersion, Number(state.spawnNodesVersion) || 0),
+    quickActionsVersion: Math.max(previous.quickActionsVersion, Number(state.quickActionsVersion) || 0),
+    customToolDockVersion: Math.max(previous.customToolDockVersion, Number(state.customToolDockVersion) || 0),
+    imageCount,
+    toolCount,
+    timelineCount,
+    isDirty: imageCount > 0 || toolCount > 0 || timelineCount > 0,
+    thumbnailPath: activeImage?.path || state.images[0]?.path || null,
+  };
+}
+
+function bumpTabUiVersion(kind) {
+  if (kind === "filmstrip") state.filmstripVersion += 1;
+  if (kind === "timeline") state.timelineVersion += 1;
+  if (kind === "spawn") state.spawnNodesVersion += 1;
+  if (kind === "quickActions") state.quickActionsVersion += 1;
+  if (kind === "customToolDock") state.customToolDockVersion += 1;
+  state.tabMetadataVersion += 1;
+}
+
+function markActiveTabUiDirty({
+  filmstrip = false,
+  timeline = false,
+  spawn = false,
+  quickActions = false,
+  customToolDock = false,
+  publishTabs = false,
+} = {}) {
+  if (filmstrip) bumpTabUiVersion("filmstrip");
+  if (timeline) bumpTabUiVersion("timeline");
+  if (spawn) bumpTabUiVersion("spawn");
+  if (quickActions) bumpTabUiVersion("quickActions");
+  if (customToolDock) bumpTabUiVersion("customToolDock");
+  if (publishTabs) {
+    syncActiveTabRecord({ capture: false, publish: true });
+  }
+}
+
 function createFreshTabSession({ runDir = null, eventsPath = null } = {}) {
   return {
     runDir,
@@ -2384,6 +2510,7 @@ function createFreshTabSession({ runDir = null, eventsPath = null } = {}) {
     lastStatusError: false,
     juggernautShellRecentSuccessfulJobs: [],
     juggernautShellLastToolKey: "",
+    tabUiMeta: createFreshTabUiMeta(),
   };
 }
 
@@ -10739,7 +10866,7 @@ function publishTabbedSessionsSnapshot(snapshot = null) {
       ? {
           tabsOrder: Array.isArray(snapshot.tabsOrder) ? snapshot.tabsOrder.slice() : state.tabsOrder.slice(),
           activeTabId: snapshot.activeTabId || state.activeTabId || null,
-          tabs: listTabs(),
+          tabs: snapshot.tabs.slice(),
         }
       : getTabsSnapshot();
   window.dispatchEvent(
@@ -23087,6 +23214,7 @@ function setCanvasMode(_mode) {
   if (state.canvasMode === next) return;
   const prevMode = state.canvasMode;
   state.canvasMode = next;
+  markActiveTabUiDirty({ spawn: true, quickActions: true });
   recordUserEvent("canvas_mode_set", { prev: prevMode, next });
   const active = String(state.activeId || "").trim();
   if (active && selectedCount() === 0) setSelectedIds([active]);
@@ -24176,7 +24304,16 @@ function cloneToolRuntimeValue(value) {
 }
 
 function syncSessionToolsFromRegistry() {
+  const previousSignature = Array.isArray(state.sessionTools)
+    ? state.sessionTools.map((tool) => `${tool?.toolId || ""}:${tool?.label || ""}`).join("|")
+    : "";
   state.sessionTools = sessionToolRegistry.list();
+  const nextSignature = Array.isArray(state.sessionTools)
+    ? state.sessionTools.map((tool) => `${tool?.toolId || ""}:${tool?.label || ""}`).join("|")
+    : "";
+  if (previousSignature !== nextSignature) {
+    markActiveTabUiDirty({ quickActions: true, customToolDock: true, publishTabs: true });
+  }
 }
 
 function captureCreateToolDraftFromUi() {
@@ -24247,6 +24384,7 @@ function hideCreateToolPanel({ clearDraft = false } = {}) {
     if (els.createToolText) els.createToolText.value = "";
   }
   els.createToolPanel.classList.add("hidden");
+  bumpTabUiVersion("customToolDock");
   renderCreateToolPreview();
   renderCustomToolDock();
 }
@@ -24264,6 +24402,7 @@ function showCreateToolPanel() {
   panel.style.top = "50%";
   panel.style.transform = "translate(-50%, -50%)";
   panel.classList.remove("hidden");
+  bumpTabUiVersion("customToolDock");
   renderCreateToolPreview();
   renderCustomToolDock();
   setTimeout(() => {
@@ -24316,6 +24455,7 @@ function invokeRegisteredTool(
   });
   state.lastToolInvocation = invocation;
   state.activeCustomToolId = tool.toolId;
+  markActiveTabUiDirty({ quickActions: true, customToolDock: true });
   recordUserEvent("custom_tool_invoked", {
     tool_id: tool.toolId,
     operation: tool.execution?.operation || null,
@@ -25180,6 +25320,7 @@ function resetActionQueue() {
     droppedOverflow: 0,
     lastDropLabel: null,
   };
+  syncActiveTabRecord({ capture: false, publish: true });
   renderSessionApiCallsReadout();
 }
 
@@ -25256,6 +25397,7 @@ function enqueueAction({ label, key = null, priority = ACTION_QUEUE_PRIORITY.use
   } else {
     showToast(`Queue full: ${label} was not queued.`, "error", 2800);
   }
+  syncActiveTabRecord({ capture: false, publish: true });
   renderQuickActions();
   renderSessionApiCallsReadout();
   processActionQueue().catch((err) => {
@@ -25289,6 +25431,7 @@ async function processActionQueue() {
   try {
     if (state.actionQueueActive && !isEngineBusy()) {
       state.actionQueueActive = null;
+      syncActiveTabRecord({ capture: false, publish: true });
       renderQuickActions();
       renderSessionApiCallsReadout();
     }
@@ -25316,6 +25459,7 @@ async function processActionQueue() {
         enqueuedAt: item.enqueuedAt,
         source: item.source || "user",
       };
+      syncActiveTabRecord({ capture: false, publish: true });
       renderQuickActions();
       renderSessionApiCallsReadout();
 
@@ -25343,27 +25487,38 @@ async function processActionQueue() {
 
       // Completed immediately (local action or no-op); continue draining.
       state.actionQueueActive = null;
+      syncActiveTabRecord({ capture: false, publish: true });
       renderQuickActions();
       renderSessionApiCallsReadout();
     }
   } finally {
     state.actionQueueRunning = false;
+    syncActiveTabRecord({ capture: false, publish: true });
     renderSessionApiCallsReadout();
   }
 }
 
 function chooseSpawnNodes() {
+  const currentNodesSignature = Array.isArray(state.spawnNodes)
+    ? state.spawnNodes.map((node) => `${node?.id || ""}:${node?.title || ""}:${node?.action || ""}`).join("|")
+    : "";
   if (!ENABLE_SPAWN_ACTIONS) {
+    const nextKey = `disabled||${state.spawnNodesVersion}`;
+    if (state.lastRenderedSpawnNodesKey === nextKey) return false;
     state.spawnNodes = [];
+    state.lastRenderedSpawnNodesKey = nextKey;
     renderSpawnbar();
     renderQuickActions();
-    return;
+    return true;
   }
   if (!state.activeId) {
+    const nextKey = `empty||${state.spawnNodesVersion}`;
+    if (state.lastRenderedSpawnNodesKey === nextKey) return false;
     state.spawnNodes = [];
+    state.lastRenderedSpawnNodesKey = nextKey;
     renderSpawnbar();
     renderQuickActions();
-    return;
+    return true;
   }
   const img = getActiveImage();
   const items = [];
@@ -25387,9 +25542,22 @@ function chooseSpawnNodes() {
   // Keep it to 3 kernels.
   const imageId = img?.id || state.activeId || "";
   const available = items.filter((item) => !isSpawnNodeOnCooldown(item.id, imageId));
-  state.spawnNodes = available.slice(0, 3);
+  const nextNodes = available.slice(0, 3);
+  const nextNodesSignature = nextNodes.map((node) => `${node?.id || ""}:${node?.title || ""}:${node?.action || ""}`).join("|");
+  const nextKey = [
+    state.spawnNodesVersion,
+    state.canvasMode || "multi",
+    imageId,
+    nextNodesSignature,
+  ].join("||");
+  if (state.lastRenderedSpawnNodesKey === nextKey) return false;
+  if (currentNodesSignature !== nextNodesSignature) {
+    state.spawnNodes = nextNodes;
+  }
+  state.lastRenderedSpawnNodesKey = nextKey;
   renderSpawnbar();
   renderQuickActions();
+  return true;
 }
 
 function computeQuickActions() {
@@ -26085,9 +26253,23 @@ function customToolCreateIcon() {
   </svg>`;
 }
 
+function customToolDockRenderSignature(tools = []) {
+  const panelOpen = Boolean(els.createToolPanel && !els.createToolPanel.classList.contains("hidden"));
+  return [
+    state.customToolDockVersion,
+    panelOpen ? 1 : 0,
+    state.activeCustomToolId || "",
+    tools.map((tool) => `${tool?.toolId || ""}:${tool?.label || ""}:${tool?.shortLabel || ""}`).join("|"),
+  ].join("||");
+}
+
 function renderCustomToolDock() {
   const root = els.customToolDock;
-  if (!root) return;
+  if (!root) return false;
+  const tools = sessionToolRegistry.visible({ limit: 3 });
+  const nextKey = customToolDockRenderSignature(tools);
+  if (state.lastRenderedCustomToolDockKey === nextKey) return false;
+  state.lastRenderedCustomToolDockKey = nextKey;
   root.innerHTML = "";
 
   const createBtn = document.createElement("button");
@@ -26106,7 +26288,6 @@ function renderCustomToolDock() {
   });
   root.appendChild(createBtn);
 
-  const tools = sessionToolRegistry.visible({ limit: 3 });
   for (const tool of tools) {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -26126,6 +26307,7 @@ function renderCustomToolDock() {
     });
     root.appendChild(btn);
   }
+  return true;
 }
 
 function renderActionGrid() {
@@ -26191,10 +26373,36 @@ function renderActionGrid() {
   syncJuggernautShellState();
 }
 
+function quickActionsRenderSignature() {
+  return [
+    state.quickActionsVersion,
+    state.spawnNodesVersion,
+    state.canvasMode || "multi",
+    state.activeId || "",
+    getSelectedIds().join(","),
+    Array.isArray(state.images) ? state.images.length : 0,
+    Array.isArray(state.sessionTools) ? state.sessionTools.length : 0,
+    Array.isArray(state.spawnNodes) ? state.spawnNodes.map((node) => `${node?.id || ""}:${node?.title || ""}`).join("|") : "",
+    state.runningActionKey || "",
+    state.actionQueue.length,
+    state.actionQueueActive?.key || "",
+    state.activeCustomToolId || "",
+    Boolean(state.expectingArtifacts) ? 1 : 0,
+    Boolean(state.juggernautShell?.toolInvoker) ? 1 : 0,
+    Boolean(state.juggernautShell?.psdExportHandler) ? 1 : 0,
+    Boolean(state.juggernautShell?.singleImageRail?.ranker) ? 1 : 0,
+    String(state.juggernautShell?.lastToolKey || ""),
+  ].join("||");
+}
+
 function renderQuickActions() {
+  const nextKey = quickActionsRenderSignature();
+  if (state.lastRenderedQuickActionsKey === nextKey) return false;
+  state.lastRenderedQuickActionsKey = nextKey;
   renderActionGrid();
   renderJuggernautShellChrome();
   renderCustomToolDock();
+  return true;
 }
 
 async function handleSpawnNode(node) {
@@ -26221,9 +26429,38 @@ async function handleSpawnNode(node) {
   }
 }
 
+function filmstripDataSignature() {
+  if (!state.filmstripVisible || state.canvasMode === "multi") return "hidden";
+  return [
+    state.filmstripVersion,
+    Array.isArray(state.images) ? state.images.length : 0,
+    (state.images || [])
+      .map((item) => `${item?.id || ""}:${item?.label || basename(item?.path || "")}:${item?.path || ""}`)
+      .join("|"),
+  ].join("||");
+}
+
+function filmstripSelectionSignature() {
+  return [state.activeId || "", getSelectedIds().join(",")].join("||");
+}
+
+function syncFilmstripRenderSignature() {
+  state.lastRenderedFilmstripKey = filmstripDataSignature();
+  state.lastRenderedFilmstripSelectionKey = filmstripSelectionSignature();
+  state.lastRenderedFilmstripActiveId = state.activeId || null;
+}
+
 function renderFilmstrip() {
-  if (!els.filmstrip) return;
+  if (!els.filmstrip) return false;
+  const nextDataKey = filmstripDataSignature();
+  const nextSelectionKey = filmstripSelectionSignature();
   if (!state.filmstripVisible || state.canvasMode === "multi") {
+    if (
+      state.lastRenderedFilmstripKey === nextDataKey &&
+      state.lastRenderedFilmstripSelectionKey === nextSelectionKey
+    ) {
+      return false;
+    }
     els.filmstrip.classList.add("hidden");
     // Avoid accumulating observed nodes when we teardown/rebuild the filmstrip.
     if (thumbObserver) {
@@ -26235,8 +26472,22 @@ function renderFilmstrip() {
     }
     state.thumbsById.clear();
     els.filmstrip.innerHTML = "";
-    return;
+    syncFilmstripRenderSignature();
+    return true;
   }
+  if (state.lastRenderedFilmstripKey === nextDataKey) {
+    if (state.lastRenderedFilmstripSelectionKey !== nextSelectionKey) {
+      setFilmstripSelected(state.lastRenderedFilmstripActiveId, state.activeId);
+      state.lastRenderedFilmstripSelectionKey = nextSelectionKey;
+      state.lastRenderedFilmstripActiveId = state.activeId || null;
+      return true;
+    }
+    return false;
+  }
+  const perfSample = startPerfSample("tab:filmstrip-refresh", {
+    runDir: state.runDir || null,
+    imageCount: Array.isArray(state.images) ? state.images.length : 0,
+  });
   els.filmstrip.classList.remove("hidden");
   ensureThumbObserver();
   // Avoid accumulating observed nodes when we teardown/rebuild the filmstrip.
@@ -26279,6 +26530,12 @@ function renderFilmstrip() {
     frag.appendChild(div);
   }
   els.filmstrip.appendChild(frag);
+  syncFilmstripRenderSignature();
+  finishPerfSample(perfSample, "filmstripRefreshMs", {
+    rebuilt: true,
+    imageCount: Array.isArray(state.images) ? state.images.length : 0,
+  });
+  return true;
 }
 
 function appendFilmstripThumb(item) {
@@ -26312,6 +26569,7 @@ function appendFilmstripThumb(item) {
   div.appendChild(label);
   state.thumbsById.set(item.id, { rootEl: div, imgEl: img, labelEl: label });
   els.filmstrip.appendChild(div);
+  syncFilmstripRenderSignature();
 }
 
 function setFilmstripSelected(prevId, nextId) {
@@ -26342,6 +26600,7 @@ function updateFilmstripThumb(item) {
         .catch(() => {});
     }
   }
+  syncFilmstripRenderSignature();
 }
 
 function _timelineMakeNodeId() {
@@ -26366,6 +26625,7 @@ function recordTimelineNode({ imageId, path, receiptPath = null, label = null, a
   };
   state.timelineNodes.push(node);
   state.timelineNodesById.set(nodeId, node);
+  markActiveTabUiDirty({ timeline: true, quickActions: true, publishTabs: true });
   if (state.timelineOpen) renderTimeline();
   return nodeId;
 }
@@ -26401,13 +26661,31 @@ function closeTimeline() {
   if (!els.timelineOverlay) return;
   state.timelineOpen = false;
   els.timelineOverlay.classList.add("hidden");
+  state.lastRenderedTimelineKey = "closed";
+}
+
+function timelineRenderSignature() {
+  if (!state.timelineOpen) return "closed";
+  return [
+    state.timelineVersion,
+    getActiveImage()?.timelineNodeId || "",
+    Array.from(state.timelineNodes || [])
+      .map(
+        (node) =>
+          `${node?.nodeId || ""}:${node?.imageId || ""}:${node?.path || ""}:${node?.label || ""}:${node?.action || ""}:${node?.createdAt || 0}:${Array.isArray(node?.parents) ? node.parents.join(",") : ""}`
+      )
+      .join("|"),
+  ].join("||");
 }
 
 function renderTimeline() {
-  if (!state.timelineOpen) return;
+  if (!state.timelineOpen) return false;
+  const nextKey = timelineRenderSignature();
+  if (state.lastRenderedTimelineKey === nextKey) return false;
+  state.lastRenderedTimelineKey = nextKey;
   const strip = els.timelineStrip;
   const detail = els.timelineDetail;
-  if (!strip) return;
+  if (!strip) return false;
   strip.innerHTML = "";
 
   const nodes = Array.from(state.timelineNodes || []).sort((a, b) => (a?.createdAt || 0) - (b?.createdAt || 0));
@@ -26417,7 +26695,7 @@ function renderTimeline() {
     empty.textContent = "No timeline yet.";
     strip.appendChild(empty);
     if (detail) detail.textContent = "";
-    return;
+    return true;
   }
 
   const activeNodeId = getActiveImage()?.timelineNodeId || null;
@@ -26469,6 +26747,7 @@ function renderTimeline() {
       detail.textContent = pieces.join("\n");
     }
   }
+  return true;
 }
 
 async function jumpToTimelineNode(nodeId) {
@@ -26516,6 +26795,7 @@ async function setActiveImage(id, { preserveSelection = false, source = "system"
   if (!item) return;
   const prevActive = state.activeId;
   state.activeId = id;
+  markActiveTabUiDirty({ spawn: true, quickActions: true });
   if (preserveSelection) {
     // Ensure the newly-active image is included and keep multi-select ordering stable.
     const next = getSelectedIds();
@@ -26536,6 +26816,8 @@ async function setActiveImage(id, { preserveSelection = false, source = "system"
     });
   }
   setFilmstripSelected(prevActive, id);
+  state.lastRenderedFilmstripSelectionKey = filmstripSelectionSignature();
+  state.lastRenderedFilmstripActiveId = state.activeId || null;
   clearSelection();
   showDropHint(false);
   renderSelectionMeta();
@@ -26556,6 +26838,7 @@ async function setActiveImage(id, { preserveSelection = false, source = "system"
   resetViewToFit();
   requestRender();
   if (state.timelineOpen) renderTimeline();
+  syncActiveTabRecord({ capture: false, publish: true });
 }
 
 function addImage(item, { select = false, deferAlwaysOnVision = false, deferAmbientIntent = false } = {}) {
@@ -26574,6 +26857,7 @@ function addImage(item, { select = false, deferAlwaysOnVision = false, deferAmbi
   }
   state.imagesById.set(item.id, item);
   state.images.push(item);
+  markActiveTabUiDirty({ filmstrip: true, timeline: true, spawn: true, quickActions: true, publishTabs: true });
   if (!state.freeformZOrder.includes(item.id)) {
     state.freeformZOrder.push(item.id);
   }
@@ -26647,6 +26931,7 @@ async function removeImageFromCanvas(imageId) {
   // Remove from collections.
   state.imagesById.delete(id);
   state.images = (state.images || []).filter((item) => item?.id !== id);
+  markActiveTabUiDirty({ filmstrip: true, timeline: true, spawn: true, quickActions: true });
   state.freeformRects.delete(id);
   state.freeformZOrder = (state.freeformZOrder || []).filter((v) => v !== id);
   state.multiRects.delete(id);
@@ -26663,6 +26948,7 @@ async function removeImageFromCanvas(imageId) {
     }
   }
   state.thumbsById.delete(id);
+  syncFilmstripRenderSignature();
 
   // If we removed the active image, select a sensible next.
   if (state.activeId === id) {
@@ -26739,6 +27025,7 @@ async function removeImageFromCanvas(imageId) {
     state.alwaysOnVision.contentDirty = false;
     state.alwaysOnVision.dirtyReason = null;
     requestRender();
+    syncActiveTabRecord({ capture: false, publish: true });
     return true;
   }
 
@@ -26754,6 +27041,7 @@ async function removeImageFromCanvas(imageId) {
   renderHudReadout();
   motherIdleSyncFromInteraction({ userInteraction: false });
   requestRender();
+  syncActiveTabRecord({ capture: false, publish: true });
   return true;
 }
 
@@ -26785,6 +27073,7 @@ async function replaceImageInPlace(
   }
   // New paths are always new files; no need to invalidate unless we overwrite, but be safe.
   invalidateImageCache(path);
+  markActiveTabUiDirty({ filmstrip: true, timeline: true, spawn: true, quickActions: true });
 
   item.path = path;
   item.receiptPath = receiptPath;
@@ -26814,6 +27103,7 @@ async function replaceImageInPlace(
   }
 
   updateFilmstripThumb(item);
+  syncActiveTabRecord({ capture: false, publish: true });
   if (item.receiptPath) ensureReceiptMeta(item).catch(() => {});
   if (state.activeId === targetId) {
     try {
@@ -28731,6 +29021,55 @@ function createTabId() {
   return `tab-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
 }
 
+function perfNow() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+function startPerfSample(label, detail = null) {
+  const id = `${label}:${Date.now().toString(36)}:${Math.random().toString(16).slice(2, 8)}`;
+  if (typeof performance !== "undefined" && typeof performance.mark === "function") {
+    try {
+      performance.mark(id, detail && typeof detail === "object" ? { detail } : undefined);
+    } catch {
+      performance.mark(id);
+    }
+  }
+  return {
+    id,
+    label,
+    startedAt: perfNow(),
+    detail,
+  };
+}
+
+function finishPerfSample(sample, metricKey = null, detail = null) {
+  if (!sample) return 0;
+  const endedAt = perfNow();
+  const duration = Math.max(0, endedAt - (Number(sample.startedAt) || endedAt));
+  const endId = `${sample.id}:end`;
+  if (typeof performance !== "undefined" && typeof performance.mark === "function") {
+    try {
+      performance.mark(endId, detail && typeof detail === "object" ? { detail } : undefined);
+    } catch {
+      performance.mark(endId);
+    }
+  }
+  if (typeof performance !== "undefined" && typeof performance.measure === "function") {
+    try {
+      performance.measure(sample.label, sample.id, endId);
+    } catch {
+      // ignore
+    }
+  }
+  if (metricKey && state.perfTimings && Object.prototype.hasOwnProperty.call(state.perfTimings, metricKey)) {
+    state.perfTimings[metricKey] = duration;
+  }
+  return duration;
+}
+
 function tabLabelForRunDir(runDir, fallback = "Run") {
   const label = basename(String(runDir || "").trim());
   return label || String(fallback || "Run");
@@ -28854,6 +29193,7 @@ function captureActiveTabSession(session = null) {
     ? state.juggernautShell.singleImageRail.recentSuccessfulJobs.slice()
     : [];
   next.juggernautShellLastToolKey = String(state.juggernautShell?.lastToolKey || "");
+  next.tabUiMeta = buildActiveTabUiMeta(next.tabUiMeta);
   return next;
 }
 
@@ -28958,6 +29298,8 @@ function bindTabSessionToState(session = null) {
     ? current.juggernautShellRecentSuccessfulJobs
     : [];
   state.juggernautShell.lastToolKey = String(current.juggernautShellLastToolKey || "");
+  current.tabUiMeta = normalizeTabUiMeta(current.tabUiMeta);
+  applyTabUiMetaToState(current.tabUiMeta);
   state.imageMenuTargetId = null;
   state.promptGenerateHoverCss = null;
   state.effectTokenDrag = null;
@@ -28966,39 +29308,61 @@ function bindTabSessionToState(session = null) {
   state.motherRolePreviewHoverImageId = null;
 }
 
-function syncActiveTabRecord({ capture = true } = {}) {
+function syncActiveTabRecord({ capture = false, publish = false } = {}) {
   const tabId = String(state.activeTabId || "").trim();
   if (!tabId) return null;
   const record = tabbedSessions.getTab(tabId);
   if (!record) return null;
+  const previousMetaSignature = tabUiMetaSignature(record.tabUiMeta);
+  const previousRunDir = record.runDir ? String(record.runDir) : null;
+  const previousLabel = record.label ? String(record.label) : null;
+  const previousBusy = Boolean(record.busy);
+  const previousThumbnailPath = record.thumbnailPath ? String(record.thumbnailPath) : null;
   if (capture) {
     record.session = captureActiveTabSession(record.session);
   }
-  record.runDir = record.session?.runDir || null;
-  record.label = tabLabelForRunDir(record.runDir, record.label || record.tabId);
+  const uiMeta = buildActiveTabUiMeta(record.tabUiMeta || record.session?.tabUiMeta);
+  record.tabUiMeta = uiMeta;
+  if (record.session && typeof record.session === "object") {
+    record.session.tabUiMeta = { ...uiMeta };
+  }
+  record.runDir = state.runDir || record.session?.runDir || record.runDir || null;
+  record.label = tabLabelForRunDir(record.runDir, record.label || record.tabId || "Run");
   record.busy = Boolean(currentTabSwitchBlockReason());
+  record.thumbnailPath = uiMeta.thumbnailPath;
   record.updatedAt = Date.now();
+  if (publish) {
+    const changed =
+      capture ||
+      previousMetaSignature !== tabUiMetaSignature(uiMeta) ||
+      previousRunDir !== record.runDir ||
+      previousLabel !== record.label ||
+      previousBusy !== Boolean(record.busy) ||
+      previousThumbnailPath !== record.thumbnailPath;
+    if (changed) {
+      tabbedSessions.upsertTab({ ...record }, { activate: false });
+    }
+  }
   return record;
 }
 
-function getTabsSnapshot() {
-  syncActiveTabRecord({ capture: true });
-  syncTabbedSessionsStateFromStore();
+function getTabsSnapshot(snapshot = null) {
+  const current = snapshot && typeof snapshot === "object" ? snapshot : tabbedSessions.snapshot();
   return {
-    tabsOrder: state.tabsOrder.slice(),
-    activeTabId: state.activeTabId || null,
-    tabs: tabbedSessions.listTabs(),
+    tabsOrder: Array.isArray(current?.tabsOrder) ? current.tabsOrder.slice() : [],
+    activeTabId: current?.activeTabId || null,
+    tabs: Array.isArray(current?.tabs) ? current.tabs.slice() : [],
   };
 }
 
-function listTabs() {
-  return getTabsSnapshot().tabs;
+function listTabs(snapshot = null) {
+  return getTabsSnapshot(snapshot).tabs;
 }
 
 function subscribeTabs(listener) {
   if (typeof listener !== "function") return () => {};
-  return tabbedSessions.subscribe(() => {
-    listener(getTabsSnapshot());
+  return tabbedSessions.subscribe((snapshot) => {
+    listener(getTabsSnapshot(snapshot));
   });
 }
 
@@ -29083,6 +29447,11 @@ function publishActiveTabVisibleState() {
 function scheduleTabHydration(tabId, reason, { spawnEngine = false } = {}) {
   const normalizedTabId = String(tabId || "").trim();
   if (!normalizedTabId) return Promise.resolve(false);
+  const perfSample = startPerfSample("tab:deferred-hydration", {
+    reason,
+    spawnEngine: Boolean(spawnEngine),
+    tabId: normalizedTabId,
+  });
   if (tabHydrationRaf && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
     window.cancelAnimationFrame(tabHydrationRaf);
   }
@@ -29105,16 +29474,27 @@ function scheduleTabHydration(tabId, reason, { spawnEngine = false } = {}) {
     });
   };
   const startHydration = () => {
-    if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return Promise.resolve(false);
+    if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) {
+      finishPerfSample(perfSample, "deferredHydrationMs", { stale: true, tabId: normalizedTabId });
+      return Promise.resolve(false);
+    }
     if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
       return new Promise((resolve) => {
         tabHydrationIdle = window.requestIdleCallback(
           () => {
             tabHydrationIdle = null;
             void runHydration()
-              .then((ok) => resolve(Boolean(ok)))
+              .then((ok) => {
+                finishPerfSample(perfSample, "deferredHydrationMs", { tabId: normalizedTabId, ok: Boolean(ok) });
+                resolve(Boolean(ok));
+              })
               .catch((err) => {
                 console.error("Deferred tab hydration failed:", err);
+                finishPerfSample(perfSample, "deferredHydrationMs", {
+                  error: err?.message || String(err || "deferred hydration failed"),
+                  ok: false,
+                  tabId: normalizedTabId,
+                });
                 resolve(false);
               });
           },
@@ -29122,10 +29502,20 @@ function scheduleTabHydration(tabId, reason, { spawnEngine = false } = {}) {
         );
       });
     }
-    return runHydration().catch((err) => {
-      console.error("Deferred tab hydration failed:", err);
-      return false;
-    });
+    return runHydration()
+      .then((ok) => {
+        finishPerfSample(perfSample, "deferredHydrationMs", { tabId: normalizedTabId, ok: Boolean(ok) });
+        return Boolean(ok);
+      })
+      .catch((err) => {
+        console.error("Deferred tab hydration failed:", err);
+        finishPerfSample(perfSample, "deferredHydrationMs", {
+          error: err?.message || String(err || "deferred hydration failed"),
+          ok: false,
+          tabId: normalizedTabId,
+        });
+        return false;
+      });
   };
   if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
     return new Promise((resolve) => {
@@ -29191,65 +29581,87 @@ async function attachActiveTabRuntime({
 
 async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate" } = {}) {
   const normalized = String(tabId || "").trim();
+  const perfSample = startPerfSample("tab:activate-fast-path", {
+    reason,
+    spawnEngine: Boolean(spawnEngine),
+    tabId: normalized,
+  });
+  const finalize = (result, detail = null) => {
+    finishPerfSample(perfSample, "activateTabFastPathMs", {
+      ...(detail && typeof detail === "object" ? detail : null),
+      activeTabId: state.activeTabId || null,
+      tabId: normalized,
+    });
+    return result;
+  };
   if (!normalized) {
-    return { ok: false, reason: "missing_tab", tabs: listTabs() };
+    return finalize({ ok: false, reason: "missing_tab" }, { ok: false, reason: "missing_tab" });
   }
   const target = tabbedSessions.getTab(normalized);
   if (!target) {
-    return { ok: false, reason: "missing_tab", tabs: listTabs() };
+    return finalize({ ok: false, reason: "missing_tab" }, { ok: false, reason: "missing_tab" });
   }
   const waitForHydration = Boolean(arguments[1]?.waitForHydration);
   if (normalized === String(state.activeTabId || "").trim()) {
     publishActiveTabVisibleState();
     const hydration = scheduleTabHydration(normalized, reason, { spawnEngine });
     if (waitForHydration) await hydration;
-    return { ok: true, tabId: normalized, activeTabId: state.activeTabId || null, tabs: listTabs(), hydration };
+    return finalize(
+      { ok: true, tabId: normalized, activeTabId: state.activeTabId || null, hydration },
+      { ok: true, sameTab: true }
+    );
   }
   const blockReason = currentTabSwitchBlockReason();
   if (blockReason) {
     showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
-    return { ok: false, reason: blockReason, activeTabId: state.activeTabId || null, tabs: listTabs() };
+    return finalize(
+      { ok: false, reason: blockReason, activeTabId: state.activeTabId || null },
+      { ok: false, reason: blockReason }
+    );
   }
   if (state.activeTabId) {
     suspendActiveTabRuntimeForSwitch();
-    syncActiveTabRecord({ capture: true });
+    syncActiveTabRecord({ capture: true, publish: true });
   }
   target.session = target.session || createFreshTabSession({ runDir: target.runDir || null, eventsPath: target.eventsPath || null });
   bindTabSessionToState(target.session);
   tabbedSessions.setActiveTab(normalized);
-  syncActiveTabRecord({ capture: false });
+  syncActiveTabRecord({ capture: false, publish: true });
   publishActiveTabVisibleState();
   const hydration = scheduleTabHydration(normalized, reason, { spawnEngine });
   if (waitForHydration) await hydration;
-  return {
-    ok: true,
-    tabId: normalized,
-    activeTabId: state.activeTabId || null,
-    tabs: listTabs(),
-    hydration,
-  };
+  return finalize(
+    {
+      ok: true,
+      tabId: normalized,
+      activeTabId: state.activeTabId || null,
+      hydration,
+    },
+    { ok: true, switched: true }
+  );
 }
 
 async function closeTab(tabId) {
   const normalized = String(tabId || "").trim();
+  const snapshot = getTabsSnapshot();
   if (!normalized) {
-    return { ok: false, reason: "missing_tab", tabs: listTabs() };
+    return { ok: false, reason: "missing_tab", tabs: snapshot.tabs };
   }
   if (!tabbedSessions.getTab(normalized)) {
-    return { ok: false, reason: "missing_tab", tabs: listTabs() };
+    return { ok: false, reason: "missing_tab", tabs: snapshot.tabs };
   }
   if (tabbedSessions.tabsOrder.length <= 1) {
     showToast("Keep one tab open in this build.", "tip", 2200);
-    return { ok: false, reason: "last_tab", tabs: listTabs() };
+    return { ok: false, reason: "last_tab", tabs: snapshot.tabs };
   }
   if (normalized === String(state.activeTabId || "").trim()) {
     const blockReason = currentTabSwitchBlockReason();
     if (blockReason) {
       showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
-      return { ok: false, reason: blockReason, tabs: listTabs() };
+      return { ok: false, reason: blockReason, tabs: snapshot.tabs };
     }
     suspendActiveTabRuntimeForSwitch();
-    syncActiveTabRecord({ capture: true });
+    syncActiveTabRecord({ capture: true, publish: true });
     const order = tabbedSessions.tabsOrder.slice();
     const index = order.indexOf(normalized);
     const remaining = order.filter((id) => id !== normalized);
@@ -29265,11 +29677,11 @@ async function closeTab(tabId) {
       void scheduleTabHydration(closed.nextActiveId, "close_tab", { spawnEngine: false });
     }
     showToast(`Closed ${tabLabelForRunDir(closed?.closed?.runDir, "tab")}.`, "tip", 1800);
-    return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: listTabs() };
+    return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: getTabsSnapshot().tabs };
   }
   const closed = tabbedSessions.closeTab(normalized, { activateNeighbor: false });
   showToast(`Closed ${tabLabelForRunDir(closed?.closed?.runDir, "tab")}.`, "tip", 1800);
-  return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: listTabs() };
+  return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: getTabsSnapshot().tabs };
 }
 
 async function ensureRun() {
@@ -29306,10 +29718,12 @@ async function ensureRun() {
       eventsPath: payload.events_path,
       session,
       busy: false,
+      tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
+      thumbnailPath: session.tabUiMeta?.thumbnailPath || null,
     },
     { activate: true, index: tabbedSessions.tabsOrder.indexOf(activeTabId) }
   );
-  syncActiveTabRecord({ capture: false });
+  syncActiveTabRecord({ capture: false, publish: true });
   setRunInfo(`Run: ${payload.run_dir}`);
   await syncActiveRunPtyBinding();
   startEventsPolling();
@@ -29319,7 +29733,7 @@ async function createRun() {
   const blockReason = currentTabSwitchBlockReason();
   if (blockReason) {
     showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
-    return { ok: false, reason: blockReason, tabs: listTabs() };
+    return { ok: false, reason: blockReason };
   }
   setStatus("Engine: creating run tab…");
   const payload = await invoke("create_run_dir");
@@ -29342,6 +29756,8 @@ async function createRun() {
       eventsPath: payload.events_path,
       session,
       busy: false,
+      tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
+      thumbnailPath: session.tabUiMeta?.thumbnailPath || null,
     },
     { activate: false }
   );
@@ -29360,10 +29776,10 @@ async function openExistingRun() {
   const blockReason = currentTabSwitchBlockReason();
   if (blockReason) {
     showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
-    return { ok: false, reason: blockReason, tabs: listTabs() };
+    return { ok: false, reason: blockReason };
   }
   const selected = await open({ directory: true, multiple: false });
-  if (!selected) return { ok: false, reason: "cancelled", tabs: listTabs() };
+  if (!selected) return { ok: false, reason: "cancelled" };
   setStatus("Engine: opening run tab…");
   const tabId = createTabId();
   const session = createFreshTabSession({
@@ -29378,6 +29794,8 @@ async function openExistingRun() {
       eventsPath: `${selected}/events.jsonl`,
       session,
       busy: false,
+      tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
+      thumbnailPath: session.tabUiMeta?.thumbnailPath || null,
     },
     { activate: false }
   );
@@ -29394,7 +29812,7 @@ async function openExistingRun() {
     "tip",
     3200
   );
-  return { ok: true, tabId, activeTabId: state.activeTabId || null, tabs: listTabs() };
+  return { ok: true, tabId, activeTabId: state.activeTabId || null };
 }
 
 async function loadExistingArtifacts() {
@@ -35926,20 +36344,16 @@ function installJuggernautShellUi() {
 function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
   const tabId = String(tab?.tabId || "").trim();
   const record = tabId ? tabbedSessions.getTab(tabId) : null;
-  const session = record?.session && typeof record.session === "object" ? record.session : null;
+  const uiMeta = normalizeTabUiMeta(record?.tabUiMeta || record?.session?.tabUiMeta);
   const title = String(tab?.label || record?.label || tabLabelForRunDir(tab?.runDir, "Run"));
   const runDir = record?.runDir ? String(record.runDir) : tab?.runDir ? String(tab.runDir) : "";
-  const imageCount = Array.isArray(session?.images) ? session.images.length : 0;
-  const toolCount = Array.isArray(session?.sessionTools) ? session.sessionTools.length : 0;
-  const timelineCount = Array.isArray(session?.timelineNodes) ? session.timelineNodes.length : 0;
-  const isDirty = imageCount > 0 || toolCount > 0 || timelineCount > 0;
   return {
     tabId,
     title,
     runDir,
     isActive: Boolean(tab?.active),
     isBusy: Boolean(tab?.busy),
-    isDirty,
+    isDirty: Boolean(uiMeta.isDirty),
     canClose: totalTabs > 1,
   };
 }
