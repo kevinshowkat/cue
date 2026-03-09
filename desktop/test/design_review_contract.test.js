@@ -98,7 +98,7 @@ test("design review skeleton slots reserve 2-3 preview slots immediately", () =>
   assert.equal(slots.every((slot) => slot.previewJob.status === "queued"), true);
 });
 
-test("design review planner prompt stays compact and low-verbosity", () => {
+test("design review planner prompt stays compact and defines actions as edit intents", () => {
   const prompt = buildDesignReviewPlannerPrompt({
     requestId: "review-compact",
     visibleCanvasRef: "/tmp/review-visible.png",
@@ -106,9 +106,12 @@ test("design review planner prompt stays compact and low-verbosity", () => {
     slotCount: 3,
   });
 
-  assert.match(prompt, /Read the canvas image and visible marks only\./);
-  assert.match(prompt, /Use low verbosity\./);
+  assert.match(prompt, /View the canvas image and visible annotations only\./);
+  assert.match(prompt, /An action is a concrete visual edit the editor could apply to the image\./);
+  assert.match(prompt, /Write actions as short edit intents, not advice, critique, or conversation\./);
   assert.match(prompt, /Return 3 ranked proposals as JSON only\./);
+  assert.match(prompt, /"markIds": \[\s*"optional annotation ids"\s*\]/);
+  assert.match(prompt, /"actionType": "short edit intent like remove_object, brighten_area, simplify_background"/);
   assert.doesNotMatch(prompt, /"requestId": "review-compact"/);
   assert.doesNotMatch(prompt, /"visibleCanvasRef": "\/tmp\/review-visible\.png"/);
 });

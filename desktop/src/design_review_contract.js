@@ -207,26 +207,26 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
   const normalized = asRecord(request) || {};
   const slotCount = clamp(normalized.slotCount, 2, 3);
   return [
-    "You are Juggernaut's action-first design review planner.",
-    "Read the canvas image and visible marks only.",
-    "Use low verbosity.",
+    "View the canvas image and visible annotations only.",
+    "An action is a concrete visual edit the editor could apply to the image.",
+    "Write actions as short edit intents, not advice, critique, or conversation.",
     `Return ${slotCount} ranked proposals as JSON only.`,
     JSON.stringify(
       {
         proposals: [
           {
-            label: "short action label",
+            label: "2-5 word edit title",
             imageId: "target image id",
             targetRegion: {
-              markIds: ["optional mark ids"],
+              markIds: ["optional annotation ids"],
               regionCandidateId: "optional region candidate id",
               bounds: { x: 0, y: 0, width: 0, height: 0 },
             },
-            actionType: "provider-agnostic action intent",
-            why: "short rationale",
-            previewBrief: "short preview instruction",
-            applyBrief: "short apply instruction",
-            negativeConstraints: ["short hard constraint"],
+            actionType: "short edit intent like remove_object, brighten_area, simplify_background",
+            why: "one short reason",
+            previewBrief: "one short sentence describing the visual result",
+            applyBrief: "one short sentence describing the exact edit to apply",
+            negativeConstraints: ["short thing to preserve"],
           },
         ],
       },
