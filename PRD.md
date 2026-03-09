@@ -15,6 +15,7 @@ Juggernaut is a text-free-first, image-first desktop design workstation for non-
 - Main editing workflow: text-free to start.
 - V1 primary wedge: single-image-first. The primary loop is one image in, usable asset out.
 - V1 primary rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots.
+- V1 shell model: single-window, Warp-style session tabs over one shared canvas surface.
 - `Create Tool` remains core product value, but for the single-image-first wedge it moves to a secondary follow-on surface such as `Save Shortcut`.
 - Icon system: custom iconography generated from the same pipeline family used for Oscillo bookend icon generation, with the starting reference at `../oscillo/scripts/generate_bookend_overlays.py`.
 - Export requirement: native `.psd`, native `.ai`, and native `.fig` are release requirements.
@@ -87,11 +88,13 @@ By **5:30 PM America/Los_Angeles on Sunday, March 8, 2026**, produce a launchabl
 This is a same-day launch slice, not the full release bar. Cross-platform parity and native `.ai`/`.fig` remain release requirements unless scope is later renegotiated.
 
 ## V1 Outcome
-Users can open the app, drop in one image, see intent-aware suggested rail jobs, apply seeded single-image edits, optionally save a reusable shortcut after a successful edit, and export a usable 2D asset with a reproducibility receipt. Multi-image flows are deferred from the primary v1 loop until the single-image wedge is stable.
+Users can open the app, keep multiple isolated runs in one window through session tabs, swap the active run into a shared canvas surface, drop in one image, see intent-aware suggested rail jobs, apply seeded single-image edits, optionally save a reusable shortcut after a successful edit, and export a usable 2D asset with a reproducibility receipt. Multi-image flows are deferred from the primary v1 loop until the single-image wedge is stable.
 
 ## V1 Primary Wedge
 - One image in.
 - One usable asset out.
+- One shared window and one shared canvas surface.
+- One active run/session tab attached at a time.
 - No multi-image flows in the primary loop.
 - Left rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots.
 - `Create Tool` remains in the product, but enters as a secondary follow-on capability through `Save Shortcut` or a secondary dialog after useful edits.
@@ -104,14 +107,17 @@ Users can open the app, drop in one image, see intent-aware suggested rail jobs,
 - Day-one iPad release.
 
 ## Core User Experience
-1. The user launches the app from the dock and lands on an immediately interactive canvas shell.
-2. The user drags one image onto the canvas.
-3. The system infers intent from image content, current selection, and recent committed actions.
-4. The left rail keeps two stable icon-only anchors: `Upload` and `Select`.
-5. The rail fills 3 dynamic suggested job slots from the seeded single-image job set.
-6. The system updates job ranking only at settled interaction boundaries and keeps the visible rail sticky during active edits.
-7. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
-8. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
+1. The user launches the app from the dock and lands on a single-window shell with a shared canvas surface and an in-app session tab strip.
+2. `New Run` creates a new run in a new tab instead of wiping the current one, and `Open Run` opens an existing run in a new tab.
+3. The user switches tabs to swap the selected run/session into the shared canvas surface.
+4. The user drags one image onto the active session canvas.
+5. The system infers intent from image content, current selection, and recent committed actions.
+6. The left rail keeps two stable icon-only anchors: `Upload` and `Select`.
+7. The rail fills 3 dynamic suggested job slots from the seeded single-image job set.
+8. The system updates job ranking only at settled interaction boundaries and keeps the visible rail sticky during active edits.
+9. If the active tab is busy, tab switching is blocked or deferred until the session reaches a safe boundary.
+10. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
+11. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
 
 ## V1 Feature Scope
 ### 1. Single-Image Canvas And Editing
@@ -122,6 +128,52 @@ Users can open the app, drop in one image, see intent-aware suggested rail jobs,
 - Fast transforms: move, scale, rotate, skew, crop, mask, select region.
 - Layer and region selection based on direct manipulation.
 - Real-time preview pipeline for deterministic local transforms.
+
+### 1A. Tabbed Session Model
+- V1 uses a single app window with one shared canvas surface and one in-app tab strip.
+- Each tab represents one isolated run/session and maps to one run directory.
+- Switching tabs swaps the selected run/session into the shared canvas surface rather than mounting multiple live canvases at once.
+- Settings remain global across all tabs in the window.
+- Run-local state is tab-local, including the source image, selection state, transform state, undo/redo history, pending edits, receipts in progress, thumbnail, and dirty state.
+- `New Run` creates a fresh run/session in a new tab and leaves the current tab intact.
+- `Open Run` opens the chosen existing run in a new tab and leaves the current tab intact.
+- Closing a tab closes only the shell session for that tab; it does not delete the underlying run directory.
+- Inactive tabs do not keep a live engine attachment, live event stream, or background live generation loop in v1.
+- Only the active tab is attached to engine/events in v1.
+- If the active tab is busy, tab switching must be blocked or explicitly deferred until the session reaches a safe boundary.
+- V1 excludes drag-reorder, native macOS window tab bar integration, and background live generation on inactive tabs.
+
+Tab contract:
+
+```text
+{
+  schemaVersion: "session-tab-v1",
+  tabId: "tab_123",
+  title: "Run 3",
+  runDir: "/absolute/path/to/run_003",
+  thumbnailPath: "/absolute/path/to/thumbnail.png" | null,
+  isActive: true,
+  isBusy: false,
+  isDirty: true,
+  canClose: true
+}
+```
+
+Contract rules:
+- `tabId` is the shell-stable identifier for one tab/session pair and is not reused within the same window lifetime.
+- `title` is the user-facing tab label derived from run metadata or a fallback generated title.
+- `runDir` is the absolute path to the persisted run backing that tab.
+- `thumbnailPath` is an optional preview image path for the run and may be `null`.
+- `isActive` is `true` for exactly one tab in the window.
+- `isBusy` is `true` when the tab cannot safely swap away because an engine task, receipt-critical mutation, or event-bound operation is still in progress.
+- `isDirty` is `true` when the run has tab-local edits or session state changes not yet reflected in its latest persisted checkpoint.
+- `canClose` is `false` when the shell must prevent close for the current tab state; closing never implies deletion of `runDir`.
+
+UI ids:
+- `session-tab-strip`
+- `session-tab-list`
+- `session-tab-new`
+- `session-tab-open`
 
 ### 2. Intent Recognition And Guidance
 - Continuously infer likely single-image job intent from canvas state and image content.
@@ -166,6 +218,7 @@ Notes:
   - proposal generation
   - tool synthesis
   - export analysis
+- In v1, engine attachment and live event streaming are scoped to the active tab/session only.
 - The UI must stay interactive while model calls are in flight.
 - Remote and local model providers use the same internal action contract.
 - V1 single-image runtime exposes these provider-agnostic capability names:
@@ -325,6 +378,7 @@ Unavailable capability policy:
 
 ### Core UX
 - The main workspace includes a left vertical icon-only rail.
+- The main workspace includes an in-app session tab strip using a single shared canvas surface.
 - The left rail keeps stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots.
 - The main editing workflow requires no text labels to operate.
 - The primary wedge is one image in and one usable asset out.
@@ -343,6 +397,15 @@ Unavailable capability policy:
 - After a successful edit, the app can surface `Save Shortcut` or `Create Tool` in a secondary follow-on surface.
 - The user can save the current action as a reusable shortcut and, when supported, generalize it into a tool in the shared tool schema.
 - The saved shortcut or generated tool can be previewed, saved, and reused within the session.
+
+### Tabbed Sessions
+- `New Run` creates a new tab/session instead of wiping the current session.
+- `Open Run` opens an existing run in a new tab.
+- Closing a tab closes only the shell session and does not delete the backing run directory.
+- Only the active tab is attached to engine/events in v1.
+- Inactive tabs do not keep a live engine/event stream or background live generation in v1.
+- Tab switching is blocked or deferred while the active tab is busy.
+- V1 does not include drag-reorder or native macOS window tab bar integration.
 
 ### Model And Mode Support
 - The app supports remote and local model routing through one unified contract.
