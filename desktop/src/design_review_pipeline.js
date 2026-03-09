@@ -143,26 +143,34 @@ function findImageRecordById(request = {}, imageId = "") {
 function resolveProposalTargetImageId(request = {}, proposal = {}) {
   const visibleCanvasContext = asRecord(request?.visibleCanvasContext) || {};
   const imageCatalog = imageCatalogFromRequest(request);
-  const firstVisibleImageId =
-    imageCatalog
-      .map((image) => readFirstString(image?.id, image?.imageId, image?.image_id))
-      .find(Boolean) || null;
-  return (
-    readFirstString(
-      proposal?.imageId,
-      proposal?.image_id,
-      proposal?.targetImageId,
-      proposal?.target_image_id,
-      proposal?.targetRegion?.imageId,
-      proposal?.targetRegion?.image_id,
-      request?.primaryImageId,
-      visibleCanvasContext?.activeImageId,
-      visibleCanvasContext?.canvas?.active_image_id,
-      request?.selectedImageIds?.[0],
-      request?.imageIdsInView?.[0],
-      firstVisibleImageId
-    ) || null
-  );
+  const catalogIds = imageCatalog
+    .map((image) => readFirstString(image?.id, image?.imageId, image?.image_id))
+    .filter(Boolean);
+  const catalogIdSet = new Set(catalogIds);
+  const candidates = [
+    proposal?.imageId,
+    proposal?.image_id,
+    proposal?.targetImageId,
+    proposal?.target_image_id,
+    proposal?.targetRegion?.imageId,
+    proposal?.targetRegion?.image_id,
+    request?.primaryImageId,
+    visibleCanvasContext?.activeImageId,
+    visibleCanvasContext?.canvas?.active_image_id,
+    request?.selectedImageIds?.[0],
+    request?.imageIdsInView?.[0],
+    catalogIds[0] || null,
+  ]
+    .map((value) => readFirstString(value))
+    .filter(Boolean);
+
+  if (catalogIdSet.size > 0) {
+    for (const candidate of candidates) {
+      if (catalogIdSet.has(candidate)) return candidate;
+    }
+    return catalogIds[0] || null;
+  }
+  return candidates[0] || null;
 }
 
 function resolveProposalReferenceImageIds(request = {}, proposal = {}, targetImageId = null) {

@@ -376,6 +376,68 @@ test("design review pipeline resolves apply target from visible image context wh
   assert.equal(applyCalls[0].targetImage?.path, "/tmp/squidward.png");
 });
 
+test("design review pipeline ignores invalid proposal imageId and falls back to catalog-matching target", async () => {
+  const applyCalls = [];
+  const pipeline = createDesignReviewPipeline({
+    providerRouter: {
+      async runPlanner() {
+        return {
+          text: JSON.stringify({
+            proposals: [
+              {
+                label: "Bluer face tone",
+                imageId: "not-a-real-image-id",
+                actionType: "recolor_face",
+                why: "Apply to the real visible image target.",
+                previewBrief: "Preview a slightly bluer face tone.",
+                applyBrief: "Apply a subtle blue tint to the face.",
+              },
+            ],
+          }),
+        };
+      },
+      async runPreview({ proposal, outputPath }) {
+        return {
+          outputPath: outputPath || `/tmp/${proposal.proposalId}.png`,
+        };
+      },
+    },
+    runApply: async (payload) => {
+      applyCalls.push(payload);
+      return {
+        outputPath: payload.outputPath || "/tmp/review-apply-output.png",
+      };
+    },
+  });
+
+  const review = await pipeline.startReview({
+    request: {
+      requestId: "review-apply-invalid-imageid",
+      primaryImageId: "img-real",
+      visibleCanvasRef: "/tmp/review-visible.png",
+      imageIdsInView: ["img-real"],
+      selectedImageIds: [],
+      visibleCanvasContext: {
+        runDir: "/tmp/review-run",
+        activeImageId: "img-real",
+        images: [
+          {
+            id: "img-real",
+            path: "/tmp/squidward-real.png",
+          },
+        ],
+      },
+    },
+  });
+
+  const applyResult = await pipeline.applyProposal(review.proposals[0].proposalId);
+
+  assert.equal(applyResult.ok, true);
+  assert.equal(applyCalls.length, 1);
+  assert.equal(applyCalls[0].targetImageId, "img-real");
+  assert.equal(applyCalls[0].targetImage?.path, "/tmp/squidward-real.png");
+});
+
 test("design review pipeline blocks duplicate applies while one proposal is already running", async () => {
   let resolveApply;
   const applyPromise = new Promise((resolve) => {
