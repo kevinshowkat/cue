@@ -53,7 +53,7 @@ test("tab switching keeps the visual swap on the fast path and defers hydration 
   assert.match(scheduleSource, /requestIdleCallback/);
   assert.match(
     activateTabSource,
-    /bindTabSessionToState\(target\.session\);[\s\S]*tabbedSessions\.setActiveTab\(normalized\);[\s\S]*syncActiveTabPreviewRuntime\(\);[\s\S]*publishActiveTabVisibleState\(\{\s*allowTabSwitchPreview:\s*true,\s*reason\s*\}\);[\s\S]*const hydration = scheduleTabHydration\(normalized, reason, \{ spawnEngine \}\);/
+    /bindTabSessionToState\(target\.session\);[\s\S]*tabbedSessions\.setActiveTab\(normalized\);[\s\S]*syncActiveTabPreviewRuntime\(\);[\s\S]*publishActiveTabVisibleState\(\{\s*allowTabSwitchPreview:\s*true,\s*reason\s*\}\);[\s\S]*const hydration = scheduleTabHydration\(normalized, reason, \{\s*spawnEngine,\s*engineFailureToast\s*\}\);/
   );
   assert.match(
     attachSource,
@@ -111,7 +111,7 @@ test("create and open paths rely on activateTab's single hydration schedule inst
   assert.equal(openExistingRunSource.includes("scheduleTabHydration"), false);
   assert.match(
     createRunSource,
-    /const result = await activateTab\(tabId, \{ spawnEngine: true, reason: "new_run_tab" \}\);[\s\S]*if \(result\?\.hydration\) await result\.hydration;/
+    /const result = await activateTab\(tabId, \{[\s\S]*spawnEngine: true,[\s\S]*reason: "new_run_tab",?[\s\S]*\}\);[\s\S]*if \(result\?\.hydration\) await result\.hydration;/
   );
   assert.match(
     openExistingRunSource,

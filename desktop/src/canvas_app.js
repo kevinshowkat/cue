@@ -3956,7 +3956,7 @@ async function syncActiveRunPtyBinding({ useCache = true } = {}) {
   return Boolean(state.ptySpawned);
 }
 
-async function ensureEngineSpawned({ reason = "engine" } = {}) {
+async function ensureEngineSpawned({ reason = "engine", showToastOnFailure = true } = {}) {
   if (state.ptySpawning) return false;
   if (!state.runDir || !state.eventsPath) return false;
 
@@ -3968,7 +3968,7 @@ async function ensureEngineSpawned({ reason = "engine" } = {}) {
 
   await spawnEngine();
   if (state.ptySpawned) startEventsPolling();
-  if (!state.ptySpawned) {
+  if (!state.ptySpawned && showToastOnFailure) {
     showToast(`Engine failed to start for ${reason}.`, "error", 3200);
   }
   return Boolean(state.ptySpawned);
@@ -31668,7 +31668,7 @@ function publishActiveTabVisibleState({ allowTabSwitchPreview = false, reason = 
   requestRender({ allowTabSwitchPreview, reason });
 }
 
-function scheduleTabHydration(tabId, reason, { spawnEngine = false } = {}) {
+function scheduleTabHydration(tabId, reason, { spawnEngine = false, engineFailureToast = true } = {}) {
   const normalizedTabId = String(tabId || "").trim();
   if (!normalizedTabId) return Promise.resolve(false);
   const perfSample = startPerfSample("tab:deferred-hydration", {
@@ -31693,6 +31693,7 @@ function scheduleTabHydration(tabId, reason, { spawnEngine = false } = {}) {
     return attachActiveTabRuntime({
       tabId: normalizedTabId,
       spawnEngine,
+      engineFailureToast,
       reason,
       hydrationToken,
     });
@@ -31763,6 +31764,7 @@ function scheduleTabHydration(tabId, reason, { spawnEngine = false } = {}) {
 async function attachActiveTabRuntime({
   tabId = state.activeTabId || null,
   spawnEngine: shouldSpawnEngine = false,
+  engineFailureToast = true,
   reason = "tab_activate",
   hydrationToken = tabHydrationToken,
 } = {}) {
@@ -31791,7 +31793,7 @@ async function attachActiveTabRuntime({
   requestRender();
   if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
   if (shouldSpawnEngine && state.runDir) {
-    const ok = await ensureEngineSpawned({ reason });
+    const ok = await ensureEngineSpawned({ reason, showToastOnFailure: engineFailureToast });
     if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
     if (ok) setStatus("Engine: ready");
   } else {
@@ -31803,7 +31805,7 @@ async function attachActiveTabRuntime({
   return true;
 }
 
-async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate" } = {}) {
+async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate", engineFailureToast = true } = {}) {
   const normalized = String(tabId || "").trim();
   const perfSample = startPerfSample("tab:activate-fast-path", {
     reason,
@@ -31829,7 +31831,7 @@ async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate"
   if (normalized === String(state.activeTabId || "").trim()) {
     syncActiveTabPreviewRuntime();
     publishActiveTabVisibleState();
-    const hydration = scheduleTabHydration(normalized, reason, { spawnEngine });
+    const hydration = scheduleTabHydration(normalized, reason, { spawnEngine, engineFailureToast });
     if (waitForHydration) await hydration;
     return finalize(
       { ok: true, tabId: normalized, activeTabId: state.activeTabId || null, hydration },
@@ -31854,7 +31856,7 @@ async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate"
   syncActiveTabPreviewRuntime();
   syncActiveTabRecord({ capture: false, publish: true });
   publishActiveTabVisibleState({ allowTabSwitchPreview: true, reason });
-  const hydration = scheduleTabHydration(normalized, reason, { spawnEngine });
+  const hydration = scheduleTabHydration(normalized, reason, { spawnEngine, engineFailureToast });
   if (waitForHydration) await hydration;
   return finalize(
     {
@@ -31975,6 +31977,7 @@ async function createRun({ announce = true, source = "new_run" } = {}) {
     showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
     return { ok: false, reason: blockReason };
   }
+  const showStartupToast = announce || String(source || "").trim() !== "boot";
   setStatus("Engine: creating run tab…");
   const payload = await invoke("create_run_dir");
   state.installTelemetry.runSequence = (Number(state.installTelemetry.runSequence) || 0) + 1;
@@ -32001,15 +32004,19 @@ async function createRun({ announce = true, source = "new_run" } = {}) {
     },
     { activate: false }
   );
-  const result = await activateTab(tabId, { spawnEngine: true, reason: "new_run_tab" });
+  const result = await activateTab(tabId, {
+    spawnEngine: true,
+    engineFailureToast: showStartupToast,
+    reason: "new_run_tab",
+  });
   if (result?.hydration) await result.hydration;
   const createdRecord = tabbedSessions.getTab(tabId) || null;
   const createdLabel = sessionTabDisplayLabel(createdRecord, DEFAULT_UNTITLED_TAB_TITLE);
   if (state.ptySpawned) {
-    if (announce) {
+    if (showStartupToast) {
       showToast(`New tab ready: ${createdLabel}.`, "tip", 2600);
     }
-  } else {
+  } else if (showStartupToast) {
     showToast(`Created ${createdLabel}, but the engine did not start.`, "error", 3200);
   }
   return result;

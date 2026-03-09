@@ -10,7 +10,7 @@ const app = readFileSync(join(desktopRoot, "src", "canvas_app.js"), "utf8");
 const createRunSignature = "async function createRun({ announce = true, source = \"new_run\" } = {}) {";
 const ensureRunChunk = app.slice(app.indexOf("async function ensureRun() {"), app.indexOf(createRunSignature));
 const ensureEngineSpawnedChunk = app.slice(
-  app.indexOf("async function ensureEngineSpawned({ reason = \"engine\" } = {}) {"),
+  app.indexOf("async function ensureEngineSpawned({ reason = \"engine\", showToastOnFailure = true } = {}) {"),
   app.indexOf("function allowVisionDescribe() {")
 );
 const bootChunk = app.slice(app.indexOf("async function boot() {"), app.indexOf("bindCommunicationReviewBootstrapBridge();"));
@@ -78,11 +78,17 @@ test("tab activation is lazy and validates engine binding before reusing a PTY",
     attachActiveTabRuntimeChunk.includes("spawnEngine: shouldSpawnEngine = false"),
     true
   );
+  assert.equal(attachActiveTabRuntimeChunk.includes("engineFailureToast = true"), true);
   assert.equal(attachActiveTabRuntimeChunk.includes("tabId = state.activeTabId || null"), true);
   assert.equal(attachActiveTabRuntimeChunk.includes("hydrationToken = tabHydrationToken"), true);
   assert.equal(attachActiveTabRuntimeChunk.includes("scheduleVisualPromptWrite();"), false);
   assert.equal(attachActiveTabRuntimeChunk.includes("if (shouldSpawnEngine && state.runDir) {"), true);
-  assert.equal(attachActiveTabRuntimeChunk.includes("const ok = await ensureEngineSpawned({ reason });"), true);
+  assert.equal(
+    attachActiveTabRuntimeChunk.includes(
+      "const ok = await ensureEngineSpawned({ reason, showToastOnFailure: engineFailureToast });"
+    ),
+    true
+  );
   assert.equal(attachActiveTabRuntimeChunk.includes("await syncActiveRunPtyBinding({ useCache: true });"), true);
   assert.equal(attachActiveTabRuntimeChunk.includes("currentTabHydrationMatches(normalizedTabId, hydrationToken)"), true);
   assert.equal(attachActiveTabRuntimeChunk.includes("startEventsPolling();"), true);
@@ -99,6 +105,10 @@ test("tab activation is lazy and validates engine binding before reusing a PTY",
 test("boot creates the initial run without showing the new-tab toast", () => {
   assert.equal(bootChunk.includes('await createRun({ announce: false, source: "boot" });'), true);
   assert.equal(app.includes(createRunSignature), true);
+  assert.equal(app.includes('const showStartupToast = announce || String(source || "").trim() !== "boot";'), true);
+  assert.equal(app.includes("engineFailureToast: showStartupToast,"), true);
+  assert.equal(app.includes("if (showStartupToast) {"), true);
+  assert.equal(app.includes("} else if (showStartupToast) {"), true);
 });
 
 test("tab rename can only start for the active tab", () => {

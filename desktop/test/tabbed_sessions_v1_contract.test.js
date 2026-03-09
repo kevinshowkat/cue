@@ -58,7 +58,7 @@ test("tabbed session store preserves the current tab until activation and closin
 test("canvas app routes New Run and Open Run into fresh tabs instead of wiping the current shell session", () => {
   assert.match(
     app,
-    /async function createRun\(\{[\s\S]*announce = true,[\s\S]*source = "new_run"[\s\S]*\} = \{\}\) \{[\s\S]*const tabId = createTabId\(\);[\s\S]*tabbedSessions\.upsertTab\([\s\S]*runDir: payload\.run_dir,[\s\S]*eventsPath: payload\.events_path,[\s\S]*\{\s*activate: false\s*\}[\s\S]*activateTab\(tabId, \{ spawnEngine: true, reason: "new_run_tab" \}\);/
+    /async function createRun\(\{[\s\S]*announce = true,[\s\S]*source = "new_run"[\s\S]*\} = \{\}\) \{[\s\S]*const tabId = createTabId\(\);[\s\S]*tabbedSessions\.upsertTab\([\s\S]*runDir: payload\.run_dir,[\s\S]*eventsPath: payload\.events_path,[\s\S]*\{\s*activate: false\s*\}[\s\S]*activateTab\(tabId, \{[\s\S]*spawnEngine: true,[\s\S]*reason: "new_run_tab",?[\s\S]*\}\);/
   );
   assert.match(
     app,
@@ -92,7 +92,7 @@ test("busy active tabs block tab switching with the implemented v1 reasons", () 
   );
   assert.match(
     app,
-    /async function activateTab\(tabId, \{ spawnEngine = false, reason = "tab_activate" \} = \{\}\) \{[\s\S]*const blockReason = currentTabSwitchBlockReason\(\);[\s\S]*showToast\(currentTabSwitchBlockMessage\(blockReason\), "tip", 2200\);[\s\S]*return finalize\(\s*\{ ok: false, reason: blockReason, activeTabId: state\.activeTabId \|\| null \},\s*\{ ok: false, reason: blockReason \}\s*\);/
+    /async function activateTab\(tabId, \{ spawnEngine = false, reason = "tab_activate", engineFailureToast = true \} = \{\}\) \{[\s\S]*const blockReason = currentTabSwitchBlockReason\(\);[\s\S]*showToast\(currentTabSwitchBlockMessage\(blockReason\), "tip", 2200\);[\s\S]*return finalize\(\s*\{ ok: false, reason: blockReason, activeTabId: state\.activeTabId \|\| null \},\s*\{ ok: false, reason: blockReason \}\s*\);/
   );
   assert.match(
     app,
