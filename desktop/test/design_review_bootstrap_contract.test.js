@@ -27,3 +27,10 @@ test("design review bootstrap keeps the integrated communication tray light and 
   assert.match(bootstrap, /communication-proposal-tray-title/);
   assert.doesNotMatch(bootstrap, /design-review-tray/);
 });
+
+test("design review bootstrap only schedules upload-analysis warmup on actual image-introducing events", () => {
+  assert.doesNotMatch(bootstrap, /window\.addEventListener\("juggernaut:shell-ready"/);
+  assert.doesNotMatch(bootstrap, /window\.addEventListener\("focus"/);
+  assert.match(bootstrap, /target\?\.matches\?\.\('input\[type="file"\]'\)/);
+  assert.match(bootstrap, /queueWarmup\(\{ delayMs: 120 \}\)/);
+});
