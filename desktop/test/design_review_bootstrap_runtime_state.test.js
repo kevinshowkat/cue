@@ -47,7 +47,7 @@ function instantiateFunction(name, deps = {}) {
   return new Function(...keys, `return (${source});`)(...values);
 }
 
-test("review bootstrap runtime registry keeps tray state isolated by active tab", () => {
+function createRuntimeRegistry() {
   const asRecord = instantiateFunction("asRecord");
   const readFirstString = instantiateFunction("readFirstString");
   const resolveDesignReviewRuntimeSessionKey = instantiateFunction(
@@ -74,7 +74,10 @@ test("review bootstrap runtime registry keeps tray state isolated by active tab"
     }
   );
 
-  const registry = createDesignReviewRuntimeRegistry();
+  return createDesignReviewRuntimeRegistry();
+}
+
+function seedRuntimeRegistry(registry) {
   registry.rememberRequest("review-a", "tab:tab-a");
   registry.rememberRequest("review-b", "tab:tab-b");
 
@@ -98,6 +101,11 @@ test("review bootstrap runtime registry keeps tray state isolated by active tab"
     },
     status: "ready",
   });
+}
+
+test("review bootstrap runtime registry keeps tray state isolated by active tab", () => {
+  const registry = createRuntimeRegistry();
+  seedRuntimeRegistry(registry);
 
   const activeTabA = registry.runtimeStateForActiveTrayEvent({
     context: {
@@ -137,6 +145,43 @@ test("review bootstrap runtime registry keeps tray state isolated by active tab"
   assert.equal(activeTabB?.activeRequestId, "review-b");
   assert.equal(activeTabB?.lastReviewState?.status, "ready");
   assert.equal(mismatchedTab, null);
+});
+
+test("review bootstrap runtime registry resolves tray state from requestId mapping when shell tray context loses activeTabId", () => {
+  const registry = createRuntimeRegistry();
+  seedRuntimeRegistry(registry);
+
+  const resolved = registry.runtimeStateForActiveTrayEvent({
+    context: {
+      runDir: "/tmp/run-a",
+    },
+    tray: {
+      visible: true,
+      requestId: "review-a",
+    },
+  });
+
+  assert.equal(resolved?.sessionKey, "tab:tab-a");
+  assert.equal(resolved?.activeRequestId, "review-a");
+  assert.equal(resolved?.lastReviewState?.status, "planning");
+});
+
+test("review bootstrap runtime registry rejects tray events with a mismatched request and active tab", () => {
+  const registry = createRuntimeRegistry();
+  seedRuntimeRegistry(registry);
+
+  const mismatched = registry.runtimeStateForActiveTrayEvent({
+    context: {
+      activeTabId: "tab-b",
+      runDir: "/tmp/run-b",
+    },
+    tray: {
+      visible: true,
+      requestId: "review-a",
+    },
+  });
+
+  assert.equal(mismatched, null);
 });
 
 test("review bootstrap debug payload collector preserves apply failure details in the tray state", () => {

@@ -1185,6 +1185,11 @@ export function createDesignReviewRuntimeRegistry() {
   const runtimeStateBySession = new Map();
   const requestToSessionKey = new Map();
 
+  const normalizeTabId = (value = "") => {
+    const normalized = readFirstString(value);
+    return normalized.startsWith("tab:") ? normalized.slice(4) : normalized;
+  };
+
   const stateForSession = (sessionKey = "", { create = true } = {}) => {
     const normalizedSessionKey = readFirstString(sessionKey);
     if (!normalizedSessionKey) return null;
@@ -1216,6 +1221,44 @@ export function createDesignReviewRuntimeRegistry() {
       shellContext: context,
     });
 
+  const trayEventMatchesRuntimeState = (runtimeState = null, detail = {}) => {
+    if (!runtimeState?.lastReviewState) return false;
+    const normalizedDetail = asRecord(detail) || {};
+    const tray = asRecord(normalizedDetail?.tray) || {};
+    const context = asRecord(normalizedDetail?.context) || {};
+    const request = asRecord(runtimeState.lastReviewState?.request) || {};
+    const runtimeRequestId = readFirstString(
+      runtimeState.activeRequestId,
+      request?.requestId
+    );
+    const trayRequestId = readFirstString(tray?.requestId, normalizedDetail?.requestId);
+    if (trayRequestId && runtimeRequestId && trayRequestId !== runtimeRequestId) {
+      return false;
+    }
+    const eventTabId = normalizeTabId(context?.activeTabId);
+    const runtimeTabId = normalizeTabId(
+      readFirstString(
+        runtimeState.sessionKey?.startsWith("tab:") ? runtimeState.sessionKey.slice(4) : "",
+        runtimeState.lastCommunicationPayload?.tabId,
+        request?.visibleCanvasContext?.activeTabId,
+        request?.sessionId
+      )
+    );
+    if (eventTabId && runtimeTabId && eventTabId !== runtimeTabId) {
+      return false;
+    }
+    const eventRunDir = readFirstString(context?.runDir);
+    const runtimeRunDir = readFirstString(
+      runtimeState.sessionKey?.startsWith("run:") ? runtimeState.sessionKey.slice(4) : "",
+      runtimeState.lastCommunicationPayload?.runDir,
+      request?.visibleCanvasContext?.runDir
+    );
+    if (eventRunDir && runtimeRunDir && eventRunDir !== runtimeRunDir) {
+      return false;
+    }
+    return true;
+  };
+
   const runtimeStateForReviewState = (reviewState = {}) => {
     const requestId = readFirstString(reviewState?.request?.requestId);
     const sessionKey =
@@ -1237,16 +1280,19 @@ export function createDesignReviewRuntimeRegistry() {
     const normalizedDetail = asRecord(detail) || {};
     const tray = asRecord(normalizedDetail?.tray) || {};
     if (tray.visible === false) return null;
-    const sessionKey = sessionKeyForContext(normalizedDetail?.context);
-    if (!sessionKey) return null;
-    const runtimeState = stateForSession(sessionKey, { create: false });
+    const trayRequestId = readFirstString(tray?.requestId, normalizedDetail?.requestId);
+    const requestSessionKey = trayRequestId ? requestToSessionKey.get(trayRequestId) : "";
+    const requestRuntimeState = stateForSession(requestSessionKey, { create: false });
+    if (requestRuntimeState?.lastReviewState) {
+      return trayEventMatchesRuntimeState(requestRuntimeState, normalizedDetail)
+        ? requestRuntimeState
+        : null;
+    }
+    const contextSessionKey = sessionKeyForContext(normalizedDetail?.context);
+    if (!contextSessionKey) return null;
+    const runtimeState = stateForSession(contextSessionKey, { create: false });
     if (!runtimeState?.lastReviewState) return null;
-    const runtimeRequestId = readFirstString(
-      runtimeState.activeRequestId,
-      runtimeState.lastReviewState?.request?.requestId
-    );
-    const trayRequestId = readFirstString(tray?.requestId);
-    if (trayRequestId && runtimeRequestId && trayRequestId !== runtimeRequestId) {
+    if (!trayEventMatchesRuntimeState(runtimeState, normalizedDetail)) {
       return null;
     }
     return runtimeState;
