@@ -28,7 +28,7 @@
       "tool_id": "upload",
       "label": "Import image",
       "semantic_role": "ingest",
-      "notes": "Upward intake arrow landing into a weighted tray.",
+      "notes": "Classic centered plus sign so adding/importing an image reads immediately without extra metaphor.",
       "asset": "./upload.svg"
     },
     {
