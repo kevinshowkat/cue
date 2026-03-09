@@ -43,6 +43,8 @@ const MENU_CANVAS_IMPORT: &str = "canvas_import_photos";
 const MENU_CANVAS_EXPORT_PSD: &str = "canvas_export_psd";
 const MENU_CANVAS_SETTINGS: &str = "canvas_settings";
 const NATIVE_MENU_ACTION_EVENT: &str = "native-menu-action";
+const DESIGN_REVIEW_PLANNER_MODEL: &str = "gpt-5.4";
+const DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL: &str = "openai/gpt-5.4";
 
 fn build_app_menu(app_name: &str) -> Menu {
     let import = CustomMenuItem::new(MENU_CANVAS_IMPORT.to_string(), "Import Photos")
@@ -2391,6 +2393,158 @@ fn review_normalize_openrouter_model(raw: &str, default_model: &str) -> String {
     trimmed.to_string()
 }
 
+fn review_normalize_planner_model(raw: &str, provider: &str) -> String {
+    let trimmed = raw.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let canonical = if trimmed.is_empty() {
+        DESIGN_REVIEW_PLANNER_MODEL.to_string()
+    } else if lower == "gpt-5.4-vision"
+        || lower == "openai/gpt-5.4-vision"
+        || lower == DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL
+    {
+        DESIGN_REVIEW_PLANNER_MODEL.to_string()
+    } else if provider.eq_ignore_ascii_case("openai") {
+        trimmed
+            .strip_prefix("openai/")
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| trimmed.to_string())
+    } else {
+        trimmed.to_string()
+    };
+
+    if provider.eq_ignore_ascii_case("openrouter") {
+        if canonical.eq_ignore_ascii_case(DESIGN_REVIEW_PLANNER_MODEL) {
+            return DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL.to_string();
+        }
+        return review_normalize_openrouter_model(
+            &canonical,
+            DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL,
+        );
+    }
+
+    canonical
+}
+
+fn review_extract_error_detail(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        let candidates = [
+            parsed
+                .pointer("/error/message")
+                .and_then(|value| value.as_str()),
+            parsed
+                .pointer("/error/metadata/raw")
+                .and_then(|value| value.as_str()),
+            parsed.pointer("/message").and_then(|value| value.as_str()),
+            parsed.pointer("/detail").and_then(|value| value.as_str()),
+        ];
+        for candidate in candidates.into_iter().flatten() {
+            let text = candidate.trim();
+            if !text.is_empty() {
+                return text.to_string();
+            }
+        }
+    }
+    trimmed.to_string()
+}
+
+fn review_is_openrouter_auth_error(status: u16, detail: &str) -> bool {
+    let lower = detail.to_ascii_lowercase();
+    status == 401
+        || status == 403
+        || lower.contains("user not found")
+        || lower.contains("unauthorized")
+        || lower.contains("invalid api key")
+        || lower.contains("invalid key")
+        || lower.contains("expired key")
+}
+
+fn review_is_invalid_model_error(status: u16, detail: &str) -> bool {
+    let lower = detail.to_ascii_lowercase();
+    status == 400
+        && (lower.contains("not a valid model id")
+            || lower.contains("invalid model id")
+            || lower.contains("invalid model")
+            || lower.contains("unknown model")
+            || lower.contains("unsupported model"))
+}
+
+fn review_format_planner_http_error(
+    provider: &str,
+    normalized_model: &str,
+    status: u16,
+    body: &str,
+) -> String {
+    let detail = review_extract_error_detail(body);
+    let provider_label = match provider {
+        "openrouter" => "OpenRouter",
+        "openai" => "OpenAI",
+        _ => "Planner",
+    };
+
+    if provider == "openrouter" && review_is_openrouter_auth_error(status, &detail) {
+        let mut message = format!(
+            "{provider_label} planner request failed: configured OpenRouter key is invalid or expired (provider={provider}, normalized model={normalized_model}, status={status})."
+        );
+        if !detail.is_empty() {
+            message.push_str(&format!(" API detail: {detail}"));
+        }
+        return message;
+    }
+
+    if review_is_invalid_model_error(status, &detail) {
+        let mut message = format!(
+            "{provider_label} planner request failed: invalid model id for provider {provider} (normalized model={normalized_model}, status={status})."
+        );
+        if !detail.is_empty() {
+            message.push_str(&format!(" API detail: {detail}"));
+        }
+        return message;
+    }
+
+    if detail.is_empty() {
+        return format!(
+            "{provider_label} planner request failed (provider={provider}, normalized model={normalized_model}, status={status})."
+        );
+    }
+
+    format!(
+        "{provider_label} planner request failed (provider={provider}, normalized model={normalized_model}, status={status}): {detail}"
+    )
+}
+
+fn review_build_openai_planner_payload(
+    prompt: &str,
+    image_urls: &[String],
+    model: &str,
+) -> serde_json::Value {
+    let mut content = vec![serde_json::json!({
+        "type": "input_text",
+        "text": prompt,
+    })];
+    for image_url in image_urls {
+        content.push(serde_json::json!({
+            "type": "input_image",
+            "image_url": image_url,
+            "detail": "high",
+        }));
+    }
+    serde_json::json!({
+        "model": model,
+        "reasoning": {
+            "effort": "xhigh",
+        },
+        "input": [{
+            "role": "user",
+            "content": content,
+        }],
+    })
+}
+
 fn review_apply_openrouter_headers(
     mut request: reqwest::blocking::RequestBuilder,
     vars: &HashMap<String, String>,
@@ -2559,10 +2713,10 @@ fn run_design_review_planner_request(
         .unwrap_or("auto")
         .trim()
         .to_ascii_lowercase();
-    let model = request
+    let requested_model = request
         .get("model")
         .and_then(|value| value.as_str())
-        .unwrap_or("gpt-5.4-vision")
+        .unwrap_or(DESIGN_REVIEW_PLANNER_MODEL)
         .trim()
         .to_string();
     let prompt = request
@@ -2595,23 +2749,13 @@ fn run_design_review_planner_request(
         if let Some(api_key) =
             review_first_non_empty(vars, &["OPENAI_API_KEY", "OPENAI_API_KEY_BACKUP"])
         {
-            let mut content = vec![serde_json::json!({
-                "type": "input_text",
-                "text": prompt,
-            })];
-            for path in &image_paths {
-                content.push(serde_json::json!({
-                    "type": "input_image",
-                    "image_url": review_image_data_url(path)?,
-                }));
-            }
-            let payload = serde_json::json!({
-                "model": model,
-                "input": [{
-                    "role": "user",
-                    "content": content,
-                }],
-            });
+            let normalized_model = review_normalize_planner_model(&requested_model, "openai");
+            let image_urls = image_paths
+                .iter()
+                .map(|path| review_image_data_url(path))
+                .collect::<Result<Vec<_>, _>>()?;
+            let payload =
+                review_build_openai_planner_payload(&prompt, &image_urls, &normalized_model);
             let response = client
                 .post("https://api.openai.com/v1/responses")
                 .bearer_auth(api_key)
@@ -2622,17 +2766,18 @@ fn run_design_review_planner_request(
             let status = response.status();
             let body = response.text().map_err(|e| e.to_string())?;
             if !status.is_success() {
-                return Err(format!(
-                    "OpenAI planner request failed ({}): {}",
+                return Err(review_format_planner_http_error(
+                    "openai",
+                    &normalized_model,
                     status.as_u16(),
-                    body
+                    &body,
                 ));
             }
             let parsed: serde_json::Value = serde_json::from_str(&body)
                 .unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
             return Ok(serde_json::json!({
                 "provider": "openai",
-                "model": model,
+                "model": normalized_model,
                 "transport": "responses",
                 "text": review_extract_openai_output_text(&parsed),
                 "raw": parsed,
@@ -2642,6 +2787,7 @@ fn run_design_review_planner_request(
 
     if provider_pref == "auto" || provider_pref == "openrouter" {
         if let Some(api_key) = review_first_non_empty(vars, &["OPENROUTER_API_KEY"]) {
+            let normalized_model = review_normalize_planner_model(&requested_model, "openrouter");
             let mut content = vec![serde_json::json!({
                 "type": "text",
                 "text": prompt,
@@ -2655,7 +2801,7 @@ fn run_design_review_planner_request(
                 }));
             }
             let payload = serde_json::json!({
-                "model": review_normalize_openrouter_model(&model, "openai/gpt-5.4-vision"),
+                "model": normalized_model,
                 "messages": [{
                     "role": "user",
                     "content": content,
@@ -2677,17 +2823,18 @@ fn run_design_review_planner_request(
             let status = response.status();
             let body = response.text().map_err(|e| e.to_string())?;
             if !status.is_success() {
-                return Err(format!(
-                    "OpenRouter planner request failed ({}): {}",
+                return Err(review_format_planner_http_error(
+                    "openrouter",
+                    &normalized_model,
                     status.as_u16(),
-                    body
+                    &body,
                 ));
             }
             let parsed: serde_json::Value = serde_json::from_str(&body)
                 .unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
             return Ok(serde_json::json!({
                 "provider": "openrouter",
-                "model": review_normalize_openrouter_model(&model, "openai/gpt-5.4-vision"),
+                "model": normalized_model,
                 "transport": "chat_completions",
                 "text": review_extract_openrouter_text(&parsed),
                 "raw": parsed,
@@ -2695,7 +2842,7 @@ fn run_design_review_planner_request(
         }
     }
 
-    Err("No planner provider credentials are configured for design review.".to_string())
+    Err("No planner provider credentials are configured for design review. Set OPENAI_API_KEY or OPENROUTER_API_KEY.".to_string())
 }
 
 fn run_design_review_preview_request(
@@ -3537,7 +3684,9 @@ mod tests {
 
     use super::{
         encode_flattened_psd_rgba, is_native_engine_placeholder, push_native_path_candidate,
-        resolve_existing_env_binary_path, EngineProgramCandidate,
+        resolve_existing_env_binary_path, review_build_openai_planner_payload,
+        review_format_planner_http_error, review_normalize_planner_model, EngineProgramCandidate,
+        DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL, DESIGN_REVIEW_PLANNER_MODEL,
     };
 
     #[test]
@@ -3620,5 +3769,92 @@ mod tests {
         assert_eq!(resolved, expected);
 
         let _ = std::fs::remove_file(full);
+    }
+
+    #[test]
+    fn openai_planner_payload_uses_xhigh_reasoning_and_high_detail_images() {
+        let payload = review_build_openai_planner_payload(
+            "Plan the next edit.",
+            &[
+                "data:image/png;base64,AAAA".to_string(),
+                "https://example.com/ref.png".to_string(),
+            ],
+            DESIGN_REVIEW_PLANNER_MODEL,
+        );
+
+        assert_eq!(
+            payload.get("model").and_then(|value| value.as_str()),
+            Some("gpt-5.4")
+        );
+        assert_eq!(
+            payload
+                .pointer("/reasoning/effort")
+                .and_then(|value| value.as_str()),
+            Some("xhigh")
+        );
+        assert_eq!(
+            payload
+                .pointer("/input/0/content/1/detail")
+                .and_then(|value| value.as_str()),
+            Some("high")
+        );
+        assert_eq!(
+            payload
+                .pointer("/input/0/content/2/detail")
+                .and_then(|value| value.as_str()),
+            Some("high")
+        );
+    }
+
+    #[test]
+    fn planner_model_normalization_uses_openai_gpt_5_4_for_openrouter() {
+        assert_eq!(
+            review_normalize_planner_model("", "openai"),
+            DESIGN_REVIEW_PLANNER_MODEL
+        );
+        assert_eq!(
+            review_normalize_planner_model("gpt-5.4-vision", "openai"),
+            DESIGN_REVIEW_PLANNER_MODEL
+        );
+        assert_eq!(
+            review_normalize_planner_model("openai/gpt-5.4", "openai"),
+            DESIGN_REVIEW_PLANNER_MODEL
+        );
+        assert_eq!(
+            review_normalize_planner_model("gpt-5.4", "openrouter"),
+            DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL
+        );
+        assert_eq!(
+            review_normalize_planner_model("openai/gpt-5.4-vision", "openrouter"),
+            DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL
+        );
+    }
+
+    #[test]
+    fn planner_error_message_flags_invalid_or_expired_openrouter_auth() {
+        let message = review_format_planner_http_error(
+            "openrouter",
+            DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL,
+            401,
+            r#"{"error":{"message":"User not found"}}"#,
+        );
+
+        assert!(message.contains("configured OpenRouter key is invalid or expired"));
+        assert!(message.contains("provider=openrouter"));
+        assert!(message.contains("normalized model=openai/gpt-5.4"));
+    }
+
+    #[test]
+    fn planner_error_message_includes_normalized_model_for_invalid_model_ids() {
+        let message = review_format_planner_http_error(
+            "openrouter",
+            "openai/gpt-5.4-vision",
+            400,
+            r#"{"error":{"message":"openai/gpt-5.4-vision is not a valid model ID"}}"#,
+        );
+
+        assert!(message.contains("invalid model id"));
+        assert!(message.contains("provider openrouter"));
+        assert!(message.contains("normalized model=openai/gpt-5.4-vision"));
     }
 }
