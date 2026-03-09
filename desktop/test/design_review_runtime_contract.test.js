@@ -17,3 +17,7 @@ test("design review provider command runs on a blocking task instead of the imme
     /tauri::async_runtime::spawn_blocking\(move \|\| run_design_review_provider_request_sync\(request\)\)/
   );
 });
+
+test("design review provider sync dispatcher supports the final apply kind", () => {
+  assert.match(mainRs, /"apply"\s*=>\s*run_design_review_apply_request\(&request,\s*&vars\)/);
+});

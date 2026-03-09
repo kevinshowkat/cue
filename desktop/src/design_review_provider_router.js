@@ -1,13 +1,19 @@
 import {
+  DESIGN_REVIEW_FINAL_APPLY_MODEL,
   DESIGN_REVIEW_PLANNER_MODEL,
   DESIGN_REVIEW_PREVIEW_MODEL,
+  buildDesignReviewApplyRequest,
   buildDesignReviewPreviewPrompt,
+  normalizeDesignReviewApplyModel,
 } from "./design_review_contract.js";
 
 const VALID_PLANNER_PROVIDERS = new Set(["openai", "openrouter"]);
 const VALID_PREVIEW_PROVIDERS = new Set(["google", "openrouter"]);
+const VALID_APPLY_PROVIDERS = new Set(["google"]);
 const DESIGN_REVIEW_PLANNER_PROVIDER_ERROR =
   "Design review planner requires OPENAI_API_KEY or OPENROUTER_API_KEY.";
+const DESIGN_REVIEW_APPLY_PROVIDER_ERROR =
+  "Design review final apply requires GEMINI_API_KEY or GOOGLE_API_KEY.";
 const DESIGN_REVIEW_PROVIDER_COMMAND = "run_design_review_provider_request";
 
 function readFirstString(...values) {
@@ -30,6 +36,21 @@ function cloneJson(value) {
 function normalizeProviderPreference(value, validProviders) {
   const provider = readFirstString(value).toLowerCase();
   return validProviders.has(provider) ? provider : "";
+}
+
+function normalizeImagePathRecord(value) {
+  if (typeof value === "string") {
+    const path = readFirstString(value) || null;
+    return path ? { path } : null;
+  }
+  const record = asRecord(value);
+  if (!record) return null;
+  const path = readFirstString(record.path, record.imagePath, record.image_path) || null;
+  if (!path) return null;
+  return {
+    imageId: readFirstString(record.imageId, record.image_id, record.id) || null,
+    path,
+  };
 }
 
 function resolveProviderApiPlan(request = {}) {
@@ -66,17 +87,59 @@ function resolveProviderApiPlan(request = {}) {
       primaryTransport: "openrouter_image_generation",
     };
   }
+  if (kind === "apply" && provider === "google") {
+    return {
+      primaryTransport: "generate_content",
+    };
+  }
   return {
     primaryTransport: "unknown",
   };
 }
 
+function parseProviderErrorEnvelope(error) {
+  const raw = readFirstString(error?.message, error);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function buildProviderDebugInfo(request = {}, { response = null, error = null } = {}) {
   const providerRequest = cloneJson(request);
+  const targetImagePath = readFirstString(
+    request?.targetImage?.path,
+    request?.targetImagePath,
+    request?.target_image_path
+  ) || null;
+  const referenceImagePaths = (Array.isArray(request?.referenceImages) ? request.referenceImages : [])
+    .map((entry) => normalizeImagePathRecord(entry)?.path)
+    .filter(Boolean);
+  const requestedModel = readFirstString(
+    response?.requestedModel,
+    response?.requested_model,
+    request?.requestedModel,
+    request?.requested_model,
+    request?.model
+  ) || null;
+  const normalizedModel =
+    readFirstString(
+      response?.normalizedModel,
+      response?.normalized_model,
+      request?.normalizedModel,
+      request?.normalized_model
+    ) ||
+    (readFirstString(request?.kind) === "apply" ? normalizeDesignReviewApplyModel(requestedModel) : null);
   const providerResponse = asRecord(response)
     ? {
         provider: readFirstString(response.provider) || null,
         model: readFirstString(response.model) || null,
+        requestedModel: readFirstString(response.requestedModel, response.requested_model) || null,
+        normalizedModel: readFirstString(response.normalizedModel, response.normalized_model) || null,
         transport: readFirstString(response.transport) || null,
         responseId: readFirstString(response.responseId, response.response_id) || null,
         outputPath: readFirstString(response.outputPath, response.outputPreviewRef) || null,
@@ -85,15 +148,30 @@ function buildProviderDebugInfo(request = {}, { response = null, error = null } 
           null,
       }
     : null;
+  const provider = readFirstString(response?.provider, request?.provider) || null;
+  const transport =
+    readFirstString(response?.transport, request?.transport) || resolveProviderApiPlan(request).primaryTransport || null;
   return {
     capturedAt: new Date().toISOString(),
     tauriCommand: DESIGN_REVIEW_PROVIDER_COMMAND,
+    provider,
+    requestedModel,
+    normalizedModel,
+    transport,
     route: {
       kind: readFirstString(request?.kind) || null,
-      provider: readFirstString(request?.provider) || null,
-      model: readFirstString(request?.model) || null,
+      provider,
+      requestedModel,
+      normalizedModel,
+      model: requestedModel,
       apiPlan: resolveProviderApiPlan(request),
     },
+    prompt: readFirstString(request?.prompt) || null,
+    targetImagePath,
+    referenceImagePaths,
+    outputPath:
+      readFirstString(response?.outputPath, response?.outputPreviewRef, request?.outputPath, request?.output_path) ||
+      null,
     providerRequest,
     providerResponse,
     failure: error
@@ -106,11 +184,27 @@ function buildProviderDebugInfo(request = {}, { response = null, error = null } 
 }
 
 function decorateProviderError(error, request = {}) {
+  const envelope = parseProviderErrorEnvelope(error);
   const message =
-    readFirstString(error?.message, error) || "Design review provider request failed.";
+    readFirstString(envelope?.message, error?.message, error) || "Design review provider request failed.";
   const wrapped = error instanceof Error ? error : new Error(message);
   if (!wrapped.message) wrapped.message = message;
-  wrapped.debugInfo = buildProviderDebugInfo(request, { error });
+  const baseDebugInfo = buildProviderDebugInfo(request, { error });
+  wrapped.debugInfo = {
+    ...baseDebugInfo,
+    ...(asRecord(envelope?.debugInfo) || {}),
+    route: {
+      ...baseDebugInfo.route,
+      ...(asRecord(envelope?.debugInfo?.route) || {}),
+    },
+    providerResponse: baseDebugInfo.providerResponse,
+    providerRequest: baseDebugInfo.providerRequest,
+    failure: {
+      ...baseDebugInfo.failure,
+      ...(asRecord(envelope?.failure) || {}),
+      message,
+    },
+  };
   return wrapped;
 }
 
@@ -157,9 +251,11 @@ export function resolveDesignReviewProviderSelection({
         : status.openrouter
           ? "openrouter"
           : "auto";
+  const applyProvider = status.gemini ? "google" : "missing";
   return {
     plannerProvider,
     previewProvider,
+    applyProvider,
   };
 }
 
@@ -207,6 +303,12 @@ export function createDesignReviewProviderRouter({
     }
   }
 
+  function assertApplyProviderAvailable(providerSelection) {
+    if (!VALID_APPLY_PROVIDERS.has(providerSelection?.applyProvider)) {
+      throw new Error(DESIGN_REVIEW_APPLY_PROVIDER_ERROR);
+    }
+  }
+
   return {
     get providerSelection() {
       return resolveDesignReviewProviderSelection({
@@ -250,6 +352,21 @@ export function createDesignReviewProviderRouter({
         prompt: buildDesignReviewPreviewPrompt({ request, proposal }),
         proposal,
       });
+    },
+    async runApply({ request = {}, proposal = {}, targetImage = null, referenceImages = [], outputPath = "" } = {}) {
+      const providerSelection = await resolveProviderSelectionLive();
+      assertApplyProviderAvailable(providerSelection);
+      return runProviderRequest(
+        buildDesignReviewApplyRequest({
+          request,
+          proposal,
+          targetImage,
+          referenceImages,
+          outputPath,
+          provider: providerSelection.applyProvider,
+          model: DESIGN_REVIEW_FINAL_APPLY_MODEL,
+        })
+      );
     },
   };
 }
