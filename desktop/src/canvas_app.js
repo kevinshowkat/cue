@@ -544,7 +544,7 @@ const REEL_PRESET = Object.freeze({
 const JUGGERNAUT_SHELL_BRIDGE_VERSION = "shell-canvas-v1";
 const JUGGERNAUT_SHELL_RAIL_CONTRACT = SINGLE_IMAGE_RAIL_CONTRACT;
 const JUGGERNAUT_SHELL_RAIL = Object.freeze(SINGLE_IMAGE_RAIL_INVENTORY.map((item) => Object.freeze({ ...item })));
-const JUGGERNAUT_LOCALLY_BACKED_TOOL_KEYS = new Set(["upload", "select"]);
+const JUGGERNAUT_LOCALLY_BACKED_TOOL_KEYS = new Set(["move", "upload", "select"]);
 const JUGGERNAUT_RUNTIME_PIN_ASSISTANT_LS_KEY = "juggernaut.runtime.pinAssistantChrome.v1";
 const JUGGERNAUT_RUNTIME_SHOW_DIAGNOSTICS_LS_KEY = "juggernaut.runtime.showDiagnosticsChrome.v1";
 
@@ -1866,6 +1866,8 @@ function createFreshCommunicationState() {
       requestId: null,
       source: null,
       anchor: null,
+      anchorLockCss: null,
+      anchorLockSignature: "",
       slots: Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) =>
         createCommunicationProposalSlot(index, {})
       ),
@@ -9747,6 +9749,8 @@ function renderJuggernautShellChrome() {
     const disabledReason = String(btn.dataset?.disabledReason || "").trim();
     const isLocallyBacked = JUGGERNAUT_LOCALLY_BACKED_TOOL_KEYS.has(key);
     const isPending = !isLocallyBacked && disabledReason === "capability_unavailable" && !toolHookReady;
+    btn.classList.toggle("is-local-utility", isLocallyBacked);
+    btn.classList.toggle("is-ai-tool", !isLocallyBacked);
     btn.classList.toggle("is-active-request", String(state.juggernautShell.lastToolKey || "") === key);
     btn.classList.toggle("is-pending-hook", isPending);
     btn.classList.toggle(
@@ -21150,6 +21154,30 @@ function communicationTrayAnchorPinnedToTitlebar(anchor = null) {
   return String(anchor?.kind || "").trim().toLowerCase() === "titlebar_button";
 }
 
+function clearCommunicationProposalTrayAnchorLock(tray = state.communication?.proposalTray || null) {
+  if (!tray || typeof tray !== "object") return tray || null;
+  tray.anchorLockCss = null;
+  tray.anchorLockSignature = "";
+  return tray;
+}
+
+function communicationProposalTrayAnchorLockSignature(anchor = null, wrap = els.canvasWrap) {
+  if (!communicationTrayAnchorPinnedToTitlebar(anchor)) return "";
+  const bounds = anchor?.canvasOverlayBounds && typeof anchor.canvasOverlayBounds === "object"
+    ? anchor.canvasOverlayBounds
+    : null;
+  if (!bounds) return "";
+  return [
+    communicationTrayAnchorPlacement(anchor),
+    Math.round(Number(bounds.x0) || 0),
+    Math.round(Number(bounds.y0) || 0),
+    Math.round(Math.max(1, Number(bounds.w) || 1)),
+    Math.round(Math.max(1, Number(bounds.h) || 1)),
+    Math.round(Number(wrap?.clientWidth) || 0),
+    Math.round(Number(wrap?.clientHeight) || 0),
+  ].join(":");
+}
+
 function positionCommunicationProposalTrayElement(trayEl, anchor = null, anchorCss = null) {
   const wrap = els.canvasWrap;
   let nextAnchor = anchor;
@@ -21159,6 +21187,10 @@ function positionCommunicationProposalTrayElement(trayEl, anchor = null, anchorC
     nextAnchorCss = communicationAnchorCanvasCss(nextAnchor) || nextAnchorCss;
   }
   if (!trayEl || !wrap || !nextAnchorCss) return false;
+  const trayState =
+    state.communication?.proposalTray && typeof state.communication.proposalTray === "object"
+      ? state.communication.proposalTray
+      : null;
   const maxX = Math.max(12, (Number(wrap?.clientWidth) || 0) - (trayEl.offsetWidth || 0) - 12);
   const maxY = Math.max(12, (Number(wrap?.clientHeight) || 0) - (trayEl.offsetHeight || 0) - 18);
   const placement = communicationTrayAnchorPlacement(nextAnchor);
@@ -21171,14 +21203,44 @@ function positionCommunicationProposalTrayElement(trayEl, anchor = null, anchorC
     const anchorRight = bounds
       ? (Number(bounds.x0) || 0) + Math.max(1, Number(bounds.w) || 1)
       : Number(nextAnchorCss.x) || 0;
+    const anchorLeft = bounds
+      ? Number(bounds.x0) || 0
+      : Number(nextAnchorCss.x) || 0;
     const anchorBottom = bounds
       ? (Number(bounds.y0) || 0) + Math.max(1, Number(bounds.h) || 1)
       : Number(nextAnchorCss.y) || 0;
-    preferredX = clamp(anchorRight - (trayEl.offsetWidth || 0), 12, maxX);
-    preferredY = clamp(anchorBottom + 12, 12, maxY);
+    if (communicationTrayAnchorPinnedToTitlebar(nextAnchor)) {
+      const anchorLockSignature = communicationProposalTrayAnchorLockSignature(nextAnchor, wrap);
+      const lockedPosition =
+        trayState?.anchorLockCss && trayState.anchorLockSignature === anchorLockSignature
+          ? trayState.anchorLockCss
+          : null;
+      preferredX = clamp(
+        Number(lockedPosition?.x) || clamp(anchorLeft, 12, maxX),
+        12,
+        maxX
+      );
+      preferredY = clamp(
+        Number(lockedPosition?.y) || clamp(anchorBottom + 12, 12, maxY),
+        12,
+        maxY
+      );
+      if (trayState && anchorLockSignature) {
+        trayState.anchorLockSignature = anchorLockSignature;
+        trayState.anchorLockCss = {
+          x: preferredX,
+          y: preferredY,
+        };
+      }
+    } else {
+      preferredX = clamp(anchorRight - (trayEl.offsetWidth || 0), 12, maxX);
+      preferredY = clamp(anchorBottom + 12, 12, maxY);
+      clearCommunicationProposalTrayAnchorLock(trayState);
+    }
   } else {
     preferredX = clamp((Number(nextAnchorCss.x) || 0) + 18, 12, maxX);
     preferredY = clamp((Number(nextAnchorCss.y) || 0) - (trayEl.offsetHeight || 0) - 16, 12, maxY);
+    clearCommunicationProposalTrayAnchorLock(trayState);
   }
   if (trayEl.dataset) {
     trayEl.dataset.anchorPlacement = placement;
@@ -22227,6 +22289,9 @@ function setCommunicationProposalTray(
   tray.requestId = next?.requestId ? String(next.requestId) : tray.requestId || null;
   tray.source = String(next?.source || source || "review_runtime").trim() || "review_runtime";
   tray.anchor = anchor || null;
+  if (!communicationTrayAnchorPinnedToTitlebar(anchor)) {
+    clearCommunicationProposalTrayAnchorLock(tray);
+  }
   tray.slots = Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) =>
     createCommunicationProposalSlot(index, Array.isArray(next?.slots) ? next.slots[index] || {} : tray.slots?.[index] || {})
   );
@@ -22253,6 +22318,7 @@ function hideCommunicationProposalTray({ preserveAnchor = true, source = "ui" } 
   els.communicationProposalTray?.classList.remove("is-dismissing");
   const tray = state.communication.proposalTray || createFreshCommunicationState().proposalTray;
   tray.visible = false;
+  clearCommunicationProposalTrayAnchorLock(tray);
   if (!preserveAnchor) {
     tray.anchor = null;
     tray.requestId = null;
@@ -22346,8 +22412,11 @@ function renderCommunicationProposalTray() {
     }
     listEl.replaceChildren(fragment);
   }
-  trayEl.style.left = `${Math.round(Number(anchorCss.x) || 0)}px`;
-  trayEl.style.top = `${Math.round(Number(anchorCss.y) || 0)}px`;
+  const positioned = positionCommunicationProposalTrayElement(trayEl, anchor, anchorCss);
+  if (!positioned) {
+    trayEl.style.left = `${Math.round(Number(anchorCss.x) || 0)}px`;
+    trayEl.style.top = `${Math.round(Number(anchorCss.y) || 0)}px`;
+  }
   if (trayEl.dataset) {
     trayEl.dataset.anchorKind = String(anchor?.kind || "").trim();
   }
@@ -27090,6 +27159,7 @@ function currentRunningActionKey() {
 }
 
 function juggernautActiveToolId() {
+  if (state.tool === "pan") return "move";
   if (state.tool === "lasso") return "select";
   return "";
 }
@@ -27157,6 +27227,10 @@ export async function applyJuggernautTool(toolId) {
   const delegated = dispatchJuggernautShellEvent("juggernaut:apply-tool", eventDetail);
   if (delegated?.defaultPrevented) return true;
 
+  if (normalized === "move") {
+    setTool("pan");
+    return true;
+  }
   if (normalized === "upload") {
     return runWithUserError("Import photos", () => importPhotos(), {
       retryHint: "Choose supported image files and retry.",

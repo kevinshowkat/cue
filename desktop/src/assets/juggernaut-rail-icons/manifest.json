@@ -18,6 +18,13 @@
   },
   "icons": [
     {
+      "tool_id": "move",
+      "label": "Move image",
+      "semantic_role": "arrange",
+      "notes": "Four-way move handle with a centered pivot so canvas arrangement reads immediately as repositioning.",
+      "asset": "./move.svg"
+    },
+    {
       "tool_id": "upload",
       "label": "Import image",
       "semantic_role": "ingest",

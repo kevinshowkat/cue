@@ -615,12 +615,28 @@ test("communication tray host preserves runtime-owned review slots while still p
     },
   };
   const communicationTrayAnchorPlacement = instantiateFunction("communicationTrayAnchorPlacement");
+  const state = {
+    communication: {
+      proposalTray: {
+        anchorLockCss: null,
+        anchorLockSignature: "",
+      },
+    },
+  };
   const positionCommunicationProposalTrayElement = instantiateFunction("positionCommunicationProposalTrayElement", {
+    state,
     els: {
       canvasWrap: { clientWidth: 500, clientHeight: 400 },
     },
     clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
     communicationTrayAnchorPlacement,
+    clearCommunicationProposalTrayAnchorLock: (tray = null) => {
+      if (!tray || typeof tray !== "object") return tray || null;
+      tray.anchorLockCss = null;
+      tray.anchorLockSignature = "";
+      return tray;
+    },
+    communicationProposalTrayAnchorLockSignature: () => "shell:500:400",
     communicationTrayAnchorPinnedToTitlebar: () => false,
     designReviewButtonTrayAnchor: () => null,
     communicationAnchorCanvasCss: () => ({ x: 50, y: 60 }),
@@ -668,12 +684,28 @@ test("communication tray host still rebuilds shell slots when the tray is no lon
     },
   };
   const communicationTrayAnchorPlacement = instantiateFunction("communicationTrayAnchorPlacement");
+  const state = {
+    communication: {
+      proposalTray: {
+        anchorLockCss: null,
+        anchorLockSignature: "",
+      },
+    },
+  };
   const positionCommunicationProposalTrayElement = instantiateFunction("positionCommunicationProposalTrayElement", {
+    state,
     els: {
       canvasWrap: { clientWidth: 500, clientHeight: 400 },
     },
     clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
     communicationTrayAnchorPlacement,
+    clearCommunicationProposalTrayAnchorLock: (tray = null) => {
+      if (!tray || typeof tray !== "object") return tray || null;
+      tray.anchorLockCss = null;
+      tray.anchorLockSignature = "";
+      return tray;
+    },
+    communicationProposalTrayAnchorLockSignature: () => "shell:500:400",
     communicationTrayAnchorPinnedToTitlebar: () => false,
     designReviewButtonTrayAnchor: () => null,
     communicationAnchorCanvasCss: () => ({ x: 50, y: 60 }),

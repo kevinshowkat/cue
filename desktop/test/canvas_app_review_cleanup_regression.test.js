@@ -130,7 +130,7 @@ test("requestCommunicationDesignReview primes immediate communication-tray state
   assert.equal(eventCalls[0].detail.context.source, "titlebar_pointer");
 });
 
-test("communication tray can anchor below the Design review button", () => {
+test("communication tray stays pinned below the titlebar button while its width changes", () => {
   const trayEl = {
     classList: {
       contains() {
@@ -143,17 +143,30 @@ test("communication tray can anchor below the Design review button", () => {
     offsetWidth: 220,
     offsetHeight: 120,
   };
-  const listEl = {
-    replaceChildren() {},
-  };
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const communicationTrayAnchorPlacement = instantiateFunction("communicationTrayAnchorPlacement");
+  const state = {
+    communication: {
+      proposalTray: {
+        anchorLockCss: null,
+        anchorLockSignature: "",
+      },
+    },
+  };
   const positionCommunicationProposalTrayElement = instantiateFunction("positionCommunicationProposalTrayElement", {
+    state,
     els: {
       canvasWrap: { clientWidth: 900, clientHeight: 600 },
     },
     clamp,
     communicationTrayAnchorPlacement,
+    clearCommunicationProposalTrayAnchorLock: (tray = null) => {
+      if (!tray || typeof tray !== "object") return tray || null;
+      tray.anchorLockCss = null;
+      tray.anchorLockSignature = "";
+      return tray;
+    },
+    communicationProposalTrayAnchorLockSignature: () => "titlebar:below:900:600",
     communicationTrayAnchorPinnedToTitlebar: (anchor = null) =>
       String(anchor?.kind || "").trim().toLowerCase() === "titlebar_button",
     designReviewButtonTrayAnchor: () => ({
@@ -168,56 +181,27 @@ test("communication tray can anchor below the Design review button", () => {
     }),
     communicationAnchorCanvasCss: () => ({ x: 780, y: -6 }),
   });
-  const renderCommunicationProposalTray = instantiateFunction("renderCommunicationProposalTray", {
-    els: {
-      communicationProposalTray: trayEl,
-      communicationProposalSlotList: listEl,
-      canvasWrap: { clientWidth: 900, clientHeight: 600 },
+  const anchor = {
+    kind: "titlebar_button",
+    trayPlacement: "below",
+    canvasOverlayBounds: {
+      x0: 710,
+      y0: -24,
+      w: 140,
+      h: 36,
     },
-    buildCommunicationProposalTraySnapshot: () => ({
-      visible: true,
-      source: "titlebar_pointer",
-      anchor: {
-        trayPlacement: "below",
-        canvasOverlayBounds: {
-          x0: 710,
-          y0: -24,
-          w: 140,
-          h: 36,
-        },
-      },
-      slots: [
-        { index: 0, status: "planning", label: "Proposal 1", title: "T1", copy: "C1" },
-      ],
-    }),
-    communicationAnchorCanvasCss: () => ({ x: 780, y: -6 }),
-    communicationProposalSlotIsPending: () => true,
-    requestAnimationFrame: (callback) => callback(),
-    clamp,
-    document: {
-      createDocumentFragment() {
-        return {
-          append() {},
-        };
-      },
-      createElement() {
-        return {
-          className: "",
-          dataset: {},
-          setAttribute() {},
-          append() {},
-          textContent: "",
-        };
-      },
-    },
-    resolveCommunicationReviewAnchor: () => null,
-    positionCommunicationProposalTrayElement,
-  });
+  };
 
-  renderCommunicationProposalTray();
-
+  positionCommunicationProposalTrayElement(trayEl, anchor, { x: 780, y: -6 });
   assert.equal(trayEl.dataset.anchorPlacement, "below");
-  assert.equal(trayEl.style.left, "630px");
+  assert.equal(trayEl.style.left, "668px");
+  assert.equal(trayEl.style.top, "24px");
+  assert.deepEqual(state.communication.proposalTray.anchorLockCss, { x: 668, y: 24 });
+
+  trayEl.offsetWidth = 160;
+  positionCommunicationProposalTrayElement(trayEl, anchor, { x: 780, y: -6 });
+
+  assert.equal(trayEl.style.left, "668px");
   assert.equal(trayEl.style.top, "24px");
 });
 

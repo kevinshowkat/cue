@@ -17,7 +17,7 @@ const railSource = readFileSync(join(here, "..", "src", "juggernaut_shell", "rai
 const appSource = readFileSync(join(here, "..", "src", "canvas_app.js"), "utf8");
 const seededJobIds = new Set(["cut_out", "remove", "new_background", "reframe", "variants"]);
 
-test("single-image rail: contract renders 2 anchors plus 3 dynamic slots", () => {
+test("single-image rail: contract renders 3 anchors plus 3 dynamic slots", () => {
   const rail = buildSingleImageRailButtons({
     hasImage: true,
     hasRegionSelection: false,
@@ -28,14 +28,19 @@ test("single-image rail: contract renders 2 anchors plus 3 dynamic slots", () =>
   assert.equal(rail.contractName, SINGLE_IMAGE_RAIL_CONTRACT);
   assert.deepEqual(
     rail.buttons.map((button) => button.toolId),
-    ["upload", "select", "cut_out", "new_background", "variants"]
+    ["move", "upload", "select", "cut_out", "new_background", "variants"]
   );
   assert.equal(rail.visibleDynamicJobs.length, SINGLE_IMAGE_RAIL_DYNAMIC_SLOT_COUNT);
-  assert.equal(rail.buttons[0].label, "Upload");
-  assert.equal(rail.buttons[1].label, "Select");
-  assert.equal(rail.buttons[2].label, "Cut Out");
-  assert.equal(rail.buttons[3].label, "New Background");
-  assert.equal(rail.buttons[4].label, "Variants");
+  assert.equal(rail.buttons[0].label, "Move");
+  assert.equal(rail.buttons[1].label, "Upload");
+  assert.equal(rail.buttons[2].label, "Select");
+  assert.equal(rail.buttons[3].label, "Cut Out");
+  assert.equal(rail.buttons[4].label, "New Background");
+  assert.equal(rail.buttons[5].label, "Variants");
+  assert.equal(rail.buttons[0].hotkey, "");
+  assert.equal(rail.buttons[1].hotkey, "1");
+  assert.equal(rail.buttons[2].hotkey, "2");
+  assert.equal(rail.buttons[3].hotkey, "3");
 });
 
 test("single-image rail: mock ranked jobs stay inside the approved seeded set and disabled reasons", () => {

@@ -25,6 +25,7 @@ const DEFAULT_DYNAMIC_ORDER = Object.freeze([
 ]);
 
 const RAIL_LABELS = Object.freeze({
+  move: "Move",
   upload: "Upload",
   select: "Select",
   cut_out: "Cut Out",
@@ -78,6 +79,7 @@ const SEEDED_JOB_LIBRARY = Object.freeze({
 });
 
 export const SINGLE_IMAGE_RAIL_INVENTORY = Object.freeze([
+  Object.freeze({ key: "move", label: "Move", kind: "anchor", requiresSelection: false }),
   Object.freeze({ key: "upload", label: "Upload", kind: "anchor", requiresSelection: false }),
   Object.freeze({ key: "select", label: "Select", kind: "anchor", requiresSelection: false }),
   ...Object.values(SEEDED_JOB_LIBRARY).map((job) =>
@@ -195,6 +197,7 @@ function disabledReasonText(reason, label) {
 
 function buttonMetaTitle(button) {
   if (button.disabledReason) return disabledReasonText(button.disabledReason, button.label);
+  if (button.toolId === "move") return "Move and arrange images";
   if (button.toolId === "upload") return "Upload an image";
   if (button.toolId === "select") return "Select a region on the active image";
   return button.label || button.toolId || "Tool";
@@ -202,6 +205,7 @@ function buttonMetaTitle(button) {
 
 function buttonMetaAriaLabel(button) {
   if (button.disabledReason) return buttonMetaTitle(button);
+  if (button.toolId === "move") return "Move image";
   if (button.toolId === "upload") return "Upload image";
   if (button.toolId === "select") return "Select region";
   return button.label || button.toolId || "Tool";
@@ -216,6 +220,21 @@ function buildAnchorButtons({
   activeToolId = "",
 } = {}) {
   return [
+    {
+      slotKey: "anchor-move",
+      slotKind: "anchor",
+      toolId: "move",
+      actionKey: "move",
+      label: "Move",
+      hotkey: "",
+      disabled: false,
+      disabledReason: "",
+      selected: String(activeToolId || "").trim() === "move",
+      running: false,
+      iconSvg: railIconSvg("move"),
+      title: "Move and arrange images",
+      ariaLabel: "Move image",
+    },
     {
       slotKey: "anchor-upload",
       slotKind: "anchor",
@@ -302,6 +321,7 @@ function buildDynamicButtons(dynamicJobs = [], { runningToolId = "" } = {}) {
     const button = {
       slotKey: `dynamic-${index}`,
       slotKind: "dynamic",
+      groupStart: index === 0,
       toolId: job.jobId,
       actionKey: job.jobId,
       label: job.label,
@@ -431,12 +451,14 @@ function setButtonData(toolEl, button) {
   toolEl.dataset.capability = String(button.capability || "").trim();
   toolEl.dataset.stickyKey = String(button.stickyKey || "").trim();
   toolEl.dataset.mock = button.mock ? "true" : "false";
+  toolEl.dataset.groupStart = button.groupStart ? "true" : "false";
 }
 
 function syncButtonClasses(toolEl, button) {
   toolEl.className = "tool juggernaut-tool juggernaut-rail-button";
   toolEl.classList.toggle("juggernaut-rail-anchor", button.slotKind === "anchor");
   toolEl.classList.toggle("juggernaut-rail-suggestion", button.slotKind === "dynamic");
+  toolEl.classList.toggle("is-group-start", Boolean(button.groupStart));
   toolEl.classList.toggle("selected", Boolean(button.selected));
   toolEl.classList.toggle("depressed", Boolean(button.running));
 }

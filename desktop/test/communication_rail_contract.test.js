@@ -17,6 +17,7 @@ test("communication rail markup exposes bottom rail tools and proposal tray scaf
   assert.match(html, /id="communication-tool-marker"/);
   assert.match(html, /id="communication-tool-magic-select"/);
   assert.match(html, /id="communication-tool-eraser"/);
+  assert.match(html, /id="communication-tool-marker"[\s\S]*d="M12 4\.3 16\.15 8\.45 13\.78 19\.25h-3\.56L7\.85 8\.45z"/);
 });
 
 test("communication rail css anchors the rail at the bottom and keeps the proposal tray floating", () => {

@@ -19,6 +19,7 @@ test("Juggernaut rail iconography: manifest covers the shared generated glyph se
     "cleanup",
     "create_tool",
     "export_psd",
+    "move",
     "select_subject",
     "upload",
     "variations",

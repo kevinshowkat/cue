@@ -76,6 +76,24 @@ export const JUGGERNAUT_RAIL_ICON_STYLE = Object.freeze({
 
 export const JUGGERNAUT_RAIL_ICON_BLUEPRINTS = Object.freeze([
   Object.freeze({
+    toolId: "move",
+    label: "Move image",
+    semanticRole: "arrange",
+    notes: "Four-way move handle with a centered pivot so canvas arrangement reads immediately as repositioning.",
+    parts: Object.freeze([
+      fillCircle(12, 12, 1.55, { "fill-opacity": "0.18" }),
+      strokeCircle(12, 12, 2.3),
+      strokePath("M12 4.9v5.05"),
+      strokePath("M12 14.05v5.05"),
+      strokePath("M4.9 12h5.05"),
+      strokePath("M14.05 12h5.05"),
+      strokePath("M9.95 7 12 4.9 14.05 7"),
+      strokePath("M9.95 17 12 19.1 14.05 17"),
+      strokePath("M7 9.95 4.9 12 7 14.05"),
+      strokePath("M17 9.95 19.1 12 17 14.05"),
+    ]),
+  }),
+  Object.freeze({
     toolId: "upload",
     label: "Import image",
     semanticRole: "ingest",
