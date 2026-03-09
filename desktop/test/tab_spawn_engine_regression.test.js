@@ -23,6 +23,7 @@ function loadAttachActiveTabRuntimeHarness({ runDir = "/runs/tab-a", ptySpawned 
     "const calls = [];",
     `const DEFAULT_TIP = ${JSON.stringify("Default tip")};`,
     `const state = ${JSON.stringify({
+      activeTabId: "tab-a",
       runDir,
       ptySpawned,
       timelineOpen: false,
@@ -40,7 +41,7 @@ function loadAttachActiveTabRuntimeHarness({ runDir = "/runs/tab-a", ptySpawned 
     "const renderCustomToolDock = record('renderCustomToolDock');",
     "const renderSelectionMeta = record('renderSelectionMeta');",
     "const renderFilmstrip = record('renderFilmstrip');",
-    "const chooseSpawnNodes = record('chooseSpawnNodes');",
+    "function chooseSpawnNodes() { calls.push({ name: 'chooseSpawnNodes', args: [] }); renderQuickActions(); }",
     "const renderQuickActions = record('renderQuickActions');",
     "const renderSessionApiCallsReadout = record('renderSessionApiCallsReadout');",
     "const updateEmptyCanvasHint = record('updateEmptyCanvasHint');",
@@ -50,6 +51,8 @@ function loadAttachActiveTabRuntimeHarness({ runDir = "/runs/tab-a", ptySpawned 
     "const renderMotherMoodStatus = record('renderMotherMoodStatus');",
     "const requestRender = record('requestRender');",
     "const scheduleVisualPromptWrite = record('scheduleVisualPromptWrite');",
+    "let tabHydrationToken = 1;",
+    "function currentTabHydrationMatches(normalizedTabId, hydrationToken) { return normalizedTabId === String(state.activeTabId || normalizedTabId) && hydrationToken === tabHydrationToken; }",
     "async function spawnEngine() { calls.push({ name: 'spawnEngine', args: [] }); state.ptySpawned = true; }",
     "async function ensureEngineSpawned(options = {}) { calls.push({ name: 'ensureEngineSpawned', args: [options] }); await spawnEngine(); return true; }",
     "async function syncActiveRunPtyBinding() { calls.push({ name: 'syncActiveRunPtyBinding', args: [] }); return Boolean(state.ptySpawned); }",
@@ -70,6 +73,11 @@ test("attachActiveTabRuntime keeps the public spawnEngine option while calling t
   const harness = loadAttachActiveTabRuntimeHarness();
   await harness.run({ spawnEngine: true, reason: "new_run_tab" });
 
+  assert.equal(
+    harness.calls.filter((entry) => entry.name === "renderQuickActions").length,
+    1,
+    "expected attachActiveTabRuntime to render quick actions once during the spawn attach pass"
+  );
   assert.equal(
     harness.calls.filter((entry) => entry.name === "ensureEngineSpawned").length,
     1,
@@ -94,6 +102,11 @@ test("attachActiveTabRuntime keeps the public spawnEngine option while calling t
   await skipHarness.run({ spawnEngine: false, reason: "open_run_tab" });
 
   assert.equal(
+    skipHarness.calls.filter((entry) => entry.name === "renderQuickActions").length,
+    1,
+    "expected attachActiveTabRuntime to render quick actions once during the reuse attach pass"
+  );
+  assert.equal(
     skipHarness.calls.filter((entry) => entry.name === "ensureEngineSpawned").length,
     0,
     "expected ensureEngineSpawned() to stay skipped when callers pass false"
@@ -112,5 +125,10 @@ test("attachActiveTabRuntime keeps the public spawnEngine option while calling t
     skipHarness.calls.filter((entry) => entry.name === "startEventsPolling").length,
     1,
     "expected polling to resume for the active tab even when engine spawn is skipped"
+  );
+  assert.equal(
+    skipHarness.calls.filter((entry) => entry.name === "renderQuickActions").length,
+    1,
+    "expected quick actions to render once through chooseSpawnNodes during the reuse attach pass"
   );
 });
