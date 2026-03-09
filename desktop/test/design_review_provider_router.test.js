@@ -31,6 +31,7 @@ test("design review provider selection falls back to OpenRouter for planning whe
   });
 
   assert.equal(selection.plannerProvider, "openrouter");
+  assert.equal(selection.applyProvider, "openrouter");
 });
 
 test("design review provider router sends planner requests with the shared gpt-5.4 planner model", async () => {
@@ -207,11 +208,56 @@ test("design review provider router resolves apply target and guidance reference
   ]);
 });
 
-test("design review provider router fails clearly when Gemini credentials are missing for final apply", async () => {
+test("design review provider router falls back to OpenRouter for final apply when Gemini keys are unavailable", async () => {
+  const requests = [];
   const router = createDesignReviewProviderRouter({
     keyStatus: {
       openai: true,
       openrouter: true,
+      gemini: false,
+    },
+    requestProvider: async (request) => {
+      requests.push(request);
+      return {
+        ok: true,
+        provider: "openrouter",
+        requestedModel: request.requestedModel,
+        normalizedModel: request.normalizedModel,
+        model: request.normalizedModel,
+        transport: "responses",
+        outputPath: request.outputPath,
+      };
+    },
+  });
+
+  const result = await router.runApply({
+    request: {
+      requestId: "review-apply-openrouter",
+      primaryImageId: "img-target",
+      visibleCanvasContext: {
+        images: [{ id: "img-target", path: "/tmp/target-openrouter.png" }],
+      },
+    },
+    proposal: {
+      proposalId: "proposal-openrouter",
+      imageId: "img-target",
+      applyBrief: "Warm up subject tones.",
+    },
+    outputPath: "/tmp/review-apply-openrouter.png",
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].kind, "apply");
+  assert.equal(requests[0].provider, "openrouter");
+  assert.equal(result.debugInfo?.route?.provider, "openrouter");
+  assert.equal(result.debugInfo?.route?.apiPlan?.primaryTransport, "responses");
+});
+
+test("design review provider router fails clearly when no final apply credentials are configured", async () => {
+  const router = createDesignReviewProviderRouter({
+    keyStatus: {
+      openai: true,
+      openrouter: false,
       gemini: false,
     },
     requestProvider: async () => ({ ok: true }),
@@ -228,7 +274,7 @@ test("design review provider router fails clearly when Gemini credentials are mi
         targetImage: { path: "/tmp/no-gemini-target.png" },
         outputPath: "/tmp/no-gemini-output.png",
       }),
-    /GEMINI_API_KEY or GOOGLE_API_KEY/
+    /GEMINI_API_KEY or GOOGLE_API_KEY or OPENROUTER_API_KEY/
   );
 });
 
