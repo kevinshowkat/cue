@@ -18,7 +18,9 @@ test("Juggernaut shell chrome exposes selection status, export button, and rail 
 
 test("Juggernaut shell bridge exposes tool/export registration and request methods", () => {
   assert.match(app, /window\.__JUGGERNAUT_SHELL__\s*=\s*\{/);
+  assert.match(app, /railContract:\s*JUGGERNAUT_SHELL_RAIL_CONTRACT/);
   assert.match(app, /registerToolInvoker\(fn\)/);
+  assert.match(app, /registerSingleImageRailRanker\(fn\)/);
   assert.match(app, /registerPsdExportHandler\(fn\)/);
   assert.match(app, /requestToolInvocation\(toolKey,\s*meta\s*=\s*\{\}\)/);
   assert.match(app, /requestPsdExport\(meta\s*=\s*\{\}\)/);

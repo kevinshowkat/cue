@@ -12,7 +12,7 @@ const manifest = JSON.parse(
 );
 const railSource = readFileSync(join(here, "..", "src", "juggernaut_shell", "rail.js"), "utf8");
 
-test("Juggernaut rail iconography: manifest covers the current left-rail tools", () => {
+test("Juggernaut rail iconography: manifest covers the shared generated glyph set", () => {
   const actualIds = manifest.icons.map((icon) => icon.tool_id).sort();
   const expectedIds = [
     "background_swap",
@@ -29,12 +29,15 @@ test("Juggernaut rail iconography: manifest covers the current left-rail tools",
 
 test("Juggernaut rail iconography: generated registry exports custom SVG glyphs", () => {
   assert.equal(typeof JUGGERNAUT_RAIL_ICON_REGISTRY.upload, "string");
-  assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.create_tool, /tool-icon-create-tool/);
+  assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.select_subject, /tool-icon-select-subject/);
   assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.background_swap, /fill-opacity=/);
 });
 
-test("Juggernaut rail iconography: rail rendering consumes generated registry and exposes tool hooks", () => {
+test("Juggernaut rail iconography: rail rendering consumes generated registry and uses keyed slots", () => {
   assert.match(railSource, /getJuggernautRailIconSvg/);
   assert.match(railSource, /toolEl\.dataset\.toolKey/);
   assert.match(railSource, /className = "tool juggernaut-tool juggernaut-rail-button"/);
+  assert.match(railSource, /toolEl\.dataset\.slotKey/);
+  assert.match(railSource, /root\.insertBefore\(toolEl,\s*cursor \|\| null\)/);
+  assert.doesNotMatch(railSource, /root\.innerHTML = "";/);
 });
