@@ -9,11 +9,11 @@ import {
 
 const VALID_PLANNER_PROVIDERS = new Set(["openai", "openrouter"]);
 const VALID_PREVIEW_PROVIDERS = new Set(["google", "openrouter"]);
-const VALID_APPLY_PROVIDERS = new Set(["google"]);
+const VALID_APPLY_PROVIDERS = new Set(["google", "openrouter"]);
 const DESIGN_REVIEW_PLANNER_PROVIDER_ERROR =
   "Design review planner requires OPENAI_API_KEY or OPENROUTER_API_KEY.";
 const DESIGN_REVIEW_APPLY_PROVIDER_ERROR =
-  "Design review final apply requires GEMINI_API_KEY or GOOGLE_API_KEY.";
+  "Design review final apply requires GEMINI_API_KEY or GOOGLE_API_KEY or OPENROUTER_API_KEY.";
 const DESIGN_REVIEW_PROVIDER_COMMAND = "run_design_review_provider_request";
 
 function readFirstString(...values) {
@@ -90,6 +90,11 @@ function resolveProviderApiPlan(request = {}) {
   if (kind === "apply" && provider === "google") {
     return {
       primaryTransport: "generate_content",
+    };
+  }
+  if (kind === "apply" && provider === "openrouter") {
+    return {
+      primaryTransport: "responses",
     };
   }
   return {
@@ -251,7 +256,7 @@ export function resolveDesignReviewProviderSelection({
         : status.openrouter
           ? "openrouter"
           : "auto";
-  const applyProvider = status.gemini ? "google" : "missing";
+  const applyProvider = status.gemini ? "google" : status.openrouter ? "openrouter" : "missing";
   return {
     plannerProvider,
     previewProvider,

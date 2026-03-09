@@ -55,6 +55,7 @@ const REVIEW_OPENAI_RESPONSES_WS_TRANSPORT: &str = "responses_websocket";
 const REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT: &str = "responses_http_fallback";
 const REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT: &str = "chat_completions";
 const REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT: &str = "generate_content";
+const REVIEW_OPENROUTER_RESPONSES_TRANSPORT: &str = "responses";
 // GPT-5.4 planner responses can pause for longer stretches between websocket
 // events on image-heavy reviews; keep the transport budget loose enough to
 // avoid false timeouts without turning real hangs into multi-minute waits.
@@ -3401,6 +3402,29 @@ fn review_build_google_apply_parts(
     Ok(parts)
 }
 
+fn review_build_openrouter_apply_input(
+    prompt: &str,
+    target_image_path: &str,
+    reference_image_paths: &[String],
+) -> Result<Vec<serde_json::Value>, String> {
+    let mut content = vec![
+        serde_json::json!({ "type": "input_text", "text": prompt }),
+        serde_json::json!({ "type": "input_text", "text": "targetImage (editable image to modify)" }),
+        serde_json::json!({ "type": "input_image", "image_url": review_image_data_url(target_image_path)? }),
+    ];
+    for (index, reference_path) in reference_image_paths.iter().enumerate() {
+        content.push(serde_json::json!({
+            "type": "input_text",
+            "text": format!("referenceImages[{index}] (guidance only; do not edit directly)"),
+        }));
+        content.push(serde_json::json!({
+            "type": "input_image",
+            "image_url": review_image_data_url(reference_path)?,
+        }));
+    }
+    Ok(content)
+}
+
 fn review_normalize_apply_model(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -3493,14 +3517,19 @@ fn review_format_apply_http_error(
     status: u16,
     body: &str,
 ) -> String {
+    let provider_label = if provider.eq_ignore_ascii_case("openrouter") {
+        "OpenRouter"
+    } else {
+        "Google"
+    };
     let detail = review_extract_error_detail(body);
     if detail.is_empty() {
         return format!(
-            "Google final apply request failed (provider={provider}, normalized model={normalized_model}, transport={transport}, status={status})."
+            "{provider_label} final apply request failed (provider={provider}, normalized model={normalized_model}, transport={transport}, status={status})."
         );
     }
     format!(
-        "Google final apply request failed (provider={provider}, normalized model={normalized_model}, transport={transport}, status={status}): {detail}"
+        "{provider_label} final apply request failed (provider={provider}, normalized model={normalized_model}, transport={transport}, status={status}): {detail}"
     )
 }
 
@@ -3546,28 +3575,90 @@ fn run_design_review_apply_request(
     }
     let reference_image_paths = deduped_reference_image_paths;
 
-    if provider_pref != "google" && provider_pref != "auto" {
-        return Err(review_apply_error(
-            &format!(
-                "Design review final apply only supports the Google Gemini transport right now (requested provider={provider_pref})."
-            ),
-            "google",
-            &requested_model,
-            &normalized_model,
-            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
-            &prompt,
-            &target_image_path,
-            &reference_image_paths,
-            &output_path,
-        ));
-    }
+    let gemini_api_key = review_first_non_empty(vars, &["GEMINI_API_KEY", "GOOGLE_API_KEY"]);
+    let openrouter_api_key = review_first_non_empty(vars, &["OPENROUTER_API_KEY"]);
+    let resolved_provider = match provider_pref.as_str() {
+        "google" => {
+            if gemini_api_key.is_some() {
+                "google"
+            } else {
+                return Err(review_apply_error(
+                    "No Google Gemini credentials are configured for design review final apply. Set GEMINI_API_KEY or GOOGLE_API_KEY.",
+                    "google",
+                    &requested_model,
+                    &normalized_model,
+                    REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                    &prompt,
+                    &target_image_path,
+                    &reference_image_paths,
+                    &output_path,
+                ));
+            }
+        }
+        "openrouter" => {
+            if openrouter_api_key.is_some() {
+                "openrouter"
+            } else {
+                return Err(review_apply_error(
+                    "No OpenRouter credentials are configured for design review final apply. Set OPENROUTER_API_KEY.",
+                    "openrouter",
+                    &requested_model,
+                    &normalized_model,
+                    REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
+                    &prompt,
+                    &target_image_path,
+                    &reference_image_paths,
+                    &output_path,
+                ));
+            }
+        }
+        "auto" => {
+            if gemini_api_key.is_some() {
+                "google"
+            } else if openrouter_api_key.is_some() {
+                "openrouter"
+            } else {
+                return Err(review_apply_error(
+                    "No final apply credentials are configured for design review. Set GEMINI_API_KEY or GOOGLE_API_KEY or OPENROUTER_API_KEY.",
+                    "auto",
+                    &requested_model,
+                    &normalized_model,
+                    REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                    &prompt,
+                    &target_image_path,
+                    &reference_image_paths,
+                    &output_path,
+                ));
+            }
+        }
+        other => {
+            return Err(review_apply_error(
+                &format!(
+                    "Design review final apply only supports provider=google or provider=openrouter (requested provider={other})."
+                ),
+                other,
+                &requested_model,
+                &normalized_model,
+                REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                &prompt,
+                &target_image_path,
+                &reference_image_paths,
+                &output_path,
+            ));
+        }
+    };
+    let resolved_transport = if resolved_provider == "openrouter" {
+        REVIEW_OPENROUTER_RESPONSES_TRANSPORT
+    } else {
+        REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT
+    };
     if prompt.is_empty() {
         return Err(review_apply_error(
             "design review apply prompt missing",
-            "google",
+            resolved_provider,
             &requested_model,
             &normalized_model,
-            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            resolved_transport,
             &prompt,
             &target_image_path,
             &reference_image_paths,
@@ -3577,10 +3668,10 @@ fn run_design_review_apply_request(
     if target_image_path.is_empty() {
         return Err(review_apply_error(
             "design review apply targetImage path missing",
-            "google",
+            resolved_provider,
             &requested_model,
             &normalized_model,
-            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            resolved_transport,
             &prompt,
             &target_image_path,
             &reference_image_paths,
@@ -3590,10 +3681,10 @@ fn run_design_review_apply_request(
     if output_path.is_empty() {
         return Err(review_apply_error(
             "design review apply outputPath missing",
-            "google",
+            resolved_provider,
             &requested_model,
             &normalized_model,
-            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            resolved_transport,
             &prompt,
             &target_image_path,
             &reference_image_paths,
@@ -3601,62 +3692,10 @@ fn run_design_review_apply_request(
         ));
     }
 
-    let Some(api_key) = review_first_non_empty(vars, &["GEMINI_API_KEY", "GOOGLE_API_KEY"]) else {
-        return Err(review_apply_error(
-            "No Google Gemini credentials are configured for design review final apply. Set GEMINI_API_KEY or GOOGLE_API_KEY.",
-            "google",
-            &requested_model,
-            &normalized_model,
-            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
-            &prompt,
-            &target_image_path,
-            &reference_image_paths,
-            &output_path,
-        ));
-    };
-
-    let parts = review_build_google_apply_parts(
-        &prompt,
-        &target_image_path,
-        &reference_image_paths,
-    )
-    .map_err(|error| {
-        review_apply_error(
-            &format!("design review apply could not stage image inputs: {error}"),
-            "google",
-            &requested_model,
-            &normalized_model,
-            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
-            &prompt,
-            &target_image_path,
-            &reference_image_paths,
-            &output_path,
-        )
-    })?;
-
-    let endpoint_base = review_first_non_empty(vars, &["GEMINI_API_BASE"])
-        .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string());
-    let endpoint = format!("{endpoint_base}/models/{normalized_model}:generateContent");
-    let payload = serde_json::json!({
-        "contents": [{
-            "role": "user",
-            "parts": parts,
-        }],
-        "generationConfig": {
-            "candidateCount": 1,
-            "responseModalities": ["IMAGE"],
-            "imageConfig": {
-                "imageSize": "2K",
-            },
-            "temperature": 0.2,
-        }
-    });
-    let client = Client::builder()
-        .timeout(Duration::from_secs(150))
-        .build()
-        .map_err(|error| {
+    if resolved_provider == "google" {
+        let api_key = gemini_api_key.as_deref().ok_or_else(|| {
             review_apply_error(
-                &format!("design review apply client setup failed: {error}"),
+                "No Google Gemini credentials are configured for design review final apply. Set GEMINI_API_KEY or GOOGLE_API_KEY.",
                 "google",
                 &requested_model,
                 &normalized_model,
@@ -3667,19 +3706,261 @@ fn run_design_review_apply_request(
                 &output_path,
             )
         })?;
-    let response = client
-        .post(endpoint)
-        .query(&[("key", api_key)])
-        .header("content-type", "application/json")
-        .json(&payload)
-        .send()
-        .map_err(|error| {
+        let parts = review_build_google_apply_parts(&prompt, &target_image_path, &reference_image_paths)
+            .map_err(|error| {
+                review_apply_error(
+                    &format!("design review apply could not stage image inputs: {error}"),
+                    "google",
+                    &requested_model,
+                    &normalized_model,
+                    REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                    &prompt,
+                    &target_image_path,
+                    &reference_image_paths,
+                    &output_path,
+                )
+            })?;
+        let endpoint_base = review_first_non_empty(vars, &["GEMINI_API_BASE"])
+            .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string());
+        let endpoint = format!("{endpoint_base}/models/{normalized_model}:generateContent");
+        let payload = serde_json::json!({
+            "contents": [{
+                "role": "user",
+                "parts": parts,
+            }],
+            "generationConfig": {
+                "candidateCount": 1,
+                "responseModalities": ["IMAGE"],
+                "imageConfig": {
+                    "imageSize": "2K",
+                },
+                "temperature": 0.2,
+            }
+        });
+        let client = Client::builder()
+            .timeout(Duration::from_secs(150))
+            .build()
+            .map_err(|error| {
+                review_apply_error(
+                    &format!("design review apply client setup failed: {error}"),
+                    "google",
+                    &requested_model,
+                    &normalized_model,
+                    REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                    &prompt,
+                    &target_image_path,
+                    &reference_image_paths,
+                    &output_path,
+                )
+            })?;
+        let response = client
+            .post(endpoint)
+            .query(&[("key", api_key)])
+            .header("content-type", "application/json")
+            .json(&payload)
+            .send()
+            .map_err(|error| {
+                review_apply_error(
+                    &format!("Google final apply request failed: {error}"),
+                    "google",
+                    &requested_model,
+                    &normalized_model,
+                    REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                    &prompt,
+                    &target_image_path,
+                    &reference_image_paths,
+                    &output_path,
+                )
+            })?;
+        let status = response.status();
+        let body = response.text().map_err(|error| {
             review_apply_error(
-                &format!("Google final apply request failed: {error}"),
+                &format!("Google final apply response read failed: {error}"),
                 "google",
                 &requested_model,
                 &normalized_model,
                 REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                &prompt,
+                &target_image_path,
+                &reference_image_paths,
+                &output_path,
+            )
+        })?;
+        if !status.is_success() {
+            return Err(review_apply_error(
+                &review_format_apply_http_error(
+                    "google",
+                    &normalized_model,
+                    REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                    status.as_u16(),
+                    &body,
+                ),
+                "google",
+                &requested_model,
+                &normalized_model,
+                REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                &prompt,
+                &target_image_path,
+                &reference_image_paths,
+                &output_path,
+            ));
+        }
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
+        let images = review_google_extract_images(&parsed).map_err(|error| {
+            review_apply_error(
+                &format!("Google final apply image decode failed: {error}"),
+                "google",
+                &requested_model,
+                &normalized_model,
+                REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                &prompt,
+                &target_image_path,
+                &reference_image_paths,
+                &output_path,
+            )
+        })?;
+        if images.len() != 1 {
+            return Err(review_apply_error(
+                &format!(
+                    "Google final apply must return exactly one image for targetImage, but returned {}.",
+                    images.len()
+                ),
+                "google",
+                &requested_model,
+                &normalized_model,
+                REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                &prompt,
+                &target_image_path,
+                &reference_image_paths,
+                &output_path,
+            ));
+        }
+        let (bytes, mime_type) = images.into_iter().next().unwrap_or_default();
+        if let Some(parent) = Path::new(&output_path).parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).map_err(|error| {
+                    review_apply_error(
+                        &format!("design review apply could not create output directory: {error}"),
+                        "google",
+                        &requested_model,
+                        &normalized_model,
+                        REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                        &prompt,
+                        &target_image_path,
+                        &reference_image_paths,
+                        &output_path,
+                    )
+                })?;
+            }
+        }
+        std::fs::write(&output_path, bytes).map_err(|error| {
+            review_apply_error(
+                &format!("design review apply could not write output image: {error}"),
+                "google",
+                &requested_model,
+                &normalized_model,
+                REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                &prompt,
+                &target_image_path,
+                &reference_image_paths,
+                &output_path,
+            )
+        })?;
+
+        return Ok(serde_json::json!({
+            "ok": true,
+            "provider": "google",
+            "requestedModel": requested_model,
+            "normalizedModel": normalized_model,
+            "model": normalized_model,
+            "transport": REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            "prompt": prompt,
+            "targetImagePath": target_image_path,
+            "referenceImagePaths": reference_image_paths,
+            "outputPath": output_path,
+            "mimeType": mime_type,
+            "raw": parsed,
+        }));
+    }
+
+    let api_key = openrouter_api_key.as_deref().ok_or_else(|| {
+        review_apply_error(
+            "No OpenRouter credentials are configured for design review final apply. Set OPENROUTER_API_KEY.",
+            "openrouter",
+            &requested_model,
+            &normalized_model,
+            REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
+            &prompt,
+            &target_image_path,
+            &reference_image_paths,
+            &output_path,
+        )
+    })?;
+    let openrouter_model =
+        review_normalize_openrouter_model(&normalized_model, "google/gemini-3.1-flash-image-preview");
+    let content =
+        review_build_openrouter_apply_input(&prompt, &target_image_path, &reference_image_paths).map_err(|error| {
+            review_apply_error(
+                &format!("design review apply could not stage image inputs: {error}"),
+                "openrouter",
+                &requested_model,
+                &openrouter_model,
+                REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
+                &prompt,
+                &target_image_path,
+                &reference_image_paths,
+                &output_path,
+            )
+        })?;
+    let payload = serde_json::json!({
+        "model": openrouter_model,
+        "input": [{
+            "role": "user",
+            "content": content,
+        }],
+        "modalities": ["text", "image"],
+        "stream": false,
+        "image_config": {
+            "image_size": "2K",
+        }
+    });
+    let endpoint = format!(
+        "{}/responses",
+        review_first_non_empty(vars, &["OPENROUTER_API_BASE"])
+            .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string())
+    );
+    let client = Client::builder()
+        .timeout(Duration::from_secs(150))
+        .build()
+        .map_err(|error| {
+            review_apply_error(
+                &format!("design review apply client setup failed: {error}"),
+                "openrouter",
+                &requested_model,
+                &openrouter_model,
+                REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
+                &prompt,
+                &target_image_path,
+                &reference_image_paths,
+                &output_path,
+            )
+        })?;
+    let request = client
+        .post(endpoint)
+        .bearer_auth(api_key)
+        .header("content-type", "application/json");
+    let response = review_apply_openrouter_headers(request, vars)
+        .json(&payload)
+        .send()
+        .map_err(|error| {
+            review_apply_error(
+                &format!("OpenRouter final apply request failed: {error}"),
+                "openrouter",
+                &requested_model,
+                &openrouter_model,
+                REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
                 &prompt,
                 &target_image_path,
                 &reference_image_paths,
@@ -3689,11 +3970,11 @@ fn run_design_review_apply_request(
     let status = response.status();
     let body = response.text().map_err(|error| {
         review_apply_error(
-            &format!("Google final apply response read failed: {error}"),
-            "google",
+            &format!("OpenRouter final apply response read failed: {error}"),
+            "openrouter",
             &requested_model,
-            &normalized_model,
-            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &openrouter_model,
+            REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
             &prompt,
             &target_image_path,
             &reference_image_paths,
@@ -3703,32 +3984,31 @@ fn run_design_review_apply_request(
     if !status.is_success() {
         return Err(review_apply_error(
             &review_format_apply_http_error(
-                "google",
-                &normalized_model,
-                REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                "openrouter",
+                &openrouter_model,
+                REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
                 status.as_u16(),
                 &body,
             ),
-            "google",
+            "openrouter",
             &requested_model,
-            &normalized_model,
-            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &openrouter_model,
+            REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
             &prompt,
             &target_image_path,
             &reference_image_paths,
             &output_path,
         ));
     }
-
     let parsed: serde_json::Value =
         serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
-    let images = review_google_extract_images(&parsed).map_err(|error| {
+    let images = review_extract_openrouter_images(&parsed).map_err(|error| {
         review_apply_error(
-            &format!("Google final apply image decode failed: {error}"),
-            "google",
+            &format!("OpenRouter final apply image decode failed: {error}"),
+            "openrouter",
             &requested_model,
-            &normalized_model,
-            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &openrouter_model,
+            REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
             &prompt,
             &target_image_path,
             &reference_image_paths,
@@ -3738,13 +4018,13 @@ fn run_design_review_apply_request(
     if images.len() != 1 {
         return Err(review_apply_error(
             &format!(
-                "Google final apply must return exactly one image for targetImage, but returned {}.",
+                "OpenRouter final apply must return exactly one image for targetImage, but returned {}.",
                 images.len()
             ),
-            "google",
+            "openrouter",
             &requested_model,
-            &normalized_model,
-            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &openrouter_model,
+            REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
             &prompt,
             &target_image_path,
             &reference_image_paths,
@@ -3757,10 +4037,10 @@ fn run_design_review_apply_request(
             std::fs::create_dir_all(parent).map_err(|error| {
                 review_apply_error(
                     &format!("design review apply could not create output directory: {error}"),
-                    "google",
+                    "openrouter",
                     &requested_model,
-                    &normalized_model,
-                    REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                    &openrouter_model,
+                    REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
                     &prompt,
                     &target_image_path,
                     &reference_image_paths,
@@ -3772,10 +4052,10 @@ fn run_design_review_apply_request(
     std::fs::write(&output_path, bytes).map_err(|error| {
         review_apply_error(
             &format!("design review apply could not write output image: {error}"),
-            "google",
+            "openrouter",
             &requested_model,
-            &normalized_model,
-            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &openrouter_model,
+            REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
             &prompt,
             &target_image_path,
             &reference_image_paths,
@@ -3785,11 +4065,11 @@ fn run_design_review_apply_request(
 
     Ok(serde_json::json!({
         "ok": true,
-        "provider": "google",
+        "provider": "openrouter",
         "requestedModel": requested_model,
-        "normalizedModel": normalized_model,
-        "model": normalized_model,
-        "transport": REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+        "normalizedModel": openrouter_model,
+        "model": openrouter_model,
+        "transport": REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
         "prompt": prompt,
         "targetImagePath": target_image_path,
         "referenceImagePaths": reference_image_paths,
@@ -5173,7 +5453,7 @@ mod tests {
     fn apply_request_rejects_unsupported_provider_with_shaped_debug_payload() {
         let request = serde_json::json!({
             "kind": "apply",
-            "provider": "openrouter",
+            "provider": "anthropic",
             "model": "Gemini Nano Banana 2",
             "prompt": "Edit only targetImage.",
             "targetImage": {
@@ -5191,7 +5471,7 @@ mod tests {
             parsed
                 .pointer("/debugInfo/provider")
                 .and_then(|value| value.as_str()),
-            Some("google")
+            Some("anthropic")
         );
         assert_eq!(
             parsed
