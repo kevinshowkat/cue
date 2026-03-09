@@ -9,6 +9,7 @@ Use this when repointing Codex tabs to land the review-accept apply path.
 ## 2. Goal
 - Let the user accept a design-review proposal from the communication tray.
 - Route the accepted proposal through a real Gemini final-apply call using Nano Banana 2.
+- Send Gemini one editable target image plus any additional reference images needed by the accepted proposal.
 - Replace the target uploaded image in place inside the active tab.
 - Keep the planner and preview split intact:
   - planner = `gpt-5.4`
@@ -81,6 +82,7 @@ cd /Users/mainframe/Desktop/projects/juggernaut-review-apply-verify && codex
 ## 8. Success Criteria
 - Accepting a ready proposal triggers a real final apply request.
 - The final apply request uses Gemini Nano Banana 2, not the preview renderer.
+- Cross-image proposals send all relevant reference images, but only one target image is edited and replaced.
 - The resulting image replaces the target uploaded image in place.
 - Replacement stays inside the active tab only.
 - Tab switching is blocked or explicitly deferred while the apply is in flight.

@@ -11,6 +11,8 @@ Use these prompts for the March 9, 2026 review-apply wave. The goal is to let us
 - If the provider-facing model id differs from the nickname, pin that mapping once in shared constants and preserve the requested vs normalized model in debug info.
 - Accept uses `proposal.imageId` as the first target choice, then falls back to `request.primaryImageId`.
 - Final apply uses `proposal.applyBrief` as the core instruction, not `previewBrief`.
+- Final apply sends exactly one editable `targetImage` plus any additional `referenceImages[]` needed for the proposal.
+- Gemini must be instructed to edit only `targetImage` and use `referenceImages[]` as guidance only.
 - The rendered output replaces the target uploaded image in place.
 - Replacing in place means the same `imageId`, transform state, selection state, z-order, and active-tab context are preserved.
 - Use the existing receipt and timeline path rather than inventing a review-only artifact system.
@@ -94,6 +96,7 @@ Build:
   - proposal
   - request snapshot
   - target image id
+  - reference image ids
   - output path on success
   - debug info on failure
 - Keep all runtime state tab-local
@@ -147,10 +150,18 @@ Build:
   - proposal applyBrief
   - proposal targetRegion
   - negativeConstraints
+- Add an apply request contract that distinguishes:
+  - `targetImage`
+  - `referenceImages[]`
+- Final apply must send all relevant proposal images to Gemini when the proposal depends on cross-image context.
+- Final apply prompt must explicitly say:
+  - edit only `targetImage`
+  - use `referenceImages[]` as guidance only
+  - return one final rendered image for `targetImage`
 - Add providerRouter.runApply(...)
 - Extend the Tauri design-review provider command with kind="apply"
 - Implement the Google Gemini final apply path first
-- Final apply must consume the source image path and write a high-quality output image to a requested output path
+- Final apply must consume the target image path, include any additional reference image paths, and write a high-quality output image to a requested output path
 - Keep preview path unchanged
 - Return shaped errors and debug payloads with:
   - provider
@@ -158,7 +169,8 @@ Build:
   - normalized model
   - transport
   - prompt
-  - input image path
+  - target image path
+  - reference image paths
   - output path
 - Prefer Gemini-only behavior for final apply; do not silently route final apply to OpenAI
 
@@ -273,11 +285,12 @@ Suggested verification:
 Manual smoke:
 - Launch from /Users/mainframe/Desktop/projects/Juggernaut/desktop
 - Create two tabs
-- Upload an image in tab 1
+- Upload two images in tab 1 when testing a cross-image proposal
 - Run Design review
 - Accept one ready proposal
 - Confirm tray shows apply-in-flight state
-- Confirm the final Gemini render replaces the uploaded image in tab 1
+- Confirm Gemini receives one editable target plus the needed reference image inputs
+- Confirm the final Gemini render replaces only the target image in tab 1
 - Confirm tab 2 does not change
 - Confirm debug payload appears if the apply fails
 

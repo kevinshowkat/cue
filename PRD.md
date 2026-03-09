@@ -242,6 +242,7 @@ Notes:
 - `GPT-5.4 vision` is the planner/reviewer for design-review reasoning.
 - `gemini-3.1-flash-image-preview` is the preview renderer for proposal thumbnails.
 - Final apply of any accepted proposal remains routed through the normal execution layer and receipt system, replacing the target image in place for the active tab when a valid target image is present.
+- When an accepted proposal depends on multiple images, final apply sends one editable target image plus any additional reference images needed for guidance, and replaces only the target image.
 - Upload-time analysis must never block `Design review`; review can run with cached context, fresh context, or no prior upload analysis.
 
 ### 7. Upload-Time Analysis And Memory
@@ -594,6 +595,7 @@ Rules:
 - Review may infer the relevant image or region from overlap and intersection with the mark instead of relying on marker-time image attachment.
 - The proposal tray floats near the marked region and shows 2-3 preview slots immediately as skeletons.
 - Accepted proposals still execute through the normal execution layer and replace the target image in place when the review request resolves to an existing target image.
+- If the accepted proposal needs cross-image context, the apply request includes the target image plus additional reference images, but only the target image is mutated and replaced.
 
 ### Create Tool
 - The primary left rail does not include `Create Tool`.
