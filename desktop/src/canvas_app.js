@@ -36554,6 +36554,34 @@ async function boot() {
     void handleDesktopAutomation(event);
   });
 
+  await listen("native-menu-action", (event) => {
+    const payload = event?.payload;
+    const action =
+      typeof payload === "string"
+        ? payload
+        : payload && typeof payload === "object"
+          ? String(payload.action || "").trim()
+          : "";
+    if (action === "import_photos") {
+      bumpInteraction();
+      runWithUserError("Import photos", () => importPhotos(), {
+        retryHint: "Choose supported image files and retry.",
+      });
+      return;
+    }
+    if (action === "export_psd") {
+      bumpInteraction();
+      void runWithUserError("Export PSD", () => requestJuggernautPsdExport({ source: "native_menu" }), {
+        retryHint: "Try again after the PSD export branch is integrated.",
+      });
+      return;
+    }
+    if (action === "open_settings") {
+      bumpInteraction();
+      els.settingsToggle?.click();
+    }
+  });
+
   // Auto-create a run for speed; users can always "Open Run" later.
   await createRun();
   installJuggernautShellBridge();

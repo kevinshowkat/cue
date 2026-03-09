@@ -31,6 +31,7 @@
   --top-api-w: clamp(56px, 7vw, 72px);
   --top-queue-w: clamp(116px, 13vw, 156px);
   --top-avg-w: clamp(72px, 8vw, 98px);
+  --jg-primary-rail-top: 18px;
 }
 
 * {
@@ -41,10 +42,7 @@ body {
   margin: 0;
   font-family: "Space Grotesk", sans-serif;
   color: var(--text);
-  background:
-    radial-gradient(1100px 600px at 12% 8%, #182232, transparent 60%),
-    radial-gradient(900px 500px at 84% 16%, #141e2b, transparent 65%),
-    linear-gradient(180deg, #070a0f, #0b0f14 70%);
+  background: #ffffff;
   min-height: 100vh;
   overflow: hidden;
 }
@@ -93,6 +91,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  position: relative;
   transform-origin: top left;
   transform: scale(var(--reel-view-scale, 1));
   width: calc(100% / var(--reel-view-scale, 1));
@@ -6398,11 +6397,12 @@ button.ghost:hover {
 }
 
 .create-tool-panel {
-  left: 50%;
+  left: calc(50% + ((var(--jg-shell-inset, 18px) + var(--jg-rail-width, 74px)) / 2));
   top: 50%;
-  width: min(480px, calc(100% - 24px));
+  width: min(480px, calc(100% - (var(--jg-shell-inset, 18px) * 2) - var(--jg-rail-width, 74px) - 32px));
+  max-width: calc(100% - (var(--jg-shell-inset, 18px) * 2) - var(--jg-rail-width, 74px) - 32px);
   transform: translate(-50%, -50%);
-  z-index: 11;
+  z-index: 13;
 }
 
 .create-tool-preview {
@@ -8646,12 +8646,16 @@ button.ghost:hover {
 }
 
 .brand-strip {
-  grid-template-columns: auto 1fr auto;
-  min-height: 52px;
-  padding: 10px 14px;
-  background:
-    radial-gradient(260px 90px at 12% 50%, rgba(100, 210, 255, 0.08), transparent 72%),
-    linear-gradient(180deg, rgba(8, 12, 18, 0.86), rgba(8, 12, 18, 0.92));
+  position: fixed;
+  inset: 0 0 auto 0;
+  grid-template-columns: 1px minmax(0, 1fr) auto;
+  align-items: stretch;
+  min-height: var(--brand-strip-h);
+  padding: 0;
+  background: transparent;
+  border-bottom: 0;
+  backdrop-filter: none;
+  pointer-events: none;
 }
 
 .brand-strip-logo {
@@ -8659,10 +8663,15 @@ button.ghost:hover {
 }
 
 .juggernaut-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .juggernaut-brand-mark {
@@ -8701,15 +8710,16 @@ button.ghost:hover {
 }
 
 .juggernaut-brand-wordmark {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(243, 248, 255, 0.98);
+  display: none;
 }
 
 .stage {
   isolation: isolate;
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   background:
     radial-gradient(1100px 540px at 18% 12%, rgba(100, 210, 255, 0.08), transparent 58%),
     radial-gradient(860px 460px at 84% 18%, rgba(255, 179, 0, 0.08), transparent 60%),
@@ -8725,47 +8735,52 @@ button.ghost:hover {
 
 .juggernaut-shell-head {
   position: absolute;
-  top: 0;
-  left: 84px;
-  right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  inset: 0;
+  pointer-events: none;
 }
 
 .juggernaut-shell-brand {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px 16px;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
-    rgba(9, 13, 18, 0.74);
-  backdrop-filter: blur(18px);
-  box-shadow:
-    0 24px 48px rgba(0, 0, 0, 0.36),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .juggernaut-shell-wordmark {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(243, 248, 255, 0.98);
+  display: none;
 }
 
-.juggernaut-shell-status {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
-  color: rgba(168, 188, 206, 0.92);
-  white-space: nowrap;
+.brand-strip > .window-drag-region {
+  position: absolute;
+  inset: 0 0 auto 0;
+  min-height: var(--brand-strip-h);
+  height: var(--brand-strip-h);
+  pointer-events: auto;
+}
+
+.brand-strip .brand-actions {
+  position: absolute;
+  width: 1px;
+  min-width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.brand-strip .menu-toggle,
+.brand-strip .app-menu {
+  display: none !important;
+}
+
+.juggernaut-shell-actions {
+  display: none;
 }
 
 .juggernaut-shell-action {
@@ -8804,7 +8819,7 @@ button.ghost:hover {
 
 .juggernaut-tool-rail {
   position: absolute;
-  top: 0;
+  top: var(--jg-primary-rail-top);
   left: 0;
   display: flex;
   flex-direction: column;
@@ -8828,7 +8843,14 @@ button.ghost:hover {
 .juggernaut-shell-chrome .custom-tool-dock {
   position: absolute;
   left: 0;
-  bottom: 0;
+  top: calc(
+    var(--jg-primary-rail-top) +
+    (var(--jg-rail-pad, 12px) * 2) +
+    (var(--jg-rail-button-size, 54px) * 5) +
+    ((var(--jg-rail-gap, 10px) + 2px) * 4) +
+    16px
+  );
+  bottom: auto;
   width: 74px;
   min-width: 74px;
   align-items: center;
@@ -8887,18 +8909,75 @@ button.ghost:hover {
 }
 
 .canvas-wrap {
-  margin: 86px 18px 18px 88px;
+  margin: 0;
   min-height: 0;
-  border-radius: 24px;
+  border-radius: 0;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 34px 80px rgba(0, 0, 0, 0.34);
-  background:
-    radial-gradient(circle at 18% 26%, rgba(100, 210, 255, 0.16), transparent 52%),
-    radial-gradient(circle at 72% 18%, rgba(255, 179, 0, 0.12), transparent 50%),
-    linear-gradient(180deg, rgba(9, 13, 19, 0.92), rgba(8, 12, 17, 0.98));
+  border: 0;
+  box-shadow: none;
+  background: #ffffff;
+}
+
+.workspace {
+  padding: 0;
+}
+
+.juggernaut-shell-chrome #top-metrics {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.juggernaut-shell-chrome #top-metrics:not(.hidden) {
+  display: grid;
+}
+
+body.juggernaut-shell .stage {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.juggernaut-shell .stage::before {
+  display: none;
+}
+
+body.juggernaut-shell .canvas-wrap {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  min-height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.canvas-wrap::before,
+body.juggernaut-shell .canvas-wrap::before {
+  display: none;
+}
+
+body.juggernaut-shell .workspace {
+  position: fixed;
+  inset: 0;
+  display: block;
+  padding: 0;
+}
+
+body.juggernaut-shell .brand-strip {
+  position: fixed;
+  inset: 0 0 auto 0;
+  min-height: var(--brand-strip-h);
+  padding: 0;
+  background: transparent;
+  border-bottom: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  pointer-events: none;
 }
 
 #control-strip,
@@ -8911,31 +8990,16 @@ button.ghost:hover {
 .drop-hint {
   pointer-events: auto;
   cursor: pointer;
-  padding: 32px;
+  padding: 0;
+  background: transparent;
 }
 
 .drop-hint-inner {
-  top: 0;
-  gap: 14px;
-  padding: 28px 32px;
-  border-radius: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background:
-    radial-gradient(180px 80px at 50% 0%, rgba(100, 210, 255, 0.12), transparent 74%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01)),
-    rgba(8, 12, 17, 0.78);
-  box-shadow:
-    0 24px 68px rgba(0, 0, 0, 0.40),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(18px);
+  display: none;
 }
 
 .drop-hint-plus {
-  font-size: clamp(86px, 11vw, 132px);
-  color: rgba(100, 210, 255, 0.26);
-  text-shadow:
-    0 24px 52px rgba(0, 0, 0, 0.62),
-    0 0 18px rgba(100, 210, 255, 0.16);
+  display: none;
 }
 
 .drop-hint-title {
@@ -8952,12 +9016,12 @@ button.ghost:hover {
 }
 
 @media (max-width: 980px) {
-  .juggernaut-shell-chrome {
-    inset: 14px;
+  :root {
+    --jg-primary-rail-top: 14px;
   }
 
-  .juggernaut-shell-head {
-    left: 74px;
+  .juggernaut-shell-chrome {
+    inset: 14px;
   }
 
   .juggernaut-tool-rail {
@@ -8971,46 +9035,37 @@ button.ghost:hover {
   }
 
   .canvas-wrap {
-    margin: 78px 14px 14px 78px;
-    border-radius: 20px;
+    margin: 0;
+    border-radius: 0;
   }
 }
 
 @media (max-width: 720px) {
+  :root {
+    --jg-primary-rail-top: 10px;
+  }
+
   .workspace {
-    padding: 8px;
+    padding: 0;
   }
 
-  .juggernaut-shell-head {
-    left: 68px;
-    gap: 10px;
+  body.juggernaut-shell .workspace {
+    padding: 0;
   }
 
-  .juggernaut-shell-brand {
-    padding: 12px 14px;
+  .create-tool-panel {
+    left: 50%;
+    width: min(460px, calc(100% - 24px));
+    max-width: calc(100% - 24px);
   }
 
-  .juggernaut-shell-wordmark {
-    font-size: 13px;
-  }
-
-  .juggernaut-shell-status {
-    font-size: 10px;
-  }
-
-  .canvas-wrap {
-    margin: 74px 10px 10px 72px;
+  .canvas-wrap,
+  body.juggernaut-shell .canvas-wrap {
+    margin: 0;
+    border-radius: 0;
   }
 
   .drop-hint {
-    padding: 18px;
-  }
-
-  .drop-hint-inner {
-    padding: 22px 20px;
-  }
-
-  .drop-hint-sub {
-    max-width: 280px;
+    padding: 0;
   }
 }

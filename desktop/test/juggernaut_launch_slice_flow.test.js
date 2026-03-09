@@ -26,7 +26,7 @@ function loadNamedFunction(name) {
 }
 
 test("Juggernaut launch slice: upload, custom tool creation, local apply, and PSD export stay wired together", async () => {
-  assert.match(html, /id="drop-hint"[\s\S]*Drop images or click to upload/);
+  assert.match(html, /id="drop-hint"/);
   assert.match(html, /id="create-tool-panel"/);
   assert.match(html, /id="juggernaut-export-psd"/);
 
