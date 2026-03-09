@@ -21980,9 +21980,13 @@ function renderCommunicationProposalTray() {
   const visible = Boolean(tray.visible && anchorCss);
   trayEl.classList.toggle("hidden", !visible);
   if (!visible) return;
+  const traySource = String(tray.source || "").trim();
   const runtimeOwnsSlotList =
     trayEl.classList.contains("is-design-review-runtime") &&
-    String(tray.source || "").trim().startsWith("review_runtime");
+    (
+      traySource.startsWith("review_runtime") ||
+      traySource === "design_review_bootstrap_state"
+    );
   if (!runtimeOwnsSlotList) {
     const fragment = document.createDocumentFragment();
     for (const slot of tray.slots) {

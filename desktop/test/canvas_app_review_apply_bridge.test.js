@@ -366,7 +366,7 @@ test("communication tray host preserves runtime-owned review slots while still p
     },
     buildCommunicationProposalTraySnapshot: () => ({
       visible: true,
-      source: "review_runtime",
+      source: "design_review_bootstrap_state",
       anchor: { x: 50, y: 60 },
       slots: [
         { index: 0, status: "ready", label: "Proposal 1", title: "T1", copy: "C1" },
