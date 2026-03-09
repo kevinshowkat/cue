@@ -2409,6 +2409,16 @@ promptBenchmarkHydrateState();
 let flushDeferredEnginePtyExit = async () => {};
 let activeEventsPollToken = 0;
 let releaseSessionTabStripSubscription = null;
+const TAB_HYDRATION_IDLE_TIMEOUT_MS = 180;
+const PTY_STATUS_CACHE_TTL_MS = 1200;
+let tabHydrationToken = 0;
+let tabHydrationRaf = 0;
+let tabHydrationTimer = null;
+let tabHydrationIdle = null;
+let ptyStatusCache = {
+  status: null,
+  fetchedAt: 0,
+};
 
 const DEFAULT_TIP = "Click Studio White to replace the background. Use 4 (Lasso) if you want a manual mask.";
 const VISUAL_PROMPT_FILENAME = "visual_prompt.json";
@@ -3586,21 +3596,53 @@ function ptyStatusMatchesActiveRun(status) {
   return String(status.run_dir || "").trim() === runDir && String(status.events_path || "").trim() === eventsPath;
 }
 
-async function syncActiveRunPtyBinding() {
+function invalidatePtyStatusCache() {
+  ptyStatusCache = {
+    status: null,
+    fetchedAt: 0,
+  };
+}
+
+function cachePtyStatus(status) {
+  ptyStatusCache = {
+    status: status && typeof status === "object" ? { ...status } : null,
+    fetchedAt: Date.now(),
+  };
+}
+
+async function readPtyStatus({ useCache = true } = {}) {
+  const now = Date.now();
+  if (
+    useCache &&
+    ptyStatusCache.status &&
+    now - Number(ptyStatusCache.fetchedAt || 0) <= PTY_STATUS_CACHE_TTL_MS
+  ) {
+    return ptyStatusCache.status;
+  }
+  if (!ptyStatusPromise) {
+    ptyStatusPromise = invoke("get_pty_status")
+      .then((status) => {
+        cachePtyStatus(status);
+        return status;
+      })
+      .finally(() => {
+        ptyStatusPromise = null;
+      });
+  }
+  return ptyStatusPromise;
+}
+
+async function syncActiveRunPtyBinding({ useCache = true } = {}) {
   if (!state.runDir || !state.eventsPath || state.ptySpawning) {
     state.ptySpawned = false;
     return false;
   }
 
   try {
-    if (!ptyStatusPromise) {
-      ptyStatusPromise = invoke("get_pty_status").finally(() => {
-        ptyStatusPromise = null;
-      });
-    }
-    const status = await ptyStatusPromise;
+    const status = await readPtyStatus({ useCache });
     state.ptySpawned = ptyStatusMatchesActiveRun(status);
   } catch (_) {
+    invalidatePtyStatusCache();
     state.ptySpawned = false;
   }
   return Boolean(state.ptySpawned);
@@ -28961,6 +29003,17 @@ function subscribeTabs(listener) {
 }
 
 function suspendActiveTabRuntimeForSwitch() {
+  if (tabHydrationRaf && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
+    window.cancelAnimationFrame(tabHydrationRaf);
+  }
+  tabHydrationRaf = 0;
+  if (tabHydrationTimer) clearTimeout(tabHydrationTimer);
+  tabHydrationTimer = null;
+  if (tabHydrationIdle && typeof window !== "undefined" && typeof window.cancelIdleCallback === "function") {
+    window.cancelIdleCallback(tabHydrationIdle);
+  }
+  tabHydrationIdle = null;
+  tabHydrationToken += 1;
   stopEventsPolling();
   state.ptySpawned = false;
   state.pollInFlight = false;
@@ -29010,17 +29063,105 @@ function suspendActiveTabRuntimeForSwitch() {
   }
 }
 
-async function attachActiveTabRuntime({ spawnEngine: shouldSpawnEngine = false, reason = "tab_activate" } = {}) {
+function currentTabHydrationMatches(tabId, hydrationToken) {
+  const normalizedTabId = String(tabId || "").trim();
+  if (!normalizedTabId) return false;
+  return normalizedTabId === String(state.activeTabId || "").trim() && hydrationToken === tabHydrationToken;
+}
+
+function publishActiveTabVisibleState() {
   setRunInfo(state.runDir ? `Run: ${state.runDir}` : "No run");
   setTip(state.lastTipText || DEFAULT_TIP);
   setDirectorText(state.lastDirectorText, state.lastDirectorMeta);
+  updateEmptyCanvasHint();
+  if (els.timelineOverlay) {
+    els.timelineOverlay.classList.toggle("hidden", !state.timelineOpen);
+  }
+  requestRender();
+}
+
+function scheduleTabHydration(tabId, reason, { spawnEngine = false } = {}) {
+  const normalizedTabId = String(tabId || "").trim();
+  if (!normalizedTabId) return Promise.resolve(false);
+  if (tabHydrationRaf && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
+    window.cancelAnimationFrame(tabHydrationRaf);
+  }
+  tabHydrationRaf = 0;
+  if (tabHydrationTimer) clearTimeout(tabHydrationTimer);
+  tabHydrationTimer = null;
+  if (tabHydrationIdle && typeof window !== "undefined" && typeof window.cancelIdleCallback === "function") {
+    window.cancelIdleCallback(tabHydrationIdle);
+  }
+  tabHydrationIdle = null;
+
+  const hydrationToken = ++tabHydrationToken;
+  const runHydration = async () => {
+    if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
+    return attachActiveTabRuntime({
+      tabId: normalizedTabId,
+      spawnEngine,
+      reason,
+      hydrationToken,
+    });
+  };
+  const startHydration = () => {
+    if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return Promise.resolve(false);
+    if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+      return new Promise((resolve) => {
+        tabHydrationIdle = window.requestIdleCallback(
+          () => {
+            tabHydrationIdle = null;
+            void runHydration()
+              .then((ok) => resolve(Boolean(ok)))
+              .catch((err) => {
+                console.error("Deferred tab hydration failed:", err);
+                resolve(false);
+              });
+          },
+          { timeout: TAB_HYDRATION_IDLE_TIMEOUT_MS }
+        );
+      });
+    }
+    return runHydration().catch((err) => {
+      console.error("Deferred tab hydration failed:", err);
+      return false;
+    });
+  };
+  if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    return new Promise((resolve) => {
+      tabHydrationRaf = window.requestAnimationFrame(() => {
+        tabHydrationRaf = 0;
+        tabHydrationTimer = setTimeout(() => {
+          tabHydrationTimer = null;
+          void startHydration().then((ok) => resolve(Boolean(ok)));
+        }, 0);
+      });
+    });
+  }
+  return new Promise((resolve) => {
+    tabHydrationTimer = setTimeout(() => {
+      tabHydrationTimer = null;
+      void startHydration().then((ok) => resolve(Boolean(ok)));
+    }, 0);
+  });
+}
+
+async function attachActiveTabRuntime({
+  tabId = state.activeTabId || null,
+  spawnEngine: shouldSpawnEngine = false,
+  reason = "tab_activate",
+  hydrationToken = tabHydrationToken,
+} = {}) {
+  const normalizedTabId = String(tabId || "").trim();
+  if (!normalizedTabId) return false;
+  if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
   syncSessionToolsFromRegistry();
   renderCreateToolPreview();
   renderCustomToolDock();
   renderSelectionMeta();
+  if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
   renderFilmstrip();
   chooseSpawnNodes();
-  renderQuickActions();
   renderSessionApiCallsReadout();
   updateEmptyCanvasHint();
   syncIntentModeClass();
@@ -29034,12 +29175,14 @@ async function attachActiveTabRuntime({ spawnEngine: shouldSpawnEngine = false, 
     els.timelineOverlay.classList.add("hidden");
   }
   requestRender();
-  scheduleVisualPromptWrite();
+  if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
   if (shouldSpawnEngine && state.runDir) {
     const ok = await ensureEngineSpawned({ reason });
+    if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
     if (ok) setStatus("Engine: ready");
   } else {
-    await syncActiveRunPtyBinding();
+    await syncActiveRunPtyBinding({ useCache: true });
+    if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
     startEventsPolling();
     renderSessionApiCallsReadout();
   }
@@ -29055,9 +29198,12 @@ async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate"
   if (!target) {
     return { ok: false, reason: "missing_tab", tabs: listTabs() };
   }
+  const waitForHydration = Boolean(arguments[1]?.waitForHydration);
   if (normalized === String(state.activeTabId || "").trim()) {
-    await attachActiveTabRuntime({ spawnEngine, reason });
-    return { ok: true, tabId: normalized, activeTabId: state.activeTabId || null, tabs: listTabs() };
+    publishActiveTabVisibleState();
+    const hydration = scheduleTabHydration(normalized, reason, { spawnEngine });
+    if (waitForHydration) await hydration;
+    return { ok: true, tabId: normalized, activeTabId: state.activeTabId || null, tabs: listTabs(), hydration };
   }
   const blockReason = currentTabSwitchBlockReason();
   if (blockReason) {
@@ -29072,12 +29218,15 @@ async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate"
   bindTabSessionToState(target.session);
   tabbedSessions.setActiveTab(normalized);
   syncActiveTabRecord({ capture: false });
-  await attachActiveTabRuntime({ spawnEngine, reason });
+  publishActiveTabVisibleState();
+  const hydration = scheduleTabHydration(normalized, reason, { spawnEngine });
+  if (waitForHydration) await hydration;
   return {
     ok: true,
     tabId: normalized,
     activeTabId: state.activeTabId || null,
     tabs: listTabs(),
+    hydration,
   };
 }
 
@@ -29112,7 +29261,8 @@ async function closeTab(tabId) {
     }
     const closed = tabbedSessions.closeTab(normalized, { activateNeighbor: true });
     if (closed?.nextActiveId) {
-      await attachActiveTabRuntime({ spawnEngine: false, reason: "close_tab" });
+      publishActiveTabVisibleState();
+      void scheduleTabHydration(closed.nextActiveId, "close_tab", { spawnEngine: false });
     }
     showToast(`Closed ${tabLabelForRunDir(closed?.closed?.runDir, "tab")}.`, "tip", 1800);
     return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: listTabs() };
@@ -29196,6 +29346,7 @@ async function createRun() {
     { activate: false }
   );
   const result = await activateTab(tabId, { spawnEngine: true, reason: "new_run_tab" });
+  if (result?.hydration) await result.hydration;
   if (state.ptySpawned) {
     showToast(`New tab ready: ${tabLabelForRunDir(payload.run_dir)}.`, "tip", 2600);
   } else {
@@ -29230,10 +29381,11 @@ async function openExistingRun() {
     },
     { activate: false }
   );
-  await activateTab(tabId, { spawnEngine: false, reason: "open_run_tab" });
+  const activation = await activateTab(tabId, { spawnEngine: false, reason: "open_run_tab" });
+  if (!activation?.ok) return activation;
+  if (activation?.hydration) await activation.hydration;
   await restoreIntentStateFromRunDir().catch(() => {});
   const restoredArtifacts = await loadExistingArtifacts();
-  await attachActiveTabRuntime({ spawnEngine: false, reason: "open_run_attach" });
   if (intentAmbientActive() && getVisibleCanvasImages().length) {
     scheduleAmbientIntentInference({ immediate: true, reason: "composition_change" });
   }
@@ -29345,6 +29497,11 @@ async function spawnEngine() {
     }
 
     state.ptySpawned = true;
+    cachePtyStatus({
+      running: true,
+      run_dir: state.runDir,
+      events_path: state.eventsPath,
+    });
     state.engineLaunchMode = launchMeta?.mode || "native";
     state.engineLaunchPath = launchMeta?.label || "unknown";
     console.info(
@@ -29361,6 +29518,7 @@ async function spawnEngine() {
     setStatus(`Engine: started (${state.engineLaunchMode})`);
   } catch (err) {
     console.error(err);
+    invalidatePtyStatusCache();
     setStatus(`Engine: failed (${err?.message || err})`, true);
   } finally {
     state.ptySpawning = false;
@@ -37356,7 +37514,7 @@ async function boot() {
 
   const handleEnginePtyExit = async () => {
     try {
-      const status = await invoke("get_pty_status");
+      const status = await readPtyStatus({ useCache: false });
       if (status?.running) {
         if (state.pendingPtyExit) {
           state.pendingPtyExit = false;
@@ -37373,6 +37531,7 @@ async function boot() {
       console.info("[brood] deferred pty-exit while spawn is in progress");
       return;
     }
+    cachePtyStatus({ running: false, run_dir: null, events_path: null });
     state.pendingPtyExit = false;
     setStatus("Engine: exited", true);
     state.ptySpawned = false;
