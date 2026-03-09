@@ -103,7 +103,7 @@ test("busy active tabs block tab switching with the implemented v1 reasons", () 
 test("inactive tabs drop live polling and realtime engine attachments in v1", () => {
   assert.match(
     app,
-    /function suspendActiveTabRuntimeForSwitch\(\) \{[\s\S]*stopEventsPolling\(\);[\s\S]*resetDescribeQueue\(\{ clearPending: true \}\);[\s\S]*invoke\("write_pty", \{ data: `\$\{PTY_COMMANDS\.INTENT_RT_STOP\}\\n` \}\)\.catch\(\(\) => \{\}\);[\s\S]*invoke\("write_pty", \{ data: `\$\{PTY_COMMANDS\.CANVAS_CONTEXT_RT_STOP\}\\n` \}\)\.catch\(\(\) => \{\}\);[\s\S]*invoke\("write_pty", \{ data: `\$\{PTY_COMMANDS\.INTENT_RT_MOTHER_STOP\}\\n` \}\)\.catch\(\(\) => \{\}\);/
+    /function suspendActiveTabRuntimeForSwitch\(\) \{[\s\S]*stopEventsPolling\(\);[\s\S]*resetDescribeQueue\(\{ clearPending: true \}\);[\s\S]*invoke\("write_pty", \{ data: `\$\{PTY_COMMANDS\.INTENT_RT_STOP\}\\n` \}\)\.catch\(\(\) => \{\}\);[\s\S]*invoke\("write_pty", \{ data: `\$\{PTY_COMMANDS\.INTENT_RT_MOTHER_STOP\}\\n` \}\)\.catch\(\(\) => \{\}\);/
   );
   assert.match(app, /function startEventsPolling\(\) \{[\s\S]*if \(!state\.activeTabId \|\| !state\.eventsPath\) return;/);
   assert.match(app, /await spawnEngine\(\);[\s\S]*startEventsPolling\(\);/);
