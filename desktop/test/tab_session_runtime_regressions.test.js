@@ -12,10 +12,38 @@ const ensureEngineSpawnedChunk = app.slice(
   app.indexOf("async function ensureEngineSpawned({ reason = \"engine\" } = {}) {"),
   app.indexOf("function allowVisionDescribe() {")
 );
-const attachActiveTabRuntimeChunk = app.slice(
-  app.indexOf("async function attachActiveTabRuntime({ spawnEngine: shouldSpawnEngine = false, reason = \"tab_activate\" } = {}) {"),
-  app.indexOf("async function activateTab(")
-);
+
+function extractFunctionSource(name) {
+  const markers = [`async function ${name}(`, `function ${name}(`];
+  const start = markers
+    .map((marker) => app.indexOf(marker))
+    .find((index) => index >= 0);
+  assert.notEqual(start, undefined, `Could not find function ${name}`);
+  const signatureStart = app.indexOf("(", start);
+  assert.notEqual(signatureStart, -1, `Could not find signature for ${name}`);
+  let parenDepth = 0;
+  let bodyStart = -1;
+  for (let index = signatureStart; index < app.length; index += 1) {
+    const char = app[index];
+    if (char === "(") parenDepth += 1;
+    if (char === ")") parenDepth -= 1;
+    if (parenDepth === 0 && char === "{") {
+      bodyStart = index;
+      break;
+    }
+  }
+  assert.notEqual(bodyStart, -1, `Could not find body for ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < app.length; index += 1) {
+    const char = app[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) {
+      return app.slice(start, index + 1);
+    }
+  }
+  throw new Error(`Could not extract function ${name}`);
+}
 
 test("ensureRun provisions the current blank tab instead of always creating another tab", () => {
   assert.equal(ensureRunChunk.includes("const activeTabId = String(state.activeTabId || \"\").trim();"), true);
@@ -35,16 +63,19 @@ test("ensureRun provisions the current blank tab instead of always creating anot
 });
 
 test("tab activation is lazy and validates engine binding before reusing a PTY", () => {
+  const attachActiveTabRuntimeChunk = extractFunctionSource("attachActiveTabRuntime");
+
   assert.equal(
-    attachActiveTabRuntimeChunk.includes(
-      "async function attachActiveTabRuntime({ spawnEngine: shouldSpawnEngine = false, reason = \"tab_activate\" } = {}) {"
-    ),
+    attachActiveTabRuntimeChunk.includes("spawnEngine: shouldSpawnEngine = false"),
     true
   );
-  assert.equal(attachActiveTabRuntimeChunk.includes("scheduleVisualPromptWrite();"), true);
+  assert.equal(attachActiveTabRuntimeChunk.includes("tabId = state.activeTabId || null"), true);
+  assert.equal(attachActiveTabRuntimeChunk.includes("hydrationToken = tabHydrationToken"), true);
+  assert.equal(attachActiveTabRuntimeChunk.includes("scheduleVisualPromptWrite();"), false);
   assert.equal(attachActiveTabRuntimeChunk.includes("if (shouldSpawnEngine && state.runDir) {"), true);
   assert.equal(attachActiveTabRuntimeChunk.includes("const ok = await ensureEngineSpawned({ reason });"), true);
-  assert.equal(attachActiveTabRuntimeChunk.includes("await syncActiveRunPtyBinding();"), true);
+  assert.equal(attachActiveTabRuntimeChunk.includes("await syncActiveRunPtyBinding({ useCache: true });"), true);
+  assert.equal(attachActiveTabRuntimeChunk.includes("currentTabHydrationMatches(normalizedTabId, hydrationToken)"), true);
   assert.equal(attachActiveTabRuntimeChunk.includes("startEventsPolling();"), true);
   assert.equal(
     ensureEngineSpawnedChunk.includes("if (await syncActiveRunPtyBinding()) {"),
