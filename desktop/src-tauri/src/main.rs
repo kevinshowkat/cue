@@ -3355,8 +3355,7 @@ fn run_design_review_preview_request(
     Err("No preview renderer credentials are configured for design review.".to_string())
 }
 
-#[tauri::command]
-fn run_design_review_provider_request(
+fn run_design_review_provider_request_sync(
     request: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let kind = request
@@ -3376,6 +3375,15 @@ fn run_design_review_provider_request(
             "unsupported design review provider request kind: {other}"
         )),
     }
+}
+
+#[tauri::command]
+async fn run_design_review_provider_request(
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || run_design_review_provider_request_sync(request))
+        .await
+        .map_err(|error| format!("design review provider task join failed: {error}"))?
 }
 
 fn runtime_channel_label() -> &'static str {

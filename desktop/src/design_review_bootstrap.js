@@ -964,9 +964,6 @@ export async function installDesignReviewBootstrap() {
       renderCommunicationTrayDetails(runtimeState.lastReviewState, acceptProposal);
     }
   });
-  window.addEventListener("juggernaut:shell-ready", () => {
-    queueWarmup({ delayMs: 0 });
-  });
   window.addEventListener(TABBED_SESSIONS_CHANGED_EVENT, () => {
     queueWarmup({ delayMs: 40 });
   });
@@ -984,12 +981,14 @@ export async function installDesignReviewBootstrap() {
     },
     true
   );
-  window.addEventListener("focus", () => {
-    queueWarmup({ delayMs: 160 });
-  });
   document.addEventListener(
     "change",
-    () => {
+    (event) => {
+      const target = event?.target;
+      const isFileInput =
+        Boolean(target?.matches?.('input[type="file"]')) ||
+        String(target?.type || "").toLowerCase() === "file";
+      if (!isFileInput) return;
       queueWarmup({ delayMs: 120 });
     },
     true
