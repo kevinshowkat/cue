@@ -1,7 +1,23 @@
+import {
+  SINGLE_IMAGE_RAIL_CONTRACT,
+  resolveSingleImageCapabilityAvailability,
+  resolveSingleImageCapabilityJob,
+} from "./single_image_capability_routing.js";
+
 export const TOOL_MANIFEST_SCHEMA = "juggernaut.tool_manifest.v1";
 export const TOOL_INVOCATION_SCHEMA = "juggernaut.tool_invocation.v1";
 export const TOOL_INVOCATION_EVENT = "juggernaut:tool-invoked";
 export const TOOL_RUNTIME_BRIDGE_KEY = "__JUGGERNAUT_TOOL_RUNTIME__";
+
+export {
+  SINGLE_IMAGE_CAPABILITY_MAP,
+  SINGLE_IMAGE_DISABLED_REASONS,
+  SINGLE_IMAGE_RAIL_CONTRACT,
+  buildSingleImageRailJobEntries,
+  listSingleImageCapabilityJobs,
+  normalizeSingleImageCapabilityRequest,
+  resolveSingleImageCapabilityAvailability,
+} from "./single_image_capability_routing.js";
 
 const TOOL_GENERATOR_ID = "juggernaut.local_manifest_builder.v1";
 const DEFAULT_VISIBLE_TOOL_LIMIT = 3;
@@ -185,6 +201,21 @@ function deriveShortLabel(label = "", fallback = "Tool") {
     .join(" ");
 }
 
+function normalizeSelectionTarget({ activeImageId = null, selectedImageIds = [] } = {}) {
+  const activeId = normalizeText(activeImageId);
+  const selection = [];
+  for (const id of Array.isArray(selectedImageIds) ? selectedImageIds : []) {
+    const key = normalizeText(id);
+    if (!key || selection.includes(key)) continue;
+    selection.push(key);
+  }
+  if (activeId && !selection.includes(activeId)) selection.push(activeId);
+  return {
+    activeId,
+    selection,
+  };
+}
+
 function nextUniqueToolId(baseId = "custom-tool", existingIds = []) {
   const used = new Set((Array.isArray(existingIds) ? existingIds : []).map((id) => String(id || "").trim()).filter(Boolean));
   if (!used.has(baseId)) return baseId;
@@ -309,14 +340,7 @@ export function buildToolInvocation(
   } = {}
 ) {
   const normalizedManifest = normalizeToolManifest(manifest);
-  const activeId = normalizeText(activeImageId);
-  const selection = [];
-  for (const id of Array.isArray(selectedImageIds) ? selectedImageIds : []) {
-    const key = normalizeText(id);
-    if (!key || selection.includes(key)) continue;
-    selection.push(key);
-  }
-  if (activeId && !selection.includes(activeId)) selection.push(activeId);
+  const { activeId, selection } = normalizeSelectionTarget({ activeImageId, selectedImageIds });
   return {
     schema: TOOL_INVOCATION_SCHEMA,
     requestId: normalizeText(requestId) || `tool-${Date.now()}`,
@@ -395,3 +419,95 @@ export function createInSessionToolRegistry(initialTools = []) {
   };
 }
 
+export function buildSingleImageRailInvocation(
+  jobOrId,
+  {
+    activeImageId = null,
+    selectedImageIds = [],
+    source = "single_image_rail",
+    trigger = "click",
+    requestId = "",
+    confidence = 0,
+    reasonCodes = [],
+    busy = false,
+    mode = "",
+    image = null,
+    capabilityAvailability = null,
+    capabilityExecutorAvailable = false,
+  } = {}
+) {
+  const job = resolveSingleImageCapabilityJob(jobOrId);
+  if (!job) {
+    throw new Error(`Unknown single-image rail job: ${String(jobOrId || "").trim() || "(empty)"}`);
+  }
+
+  const { activeId, selection } = normalizeSelectionTarget({ activeImageId, selectedImageIds });
+  const availability = resolveSingleImageCapabilityAvailability(job, {
+    activeImageId: activeId,
+    selectedImageIds: selection,
+    busy,
+    mode,
+    image,
+    capabilityAvailability,
+    capabilityExecutorAvailable,
+    reasonCodes,
+  });
+
+  return {
+    contract: SINGLE_IMAGE_RAIL_CONTRACT,
+    schema: TOOL_INVOCATION_SCHEMA,
+    requestId: normalizeText(requestId) || `tool-${Date.now()}`,
+    issuedAt: new Date().toISOString(),
+    source: normalizeText(source) || "single_image_rail",
+    trigger: normalizeText(trigger) || "click",
+    jobId: job.jobId,
+    label: job.label,
+    capability: job.capability,
+    stickyKey: job.stickyKey,
+    tool: {
+      toolId: job.jobId,
+      jobId: job.jobId,
+      label: job.label,
+      version: 1,
+      executionKind: "model_capability",
+      capability: job.capability,
+      requiresSelection: job.requiresSelection,
+    },
+    target: {
+      activeImageId: activeId || null,
+      selectedImageIds: selection,
+    },
+    selection: {
+      activeId: activeId || null,
+      selectedImageIds: selection,
+    },
+    execution: {
+      kind: "model_capability",
+      capability: job.capability,
+      jobId: job.jobId,
+      params: {},
+    },
+    inputContract: {
+      requiresActiveImage: job.requiresSelection,
+      minImages: job.requiresSelection ? 1 : 0,
+      maxImages: 1,
+      acceptedTarget: "active_image",
+    },
+    receipt: {
+      manifestSchema: SINGLE_IMAGE_RAIL_CONTRACT,
+      reproducible: true,
+      include: ["capability", "selection", "execution"],
+    },
+    failureBehavior: {
+      kind: "toast",
+      message: `${job.label} could not be applied.`,
+    },
+    availability,
+    rail: {
+      contract: SINGLE_IMAGE_RAIL_CONTRACT,
+      confidence: Math.max(0, Math.min(1, Number(confidence) || 0)),
+      reasonCodes: availability?.reasonCodes || [],
+      stickyKey: job.stickyKey,
+    },
+  };
+}

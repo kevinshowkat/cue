@@ -11,6 +11,7 @@ import {
   applyToolRuntimeRequest,
   installToolApplyBridge,
 } from "../src/tool_apply_runtime.js";
+import { SINGLE_IMAGE_RAIL_CONTRACT } from "../src/single_image_capability_routing.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
@@ -228,4 +229,107 @@ test("canvas app keeps a thin bridge into the runtime module", () => {
   assert.match(app, /source:\s*"tool_runtime"/);
   assert.match(app, /replaceActive:\s*true/);
   assert.match(app, /installToolApplyBridge\(\{\s*windowObj:\s*window,\s*CustomEventCtor:\s*typeof CustomEvent === "function" \? CustomEvent : null,\s*applyToolRuntimeEdit,/s);
+});
+
+test("tool apply runtime: routes approved single-image capability requests through a provider-agnostic executor", async () => {
+  const calls = [];
+  const result = await applyToolRuntimeRequest(
+    {
+      contract: SINGLE_IMAGE_RAIL_CONTRACT,
+      jobId: "cut_out",
+      target: {
+        activeImageId: "img-2",
+        selectedImageIds: ["img-2"],
+      },
+      execution: {
+        kind: "model_capability",
+        capability: "subject_isolation",
+      },
+    },
+    {
+      getActiveImageId: () => "img-2",
+      hasImageId: (imageId) => imageId === "img-2",
+      getImageById: () => ({
+        id: "img-2",
+        path: "/tmp/source.png",
+      }),
+      getCapabilityAvailability: () => ({
+        available: true,
+      }),
+      executeCapability: async (payload) => {
+        calls.push(payload);
+        return {
+          imageId: "img-2",
+          outputPath: "/tmp/cutout.png",
+          receiptPath: "/tmp/cutout-receipt.json",
+        };
+      },
+    }
+  );
+
+  assert.deepEqual(result, {
+    ok: true,
+    imageId: "img-2",
+    toolId: "cut_out",
+    outputPath: "/tmp/cutout.png",
+    receiptStep: {
+      kind: "model_capability_edit",
+      source: "tool_runtime",
+      jobId: "cut_out",
+      toolId: "cut_out",
+      toolName: "Cut Out",
+      capability: "subject_isolation",
+      outputPath: "/tmp/cutout.png",
+      receiptPath: "/tmp/cutout-receipt.json",
+    },
+    jobId: "cut_out",
+    capability: "subject_isolation",
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].route.jobId, "cut_out");
+  assert.equal(calls[0].route.capability, "subject_isolation");
+  assert.deepEqual(calls[0].selection, {
+    activeImageId: "img-2",
+    selectedImageIds: ["img-2"],
+  });
+});
+
+test("tool apply runtime: capability route returns shaped disabled failures without provider names", async () => {
+  const result = await applyToolRuntimeRequest(
+    {
+      contract: SINGLE_IMAGE_RAIL_CONTRACT,
+      jobId: "variants",
+      target: {
+        activeImageId: "img-5",
+        selectedImageIds: ["img-5"],
+      },
+      execution: {
+        kind: "model_capability",
+        capability: "identity_preserving_variation",
+      },
+    },
+    {
+      getActiveImageId: () => "img-5",
+      hasImageId: () => true,
+      getImageById: () => ({
+        id: "img-5",
+        path: "/tmp/source.png",
+      }),
+      getExecutionMode: () => "local_only",
+      normalizeErrorMessage: (error) => String(error?.message || error),
+    }
+  );
+
+  assert.deepEqual(result, {
+    ok: false,
+    imageId: "img-5",
+    toolId: "variants",
+    outputPath: null,
+    receiptStep: null,
+    error: "Variants is unavailable in the current mode.",
+    jobId: "variants",
+    capability: "identity_preserving_variation",
+    disabledReason: "unavailable_in_current_mode",
+  });
+  assert.doesNotMatch(JSON.stringify(result), /openai|gemini|flux|imagen/i);
 });
