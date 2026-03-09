@@ -16,7 +16,7 @@ Juggernaut is a text-free-first, image-first desktop design workstation for non-
 - V1 primary wedge: single-image-first. The primary loop is one image in, usable asset out.
 - V1 primary rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots.
 - Product split:
-  - left rail = precomputed action library
+  - left rail = deterministic precomputed action library
   - bottom rail = communication layer for complex or non-prebaked changes
 - V1 bottom communication rail tools: `Marker`, `Magic Select`, `Eraser`.
 - V1 shell model: single-window, Warp-style session tabs over one shared canvas surface.
@@ -92,7 +92,7 @@ By **5:30 PM America/Los_Angeles on Sunday, March 8, 2026**, produce a launchabl
 This is a same-day launch slice, not the full release bar. Cross-platform parity and native `.ai`/`.fig` remain release requirements unless scope is later renegotiated.
 
 ## V1 Outcome
-Users can open the app, keep multiple isolated runs in one window through session tabs, swap the active run into a shared canvas surface, drop in one image, use the left rail for precomputed actions and the bottom rail for complex communication-driven edits, see intent-aware suggested rail jobs, apply seeded single-image edits, request action-first design review proposals against the visible canvas plus any marks, optionally save a reusable shortcut after a successful edit, and export a usable 2D asset with a reproducibility receipt. Multi-image flows are deferred from the primary v1 loop until the single-image wedge is stable.
+Users can open the app, keep multiple isolated runs in one window through session tabs, swap the active run into a shared canvas surface, drop in one image, use the left rail for deterministic precomputed actions and the bottom rail for complex communication-driven edits, see intent-aware suggested rail jobs, apply seeded single-image edits, request action-first design review proposals against the visible canvas plus any marks, optionally save a reusable shortcut after a successful edit, and export a usable 2D asset with a reproducibility receipt. Multi-image flows are deferred from the primary v1 loop until the single-image wedge is stable.
 
 ## V1 Primary Wedge
 - One image in.
@@ -100,7 +100,7 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 - One shared window and one shared canvas surface.
 - One active run/session tab attached at a time.
 - No multi-image flows in the primary loop.
-- Left rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots from the precomputed action library.
+- Left rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library.
 - Bottom rail shape: communication-only rail for complex or non-prebaked changes.
 - Bottom communication rail v1 tools: `Marker`, `Magic Select`, `Eraser`.
 - `Create Tool` remains in the product, but enters as a secondary follow-on capability through `Save Shortcut` or a secondary dialog after useful edits.
@@ -117,15 +117,15 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 2. `New Run` creates a new run in a new tab instead of wiping the current one, and `Open Run` opens an existing run in a new tab.
 3. The user switches tabs to swap the selected run/session into the shared canvas surface.
 4. The user drags one image onto the active session canvas.
-5. After first-use cloud-analysis consent, the system may opportunistically analyze the uploaded image, cache that analysis by image hash, and use it to improve future suggestions without blocking editing or design review.
+5. After first-use cloud-analysis consent, the system may opportunistically analyze the uploaded image through the design-review upload-analysis path, cache that analysis by image hash, and use it to improve future suggestions without blocking editing or design review.
 6. The left rail keeps two stable icon-only anchors: `Upload` and `Select`.
-7. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the precomputed action library.
+7. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the deterministic precomputed action library.
 8. The bottom rail exposes `Marker`, `Magic Select`, and `Eraser` as the communication layer for complex or non-prebaked changes.
-9. `Marker` lets the user place transient arrows, strokes, or scribbles that mean "look here" or "change this" without requiring prior image selection.
+9. `Marker` lets the user place transient Photoshop-style freehand highlighter marks that are raw and pointer-faithful, without arrowheads, without prior image selection, and without requiring an image under the pointer.
 10. `Magic Select` lets the user click an image and cycle through 2-3 proposed candidate regions for communication and review.
 11. `Eraser` clears communication marks and region proposals only; it does not delete image pixels or committed edits.
 12. The user triggers `Design review` explicitly with the existing `Design review` button.
-13. Review analyzes the whole visible canvas plus the marked region or active region candidate and immediately opens a floating proposal tray near that area with 2-3 preview skeleton slots.
+13. Review analyzes the whole visible canvas plus the marked region or active region candidate, can infer the relevant image or region from mark overlap and intersection at review time, and immediately opens a floating proposal tray near that area with 2-3 preview skeleton slots.
 14. The planner/reviewer uses `GPT-5.4 vision`, preview rendering uses `gemini-3.1-flash-image-preview`, and final apply remains routed through the normal execution layer.
 15. If the active tab is busy, tab switching is blocked or deferred until the session reaches a safe boundary.
 16. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
@@ -140,7 +140,7 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 - Fast transforms: move, scale, rotate, skew, crop, mask, select region.
 - Layer and region selection based on direct manipulation.
 - Real-time preview pipeline for deterministic local transforms.
-- Communication marks and region proposals are overlays on top of image content, not committed image edits.
+- Communication marks and region proposals are canvas-overlay annotations on top of image content, not committed image edits.
 
 ### 1A. Tabbed Session Model
 - V1 uses a single app window with one shared canvas surface and one in-app tab strip.
@@ -203,7 +203,7 @@ UI ids:
 - Anchors do not rerank or disappear.
 - Dynamic slots draw only from the seeded single-image job set in the primary loop.
 - `Create Tool` and multi-image actions do not appear as primary rail actions in the v1 wedge.
-- The left rail is the precomputed action library and does not host freeform communication tools.
+- The left rail is the deterministic precomputed action library and does not host freeform communication tools.
 
 ### 4. Seeded Single-Image Job Set
 V1 seeds 5 single-image jobs and lets intent ranking choose which 3 to show at a time:
@@ -224,16 +224,18 @@ Notes:
   - `Marker`
   - `Magic Select`
   - `Eraser`
-- `Marker` creates transient communication arrows, strokes, or scribbles that mean "look here" or "change this".
+- `Marker` creates transient Photoshop-style freehand highlighter annotations that mean "look here" or "change this".
 - `Magic Select` proposes 2-3 candidate regions for a clicked image location and lets the user cycle through them before review.
 - `Eraser` removes communication marks and region proposals only.
-- Communication marks belong to the image directly under the mark, not to all selected images.
+- Communication marks are canvas-overlay annotations first. They may overlap an image or blank canvas, and they do not become image-local geometry until a later action explicitly needs that mapping.
 - Marks alone are sufficient input for `Design review`; explicit image selection is not required.
+- Blank-canvas marks are valid input for `Design review`.
 - Communication overlays are session-local, reversible, and excluded from exported image pixels unless intentionally committed through a later action.
 
 ### 6. Design Review Flow
 - `Design review` is an explicit user trigger through the existing `Design review` button.
 - Review analyzes the whole visible canvas plus the marked region or current region candidate.
+- Review-time targeting may infer the relevant image, images, or region from mark overlap and intersection instead of requiring marker-time attachment.
 - Review output is action-first: proposals describe likely edits to perform, not conversational critique.
 - The proposal tray floats near the marked region or active region candidate rather than opening as chat.
 - The tray reserves 2-3 preview slots immediately as skeletons while preview work starts.
@@ -244,7 +246,7 @@ Notes:
 
 ### 7. Upload-Time Analysis And Memory
 - Upload-time analysis runs only after first-use consent for cloud analysis.
-- Once consent exists, upload-time analysis is opportunistic and cached by image hash.
+- Once consent exists, upload-time analysis is opportunistic, cached by image hash, and belongs to the design-review upload-analysis path rather than the passive primary editing loop.
 - Cached analysis may seed left-rail ranking, `Magic Select` region proposals, and `Design review` proposal ranking.
 - Upload-time analysis is advisory and must never block import, canvas interaction, or `Design review`.
 - Account-wide memory may bias proposal ranking by previously accepted action types, style tendencies, and repeated use-case patterns across the account.
@@ -266,6 +268,9 @@ Notes:
   - tool synthesis
   - export analysis
 - In v1, engine attachment and live event streaming are scoped to the active tab/session only.
+- The legacy engine-backed image-describe or vision-describe path is not a primary-loop dependency for upload, tab switch, or image switch.
+- Passive image describe must not auto-start the engine when an image is uploaded, focused, or switched.
+- Engine spawn remains reserved for explicit engine-backed actions, explicit review work, or other user-invoked execution paths.
 - The UI must stay interactive while model calls are in flight.
 - Remote and local model providers use the same internal action contract.
 - V1 single-image runtime exposes these provider-agnostic capability names:
@@ -332,10 +337,11 @@ The bottom communication rail and `Design review` flow share the following contr
   schemaVersion: "communication-mark-v1",
   markId: "mark_123",
   sessionId: "session_123",
-  imageId: "asset_123",
-  kind: "stroke" | "arrow" | "scribble",
+  imageId: "asset_123" | null,
+  kind: "freehand_marker",
   points: [{ x: 120.5, y: 88.0 }],
   bounds: { x: 100.0, y: 70.0, width: 90.0, height: 42.0 },
+  coordinateSpace: "canvas_overlay",
   colorToken: "signal-red",
   createdAt: "2026-03-09T18:30:00Z",
   createdByTool: "marker",
@@ -344,10 +350,11 @@ The bottom communication rail and `Design review` flow share the following contr
 ```
 
 Rules:
-- `imageId` is required and binds the mark to the image under the mark rather than to the global selection.
-- A mark may exist without any explicit selection state.
-- `kind` is limited to communication gestures and does not represent destructive paint.
-- `points` are stored in image-local coordinates so the mark remains attached during canvas transforms.
+- `imageId` is optional at creation time; blank-canvas marks use `null` until review or a later action infers a relevant image intersection.
+- A mark may exist without any explicit selection state or image attachment.
+- `kind` is limited to raw freehand communication highlighting and does not represent destructive paint.
+- `points` are stored in canvas-overlay coordinates and remain pointer-faithful rather than being remapped through image transforms.
+- `coordinateSpace` is `canvas_overlay` in v1 for marker-authored marks.
 - `transient: true` means the mark is communication-only until converted into a later action.
 
 `regionCandidate`:
@@ -399,6 +406,7 @@ Rules:
 - The request must include the whole visible canvas context, not just the cropped marked area.
 - At least one of `markIds` or `activeRegionCandidateId` must be present.
 - `markIds` may be sufficient input even when `selectionState` is `none`.
+- Review-time targeting may infer the relevant image or region from mark overlap and intersection, including when a mark began on blank canvas.
 - `uploadAnalysisRef` is optional and must not gate request execution.
 
 `proposal`:
@@ -560,7 +568,7 @@ Rules:
 - The main workspace includes a left vertical icon-only rail.
 - The main workspace includes a bottom communication rail.
 - The main workspace includes an in-app session tab strip using a single shared canvas surface.
-- The left rail keeps stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots from the precomputed action library.
+- The left rail keeps stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library.
 - The bottom communication rail contains `Marker`, `Magic Select`, and `Eraser` in v1.
 - The main editing workflow requires no text labels to operate.
 - The primary wedge is one image in and one usable asset out.
@@ -569,7 +577,7 @@ Rules:
 - The default workflow is image-led, not chat-led.
 - The primary rail suggestions come only from the seeded 5-job single-image set.
 - Communication marks alone are sufficient input for `Design review`; explicit image selection is not required.
-- Communication marks attach to the image under the mark rather than to all selected images.
+- Communication marks are canvas-overlay annotations first and may begin on blank canvas.
 
 ### Suggested Rail Jobs
 - Intent ranking emits ordered seeded-job candidates using the `single-image-rail-v1` contract.
@@ -577,11 +585,13 @@ Rules:
 - Unavailable capabilities remain visible as disabled jobs with generic disabled reasons.
 
 ### Communication Rail And Review
-- `Marker` is a transient communication stroke, arrow, or scribble meaning "look here" or "change this".
+- `Marker` is a transient Photoshop-style freehand highlighter mark in canvas-overlay space, with raw pointer-faithful paths and no arrowheads.
 - `Magic Select` proposes 2-3 candidate regions per click and lets the user cycle among them.
 - `Eraser` clears communication marks and region proposals only.
 - `Design review` is triggered explicitly from the existing button rather than automatically on mark creation.
+- Blank-canvas marks are valid review input.
 - Review analyzes the visible canvas plus the marked region or active region candidate.
+- Review may infer the relevant image or region from overlap and intersection with the mark instead of relying on marker-time image attachment.
 - The proposal tray floats near the marked region and shows 2-3 preview slots immediately as skeletons.
 - Accepted proposals still execute through the normal execution layer.
 
@@ -606,6 +616,7 @@ Rules:
 - The runtime can maintain multiple simultaneous model tasks without freezing the UI.
 - Upload-time cloud analysis requires first-use consent, is opportunistic, and is cached by image hash.
 - Upload-time analysis never blocks `Design review`.
+- Upload-time semantic warmup belongs to the design-review upload-analysis path, not passive engine-backed describe in the primary editing loop.
 - Account-wide memory may bias proposal ranking by accepted action types, style patterns, and use-case history.
 
 ### Reproducibility
@@ -666,3 +677,4 @@ Rules:
 - Release parity across macOS, Windows, and Linux means the same core features.
 - Hidden accessibility labels and screen-reader metadata are allowed even when visible labels are absent.
 - The primary v1 loop is single-image-first; multi-image flows return only after the single-image wedge is stable.
+- Passive engine-backed image describe is not required to upload, focus, or switch images in the primary editing loop.
