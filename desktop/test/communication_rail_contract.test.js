@@ -19,7 +19,10 @@ test("communication rail markup exposes bottom rail tools and proposal tray scaf
   assert.match(html, /id="communication-tool-marker"/);
   assert.match(html, /id="communication-tool-magic-select"/);
   assert.match(html, /id="communication-tool-eraser"/);
-  assert.match(html, /id="communication-tool-marker"[\s\S]*d="M12 1\.6c\.42 0 \.8\.22 1\.11\.66l2\.03 2\.87c\.42\.59\.64 1\.28\.64 2v12\.07c0 1\.24-1\.01 2\.25-2\.25 2\.25h-3\.06c-1\.24 0-2\.25-1\.01-2\.25-2\.25V7\.13c0-.72\.22-1\.41\.64-2l2\.03-2\.87c\.31-.44\.69-.66 1\.11-.66z"[\s\S]*fill="rgba\(14, 16, 20, 0\.96\)"/);
+  assert.match(html, /id="communication-tool-marker"[\s\S]*d="M9\.15 7\.1c0-.91\.74-1\.65 1\.65-1\.65h2\.4c\.91 0 1\.65\.74 1\.65 1\.65v11\.44c0 1\.58-1\.28 2\.86-2\.86 2\.86h-.18a2\.86 2\.86 0 0 1-2\.86-2\.86V7\.1z"/);
+  assert.match(html, /id="communication-tool-marker"[\s\S]*fill="rgba\(141, 151, 164, 0\.9\)"/);
+  assert.match(html, /id="communication-tool-marker"[\s\S]*d="M12 2\.05c\.45 0 \.81\.23 1\.08\.69l1\.04 1\.87c\.19\.34\.29\.72\.29 1\.11 0 \.5-.4\.9-.9\.9h-3\.02c-.5 0-.9-.4-.9-.9 0-.39\.1-.77\.29-1\.11l1\.04-1\.87c\.27-.46\.63-.69 1\.08-.69z"/);
+  assert.match(html, /id="communication-tool-marker"[\s\S]*fill="rgba\(14, 16, 20, 0\.98\)"/);
 });
 
 test("communication rail css anchors the rail at the bottom and keeps the proposal tray floating", () => {
