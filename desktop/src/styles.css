@@ -6783,6 +6783,7 @@ button.ghost:hover {
   z-index: 13;
   width: min(360px, calc(100vw - 40px));
   min-width: 280px;
+  overflow: hidden;
   padding: 12px;
   border-radius: 18px;
   border: 1px solid rgba(18, 30, 44, 0.12);
@@ -6798,7 +6799,9 @@ button.ghost:hover {
   will-change: transform, opacity;
   transition:
     opacity 180ms ease,
-    transform 180ms ease;
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    padding 180ms ease;
   transform: translateY(0) scale(1);
   transform-origin: top left;
 }
