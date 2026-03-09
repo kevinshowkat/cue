@@ -217,6 +217,49 @@ test("image-hit marker commits preserve overlay-space geometry and avoid image b
   assert.equal(state.communication.canvasMarks[0].id, mark.id);
 });
 
+test("communication overlay renders all committed annotations instead of truncating early marks", () => {
+  const rendered = [];
+  const marks = Array.from({ length: 15 }, (_, index) => ({
+    id: `mark-${index + 1}`,
+    points: [
+      { x: index, y: index },
+      { x: index + 10, y: index + 10 },
+    ],
+  }));
+  const state = {
+    communication: {
+      regionProposalsByImageId: new Map(),
+      marksByImageId: new Map([["img-1", marks.slice(0, 8)]]),
+      canvasMarks: marks.slice(8),
+      markDraft: null,
+    },
+  };
+  const octx = {
+    save() {},
+    restore() {},
+    stroke() {
+      rendered.push("stroke");
+    },
+  };
+  const renderCommunicationOverlay = instantiateFunction("renderCommunicationOverlay", {
+    getDpr: () => 1,
+    state,
+    imageToCanvasForImageId: () => null,
+    COMMUNICATION_REGION_ACTIVE: "active",
+    COMMUNICATION_REGION_IDLE: "idle",
+    drawPolygonPath: () => false,
+    communicationDraftPointsToCanvas: () => [],
+    communicationMarkPointsToCanvas: (mark) => mark.points,
+    COMMUNICATION_MARK_STROKE: "rgba(255, 94, 190, 0.96)",
+    traceCommunicationMarkPath: () => true,
+    communicationCanvasMarks: () => state.communication.canvasMarks,
+  });
+
+  renderCommunicationOverlay(octx);
+
+  assert.equal(rendered.length, 15);
+});
+
 test("review targeting resolves an overlay mark onto the overlapping visible image", () => {
   const communicationPointsBounds = instantiateFunction("communicationPointsBounds");
   const communicationRectCssPolygon = instantiateFunction("communicationRectCssPolygon", {

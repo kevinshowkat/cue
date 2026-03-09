@@ -22119,11 +22119,11 @@ function renderCommunicationOverlay(octx) {
 
   for (const [, marks] of Array.from(state.communication?.marksByImageId?.entries?.() || [])) {
     const list = Array.isArray(marks) ? marks : [];
-    for (const mark of list.slice(-12)) {
+    for (const mark of list) {
       drawMark(mark);
     }
   }
-  for (const mark of communicationCanvasMarks().slice(-12)) {
+  for (const mark of communicationCanvasMarks()) {
     drawMark(mark);
   }
   if (state.communication?.markDraft) {
