@@ -19,12 +19,13 @@ test("communication rail markup exposes bottom rail tools and proposal tray scaf
   assert.match(html, /id="communication-tool-marker"/);
   assert.match(html, /id="communication-tool-magic-select"/);
   assert.match(html, /id="communication-tool-eraser"/);
-  assert.match(html, /id="communication-tool-marker"[\s\S]*d="M15\.3 4\.2 19\.8 8\.7 18 10\.5 16\.8 9\.3 8\.05 18\.05 4\.9 18\.7 5\.55 15\.55 14\.3 6\.8 13\.1 5\.6z"/);
+  assert.match(html, /id="communication-tool-marker"[\s\S]*d="M12 2\.9 15\.65 6\.55 14\.15 8\.05 14\.9 19\.3H9\.1l\.75-11\.25z"/);
 });
 
 test("communication rail css anchors the rail at the bottom and keeps the proposal tray floating", () => {
   assert.match(css, /\.communication-rail\s*\{/);
   assert.match(css, /\.communication-rail\s*\{[\s\S]*bottom:\s*22px/);
+  assert.match(css, /\.communication-tool svg\s*\{[\s\S]*width:\s*32px[\s\S]*height:\s*32px/);
   assert.match(css, /\.communication-tool\.is-active::after\s*\{/);
   assert.match(css, /\.communication-proposal-tray\s*\{/);
   assert.match(css, /\.communication-proposal-slot\.is-skeleton::before\s*\{/);
