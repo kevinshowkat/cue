@@ -4,7 +4,7 @@
 )]
 #![allow(unexpected_cfgs)]
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
 #[cfg(target_os = "macos")]
 use cocoa::appkit::{
@@ -1327,15 +1327,18 @@ fn summarize_receipt_value(path: &Path, parsed: &serde_json::Value) -> ExportEdi
 
 fn collect_run_receipt_records(run_dir: &Path) -> Result<Vec<RunReceiptRecord>, String> {
     let mut records = Vec::new();
-    let entries = std::fs::read_dir(run_dir)
-        .map_err(|e| format!("{}: {e}", run_dir.to_string_lossy()))?;
+    let entries =
+        std::fs::read_dir(run_dir).map_err(|e| format!("{}: {e}", run_dir.to_string_lossy()))?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
             continue;
         };
-        if !name.starts_with("receipt-") || !name.ends_with(".json") || name.starts_with("receipt-export-") {
+        if !name.starts_with("receipt-")
+            || !name.ends_with(".json")
+            || name.starts_with("receipt-export-")
+        {
             continue;
         }
         let raw = std::fs::read_to_string(&path)
@@ -1360,15 +1363,15 @@ fn collect_run_receipt_records(run_dir: &Path) -> Result<Vec<RunReceiptRecord>, 
 
 fn read_visual_prompt(run_dir: &Path) -> Result<VisualPromptPayload, String> {
     let path = run_dir.join("visual_prompt.json");
-    let raw = std::fs::read_to_string(&path)
-        .map_err(|e| format!("{}: {e}", path.to_string_lossy()))?;
+    let raw =
+        std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.to_string_lossy()))?;
     serde_json::from_str::<VisualPromptPayload>(&raw)
         .map_err(|e| format!("{}: {e}", path.to_string_lossy()))
 }
 
 fn read_image_rgba(path: &Path) -> Result<image::RgbaImage, String> {
-    let reader = image::ImageReader::open(path)
-        .map_err(|e| format!("{}: {e}", path.to_string_lossy()))?;
+    let reader =
+        image::ImageReader::open(path).map_err(|e| format!("{}: {e}", path.to_string_lossy()))?;
     let decoded = reader
         .decode()
         .map_err(|e| format!("{}: {e}", path.to_string_lossy()))?;
@@ -1445,7 +1448,9 @@ fn encode_flattened_psd_rgba(width: u32, height: u32, rgba: &[u8]) -> Result<Vec
     Ok(out)
 }
 
-fn collect_edit_receipts_from_records(records: &[RunReceiptRecord]) -> Vec<ExportEditReceiptPayload> {
+fn collect_edit_receipts_from_records(
+    records: &[RunReceiptRecord],
+) -> Vec<ExportEditReceiptPayload> {
     records
         .iter()
         .filter_map(|record| record.summary.clone())
@@ -1518,7 +1523,12 @@ fn build_source_images_from_visual_prompt(
     let mut missing_rects = false;
 
     for (index, image) in visual_prompt.images.iter().enumerate() {
-        let Some(image_id) = image.id.as_ref().map(|value| value.trim()).filter(|value| !value.is_empty()) else {
+        let Some(image_id) = image
+            .id
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        else {
             continue;
         };
         if let Some(target) = single_target.as_deref() {
@@ -1526,7 +1536,12 @@ fn build_source_images_from_visual_prompt(
                 continue;
             }
         }
-        let Some(image_path) = image.path.as_ref().map(|value| value.trim()).filter(|value| !value.is_empty()) else {
+        let Some(image_path) = image
+            .path
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        else {
             continue;
         };
         let path = PathBuf::from(image_path);
@@ -1629,7 +1644,10 @@ fn build_source_images_from_visual_prompt(
     }
 
     Ok((
-        loaded_layers.into_iter().map(|(payload, _)| payload).collect(),
+        loaded_layers
+            .into_iter()
+            .map(|(payload, _)| payload)
+            .collect(),
         canvas.mode,
         active_image_id,
         Some(ExportRectPayload {
@@ -1727,7 +1745,9 @@ fn build_source_images_from_receipts(
     ))
 }
 
-fn resolve_provided_export_request(request: ExportPsdRequest) -> Result<ResolvedExportPsdRequest, String> {
+fn resolve_provided_export_request(
+    request: ExportPsdRequest,
+) -> Result<ResolvedExportPsdRequest, String> {
     let run_dir_path = PathBuf::from(&request.run_dir);
     if !run_dir_path.exists() {
         return Err(format!("run dir not found: {}", request.run_dir));
@@ -1782,7 +1802,10 @@ fn resolve_provided_export_request(request: ExportPsdRequest) -> Result<Resolved
     })
 }
 
-fn resolve_legacy_export_request(run_dir: String, out_path: String) -> Result<ResolvedExportPsdRequest, String> {
+fn resolve_legacy_export_request(
+    run_dir: String,
+    out_path: String,
+) -> Result<ResolvedExportPsdRequest, String> {
     let run_dir_path = PathBuf::from(&run_dir);
     if !run_dir_path.exists() {
         return Err(format!("run dir not found: {run_dir}"));
@@ -1793,13 +1816,20 @@ fn resolve_legacy_export_request(run_dir: String, out_path: String) -> Result<Re
     let records = collect_run_receipt_records(&run_dir_path)?;
     let edit_receipts = collect_edit_receipts_from_records(&records);
 
-    let (source_images, canvas_mode, active_image_id, export_bounds_css, flattened_size_px, composite, extra_limits) =
-        match read_visual_prompt(&run_dir_path)
-            .and_then(|visual_prompt| build_source_images_from_visual_prompt(visual_prompt, &records))
-        {
-            Ok(snapshot) => snapshot,
-            Err(_) => build_source_images_from_receipts(&records)?,
-        };
+    let (
+        source_images,
+        canvas_mode,
+        active_image_id,
+        export_bounds_css,
+        flattened_size_px,
+        composite,
+        extra_limits,
+    ) = match read_visual_prompt(&run_dir_path)
+        .and_then(|visual_prompt| build_source_images_from_visual_prompt(visual_prompt, &records))
+    {
+        Ok(snapshot) => snapshot,
+        Err(_) => build_source_images_from_receipts(&records)?,
+    };
 
     let flattened_source_path = write_generated_flattened_source(&run_dir_path, &composite)?;
     Ok(ResolvedExportPsdRequest {
@@ -1888,14 +1918,12 @@ fn build_export_receipt_payload(
             let receipt_sha256 = receipt_path_buf
                 .as_ref()
                 .and_then(|path| sha256_file(path).ok());
-            let receipt_summary = receipt_path_buf
-                .as_ref()
-                .and_then(|path| {
-                    std::fs::read_to_string(path)
-                        .ok()
-                        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-                        .map(|parsed| summarize_receipt_value(path, &parsed))
-                });
+            let receipt_summary = receipt_path_buf.as_ref().and_then(|path| {
+                std::fs::read_to_string(path)
+                    .ok()
+                    .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                    .map(|parsed| summarize_receipt_value(path, &parsed))
+            });
             serde_json::json!({
                 "id": image.id,
                 "path": image.path,
@@ -2229,6 +2257,640 @@ fn env_flag(raw: Option<&String>) -> Option<bool> {
         "1" | "true" | "yes" | "on" => Some(true),
         "0" | "false" | "no" | "off" => Some(false),
         _ => None,
+    }
+}
+
+fn review_first_non_empty(vars: &HashMap<String, String>, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(value) = vars.get(*key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn review_mime_type_from_path(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.trim().to_ascii_lowercase())
+        .unwrap_or_default()
+        .as_str()
+    {
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        _ => "image/png",
+    }
+}
+
+fn review_image_data_url(path: &str) -> Result<String, String> {
+    let image_path = PathBuf::from(path);
+    let bytes = std::fs::read(&image_path).map_err(|e| e.to_string())?;
+    let mime = review_mime_type_from_path(&image_path);
+    let encoded = BASE64_STANDARD.encode(bytes);
+    Ok(format!("data:{mime};base64,{encoded}"))
+}
+
+fn review_extract_openai_output_text(payload: &serde_json::Value) -> String {
+    if let Some(text) = payload.get("output_text").and_then(|value| value.as_str()) {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    if let Some(output) = payload.get("output").and_then(|value| value.as_array()) {
+        let mut parts = Vec::new();
+        for item in output {
+            if let Some(content) = item.get("content").and_then(|value| value.as_array()) {
+                for block in content {
+                    let block_type = block
+                        .get("type")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default();
+                    if block_type == "output_text" || block_type == "text" {
+                        if let Some(text) = block
+                            .get("text")
+                            .and_then(|value| value.as_str())
+                            .or_else(|| block.get("content").and_then(|value| value.as_str()))
+                        {
+                            let trimmed = text.trim();
+                            if !trimmed.is_empty() {
+                                parts.push(trimmed.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !parts.is_empty() {
+            return parts.join("\n");
+        }
+    }
+    String::new()
+}
+
+fn review_extract_openrouter_text(payload: &serde_json::Value) -> String {
+    if let Some(text) = payload
+        .get("choices")
+        .and_then(|value| value.as_array())
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+    {
+        if let Some(content) = text.get("content") {
+            if let Some(raw) = content.as_str() {
+                let trimmed = raw.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+            if let Some(items) = content.as_array() {
+                let mut parts = Vec::new();
+                for item in items {
+                    let item_type = item
+                        .get("type")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default();
+                    if item_type == "text" {
+                        if let Some(text) = item.get("text").and_then(|value| value.as_str()) {
+                            let trimmed = text.trim();
+                            if !trimmed.is_empty() {
+                                parts.push(trimmed.to_string());
+                            }
+                        }
+                    }
+                }
+                if !parts.is_empty() {
+                    return parts.join("\n");
+                }
+            }
+        }
+    }
+    review_extract_openai_output_text(payload)
+}
+
+fn review_normalize_openrouter_model(raw: &str, default_model: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return default_model.to_string();
+    }
+    if trimmed.contains('/') {
+        return trimmed.to_string();
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("gpt-") || lower.starts_with("o1") || lower.starts_with("o3") {
+        return format!("openai/{trimmed}");
+    }
+    if lower.starts_with("gemini") {
+        return format!("google/{trimmed}");
+    }
+    trimmed.to_string()
+}
+
+fn review_apply_openrouter_headers(
+    mut request: reqwest::blocking::RequestBuilder,
+    vars: &HashMap<String, String>,
+) -> reqwest::blocking::RequestBuilder {
+    if let Some(referer) = review_first_non_empty(vars, &["OPENROUTER_HTTP_REFERER"]) {
+        request = request.header("HTTP-Referer", referer);
+    }
+    if let Some(title) = review_first_non_empty(vars, &["OPENROUTER_X_TITLE"]) {
+        request = request.header("X-Title", title);
+    } else {
+        request = request.header("X-Title", "Juggernaut");
+    }
+    request
+}
+
+fn review_google_extract_images(
+    payload: &serde_json::Value,
+) -> Result<Vec<(Vec<u8>, String)>, String> {
+    let mut out = Vec::new();
+    let candidates = payload
+        .get("candidates")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    for candidate in candidates {
+        let parts = candidate
+            .get("content")
+            .and_then(|value| value.as_object())
+            .and_then(|content| content.get("parts"))
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        for part in parts {
+            let inline = part
+                .get("inlineData")
+                .or_else(|| part.get("inline_data"))
+                .and_then(|value| value.as_object())
+                .cloned()
+                .unwrap_or_default();
+            let Some(data) = inline.get("data").and_then(|value| value.as_str()) else {
+                continue;
+            };
+            if data.trim().is_empty() {
+                continue;
+            }
+            let bytes = BASE64_STANDARD
+                .decode(data.trim().as_bytes())
+                .map_err(|e| format!("Google preview image decode failed: {e}"))?;
+            let mime = inline
+                .get("mimeType")
+                .or_else(|| inline.get("mime_type"))
+                .and_then(|value| value.as_str())
+                .unwrap_or("image/png")
+                .to_string();
+            out.push((bytes, mime));
+        }
+    }
+    Ok(out)
+}
+
+fn review_collect_openrouter_images(
+    value: &serde_json::Value,
+    key_hint: Option<&str>,
+    out: &mut Vec<String>,
+) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, nested) in map {
+                review_collect_openrouter_images(nested, Some(key), out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                review_collect_openrouter_images(item, key_hint, out);
+            }
+        }
+        serde_json::Value::String(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return;
+            }
+            let key = key_hint
+                .map(|value| value.trim().to_ascii_lowercase())
+                .unwrap_or_default();
+            let looks_http = trimmed.starts_with("http://") || trimmed.starts_with("https://");
+            let looks_data_url = trimmed.starts_with("data:image/");
+            let looks_b64_key = key.contains("b64") || key.contains("base64") || key == "result";
+            let looks_url_key = key == "url"
+                || key.ends_with("_url")
+                || key.ends_with("url")
+                || key.contains("image_url");
+            if looks_data_url || (looks_http && looks_url_key) || looks_b64_key {
+                if !out.iter().any(|existing| existing == trimmed) {
+                    out.push(trimmed.to_string());
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn review_decode_openrouter_data_url(raw: &str) -> Result<(Vec<u8>, String), String> {
+    let (meta, payload) = raw
+        .split_once(',')
+        .ok_or_else(|| "invalid data URL image payload".to_string())?;
+    let mime = meta
+        .trim()
+        .strip_prefix("data:")
+        .and_then(|rest| rest.split(';').next())
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .unwrap_or("image/png")
+        .to_string();
+    let bytes = BASE64_STANDARD
+        .decode(payload.trim().as_bytes())
+        .map_err(|e| format!("OpenRouter image decode failed: {e}"))?;
+    Ok((bytes, mime))
+}
+
+fn review_extract_openrouter_images(
+    payload: &serde_json::Value,
+) -> Result<Vec<(Vec<u8>, String)>, String> {
+    let client = Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut candidates = Vec::new();
+    review_collect_openrouter_images(payload, None, &mut candidates);
+    let mut out = Vec::new();
+    for candidate in candidates {
+        let trimmed = candidate.trim();
+        if trimmed.starts_with("data:image/") {
+            if let Ok(image) = review_decode_openrouter_data_url(trimmed) {
+                out.push(image);
+            }
+            continue;
+        }
+        if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            let response = client.get(trimmed).send().map_err(|e| e.to_string())?;
+            if response.status().is_success() {
+                let mime = response
+                    .headers()
+                    .get("content-type")
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or("image/png")
+                    .to_string();
+                let bytes = response.bytes().map_err(|e| e.to_string())?.to_vec();
+                out.push((bytes, mime));
+            }
+            continue;
+        }
+        if let Ok(bytes) = BASE64_STANDARD.decode(trimmed.as_bytes()) {
+            out.push((bytes, "image/png".to_string()));
+        }
+    }
+    Ok(out)
+}
+
+fn run_design_review_planner_request(
+    request: &serde_json::Value,
+    vars: &HashMap<String, String>,
+) -> Result<serde_json::Value, String> {
+    let provider_pref = request
+        .get("provider")
+        .and_then(|value| value.as_str())
+        .unwrap_or("auto")
+        .trim()
+        .to_ascii_lowercase();
+    let model = request
+        .get("model")
+        .and_then(|value| value.as_str())
+        .unwrap_or("gpt-5.4-vision")
+        .trim()
+        .to_string();
+    let prompt = request
+        .get("prompt")
+        .and_then(|value| value.as_str())
+        .ok_or("planner prompt missing")?
+        .to_string();
+    let image_paths: Vec<String> = request
+        .get("images")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|entry| {
+            entry.as_str().map(|value| value.to_string()).or_else(|| {
+                entry
+                    .get("path")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string())
+            })
+        })
+        .filter(|value| !value.trim().is_empty())
+        .collect();
+    let client = Client::builder()
+        .timeout(Duration::from_secs(90))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    if provider_pref == "auto" || provider_pref == "openai" {
+        if let Some(api_key) =
+            review_first_non_empty(vars, &["OPENAI_API_KEY", "OPENAI_API_KEY_BACKUP"])
+        {
+            let mut content = vec![serde_json::json!({
+                "type": "input_text",
+                "text": prompt,
+            })];
+            for path in &image_paths {
+                content.push(serde_json::json!({
+                    "type": "input_image",
+                    "image_url": review_image_data_url(path)?,
+                }));
+            }
+            let payload = serde_json::json!({
+                "model": model,
+                "input": [{
+                    "role": "user",
+                    "content": content,
+                }],
+            });
+            let response = client
+                .post("https://api.openai.com/v1/responses")
+                .bearer_auth(api_key)
+                .header("content-type", "application/json")
+                .json(&payload)
+                .send()
+                .map_err(|e| format!("OpenAI planner request failed: {e}"))?;
+            let status = response.status();
+            let body = response.text().map_err(|e| e.to_string())?;
+            if !status.is_success() {
+                return Err(format!(
+                    "OpenAI planner request failed ({}): {}",
+                    status.as_u16(),
+                    body
+                ));
+            }
+            let parsed: serde_json::Value = serde_json::from_str(&body)
+                .unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
+            return Ok(serde_json::json!({
+                "provider": "openai",
+                "model": model,
+                "transport": "responses",
+                "text": review_extract_openai_output_text(&parsed),
+                "raw": parsed,
+            }));
+        }
+    }
+
+    if provider_pref == "auto" || provider_pref == "openrouter" {
+        if let Some(api_key) = review_first_non_empty(vars, &["OPENROUTER_API_KEY"]) {
+            let mut content = vec![serde_json::json!({
+                "type": "text",
+                "text": prompt,
+            })];
+            for path in &image_paths {
+                content.push(serde_json::json!({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": review_image_data_url(path)?,
+                    }
+                }));
+            }
+            let payload = serde_json::json!({
+                "model": review_normalize_openrouter_model(&model, "openai/gpt-5.4-vision"),
+                "messages": [{
+                    "role": "user",
+                    "content": content,
+                }],
+                "temperature": 0.2,
+            });
+            let request = client
+                .post(
+                    review_first_non_empty(vars, &["OPENROUTER_API_BASE"])
+                        .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string())
+                        + "/chat/completions",
+                )
+                .bearer_auth(api_key)
+                .header("content-type", "application/json");
+            let response = review_apply_openrouter_headers(request, vars)
+                .json(&payload)
+                .send()
+                .map_err(|e| format!("OpenRouter planner request failed: {e}"))?;
+            let status = response.status();
+            let body = response.text().map_err(|e| e.to_string())?;
+            if !status.is_success() {
+                return Err(format!(
+                    "OpenRouter planner request failed ({}): {}",
+                    status.as_u16(),
+                    body
+                ));
+            }
+            let parsed: serde_json::Value = serde_json::from_str(&body)
+                .unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
+            return Ok(serde_json::json!({
+                "provider": "openrouter",
+                "model": review_normalize_openrouter_model(&model, "openai/gpt-5.4-vision"),
+                "transport": "chat_completions",
+                "text": review_extract_openrouter_text(&parsed),
+                "raw": parsed,
+            }));
+        }
+    }
+
+    Err("No planner provider credentials are configured for design review.".to_string())
+}
+
+fn run_design_review_preview_request(
+    request: &serde_json::Value,
+    vars: &HashMap<String, String>,
+) -> Result<serde_json::Value, String> {
+    let provider_pref = request
+        .get("provider")
+        .and_then(|value| value.as_str())
+        .unwrap_or("auto")
+        .trim()
+        .to_ascii_lowercase();
+    let model = request
+        .get("model")
+        .and_then(|value| value.as_str())
+        .unwrap_or("gemini-3.1-flash-image-preview")
+        .trim()
+        .to_string();
+    let prompt = request
+        .get("prompt")
+        .and_then(|value| value.as_str())
+        .ok_or("preview prompt missing")?
+        .to_string();
+    let output_path = request
+        .get("outputPath")
+        .and_then(|value| value.as_str())
+        .ok_or("preview outputPath missing")?
+        .to_string();
+    let input_path = request
+        .get("inputImage")
+        .and_then(|value| value.get("path"))
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string())
+        .or_else(|| {
+            request
+                .get("inputImage")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        })
+        .ok_or("preview inputImage path missing")?;
+    let client = Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    if provider_pref == "auto" || provider_pref == "google" {
+        if let Some(api_key) = review_first_non_empty(vars, &["GEMINI_API_KEY", "GOOGLE_API_KEY"]) {
+            let image_bytes = std::fs::read(&input_path).map_err(|e| e.to_string())?;
+            let mime = review_mime_type_from_path(Path::new(&input_path)).to_string();
+            let endpoint_base = review_first_non_empty(vars, &["GEMINI_API_BASE"])
+                .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string());
+            let model_path = if model.starts_with("models/") {
+                model.clone()
+            } else {
+                format!("models/{model}")
+            };
+            let endpoint = format!("{endpoint_base}/{model_path}:generateContent");
+            let payload = serde_json::json!({
+                "contents": [{
+                    "role": "user",
+                    "parts": [
+                        {
+                            "inlineData": {
+                                "mimeType": mime,
+                                "data": BASE64_STANDARD.encode(image_bytes),
+                            }
+                        },
+                        { "text": prompt }
+                    ]
+                }],
+                "generationConfig": {
+                    "responseModalities": ["TEXT", "IMAGE"],
+                    "temperature": 0.25
+                }
+            });
+            let response = client
+                .post(endpoint)
+                .query(&[("key", api_key)])
+                .header("content-type", "application/json")
+                .json(&payload)
+                .send()
+                .map_err(|e| format!("Google preview request failed: {e}"))?;
+            let status = response.status();
+            let body = response.text().map_err(|e| e.to_string())?;
+            if !status.is_success() {
+                return Err(format!(
+                    "Google preview request failed ({}): {}",
+                    status.as_u16(),
+                    body
+                ));
+            }
+            let parsed: serde_json::Value = serde_json::from_str(&body)
+                .unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
+            let images = review_google_extract_images(&parsed)?;
+            let Some((bytes, mime_type)) = images.into_iter().next() else {
+                return Err("Google preview renderer returned no image.".to_string());
+            };
+            std::fs::write(&output_path, bytes).map_err(|e| e.to_string())?;
+            return Ok(serde_json::json!({
+                "provider": "google",
+                "model": model,
+                "transport": "generate_content",
+                "outputPath": output_path,
+                "mimeType": mime_type,
+                "raw": parsed,
+            }));
+        }
+    }
+
+    if provider_pref == "auto" || provider_pref == "openrouter" {
+        if let Some(api_key) = review_first_non_empty(vars, &["OPENROUTER_API_KEY"]) {
+            let payload = serde_json::json!({
+                "model": review_normalize_openrouter_model(&model, "google/gemini-3.1-flash-image-preview"),
+                "input": [{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": prompt,
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": review_image_data_url(&input_path)?,
+                        }
+                    ]
+                }],
+                "modalities": ["text", "image"],
+                "stream": false,
+                "image_config": {
+                    "image_size": "1K",
+                }
+            });
+            let endpoint = format!(
+                "{}/responses",
+                review_first_non_empty(vars, &["OPENROUTER_API_BASE"])
+                    .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string())
+            );
+            let request = client
+                .post(endpoint)
+                .bearer_auth(api_key)
+                .header("content-type", "application/json");
+            let response = review_apply_openrouter_headers(request, vars)
+                .json(&payload)
+                .send()
+                .map_err(|e| format!("OpenRouter preview request failed: {e}"))?;
+            let status = response.status();
+            let body = response.text().map_err(|e| e.to_string())?;
+            if !status.is_success() {
+                return Err(format!(
+                    "OpenRouter preview request failed ({}): {}",
+                    status.as_u16(),
+                    body
+                ));
+            }
+            let parsed: serde_json::Value = serde_json::from_str(&body)
+                .unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
+            let images = review_extract_openrouter_images(&parsed)?;
+            let Some((bytes, mime_type)) = images.into_iter().next() else {
+                return Err("OpenRouter preview renderer returned no image.".to_string());
+            };
+            std::fs::write(&output_path, bytes).map_err(|e| e.to_string())?;
+            return Ok(serde_json::json!({
+                "provider": "openrouter",
+                "model": review_normalize_openrouter_model(&model, "google/gemini-3.1-flash-image-preview"),
+                "transport": "responses",
+                "outputPath": output_path,
+                "mimeType": mime_type,
+                "raw": parsed,
+            }));
+        }
+    }
+
+    Err("No preview renderer credentials are configured for design review.".to_string())
+}
+
+#[tauri::command]
+fn run_design_review_provider_request(
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let kind = request
+        .get("kind")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    if kind.is_empty() {
+        return Err("design review provider request kind missing".to_string());
+    }
+    let vars = collect_brood_env_snapshot();
+    match kind.as_str() {
+        "planner" | "upload_analysis" => run_design_review_planner_request(&request, &vars),
+        "preview" => run_design_review_preview_request(&request, &vars),
+        other => Err(format!(
+            "unsupported design review provider request kind: {other}"
+        )),
     }
 }
 
@@ -2846,6 +3508,7 @@ fn main() {
             append_install_telemetry_event,
             save_openrouter_api_key,
             openrouter_oauth_pkce_sign_in,
+            run_design_review_provider_request,
             get_pty_status,
             read_file_since,
         ])
@@ -2883,8 +3546,14 @@ mod tests {
         assert_eq!(&bytes[0..4], b"8BPS");
         assert_eq!(u16::from_be_bytes([bytes[4], bytes[5]]), 1);
         assert_eq!(u16::from_be_bytes([bytes[12], bytes[13]]), 4);
-        assert_eq!(u32::from_be_bytes([bytes[14], bytes[15], bytes[16], bytes[17]]), 2);
-        assert_eq!(u32::from_be_bytes([bytes[18], bytes[19], bytes[20], bytes[21]]), 1);
+        assert_eq!(
+            u32::from_be_bytes([bytes[14], bytes[15], bytes[16], bytes[17]]),
+            2
+        );
+        assert_eq!(
+            u32::from_be_bytes([bytes[18], bytes[19], bytes[20], bytes[21]]),
+            1
+        );
         assert_eq!(u16::from_be_bytes([bytes[22], bytes[23]]), 8);
         assert_eq!(u16::from_be_bytes([bytes[24], bytes[25]]), 3);
         assert_eq!(u16::from_be_bytes([bytes[38], bytes[39]]), 0);

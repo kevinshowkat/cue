@@ -936,7 +936,7 @@
       window.__brood_booted = false;
       window.__juggernaut_booted = false;
       const bootEl = document.getElementById("boot-error");
-      import("./canvas_app.js")
+      Promise.all([import("./design_review_bootstrap.js"), import("./canvas_app.js")])
         .then(() => {
           window.__brood_booted = true;
           window.__juggernaut_booted = true;
