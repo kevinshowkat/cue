@@ -138,3 +138,55 @@ test("review bootstrap runtime registry keeps tray state isolated by active tab"
   assert.equal(activeTabB?.lastReviewState?.status, "ready");
   assert.equal(mismatchedTab, null);
 });
+
+test("review bootstrap debug payload collector preserves apply failure details in the tray state", () => {
+  const readFirstString = instantiateFunction("readFirstString");
+  const collectReviewDebugPayload = instantiateFunction("collectReviewDebugPayload", {
+    readFirstString,
+  });
+
+  const payload = collectReviewDebugPayload({
+    request: {
+      requestId: "review-apply-debug",
+    },
+    status: "apply_failed",
+    slots: [
+      {
+        rank: 1,
+        status: "apply_failed",
+        proposal: {
+          label: "Retouch product",
+        },
+        error: "The final edit could not be rendered.",
+        apply: {
+          debugInfo: {
+            route: {
+              kind: "apply",
+              provider: "google",
+            },
+            providerRequest: {
+              model: "gemini-3.1-flash-image-preview",
+            },
+          },
+        },
+      },
+    ],
+    lastApplyEvent: {
+      status: "apply_failed",
+      debugInfo: {
+        route: {
+          kind: "apply",
+        },
+      },
+    },
+  });
+
+  assert.equal(payload.requestId, "review-apply-debug");
+  assert.equal(payload.failedSlots[0].failureStage, "apply");
+  assert.equal(payload.failedSlots[0].debugInfo?.route?.kind, "apply");
+  assert.equal(
+    payload.failedSlots[0].debugInfo?.providerRequest?.model,
+    "gemini-3.1-flash-image-preview"
+  );
+  assert.equal(payload.applyFailure?.status, "apply_failed");
+});

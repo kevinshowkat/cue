@@ -31,6 +31,17 @@ function cloneJson(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function uniqueStrings(values = [], { limit = Infinity } = {}) {
+  const out = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const text = String(value || "").trim();
+    if (!text || out.includes(text)) continue;
+    out.push(text);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 function freshState() {
   return {
     status: "idle",
@@ -39,6 +50,8 @@ function freshState() {
     proposals: [],
     previewJobs: [],
     plannerDebugInfo: null,
+    activeApply: null,
+    lastApplyEvent: null,
     errors: [],
     startedAt: null,
     completedAt: null,
@@ -52,6 +65,13 @@ function previewFilePathForProposal(runDir = "", proposalId = "") {
   return `${dir}/review-preview-${proposalKey || "proposal"}.png`;
 }
 
+function applyFilePathForProposal(runDir = "", proposalId = "") {
+  const dir = String(runDir || "").trim();
+  const proposalKey = String(proposalId || "").trim().replace(/[^a-z0-9._:-]+/gi, "_");
+  if (!dir) return "";
+  return `${dir}/review-apply-${proposalKey || "proposal"}.png`;
+}
+
 function patchSlot(slots = [], rank = 1, patch = {}) {
   return slots.map((slot) => {
     if (Number(slot?.rank) !== Number(rank)) return slot;
@@ -62,16 +82,170 @@ function patchSlot(slots = [], rank = 1, patch = {}) {
   });
 }
 
+function patchSlotByProposalId(slots = [], proposalId = "", patch = {}) {
+  const normalizedProposalId = readFirstString(proposalId);
+  if (!normalizedProposalId) return Array.isArray(slots) ? slots.slice() : [];
+  return (Array.isArray(slots) ? slots : []).map((slot) => {
+    if (readFirstString(slot?.proposal?.proposalId) !== normalizedProposalId) return slot;
+    return {
+      ...slot,
+      ...(patch && typeof patch === "object" ? patch : {}),
+    };
+  });
+}
+
+function patchProposal(proposals = [], proposalId = "", patch = {}) {
+  const normalizedProposalId = readFirstString(proposalId);
+  if (!normalizedProposalId) return Array.isArray(proposals) ? proposals.slice() : [];
+  return (Array.isArray(proposals) ? proposals : []).map((proposal) => {
+    if (readFirstString(proposal?.proposalId) !== normalizedProposalId) return proposal;
+    return {
+      ...proposal,
+      ...(patch && typeof patch === "object" ? patch : {}),
+    };
+  });
+}
+
+function findProposalInReviewState(reviewState = {}, proposalId = "") {
+  const normalizedProposalId = readFirstString(proposalId);
+  if (!normalizedProposalId) return null;
+  const proposals = Array.isArray(reviewState?.proposals) ? reviewState.proposals : [];
+  const proposalMatch =
+    proposals.find((proposal) => readFirstString(proposal?.proposalId) === normalizedProposalId) ||
+    null;
+  if (proposalMatch) return proposalMatch;
+  const slots = Array.isArray(reviewState?.slots) ? reviewState.slots : [];
+  return (
+    slots
+      .map((slot) => asRecord(slot?.proposal))
+      .find((proposal) => readFirstString(proposal?.proposalId) === normalizedProposalId) || null
+  );
+}
+
+function imageCatalogFromRequest(request = {}) {
+  const visibleCanvasContext = asRecord(request?.visibleCanvasContext) || {};
+  return Array.isArray(visibleCanvasContext.images)
+    ? visibleCanvasContext.images.filter((image) => image && typeof image === "object")
+    : [];
+}
+
+function findImageRecordById(request = {}, imageId = "") {
+  const normalizedImageId = readFirstString(imageId);
+  if (!normalizedImageId) return null;
+  return (
+    imageCatalogFromRequest(request).find(
+      (image) =>
+        readFirstString(image?.id, image?.imageId, image?.image_id) === normalizedImageId
+    ) || null
+  );
+}
+
+function resolveProposalTargetImageId(request = {}, proposal = {}) {
+  return readFirstString(proposal?.imageId, request?.primaryImageId) || null;
+}
+
+function resolveProposalReferenceImageIds(request = {}, proposal = {}, targetImageId = null) {
+  const normalizedTargetImageId = readFirstString(targetImageId);
+  const explicitReferenceIds = uniqueStrings(
+    [
+      ...(Array.isArray(proposal?.referenceImageIds) ? proposal.referenceImageIds : []),
+      ...(Array.isArray(proposal?.reference_image_ids) ? proposal.reference_image_ids : []),
+      ...(Array.isArray(proposal?.referenceImages)
+        ? proposal.referenceImages.map((image) => readFirstString(image?.imageId, image?.id))
+        : []),
+      ...(Array.isArray(proposal?.reference_images)
+        ? proposal.reference_images.map((image) =>
+            readFirstString(image?.imageId, image?.image_id, image?.id)
+          )
+        : []),
+    ],
+    { limit: 12 }
+  ).filter((imageId) => imageId !== normalizedTargetImageId);
+  if (explicitReferenceIds.length) return explicitReferenceIds;
+  return uniqueStrings(
+    [
+      ...(Array.isArray(request?.selectedImageIds) ? request.selectedImageIds : []),
+      ...(Array.isArray(request?.imageIdsInView) ? request.imageIdsInView : []),
+      ...imageCatalogFromRequest(request).map((image) =>
+        readFirstString(image?.id, image?.imageId, image?.image_id)
+      ),
+    ],
+    { limit: 12 }
+  ).filter((imageId) => imageId && imageId !== normalizedTargetImageId);
+}
+
+function resolveReviewSessionKey(request = {}, fallback = "") {
+  const normalizedFallback = readFirstString(fallback);
+  if (normalizedFallback) return normalizedFallback;
+  const visibleCanvasContext = asRecord(request?.visibleCanvasContext) || {};
+  const activeTabId = readFirstString(visibleCanvasContext.activeTabId);
+  if (activeTabId) return `tab:${activeTabId}`;
+  const runDir = readFirstString(visibleCanvasContext.runDir);
+  if (runDir) return `run:${runDir}`;
+  const sessionId = readFirstString(request?.sessionId);
+  if (sessionId) {
+    if (/^(tab|run|session|request):/i.test(sessionId)) return sessionId;
+    return `session:${sessionId}`;
+  }
+  const requestId = readFirstString(request?.requestId);
+  if (requestId) return `request:${requestId}`;
+  return "";
+}
+
+function buildLocalApplyDebugInfo({
+  request = {},
+  sessionKey = "",
+  proposal = {},
+  targetImageId = null,
+  targetImage = null,
+  referenceImageIds = [],
+  referenceImages = [],
+  outputPath = null,
+  error = null,
+  reason = "",
+} = {}) {
+  return {
+    source: "design_review_pipeline",
+    route: {
+      kind: "apply",
+    },
+    requestId: readFirstString(request?.requestId) || null,
+    sessionKey: readFirstString(sessionKey) || null,
+    proposal: cloneJson(proposal),
+    request: cloneJson(request),
+    reason: readFirstString(reason) || null,
+    targetImageId: readFirstString(targetImageId) || null,
+    targetImagePath: readFirstString(targetImage?.path, targetImage?.imagePath) || null,
+    referenceImageIds: uniqueStrings(referenceImageIds, { limit: 12 }),
+    referenceImagePaths: uniqueStrings(
+      (Array.isArray(referenceImages) ? referenceImages : []).map((image) =>
+        readFirstString(image?.path, image?.imagePath)
+      ),
+      { limit: 12 }
+    ),
+    outputPath: readFirstString(outputPath) || null,
+    message: readFirstString(error?.message, error) || null,
+  };
+}
+
 export function createDesignReviewPipeline({
   providerRouter = null,
   memoryStore = null,
   uploadAnalysisCache = null,
   hashImage = null,
   slotCount = 3,
+  runApply = null,
+  onApplyEvent = null,
 } = {}) {
   let state = freshState();
   let activeRunToken = 0;
   const listeners = new Set();
+  const applyRunner =
+    typeof runApply === "function"
+      ? runApply
+      : typeof providerRouter?.runApply === "function"
+        ? providerRouter.runApply.bind(providerRouter)
+        : null;
 
   const emit = () => {
     const snapshot = cloneJson(state);
@@ -88,6 +262,17 @@ export function createDesignReviewPipeline({
   const setState = (next) => {
     state = next;
     return emit();
+  };
+
+  const emitApplyEvent = (payload = null) => {
+    const eventPayload = cloneJson(payload);
+    if (typeof onApplyEvent !== "function" || !eventPayload) return eventPayload;
+    try {
+      onApplyEvent(eventPayload);
+    } catch (error) {
+      console.error("Design-review apply listener failed:", error);
+    }
+    return eventPayload;
   };
 
   return {
@@ -150,6 +335,8 @@ export function createDesignReviewPipeline({
         proposals: [],
         previewJobs: initialSlots.map((slot) => slot.previewJob),
         plannerDebugInfo: null,
+        activeApply: null,
+        lastApplyEvent: null,
         errors: [],
         startedAt: new Date().toISOString(),
         completedAt: null,
@@ -318,13 +505,286 @@ export function createDesignReviewPipeline({
       });
       return cloneJson(state);
     },
-    acceptProposal(proposalId, { stylePatterns = [], useCasePatterns = [] } = {}) {
-      const proposal = state.proposals.find((entry) => String(entry?.proposalId || "").trim() === String(proposalId || "").trim());
+    acceptProposal(proposalId, { stylePatterns = [], useCasePatterns = [], reviewState = null } = {}) {
+      const proposal = findProposalInReviewState(asRecord(reviewState) || state, proposalId);
       if (!proposal || !memoryStore) return null;
       return recordAcceptedDesignReviewProposal(memoryStore, proposal, {
         stylePatterns,
         useCasePatterns,
       });
+    },
+    async applyProposal(proposalId, { sessionKey = null, reviewState = null, onStateChange = null } = {}) {
+      const normalizedProposalId = readFirstString(proposalId);
+      let workingState = cloneJson(asRecord(reviewState) || state);
+      const sourceRequestId = readFirstString(workingState?.request?.requestId);
+      const shouldSyncGlobalState =
+        !asRecord(reviewState) ||
+        (sourceRequestId && sourceRequestId === readFirstString(state?.request?.requestId));
+      const publishState = (nextState) => {
+        workingState = cloneJson(nextState);
+        if (shouldSyncGlobalState) {
+          return setState(nextState);
+        }
+        const snapshot = cloneJson(nextState);
+        if (typeof onStateChange === "function") {
+          try {
+            onStateChange(snapshot);
+          } catch (error) {
+            console.error("Design-review apply state listener failed:", error);
+          }
+        }
+        return snapshot;
+      };
+      const request = cloneJson(workingState?.request);
+      const proposal = cloneJson(findProposalInReviewState(workingState, normalizedProposalId)) || null;
+      if (!request || !proposal) {
+        return {
+          ok: false,
+          reason: "proposal_unavailable",
+          requestId: readFirstString(request?.requestId) || null,
+          proposalId: normalizedProposalId || null,
+        };
+      }
+      const requestId = readFirstString(request?.requestId) || null;
+      if (
+        readFirstString(workingState?.activeApply?.requestId) === requestId &&
+        readFirstString(workingState?.activeApply?.status) === "running"
+      ) {
+        return {
+          ok: false,
+          reason: "apply_in_progress",
+          requestId,
+          proposalId: normalizedProposalId,
+        };
+      }
+
+      const resolvedSessionKey = resolveReviewSessionKey(request, sessionKey);
+      const targetImageId = resolveProposalTargetImageId(request, proposal);
+      const referenceImageIds = resolveProposalReferenceImageIds(request, proposal, targetImageId);
+      const targetImage = findImageRecordById(request, targetImageId);
+      const referenceImages = referenceImageIds
+        .map((imageId) => findImageRecordById(request, imageId))
+        .filter(Boolean);
+      const outputPath = applyFilePathForProposal(
+        request?.visibleCanvasContext?.runDir,
+        proposal.proposalId
+      );
+      const startedAt = new Date().toISOString();
+      const startedEvent = {
+        phase: "started",
+        status: "apply_running",
+        requestId,
+        sessionKey: resolvedSessionKey || null,
+        proposal: {
+          ...proposal,
+          status: "apply_running",
+        },
+        request,
+        targetImageId,
+        referenceImageIds,
+        outputPath: null,
+        debugInfo: null,
+        error: null,
+        startedAt,
+        completedAt: null,
+      };
+
+      publishState({
+        ...workingState,
+        status: "apply_running",
+        activeApply: {
+          requestId,
+          proposalId: normalizedProposalId,
+          sessionKey: resolvedSessionKey || null,
+          targetImageId,
+          referenceImageIds,
+          status: "running",
+          startedAt,
+          completedAt: null,
+        },
+        lastApplyEvent: startedEvent,
+        proposals: patchProposal(workingState?.proposals, normalizedProposalId, {
+          status: "apply_running",
+        }),
+        slots: patchSlotByProposalId(workingState?.slots, normalizedProposalId, {
+          status: "apply_running",
+          error: null,
+          debugInfo: null,
+          apply: {
+            status: "running",
+            sessionKey: resolvedSessionKey || null,
+            targetImageId,
+            referenceImageIds,
+            outputPath: null,
+            startedAt,
+            completedAt: null,
+            debugInfo: null,
+            error: null,
+          },
+        }),
+        errors: [],
+      });
+      emitApplyEvent(startedEvent);
+
+      const finishWithFailure = (error, reason = "apply_failed") => {
+        const completedAt = new Date().toISOString();
+        const debugInfo =
+          cloneJson(error?.debugInfo) ||
+          buildLocalApplyDebugInfo({
+            request,
+            sessionKey: resolvedSessionKey,
+            proposal,
+            targetImageId,
+            targetImage,
+            referenceImageIds,
+            referenceImages,
+            outputPath,
+            error,
+            reason,
+        });
+        const failureEvent = {
+          phase: "failed",
+          status: "apply_failed",
+          requestId,
+          sessionKey: resolvedSessionKey || null,
+          proposal: {
+            ...proposal,
+            status: "apply_failed",
+          },
+          request,
+          targetImageId,
+          referenceImageIds,
+          outputPath: null,
+          debugInfo,
+          error: readFirstString(error?.message, error) || "Design review apply failed.",
+          startedAt,
+          completedAt,
+        };
+        publishState({
+          ...workingState,
+          status: "apply_failed",
+          activeApply: null,
+          lastApplyEvent: failureEvent,
+          proposals: patchProposal(workingState?.proposals, normalizedProposalId, {
+            status: "apply_failed",
+          }),
+          slots: patchSlotByProposalId(workingState?.slots, normalizedProposalId, {
+            status: "apply_failed",
+            error: failureEvent.error,
+            debugInfo,
+            apply: {
+              status: "failed",
+              sessionKey: resolvedSessionKey || null,
+              targetImageId,
+              referenceImageIds,
+              outputPath: null,
+              startedAt,
+              completedAt,
+              debugInfo,
+              error: failureEvent.error,
+            },
+          }),
+          errors: [failureEvent.error],
+          completedAt,
+        });
+        emitApplyEvent(failureEvent);
+        return {
+          ok: false,
+          reason,
+          ...failureEvent,
+        };
+      };
+
+      if (!applyRunner) {
+        return finishWithFailure(
+          new Error("Design review apply handler is unavailable."),
+          "apply_unavailable"
+        );
+      }
+      if (!targetImageId || !readFirstString(targetImage?.path, targetImage?.imagePath)) {
+        return finishWithFailure(
+          new Error("Accepted review proposal is missing a target image."),
+          "target_image_unavailable"
+        );
+      }
+
+      try {
+        const applyResult = await applyRunner({
+          request,
+          proposal,
+          sessionKey: resolvedSessionKey || null,
+          targetImageId,
+          referenceImageIds,
+          targetImage,
+          referenceImages,
+          outputPath,
+        });
+        const completedAt = new Date().toISOString();
+        const resolvedOutputPath =
+          readFirstString(
+            applyResult?.outputPath,
+            applyResult?.outputImagePath,
+            applyResult?.path
+          ) || outputPath || null;
+        if (!resolvedOutputPath) {
+          return finishWithFailure(
+            new Error("Design review apply did not produce an output image."),
+            "apply_missing_output"
+          );
+        }
+        const successEvent = {
+          phase: "succeeded",
+          status: "apply_succeeded",
+          requestId,
+          sessionKey: resolvedSessionKey || null,
+          proposal: {
+            ...proposal,
+            status: "apply_succeeded",
+          },
+          request,
+          targetImageId,
+          referenceImageIds,
+          outputPath: resolvedOutputPath,
+          debugInfo: cloneJson(applyResult?.debugInfo || null),
+          error: null,
+          startedAt,
+          completedAt,
+        };
+        publishState({
+          ...workingState,
+          status: "apply_succeeded",
+          activeApply: null,
+          lastApplyEvent: successEvent,
+          proposals: patchProposal(workingState?.proposals, normalizedProposalId, {
+            status: "apply_succeeded",
+          }),
+          slots: patchSlotByProposalId(workingState?.slots, normalizedProposalId, {
+            status: "apply_succeeded",
+            error: null,
+            debugInfo: cloneJson(applyResult?.debugInfo || null),
+            apply: {
+              status: "succeeded",
+              sessionKey: resolvedSessionKey || null,
+              targetImageId,
+              referenceImageIds,
+              outputPath: resolvedOutputPath,
+              startedAt,
+              completedAt,
+              debugInfo: cloneJson(applyResult?.debugInfo || null),
+              error: null,
+            },
+          }),
+          errors: [],
+          completedAt,
+        });
+        emitApplyEvent(successEvent);
+        return {
+          ok: true,
+          ...successEvent,
+        };
+      } catch (error) {
+        return finishWithFailure(error, "apply_failed");
+      }
     },
   };
 }

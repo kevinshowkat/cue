@@ -32,9 +32,19 @@ test("design review bootstrap exposes a failure debug payload modal from the com
   assert.match(bootstrap, /const REVIEW_DEBUG_MODAL_ID = "design-review-debug-modal"/);
   assert.match(bootstrap, /function openReviewDebugModal\(payload = null\)/);
   assert.match(bootstrap, /debug\.textContent = "Debug Payload"/);
-  assert.match(bootstrap, /slot\?\.status === "failed" && slot\?\.debugInfo/);
+  assert.match(bootstrap, /\["failed", "apply_failed"\]\.includes\(String\(slot\?\.status \|\| ""\)\)/);
   assert.match(bootstrap, /const fragment = document\.createDocumentFragment\(\)/);
   assert.match(bootstrap, /list\.replaceChildren\(fragment\)/);
+});
+
+test("design review bootstrap dispatches structured apply events and routes tray accepts through the runtime apply path", () => {
+  assert.match(bootstrap, /const REVIEW_APPLY_EVENT = "juggernaut:design-review-apply"/);
+  assert.match(bootstrap, /const runDesignReviewApply = createDesignReviewApplyRunner\(providerRouter\)/);
+  assert.match(bootstrap, /new CustomEvent\(REVIEW_APPLY_EVENT,\s*\{\s*detail,/s);
+  assert.match(bootstrap, /const syncRuntimeReviewState = \(runtimeState = null, nextState = null\) =>/);
+  assert.match(bootstrap, /const reviewState =[\s\S]*runtimeState\.lastReviewState[\s\S]*pipeline\.getState\(\)/);
+  assert.match(bootstrap, /pipeline\.acceptProposal\(proposalId,\s*\{[\s\S]*reviewState,/s);
+  assert.match(bootstrap, /void pipeline\.applyProposal\(proposalId,\s*\{[\s\S]*reviewState,[\s\S]*onStateChange:/s);
 });
 
 test("design review bootstrap keeps tab-local review runtime state instead of one shared tray state", () => {

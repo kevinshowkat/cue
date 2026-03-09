@@ -23,6 +23,7 @@ const REVIEW_DEBUG_MODAL_ID = "design-review-debug-modal";
 const REVIEW_STYLE_ID = "design-review-style";
 const REVIEW_STATE_EVENT = "juggernaut:design-review-state";
 const REVIEW_ACCEPT_EVENT = "juggernaut:design-review-accept";
+const REVIEW_APPLY_EVENT = "juggernaut:design-review-apply";
 const REVIEW_UPLOAD_ANALYSIS_EVENT = "juggernaut:upload-analysis-updated";
 const COMMUNICATION_REVIEW_REQUESTED_EVENT = "juggernaut:design-review-requested";
 const COMMUNICATION_PROPOSAL_TRAY_EVENT = "juggernaut:communication-proposal-tray-changed";
@@ -156,6 +157,77 @@ async function captureVisibleCanvasRef(runDir = "") {
   const outputPath = await join(normalizedRunDir, `design-review-visible-${Date.now()}.png`);
   await writeBinaryFile(outputPath, new Uint8Array(buffer));
   return outputPath;
+}
+
+function createDesignReviewApplyRunner(providerRouter = null) {
+  return async ({
+    request = {},
+    proposal = {},
+    sessionKey = null,
+    targetImageId = null,
+    referenceImageIds = [],
+    targetImage = null,
+    referenceImages = [],
+    outputPath = "",
+  } = {}) => {
+    const normalizedTargetImage = targetImage && typeof targetImage === "object" ? { ...targetImage } : null;
+    const normalizedTargetImagePath = readFirstString(
+      normalizedTargetImage?.path,
+      normalizedTargetImage?.imagePath
+    );
+    const normalizedReferenceImages = (Array.isArray(referenceImages) ? referenceImages : [])
+      .map((image) => (image && typeof image === "object" ? { ...image } : null))
+      .filter(Boolean)
+      .map((image) => ({
+        ...image,
+        imageId: readFirstString(image?.id, image?.imageId, image?.image_id) || null,
+        path: readFirstString(image?.path, image?.imagePath) || null,
+      }))
+      .filter((image) => image.path);
+
+    if (!providerRouter || typeof providerRouter.runApply !== "function") {
+      const error = new Error("Design review apply handler is unavailable.");
+      error.debugInfo = {
+        source: "design_review_bootstrap",
+        route: {
+          kind: "apply",
+        },
+        requestId: readFirstString(request?.requestId) || null,
+        sessionKey: readFirstString(sessionKey) || null,
+        proposal,
+        request,
+        targetImageId: readFirstString(targetImageId) || null,
+        targetImagePath: normalizedTargetImagePath || null,
+        referenceImageIds: Array.isArray(referenceImageIds) ? referenceImageIds.slice() : [],
+        referenceImagePaths: normalizedReferenceImages.map((image) => image.path),
+        outputPath: readFirstString(outputPath) || null,
+      };
+      throw error;
+    }
+
+    return providerRouter.runApply({
+      request,
+      proposal,
+      sessionKey: readFirstString(sessionKey) || null,
+      targetImageId: readFirstString(targetImageId) || null,
+      referenceImageIds: Array.isArray(referenceImageIds) ? referenceImageIds.slice() : [],
+      targetImage: normalizedTargetImagePath
+        ? {
+            ...normalizedTargetImage,
+            imageId:
+              readFirstString(
+                normalizedTargetImage?.id,
+                normalizedTargetImage?.imageId,
+                normalizedTargetImage?.image_id,
+                targetImageId
+              ) || null,
+            path: normalizedTargetImagePath,
+          }
+        : null,
+      referenceImages: normalizedReferenceImages,
+      outputPath: readFirstString(outputPath) || null,
+    });
+  };
 }
 
 function ensureReviewStyle() {
@@ -407,9 +479,21 @@ function ensureReviewStyle() {
   background: rgba(166, 238, 200, 0.46);
   color: rgba(38, 118, 76, 0.9);
 }
+.communication-proposal-slot[data-review-status="apply_running"] .design-review-runtime-status {
+  background: rgba(208, 229, 255, 0.92);
+  color: rgba(36, 95, 180, 0.9);
+}
+.communication-proposal-slot[data-review-status="apply_succeeded"] .design-review-runtime-status {
+  background: rgba(166, 238, 200, 0.64);
+  color: rgba(38, 118, 76, 0.92);
+}
 .communication-proposal-slot[data-review-status="failed"] .design-review-runtime-status {
   background: rgba(255, 218, 218, 0.9);
   color: rgba(162, 49, 49, 0.92);
+}
+.communication-proposal-slot[data-review-status="apply_failed"] .design-review-runtime-status {
+  background: rgba(255, 218, 218, 0.96);
+  color: rgba(162, 49, 49, 0.94);
 }
 .design-review-runtime-title {
   font-size: 14px;
@@ -438,6 +522,10 @@ function ensureReviewStyle() {
   cursor: pointer;
   background: rgba(28, 118, 242, 0.92);
   color: rgba(255, 255, 255, 0.98);
+}
+.design-review-runtime-action:disabled {
+  cursor: default;
+  opacity: 0.58;
 }
 .design-review-runtime-action.design-review-runtime-action-secondary {
   background: rgba(233, 238, 244, 0.96);
@@ -693,6 +781,9 @@ export function buildDesignReviewRequestFromCommunication({
 
 function slotStatusLabel(status = "") {
   if (status === "ready") return "Ready";
+  if (status === "apply_running") return "Applying";
+  if (status === "apply_succeeded") return "Applied";
+  if (status === "apply_failed") return "Apply Failed";
   if (status === "failed") return "Failed";
   if (status === "preview_running") return "Rendering";
   if (status === "preview_pending") return "Queued";
@@ -701,6 +792,27 @@ function slotStatusLabel(status = "") {
 }
 
 function slotSummaryText(slot = {}) {
+  if (slot?.status === "apply_running") {
+    const targetImageId = readFirstString(slot?.apply?.targetImageId, slot?.proposal?.imageId);
+    return clampText(
+      targetImageId
+        ? `Applying the final edit to ${targetImageId}.`
+        : "Applying the final edit to the target image.",
+      220
+    );
+  }
+  if (slot?.status === "apply_succeeded") {
+    return clampText(
+      "Final apply finished. The accepted edit is ready for in-place replacement.",
+      220
+    );
+  }
+  if (slot?.status === "apply_failed") {
+    return clampText(
+      slot?.apply?.error || slot?.error || "The accepted edit could not be rendered.",
+      220
+    );
+  }
   return clampText(
     slot?.error || slot?.proposal?.why || "Waiting for planner and previews.",
     220
@@ -710,21 +822,36 @@ function slotSummaryText(slot = {}) {
 function collectReviewDebugPayload(state = {}) {
   const slots = Array.isArray(state?.slots) ? state.slots : [];
   const failedSlots = slots
-    .filter((slot) => slot?.status === "failed" && slot?.debugInfo)
+    .filter((slot) =>
+      ["failed", "apply_failed"].includes(String(slot?.status || "")) &&
+      (slot?.apply?.debugInfo || slot?.debugInfo)
+    )
     .map((slot, index) => ({
       rank: Number(slot?.rank) || index + 1,
       label: readFirstString(slot?.proposal?.label, slot?.proposal?.title) || `Proposal ${index + 1}`,
+      failureStage: slot?.status === "apply_failed" ? "apply" : "preview",
       error: readFirstString(slot?.error) || null,
-      debugInfo: JSON.parse(JSON.stringify(slot.debugInfo)),
+      debugInfo: JSON.parse(JSON.stringify(slot?.apply?.debugInfo || slot?.debugInfo)),
     }));
-  if (!failedSlots.length && !state?.plannerDebugInfo) return null;
+  const applyFailure =
+    state?.lastApplyEvent?.status === "apply_failed" && state?.lastApplyEvent?.debugInfo
+      ? JSON.parse(JSON.stringify(state.lastApplyEvent))
+      : null;
+  if (!failedSlots.length && !state?.plannerDebugInfo && !applyFailure) return null;
   return {
     requestId: readFirstString(state?.request?.requestId) || null,
     status: readFirstString(state?.status) || null,
     reviewRequest: state?.request && typeof state.request === "object" ? JSON.parse(JSON.stringify(state.request)) : null,
     plannerDebugInfo: state?.plannerDebugInfo ? JSON.parse(JSON.stringify(state.plannerDebugInfo)) : null,
+    applyFailure,
     failedSlots,
   };
+}
+
+function communicationTraySlotStatus(status = "") {
+  if (status === "ready" || status === "apply_succeeded") return "ready";
+  if (status === "failed" || status === "apply_failed") return "failed";
+  return "skeleton";
 }
 
 function clampTrayIntoCanvasWrap(tray = null) {
@@ -752,12 +879,7 @@ export function mapDesignReviewStateToCommunicationTray(state = {}) {
     status: readFirstString(state?.status) || "idle",
     slots: slots.map((slot, index) => ({
       slotId: readFirstString(slot?.slotId) || `design-review-slot-${index + 1}`,
-      status:
-        slot?.status === "ready"
-          ? "ready"
-          : slot?.status === "failed"
-            ? "failed"
-            : "skeleton",
+      status: communicationTraySlotStatus(slot?.status),
       label: `Proposal ${Number(slot?.rank) || index + 1}`,
       title: clampText(
         slot?.proposal?.label ||
@@ -844,6 +966,11 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
   }
 
   const slots = Array.isArray(state?.slots) ? state.slots : [];
+  const requestApplyLocked = Boolean(
+    readFirstString(state?.activeApply?.requestId) &&
+    readFirstString(state?.activeApply?.requestId) ===
+      readFirstString(state?.request?.requestId)
+  );
   const fragment = document.createDocumentFragment();
   slots.forEach((slot, index) => {
     const card = document.createElement("div");
@@ -851,8 +978,16 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
     card.dataset.slotIndex = String(index);
     card.setAttribute("role", "listitem");
     card.dataset.reviewStatus = readFirstString(slot?.status) || "skeleton";
-    card.classList.toggle("is-skeleton", !["ready", "failed"].includes(String(slot?.status || "")));
-    card.classList.toggle("is-failed", String(slot?.status || "") === "failed");
+    card.classList.toggle(
+      "is-skeleton",
+      !["ready", "failed", "apply_running", "apply_succeeded", "apply_failed"].includes(
+        String(slot?.status || "")
+      )
+    );
+    card.classList.toggle(
+      "is-failed",
+      ["failed", "apply_failed"].includes(String(slot?.status || ""))
+    );
 
     const layout = document.createElement("div");
     layout.className = "design-review-runtime-card";
@@ -897,29 +1032,42 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
 
     copy.append(row, titleNode, why);
 
+    const slotDebugInfo = slot?.apply?.debugInfo || slot?.debugInfo || null;
     if (
-      (slot?.proposal && (slot?.status === "ready" || slot?.status === "failed")) ||
-      (slot?.status === "failed" && slot?.debugInfo)
+      slot?.proposal ||
+      (["failed", "apply_failed"].includes(String(slot?.status || "")) && slotDebugInfo)
     ) {
       const actions = document.createElement("div");
       actions.className = "design-review-runtime-actions";
-      if (slot?.proposal && (slot?.status === "ready" || slot?.status === "failed")) {
+      if (slot?.proposal) {
         const accept = document.createElement("button");
         accept.type = "button";
         accept.className = "design-review-runtime-action";
-        accept.textContent = slot?.status === "ready" ? "Apply via Runtime" : "Accept Intent";
+        accept.textContent =
+          slot?.status === "apply_running"
+            ? "Applying…"
+            : slot?.status === "apply_succeeded"
+              ? "Applied"
+              : slot?.status === "apply_failed"
+                ? "Retry Apply"
+                : "Apply via Runtime";
+        accept.disabled =
+          slot?.status === "apply_running" ||
+          slot?.status === "apply_succeeded" ||
+          requestApplyLocked;
         accept.addEventListener("click", () => {
+          if (accept.disabled) return;
           if (typeof onAccept === "function") onAccept(slot.proposal);
         });
         actions.appendChild(accept);
       }
-      if (slot?.status === "failed" && slot?.debugInfo) {
+      if (["failed", "apply_failed"].includes(String(slot?.status || "")) && slotDebugInfo) {
         const debug = document.createElement("button");
         debug.type = "button";
         debug.className = "design-review-runtime-action design-review-runtime-action-secondary";
         debug.textContent = "Debug Payload";
         debug.addEventListener("click", () => {
-          openReviewDebugModal(slot.debugInfo);
+          openReviewDebugModal(slotDebugInfo);
         });
         actions.appendChild(debug);
       }
@@ -1102,7 +1250,9 @@ function syncCommunicationTray(runtimeState, state = {}, onAccept = null) {
       slots: trayState.slots,
     });
   }
-  renderCommunicationTrayDetails(state, onAccept);
+  renderCommunicationTrayDetails(state, (proposal) => {
+    if (typeof onAccept === "function") onAccept(proposal, runtimeState);
+  });
 }
 
 function renderReviewFailure(
@@ -1165,12 +1315,21 @@ export async function installDesignReviewBootstrap() {
   });
   const pathHashCache = new Map();
   const runtimeRegistry = createDesignReviewRuntimeRegistry();
+  const runDesignReviewApply = createDesignReviewApplyRunner(providerRouter);
 
   const pipeline = createDesignReviewPipeline({
     providerRouter,
     memoryStore,
     uploadAnalysisCache,
     hashImage: (image) => hashImageRecord(image, pathHashCache),
+    runApply: runDesignReviewApply,
+    onApplyEvent: (detail) => {
+      window.dispatchEvent(
+        new CustomEvent(REVIEW_APPLY_EVENT, {
+          detail,
+        })
+      );
+    },
   });
 
   const warmupController = createUploadAnalysisWarmupController({
@@ -1256,40 +1415,94 @@ export async function installDesignReviewBootstrap() {
     void setConsent("denied");
   });
 
-  const acceptProposal = (proposal) => {
-    const memory = pipeline.acceptProposal(proposal?.proposalId, {
+  let acceptProposal = () => null;
+
+  const syncRuntimeReviewState = (runtimeState = null, nextState = null) => {
+    if (!runtimeState || !nextState || typeof nextState !== "object") {
+      if (typeof window !== "undefined" && nextState && typeof nextState === "object") {
+        window.dispatchEvent(
+          new CustomEvent(REVIEW_STATE_EVENT, {
+            detail: nextState,
+          })
+        );
+      }
+      return nextState;
+    }
+    runtimeState.lastReviewState = nextState;
+    runtimeState.activeRequestId =
+      readFirstString(nextState?.request?.requestId, runtimeState?.activeRequestId) || null;
+    if (runtimeState.activeRequestId && runtimeState.sessionKey) {
+      runtimeRegistry.rememberRequest(runtimeState.activeRequestId, runtimeState.sessionKey);
+    }
+    const activeSessionKey = runtimeRegistry.sessionKeyForContext(shellSnapshot());
+    if (
+      runtimeState.sessionKey === activeSessionKey &&
+      runtimeState.activeRequestId &&
+      readFirstString(nextState?.request?.requestId) === runtimeState.activeRequestId
+    ) {
+      syncCommunicationTray(runtimeState, nextState, acceptProposal);
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent(REVIEW_STATE_EVENT, {
+          detail: nextState,
+        })
+      );
+    }
+    return nextState;
+  };
+
+  acceptProposal = (proposal, runtimeState = null) => {
+    const reviewState =
+      (runtimeState?.lastReviewState && typeof runtimeState.lastReviewState === "object"
+        ? JSON.parse(JSON.stringify(runtimeState.lastReviewState))
+        : pipeline.getState()) || {};
+    const proposalId = readFirstString(proposal?.proposalId);
+    const requestId =
+      readFirstString(
+        proposal?.requestId,
+        reviewState?.request?.requestId,
+        runtimeState?.activeRequestId,
+        runtimeState?.lastReviewState?.request?.requestId
+      ) || null;
+    if (!proposalId || !requestId) return null;
+    if (
+      requestId &&
+      readFirstString(reviewState?.activeApply?.requestId) === requestId &&
+      readFirstString(reviewState?.activeApply?.status) === "running"
+    ) {
+      return null;
+    }
+    const memory = pipeline.acceptProposal(proposalId, {
       stylePatterns:
         proposal?.negativeConstraints?.filter((entry) =>
           /style|tone|lighting|material/i.test(String(entry || ""))
         ) || [],
       useCasePatterns: [proposal?.actionType].filter(Boolean),
+      reviewState,
     });
     window.dispatchEvent(
       new CustomEvent(REVIEW_ACCEPT_EVENT, {
         detail: {
           proposal,
           memory,
+          requestId,
+          sessionKey: runtimeState?.sessionKey || null,
         },
       })
     );
+    void pipeline.applyProposal(proposalId, {
+      sessionKey: runtimeState?.sessionKey || null,
+      reviewState,
+      onStateChange: (nextState) => {
+        syncRuntimeReviewState(runtimeState, nextState);
+      },
+    });
   };
 
   pipeline.subscribe((state) => {
     const runtimeState = runtimeRegistry.runtimeStateForReviewState(state);
-    const activeSessionKey = runtimeRegistry.sessionKeyForContext(shellSnapshot());
-    if (
-      runtimeState &&
-      runtimeState.sessionKey === activeSessionKey &&
-      runtimeState.activeRequestId &&
-      readFirstString(state?.request?.requestId) === runtimeState.activeRequestId
-    ) {
-      syncCommunicationTray(runtimeState, state, acceptProposal);
-    }
-    window.dispatchEvent(
-      new CustomEvent(REVIEW_STATE_EVENT, {
-        detail: state,
-      })
-    );
+    syncRuntimeReviewState(runtimeState, state);
   });
 
   const startReviewFromCommunication = async (detail = {}) => {
@@ -1370,7 +1583,9 @@ export async function installDesignReviewBootstrap() {
       clearCommunicationTrayReviewDetails();
       return;
     }
-    renderCommunicationTrayDetails(runtimeState.lastReviewState, acceptProposal);
+    renderCommunicationTrayDetails(runtimeState.lastReviewState, (proposal) => {
+      acceptProposal(proposal, runtimeState);
+    });
   });
   window.addEventListener(
     "drop",
@@ -1400,7 +1615,13 @@ export async function installDesignReviewBootstrap() {
   );
 
   const bridge = {
-    getState: () => pipeline.getState(),
+    getState: () => {
+      const activeSessionKey = runtimeRegistry.sessionKeyForContext(shellSnapshot());
+      return (
+        runtimeRegistry.stateForSession(activeSessionKey, { create: false })?.lastReviewState ||
+        pipeline.getState()
+      );
+    },
     subscribe: (listener) => pipeline.subscribe(listener),
     startReviewFromShell(meta = {}) {
       return shellBridge()?.requestDesignReview?.(meta) || null;
