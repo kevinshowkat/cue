@@ -28,9 +28,19 @@ test("design review bootstrap keeps the integrated communication tray light and 
   assert.doesNotMatch(bootstrap, /design-review-tray/);
 });
 
-test("design review bootstrap only schedules upload-analysis warmup on actual image-introducing events", () => {
+test("design review bootstrap keeps tab-local review runtime state instead of one shared tray state", () => {
+  assert.match(bootstrap, /createDesignReviewRuntimeRegistry/);
+  assert.match(bootstrap, /const runtimeStateBySession = new Map\(\)/);
+  assert.match(bootstrap, /runtimeStateForActiveTrayEvent\(event\?\.detail\)/);
+  assert.match(bootstrap, /clearCommunicationTrayReviewDetails\(\)/);
+  assert.doesNotMatch(bootstrap, /const runtimeState = \{\s*lastCommunicationPayload:/);
+});
+
+test("design review bootstrap only schedules upload-analysis warmup on explicit review start or image-introducing events", () => {
   assert.doesNotMatch(bootstrap, /window\.addEventListener\("juggernaut:shell-ready"/);
   assert.doesNotMatch(bootstrap, /window\.addEventListener\("focus"/);
+  assert.doesNotMatch(bootstrap, /TABBED_SESSIONS_CHANGED_EVENT/);
   assert.match(bootstrap, /target\?\.matches\?\.\('input\[type="file"\]'\)/);
+  assert.match(bootstrap, /queueWarmup\(\{ snapshot, delayMs: 0, sessionKey: runtimeState\.sessionKey \}\)/);
   assert.match(bootstrap, /queueWarmup\(\{ delayMs: 120 \}\)/);
 });
