@@ -106,3 +106,43 @@ test("create and open paths rely on activateTab's single hydration schedule inst
     /const activation = await activateTab\(tabId, \{ spawnEngine: false, reason: "open_run_tab" \}\);[\s\S]*if \(activation\?\.hydration\) await activation\.hydration;/
   );
 });
+
+test("tab metadata reads stay pure and do not capture the active session", () => {
+  const getTabsSnapshotSource = extractFunctionSource("getTabsSnapshot");
+  const listTabsSource = extractFunctionSource("listTabs");
+  const subscribeTabsSource = extractFunctionSource("subscribeTabs");
+  const publishSource = extractFunctionSource("publishTabbedSessionsSnapshot");
+
+  assert.equal(getTabsSnapshotSource.includes("syncActiveTabRecord"), false);
+  assert.equal(getTabsSnapshotSource.includes("capture: true"), false);
+  assert.equal(listTabsSource.includes("syncActiveTabRecord"), false);
+  assert.equal(subscribeTabsSource.includes("syncActiveTabRecord"), false);
+  assert.match(subscribeTabsSource, /tabbedSessions\.subscribe\(\(snapshot\) => \{\s*listener\(getTabsSnapshot\(snapshot\)\);/);
+  assert.match(publishSource, /tabs:\s*snapshot\.tabs\.slice\(\)/);
+  assert.equal(publishSource.includes("tabs: listTabs()"), false);
+});
+
+test("tab activation keeps tab metadata off the fast path while explicit switch-away capture remains", () => {
+  const activateSource = extractFunctionSource("activateTab");
+  const closeSource = extractFunctionSource("closeTab");
+
+  assert.equal(activateSource.includes("tabs: listTabs()"), false);
+  assert.match(activateSource, /syncActiveTabRecord\(\{ capture: true, publish: true \}\);/);
+  assert.match(activateSource, /syncActiveTabRecord\(\{ capture: false, publish: true \}\);/);
+  assert.match(closeSource, /syncActiveTabRecord\(\{ capture: true, publish: true \}\);/);
+});
+
+test("deferred hydration surfaces are individually gated by stable render signatures", () => {
+  const renderFilmstripSource = extractFunctionSource("renderFilmstrip");
+  const renderTimelineSource = extractFunctionSource("renderTimeline");
+  const chooseSpawnNodesSource = extractFunctionSource("chooseSpawnNodes");
+  const renderQuickActionsSource = extractFunctionSource("renderQuickActions");
+  const renderCustomToolDockSource = extractFunctionSource("renderCustomToolDock");
+
+  assert.match(renderFilmstripSource, /state\.lastRenderedFilmstripKey === nextDataKey/);
+  assert.match(renderFilmstripSource, /state\.lastRenderedFilmstripSelectionKey === nextSelectionKey/);
+  assert.match(renderTimelineSource, /state\.lastRenderedTimelineKey === nextKey/);
+  assert.match(chooseSpawnNodesSource, /state\.lastRenderedSpawnNodesKey === nextKey/);
+  assert.match(renderQuickActionsSource, /state\.lastRenderedQuickActionsKey === nextKey/);
+  assert.match(renderCustomToolDockSource, /state\.lastRenderedCustomToolDockKey === nextKey/);
+});

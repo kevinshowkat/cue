@@ -17,6 +17,8 @@ test("Titlebar tab strip binds live DOM ids and renders from the tab snapshot", 
   assert.match(app, /function renderSessionTabStrip\(/);
   assert.match(app, /els\.sessionTabList\.replaceChildren\(fragment\)/);
   assert.match(app, /releaseSessionTabStripSubscription\s*=\s*subscribeTabs\(\(snapshot\)\s*=>\s*{\s*renderSessionTabStrip\(snapshot\);/);
+  assert.match(app, /const uiMeta = normalizeTabUiMeta\(record\?\.tabUiMeta \|\| record\?\.session\?\.tabUiMeta\);/);
+  assert.equal(app.includes("const session = record?.session"), false);
 });
 
 test("Titlebar tab strip routes activate, close, open, new, and design review actions", () => {
