@@ -359,8 +359,8 @@ function ensureReviewStyle() {
   word-break: break-word;
 }
 #communication-proposal-tray.is-design-review-runtime {
-  width: min(388px, calc(100vw - 34px));
-  min-width: 296px;
+  width: min(360px, calc(100vw - 40px));
+  min-width: 280px;
   border-color: rgba(203, 212, 222, 0.94);
   background:
     radial-gradient(220px 126px at 18% -6%, rgba(255, 149, 92, 0.10), transparent 62%),

@@ -6806,7 +6806,7 @@ button.ghost:hover {
 .communication-proposal-tray.is-dismissing {
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-8px) scale(0.985);
+  transform: translateY(-8px);
 }
 
 .communication-proposal-tray::after {

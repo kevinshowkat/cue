@@ -22228,6 +22228,16 @@ function designReviewApplyActionLabel(detail = {}) {
 function normalizeDesignReviewApplyEventDetail(detail = {}, { fallbackState = null, status = "" } = {}) {
   const record = asRecord(detail) || {};
   const fallback = cloneDesignReviewApplyState(fallbackState);
+  const parseApplyEventTimestamp = (...values) => {
+    for (const value of values) {
+      if (value == null || value === "") continue;
+      const numeric = Number(value);
+      if (Number.isFinite(numeric) && numeric > 0) return numeric;
+      const parsed = Date.parse(String(value));
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+    return 0;
+  };
   const proposal =
     asRecord(record.proposal)
       ? cloneToolRuntimeValue(record.proposal)
@@ -22267,17 +22277,39 @@ function normalizeDesignReviewApplyEventDetail(detail = {}, { fallbackState = nu
       request?.primaryImageId,
       fallback.targetImageId
     ) || null;
-  const referenceImageIds = uniqueStringList(
+  const explicitReferenceImageIds = uniqueStringList(
     [
       ...(Array.isArray(record.referenceImageIds) ? record.referenceImageIds : []),
       ...(Array.isArray(record.reference_image_ids) ? record.reference_image_ids : []),
       ...((Array.isArray(record.referenceImages) ? record.referenceImages : []).map((image) =>
         readFirstString(image?.imageId, image?.image_id, image?.id)
       )),
-      ...(Array.isArray(fallback.referenceImageIds) ? fallback.referenceImageIds : []),
     ],
     { exclude: [targetImageId] }
   );
+  const fallbackReferenceImageIds = uniqueStringList(
+    Array.isArray(fallback.referenceImageIds) ? fallback.referenceImageIds : [],
+    { exclude: [targetImageId] }
+  );
+  const requestReferenceImageIds = uniqueStringList(
+    [
+      ...(Array.isArray(request?.selectedImageIds) ? request.selectedImageIds : []),
+      ...(Array.isArray(request?.imageIdsInView) ? request.imageIdsInView : []),
+      ...((Array.isArray(request?.visibleCanvasContext?.images) ? request.visibleCanvasContext.images : []).map((image) =>
+        readFirstString(image?.imageId, image?.image_id, image?.id)
+      )),
+      ...((Array.isArray(request?.images) ? request.images : []).map((image) =>
+        readFirstString(image?.imageId, image?.image_id, image?.id)
+      )),
+    ],
+    { exclude: [targetImageId] }
+  );
+  const referenceImageIds =
+    explicitReferenceImageIds.length > 0
+      ? explicitReferenceImageIds
+      : fallbackReferenceImageIds.length > 0
+        ? fallbackReferenceImageIds
+        : requestReferenceImageIds;
   const debugInfo =
     asRecord(record.debugInfo)
       ? cloneToolRuntimeValue(record.debugInfo)
@@ -22305,8 +22337,8 @@ function normalizeDesignReviewApplyEventDetail(detail = {}, { fallbackState = nu
     referenceImageIds,
     outputPath: readFirstString(record.outputPath, record.output_path, fallback.outputPath) || null,
     error: readFirstString(record.error, record.failureReason, record.failure_reason, fallback.error) || null,
-    startedAt: Math.max(0, Number(record.startedAt || fallback.startedAt || Date.now()) || 0),
-    completedAt: Math.max(0, Number(record.completedAt || Date.now()) || 0),
+    startedAt: parseApplyEventTimestamp(record.startedAt, fallback.startedAt, Date.now()),
+    completedAt: parseApplyEventTimestamp(record.completedAt, fallback.completedAt, Date.now()),
     proposal,
     request,
     debugInfo,
@@ -22465,6 +22497,19 @@ async function applyAcceptedDesignReviewOutput(detail = {}) {
   if (item) {
     item.source = DESIGN_REVIEW_APPLY_SOURCE;
     if (nodeId) item.timelineNodeId = nodeId;
+  }
+  const referenceImageIds = uniqueStringList(
+    Array.isArray(normalized.referenceImageIds) ? normalized.referenceImageIds : [],
+    { exclude: ["", targetId] }
+  );
+  for (const referenceImageId of referenceImageIds) {
+    await removeImageFromCanvas(referenceImageId).catch(() => {});
+  }
+  if (state.communication?.tool) {
+    setCommunicationTool(null, { source: "review_apply_success" });
+  }
+  if (state.canvasMode === "multi" && state.tool !== "pan") {
+    setTool("pan");
   }
   updateDesignReviewApplyCostLatency(normalized);
   if (receiptPath) {
@@ -23729,7 +23774,7 @@ function renderDesignReviewApplyShimmerPath(octx, points = [], { emphasis = "tar
   if (drawPolygonPath(octx, points)) {
     octx.fillStyle = isTarget
       ? `rgba(70, 208, 255, ${(0.08 + pulse * 0.05).toFixed(3)})`
-      : `rgba(214, 244, 255, ${(0.05 + pulse * 0.03).toFixed(3)})`;
+      : `rgba(214, 244, 255, ${(0.08 + pulse * 0.05).toFixed(3)})`;
     octx.fill();
   }
   octx.restore();
@@ -23751,9 +23796,9 @@ function renderDesignReviewApplyShimmerPath(octx, points = [], { emphasis = "tar
       shimmer.addColorStop(1, "rgba(92, 222, 255, 0)");
     } else {
       shimmer.addColorStop(0, "rgba(214, 244, 255, 0)");
-      shimmer.addColorStop(0.45, "rgba(232, 250, 255, 0.08)");
-      shimmer.addColorStop(0.5, "rgba(248, 253, 255, 0.24)");
-      shimmer.addColorStop(0.55, "rgba(232, 250, 255, 0.08)");
+      shimmer.addColorStop(0.45, "rgba(232, 250, 255, 0.12)");
+      shimmer.addColorStop(0.5, "rgba(248, 253, 255, 0.34)");
+      shimmer.addColorStop(0.55, "rgba(232, 250, 255, 0.12)");
       shimmer.addColorStop(1, "rgba(214, 244, 255, 0)");
     }
     octx.fillStyle = shimmer;
@@ -23770,12 +23815,12 @@ function renderDesignReviewApplyShimmerPath(octx, points = [], { emphasis = "tar
   octx.lineJoin = "round";
   octx.strokeStyle = isTarget
     ? `rgba(94, 232, 255, ${(0.72 + pulse * 0.16).toFixed(3)})`
-    : `rgba(212, 244, 255, ${(0.46 + pulse * 0.12).toFixed(3)})`;
-  octx.lineWidth = Math.max(1, Math.round((isTarget ? 2.2 : 1.6) * dpr));
+    : `rgba(212, 244, 255, ${(0.62 + pulse * 0.16).toFixed(3)})`;
+  octx.lineWidth = Math.max(1, Math.round((isTarget ? 2.2 : 1.9) * dpr));
   octx.shadowColor = isTarget
     ? `rgba(94, 232, 255, ${(0.26 + pulse * 0.12).toFixed(3)})`
-    : `rgba(212, 244, 255, ${(0.14 + pulse * 0.08).toFixed(3)})`;
-  octx.shadowBlur = Math.round((isTarget ? 18 : 10) * dpr);
+    : `rgba(212, 244, 255, ${(0.20 + pulse * 0.10).toFixed(3)})`;
+  octx.shadowBlur = Math.round((isTarget ? 18 : 14) * dpr);
   if (!isTarget) {
     octx.setLineDash([Math.max(2, Math.round(8 * dpr)), Math.max(2, Math.round(6 * dpr))]);
     octx.lineDashOffset = -Math.round(shimmerProgress * Math.max(10, 36 * dpr));
@@ -24226,6 +24271,7 @@ function setCanvasMode(_mode) {
   hideAnnotatePanel();
   state.circleDraft = null;
   hideMarkPanel();
+  setTool("pan");
   chooseSpawnNodes();
   renderFilmstrip();
   renderSelectionMeta();
