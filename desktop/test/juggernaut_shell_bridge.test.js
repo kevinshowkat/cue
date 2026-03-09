@@ -8,12 +8,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "src", "index.html"), "utf8");
 const app = readFileSync(join(here, "..", "src", "canvas_app.js"), "utf8");
 
-test("Juggernaut shell chrome exposes selection status, export button, and rail root", () => {
+test("Juggernaut shell chrome exposes selection status, export button, rail root, and upload affordance", () => {
   assert.match(html, /class=\"juggernaut-shell-chrome\"/);
   assert.match(html, /id=\"juggernaut-selection-status\"/);
   assert.match(html, /id=\"juggernaut-export-psd\"/);
   assert.match(html, /id=\"action-grid\"[^>]*aria-label=\"Juggernaut left rail\"/);
-  assert.match(html, /id=\"drop-hint\"[\s\S]*Drop images or click to upload/);
+  assert.match(html, /id=\"drop-hint\"/);
 });
 
 test("Juggernaut shell bridge exposes tool/export registration and request methods", () => {

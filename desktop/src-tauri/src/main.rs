@@ -34,8 +34,35 @@ use std::process;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{Manager, State};
+use tauri::{CustomMenuItem, Manager, Menu, MenuItem, State, Submenu};
 use url::Url;
+
+const MENU_CANVAS_IMPORT: &str = "canvas_import_photos";
+const MENU_CANVAS_EXPORT_PSD: &str = "canvas_export_psd";
+const MENU_CANVAS_SETTINGS: &str = "canvas_settings";
+const NATIVE_MENU_ACTION_EVENT: &str = "native-menu-action";
+
+fn build_app_menu(app_name: &str) -> Menu {
+    let import = CustomMenuItem::new(MENU_CANVAS_IMPORT.to_string(), "Import Photos")
+        .accelerator("CmdOrCtrl+O");
+    let export_psd = CustomMenuItem::new(MENU_CANVAS_EXPORT_PSD.to_string(), "Export PSD")
+        .accelerator("CmdOrCtrl+Shift+E");
+    let settings = CustomMenuItem::new(MENU_CANVAS_SETTINGS.to_string(), "Settings…")
+        .accelerator("CmdOrCtrl+,");
+
+    let canvas_menu = Menu::new()
+        .add_item(import)
+        .add_item(export_psd)
+        .add_native_item(MenuItem::Separator)
+        .add_item(settings);
+
+    Menu::os_default(app_name).add_submenu(Submenu::new("Canvas", canvas_menu))
+}
+
+fn emit_native_menu_action(window: &tauri::Window, action: &str) {
+    let payload = serde_json::json!({ "action": action });
+    let _ = window.emit(NATIVE_MENU_ACTION_EVENT, payload);
+}
 
 fn find_repo_root(start: &Path) -> Option<PathBuf> {
     let mut current = Some(start);
@@ -2785,7 +2812,16 @@ fn apply_macos_native_window_polish(window: &tauri::Window) -> Result<(), String
 
 fn main() {
     let pty_state: SharedPtyState = Arc::new(Mutex::new(PtyState::new()));
+    let context = tauri::generate_context!();
+    let menu = build_app_menu(&context.package_info().name);
     tauri::Builder::default()
+        .menu(menu)
+        .on_menu_event(|event| match event.menu_item_id() {
+            MENU_CANVAS_IMPORT => emit_native_menu_action(&event.window(), "import_photos"),
+            MENU_CANVAS_EXPORT_PSD => emit_native_menu_action(&event.window(), "export_psd"),
+            MENU_CANVAS_SETTINGS => emit_native_menu_action(&event.window(), "open_settings"),
+            _ => {}
+        })
         .manage(pty_state)
         .invoke_handler(tauri::generate_handler![
             report_automation_result,
@@ -2818,7 +2854,7 @@ fn main() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }
 
