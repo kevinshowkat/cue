@@ -14,6 +14,8 @@ use cocoa::appkit::{
 #[cfg(target_os = "macos")]
 use cocoa::base::{id, nil, BOOL, NO, YES};
 #[cfg(target_os = "macos")]
+use cocoa::foundation::NSString;
+#[cfg(target_os = "macos")]
 use objc::{class, msg_send, sel, sel_impl};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use rand::rngs::OsRng;
@@ -2768,6 +2770,13 @@ fn apply_macos_native_window_polish(window: &tauri::Window) -> Result<(), String
         }
 
         effect_view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable);
+        let aqua_name = NSString::alloc(nil).init_str("NSAppearanceNameAqua");
+        let light_appearance: id = msg_send![class!(NSAppearance), appearanceNamed: aqua_name];
+        if light_appearance != nil {
+            let (): () = msg_send![ns_window, setAppearance: light_appearance];
+            let (): () = msg_send![host_view, setAppearance: light_appearance];
+            let (): () = msg_send![effect_view, setAppearance: light_appearance];
+        }
         let (): () = msg_send![effect_view, setMaterial: NS_VISUAL_EFFECT_MATERIAL_HEADER_VIEW];
         let (): () =
             msg_send![effect_view, setBlendingMode: NS_VISUAL_EFFECT_BLENDING_MODE_BEHIND_WINDOW];

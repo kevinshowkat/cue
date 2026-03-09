@@ -21,6 +21,57 @@
           <span class="juggernaut-brand-wordmark">Juggernaut</span>
         </div>
         <div class="window-drag-region" aria-hidden="true" data-tauri-drag-region></div>
+        <div id="session-tab-strip" class="session-tab-strip" role="group" aria-label="Session strip">
+          <div id="session-tab-list" class="session-tab-list" role="tablist" aria-label="Open sessions"></div>
+          <div class="session-tab-strip-actions" role="group" aria-label="Session actions">
+            <button
+              id="session-tab-open"
+              class="session-tab-strip-action"
+              type="button"
+              aria-label="Open session"
+              title="Open session"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M4.5 8.5h5l1.8 2h8.2v7.5a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2zM4.5 8.5V7a2 2 0 0 1 2-2h3.2l1.8 2H17.5a2 2 0 0 1 2 2v1.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span class="sr-only">Open session</span>
+            </button>
+            <button
+              id="session-tab-new"
+              class="session-tab-strip-action"
+              type="button"
+              aria-label="New session"
+              title="New session"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 5v14M5 12h14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.9"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span class="sr-only">New session</span>
+            </button>
+            <button
+              id="session-tab-design-review"
+              class="session-tab-strip-action session-tab-strip-review"
+              type="button"
+              aria-label="Design review"
+              title="Design review"
+            >
+              <span>Design review</span>
+            </button>
+          </div>
+        </div>
         <div class="brand-actions" role="group" aria-label="Window actions">
           <div class="sr-only">
             <span
@@ -91,7 +142,7 @@
           <div class="juggernaut-shell-chrome" aria-label="Juggernaut shell">
             <div id="action-grid" class="action-grid juggernaut-tool-rail" role="toolbar" aria-label="Juggernaut left rail"></div>
             <div id="custom-tool-dock" class="custom-tool-dock" role="toolbar" aria-label="Custom tools"></div>
-            <div class="juggernaut-shell-head" role="toolbar" aria-label="Canvas toolbar">
+            <div class="juggernaut-shell-head" aria-hidden="true">
               <div class="juggernaut-shell-brand" aria-label="Canvas workspace">
                 <div class="juggernaut-shell-wordmark">Canvas</div>
                 <div>
@@ -100,8 +151,8 @@
                   </div>
                 </div>
               </div>
-              <div id="session-tab-strip" class="session-tab-strip" role="group" aria-label="Session strip">
-                <div id="session-tab-list" class="session-tab-list" role="tablist" aria-label="Open sessions">
+              <div id="session-tab-strip-shell-head-placeholder" class="session-tab-strip" role="presentation" aria-hidden="true">
+                <div id="session-tab-list-shell-head-placeholder" class="session-tab-list" role="presentation" aria-hidden="true">
                   <div
                     class="session-tab-item is-active is-dirty"
                     data-tab-id="tab-hero"
@@ -240,7 +291,7 @@
                 </div>
                 <div class="session-tab-strip-actions" role="group" aria-label="Session actions">
                   <button
-                    id="session-tab-open"
+                    id="session-tab-open-shell-head-placeholder"
                     class="session-tab-strip-action"
                     type="button"
                     aria-label="Open session"
@@ -259,7 +310,7 @@
                     <span class="sr-only">Open session</span>
                   </button>
                   <button
-                    id="session-tab-new"
+                    id="session-tab-new-shell-head-placeholder"
                     class="session-tab-strip-action"
                     type="button"
                     aria-label="New session"

@@ -11,12 +11,13 @@ const html = readFileSync(htmlPath, "utf8");
 const css = readFileSync(cssPath, "utf8");
 
 test("Juggernaut shell: stage chrome carries the left rail, custom tools, and workspace header while legacy dock markup remains available", () => {
-  assert.match(html, /class=\"juggernaut-shell-chrome\"[\s\S]*id=\"action-grid\"[\s\S]*id=\"custom-tool-dock\"[\s\S]*class=\"juggernaut-shell-head\"[\s\S]*id=\"session-tab-strip\"[\s\S]*id=\"top-metrics\"[\s\S]*id=\"juggernaut-export-psd\"/);
-  assert.match(html, /class=\"brand-strip\"[^>]*role=\"toolbar\"[\s\S]*class=\"juggernaut-brand\"[^>]*data-tauri-drag-region[\s\S]*class=\"window-drag-region\"[^>]*data-tauri-drag-region[\s\S]*class=\"sr-only\"[\s\S]*id=\"engine-status\"[\s\S]*id=\"mother-intent-source-indicator\"[\s\S]*id=\"app-menu-toggle\"/);
-  assert.match(html, /class=\"juggernaut-shell-head\"[^>]*role=\"toolbar\"[\s\S]*class=\"juggernaut-shell-brand\"[\s\S]*class=\"juggernaut-shell-wordmark\">Canvas</);
+  assert.match(html, /class=\"juggernaut-shell-chrome\"[\s\S]*id=\"action-grid\"[\s\S]*id=\"custom-tool-dock\"[\s\S]*class=\"juggernaut-shell-head\"[\s\S]*id=\"top-metrics\"[\s\S]*id=\"juggernaut-export-psd\"/);
+  assert.match(html, /class=\"brand-strip\"[^>]*role=\"toolbar\"[\s\S]*class=\"juggernaut-brand\"[^>]*data-tauri-drag-region[\s\S]*class=\"window-drag-region\"[^>]*data-tauri-drag-region[\s\S]*id=\"session-tab-strip\"[\s\S]*id=\"session-tab-list\"[\s\S]*id=\"session-tab-open\"[\s\S]*id=\"session-tab-new\"[\s\S]*id=\"session-tab-design-review\"[\s\S]*class=\"sr-only\"[\s\S]*id=\"engine-status\"[\s\S]*id=\"mother-intent-source-indicator\"[\s\S]*id=\"app-menu-toggle\"/);
+  assert.match(html, /class=\"juggernaut-shell-head\"[^>]*aria-hidden=\"true\"[\s\S]*class=\"juggernaut-shell-brand\"[\s\S]*class=\"juggernaut-shell-wordmark\">Canvas</);
   assert.match(html, /id=\"session-tab-list\"[^>]*role=\"tablist\"/);
   assert.match(html, /id=\"session-tab-open\"/);
   assert.match(html, /id=\"session-tab-new\"/);
+  assert.match(html, /id=\"session-tab-design-review\"/);
   assert.match(html, /id=\"top-metrics\"[^>]*class=\"top-metrics hidden\"/);
   assert.match(html, /id=\"juggernaut-selection-status\"[^>]*class=\"sr-only\"/);
   assert.match(html, /class=\"brand-actions juggernaut-shell-actions\"[^>]*role=\"group\"[\s\S]*id=\"juggernaut-export-psd\"/);

@@ -92,7 +92,7 @@ test("busy active tabs block tab switching with the implemented v1 reasons", () 
   );
   assert.match(
     app,
-    /async function activateTab\(tabId, \{ spawnEngine = true, reason = "tab_activate" \} = \{\}\) \{[\s\S]*const blockReason = currentTabSwitchBlockReason\(\);[\s\S]*showToast\(currentTabSwitchBlockMessage\(blockReason\), "tip", 2200\);[\s\S]*return \{ ok: false, reason: blockReason, activeTabId: state\.activeTabId \|\| null, tabs: listTabs\(\) \};/
+    /async function activateTab\(tabId, \{ spawnEngine = false, reason = "tab_activate" \} = \{\}\) \{[\s\S]*const blockReason = currentTabSwitchBlockReason\(\);[\s\S]*showToast\(currentTabSwitchBlockMessage\(blockReason\), "tip", 2200\);[\s\S]*return \{ ok: false, reason: blockReason, activeTabId: state\.activeTabId \|\| null, tabs: listTabs\(\) \};/
   );
   assert.match(
     app,
