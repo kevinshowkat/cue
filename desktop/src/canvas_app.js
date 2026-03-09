@@ -118,6 +118,8 @@ const COMMUNICATION_MARK_MAX_POINTS = 1024;
 const COMMUNICATION_STATE_CHANGED_EVENT = "juggernaut:communication-state-changed";
 const COMMUNICATION_REVIEW_REQUESTED_EVENT = "juggernaut:design-review-requested";
 const COMMUNICATION_PROPOSAL_TRAY_EVENT = "juggernaut:communication-proposal-tray-changed";
+const DESIGN_REVIEW_BOOTSTRAP_STATE_EVENT = "juggernaut:design-review-state";
+const DESIGN_REVIEW_BOOTSTRAP_TRAY_ID = "design-review-tray";
 const COMMUNICATION_MARK_STROKE = "rgba(255, 94, 190, 0.96)";
 const COMMUNICATION_REGION_ACTIVE = "rgba(100, 210, 255, 0.94)";
 const COMMUNICATION_REGION_IDLE = "rgba(100, 210, 255, 0.34)";
@@ -1678,22 +1680,76 @@ const openrouterOnboardingState = {
   transitionTimer: null,
 };
 
+let communicationReviewBootstrapBridgeBound = false;
+
+function normalizeCommunicationProposalSlotStatus(rawStatus = "") {
+  const value = String(rawStatus || "").trim().toLowerCase();
+  if (value === "queued" || value === "idle" || value === "starting" || value === "capturing" || value === "warming") {
+    return "preparing";
+  }
+  if (value === "planning") return "planning";
+  if (value === "preview_pending") return "preview_pending";
+  if (value === "preview_running" || value === "rendering") return "preview_running";
+  if (
+    value === "ready" ||
+    value === "failed" ||
+    value === "hidden" ||
+    value === "preparing" ||
+    value === "skeleton"
+  ) {
+    return value || "skeleton";
+  }
+  return "skeleton";
+}
+
+function communicationProposalSlotIsPending(status = "") {
+  const normalized = normalizeCommunicationProposalSlotStatus(status);
+  return normalized !== "ready" && normalized !== "failed" && normalized !== "hidden";
+}
+
+function communicationProposalDefaultLabel(index = 0, status = "skeleton") {
+  const normalized = normalizeCommunicationProposalSlotStatus(status);
+  if (normalized === "preparing") return "Preparing";
+  if (normalized === "planning") return "Planning";
+  if (normalized === "preview_pending") return "Preview";
+  if (normalized === "preview_running") return "Rendering";
+  return `Proposal ${Math.max(0, Number(index) || 0) + 1}`;
+}
+
+function communicationProposalDefaultTitle(status = "skeleton") {
+  const normalized = normalizeCommunicationProposalSlotStatus(status);
+  if (normalized === "preparing") return "Preparing review context";
+  if (normalized === "planning") return "Planning actions";
+  if (normalized === "preview_pending") return "Holding preview slots";
+  if (normalized === "preview_running") return "Rendering previews";
+  if (normalized === "ready") return "Proposal ready";
+  if (normalized === "failed") return "Review failed";
+  return "Review warming up";
+}
+
+function communicationProposalDefaultCopy(status = "skeleton") {
+  const normalized = normalizeCommunicationProposalSlotStatus(status);
+  if (normalized === "preparing") return "Capturing the visible canvas and any marks.";
+  if (normalized === "planning") return "Ranking action-first edit directions.";
+  if (normalized === "preview_pending") return "Preview renders will appear here as they start.";
+  if (normalized === "preview_running") return "Preview renders are in flight.";
+  if (normalized === "failed") return "The review preview could not be prepared.";
+  return "Waiting for planner and previews.";
+}
+
 function createCommunicationProposalSlot(index = 0, slot = {}) {
   const slotIndex = Math.max(0, Number(index) || 0);
-  const status = (() => {
-    const value = String(slot?.status || "").trim().toLowerCase();
-    if (value === "ready" || value === "failed" || value === "hidden") return value;
-    return "skeleton";
-  })();
+  const status = normalizeCommunicationProposalSlotStatus(slot?.status || "");
   return {
     slotId: String(slot?.slotId || `communication-slot-${slotIndex + 1}`).trim() || `communication-slot-${slotIndex + 1}`,
     index: slotIndex,
     status,
-    label: String(slot?.label || `Proposal ${slotIndex + 1}`).trim() || `Proposal ${slotIndex + 1}`,
-    title: String(slot?.title || (status === "failed" ? "Preview failed" : "Review warming up")).trim() ||
-      (status === "failed" ? "Preview failed" : "Review warming up"),
-    copy: String(slot?.copy || slot?.previewBrief || slot?.why || "Waiting for planner and previews.").trim() ||
-      "Waiting for planner and previews.",
+    label: String(slot?.label || communicationProposalDefaultLabel(slotIndex, status)).trim() ||
+      communicationProposalDefaultLabel(slotIndex, status),
+    title: String(slot?.title || communicationProposalDefaultTitle(status)).trim() ||
+      communicationProposalDefaultTitle(status),
+    copy: String(slot?.copy || slot?.previewBrief || slot?.why || communicationProposalDefaultCopy(status)).trim() ||
+      communicationProposalDefaultCopy(status),
     imageId: slot?.imageId ? String(slot.imageId) : null,
     actionType: slot?.actionType ? String(slot.actionType) : null,
     targetRegionId: slot?.targetRegionId ? String(slot.targetRegionId) : null,
@@ -1719,6 +1775,7 @@ function createFreshCommunicationState() {
       ),
     },
     reviewRequestSeq: 0,
+    lastReviewRequestedAt: 0,
   };
 }
 
@@ -14801,6 +14858,7 @@ function motherV2IntentRequiredImageIds() {
 }
 
 function motherV2VisionReadyForIntent({ schedule = true } = {}) {
+  void schedule;
   const requiredIds = motherV2IntentRequiredImageIds();
   const missingIds = [];
   for (const imageId of requiredIds) {
@@ -14809,7 +14867,6 @@ function motherV2VisionReadyForIntent({ schedule = true } = {}) {
     const desc = typeof item.visionDesc === "string" ? item.visionDesc.trim() : "";
     if (desc) continue;
     missingIds.push(String(imageId));
-    if (schedule) scheduleVisionDescribe(item.path, { priority: true, fallback: true });
   }
   return {
     requiredIds,
@@ -23154,6 +23211,56 @@ function buildCommunicationBridgeSnapshot() {
   };
 }
 
+function buildCommunicationReviewPendingSlots({ overallStatus = "preparing" } = {}) {
+  const normalized = normalizeCommunicationProposalSlotStatus(overallStatus);
+  let slotStatuses = ["preparing", "planning", "preview_pending"];
+  if (normalized === "planning") {
+    slotStatuses = ["planning", "planning", "preview_pending"];
+  } else if (normalized === "preview_running" || normalized === "ready") {
+    slotStatuses = ["planning", "preview_running", "preview_running"];
+  } else if (normalized === "failed") {
+    slotStatuses = ["failed", "failed", "failed"];
+  }
+  return Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) =>
+    createCommunicationProposalSlot(index, {
+      status: slotStatuses[index] || slotStatuses[slotStatuses.length - 1] || "skeleton",
+    })
+  );
+}
+
+function buildCommunicationProposalSlotsFromReviewState(reviewState = {}) {
+  const normalizedState = reviewState && typeof reviewState === "object" ? reviewState : {};
+  const overallStatus = normalizeCommunicationProposalSlotStatus(normalizedState.status || "preparing");
+  const rawSlots = Array.isArray(normalizedState.slots) ? normalizedState.slots : [];
+  if (!rawSlots.length) return buildCommunicationReviewPendingSlots({ overallStatus });
+  return Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) => {
+    const slot = rawSlots[index] || {};
+    const proposal = slot?.proposal && typeof slot.proposal === "object" ? slot.proposal : null;
+    const status = normalizeCommunicationProposalSlotStatus(slot?.status || overallStatus);
+    return createCommunicationProposalSlot(index, {
+      status,
+      label: slot?.rank ? `Proposal ${slot.rank}` : null,
+      title: proposal?.label || slot?.label || communicationProposalDefaultTitle(status),
+      copy: slot?.error || proposal?.why || communicationProposalDefaultCopy(status),
+      imageId: proposal?.primaryImageId || null,
+      actionType: proposal?.actionType || null,
+      targetRegionId: proposal?.targetRegionId || null,
+      previewStatus: slot?.status || normalizedState.status || null,
+    });
+  });
+}
+
+function suppressBootstrapDesignReviewTray() {
+  if (typeof document === "undefined") return false;
+  const tray = document.getElementById(DESIGN_REVIEW_BOOTSTRAP_TRAY_ID);
+  if (!tray) return false;
+  tray.classList.add("hidden");
+  tray.hidden = true;
+  tray.style.display = "none";
+  tray.setAttribute("aria-hidden", "true");
+  return true;
+}
+
 function setCommunicationProposalTray(next = {}, { source = "review_runtime" } = {}) {
   const tray = state.communication.proposalTray || createFreshCommunicationState().proposalTray;
   const anchor = next?.anchor && typeof next.anchor === "object" ? { ...next.anchor } : resolveCommunicationReviewAnchor();
@@ -23181,6 +23288,8 @@ function hideCommunicationProposalTray({ preserveAnchor = true, source = "ui" } 
   if (!preserveAnchor) {
     tray.anchor = null;
     tray.requestId = null;
+  } else if (source === "communication_tray_close") {
+    tray.requestId = null;
   }
   state.communication.proposalTray = tray;
   renderCommunicationChrome();
@@ -23203,8 +23312,10 @@ function renderCommunicationProposalTray() {
   if (!visible) return;
   const fragment = document.createDocumentFragment();
   for (const slot of tray.slots) {
+    if (slot.status === "hidden") continue;
+    const pending = communicationProposalSlotIsPending(slot.status);
     const card = document.createElement("div");
-    card.className = `communication-proposal-slot ${slot.status === "skeleton" ? "is-skeleton" : ""} ${slot.status === "failed" ? "is-failed" : ""}`.trim();
+    card.className = `communication-proposal-slot ${pending ? "is-skeleton" : ""} ${slot.status === "failed" ? "is-failed" : ""}`.trim();
     card.dataset.slotIndex = String(slot.index);
     card.dataset.slotState = String(slot.status || "skeleton");
     card.setAttribute("role", "listitem");
@@ -23243,12 +23354,43 @@ function renderCommunicationChrome() {
   }
 }
 
+function syncCommunicationProposalTrayFromReviewState(reviewState = {}, { source = "review_runtime_state" } = {}) {
+  suppressBootstrapDesignReviewTray();
+  const tray = state.communication?.proposalTray || createFreshCommunicationState().proposalTray;
+  if (!tray.visible && !tray.requestId) return null;
+  const normalizedState = reviewState && typeof reviewState === "object" ? reviewState : {};
+  const rawSlots = Array.isArray(normalizedState.slots) ? normalizedState.slots : [];
+  const rawStatus = String(normalizedState.status || "").trim().toLowerCase();
+  if (!rawSlots.length && !rawStatus) return null;
+  if (!rawSlots.length && rawStatus === "idle") return null;
+  return setCommunicationProposalTray(
+    {
+      visible: true,
+      requestId: tray.requestId || null,
+      source,
+      anchor: tray.anchor || resolveCommunicationReviewAnchor(),
+      slots: buildCommunicationProposalSlotsFromReviewState(normalizedState),
+    },
+    { source }
+  );
+}
+
 function requestCommunicationDesignReview({ source = "titlebar" } = {}) {
   const anchor = resolveCommunicationReviewAnchor();
   if (!anchor) {
     showToast("Add a mark or Magic Select region first.", "tip", 1800);
     return { ok: false, reason: "missing_anchor" };
   }
+  suppressBootstrapDesignReviewTray();
+  const now = Date.now();
+  const tray = state.communication.proposalTray || createFreshCommunicationState().proposalTray;
+  const lastRequestedAt = Number(state.communication.lastReviewRequestedAt) || 0;
+  const activeRequestId = tray.requestId ? String(tray.requestId) : null;
+  if (tray.visible && activeRequestId && now - lastRequestedAt < 450) {
+    const payload = buildCommunicationReviewPayload({ requestId: activeRequestId, source });
+    return { ok: true, requestId: activeRequestId, payload, deduped: true };
+  }
+  state.communication.lastReviewRequestedAt = now;
   const requestId = `design-review-${Date.now()}-${Math.max(1, ++state.communication.reviewRequestSeq)}`;
   setCommunicationProposalTray(
     {
@@ -23256,9 +23398,7 @@ function requestCommunicationDesignReview({ source = "titlebar" } = {}) {
       requestId,
       source,
       anchor,
-      slots: Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) =>
-        createCommunicationProposalSlot(index, {})
-      ),
+      slots: buildCommunicationReviewPendingSlots({ overallStatus: "preparing" }),
     },
     { source }
   );
@@ -23269,7 +23409,64 @@ function requestCommunicationDesignReview({ source = "titlebar" } = {}) {
     communication: payload.communication,
     context: payload,
   });
-  return { ok: true, requestId, payload };
+  return { ok: true, requestId, payload, deduped: false };
+}
+
+function suppressNextDesignReviewTitlebarClick() {
+  const button = els.sessionTabDesignReview;
+  if (!button) return;
+  button.disabled = true;
+  setTimeout(() => {
+    if (!els.sessionTabDesignReview) return;
+    els.sessionTabDesignReview.disabled = false;
+  }, 0);
+}
+
+function startBootstrapDesignReview(request = null, { source = "titlebar" } = {}) {
+  const bridge = typeof window !== "undefined" ? window.__JUGGERNAUT_REVIEW__ : null;
+  if (!bridge || typeof bridge.startReviewFromShell !== "function") return false;
+  Promise.resolve()
+    .then(() => bridge.startReviewFromShell())
+    .catch((error) => {
+      console.error("Design review bootstrap failed:", error);
+      const detail = normalizeErrorMessage(error, "Design review failed to start.");
+      setCommunicationProposalTray(
+        {
+          visible: true,
+          requestId: request?.requestId ? String(request.requestId) : state.communication?.proposalTray?.requestId || null,
+          source: `${source}_bridge_failed`,
+          anchor: state.communication?.proposalTray?.anchor || resolveCommunicationReviewAnchor(),
+          slots: Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) =>
+            createCommunicationProposalSlot(index, index === 0
+              ? {
+                  status: "failed",
+                  title: "Review failed",
+                  copy: detail,
+                }
+              : { status: "hidden" })
+          ),
+        },
+        { source: `${source}_bridge_failed` }
+      );
+    });
+  return true;
+}
+
+function triggerCommunicationDesignReviewFromTitlebar({ source = "titlebar" } = {}) {
+  const request = requestCommunicationDesignReview({ source });
+  if (!request?.ok || request?.deduped) return request;
+  startBootstrapDesignReview(request, { source });
+  return request;
+}
+
+function bindCommunicationReviewBootstrapBridge() {
+  if (communicationReviewBootstrapBridgeBound || typeof window === "undefined") return;
+  communicationReviewBootstrapBridgeBound = true;
+  window.addEventListener(DESIGN_REVIEW_BOOTSTRAP_STATE_EVENT, (event) => {
+    syncCommunicationProposalTrayFromReviewState(event?.detail || null, {
+      source: "design_review_bootstrap_state",
+    });
+  });
 }
 
 function dropCommunicationStateForImageId(imageId) {
@@ -24837,7 +25034,6 @@ function setCanvasMode(_mode) {
   hideMarkPanel();
   chooseSpawnNodes();
   renderFilmstrip();
-  scheduleVisionDescribeAll();
   renderSelectionMeta();
   scheduleVisualPromptWrite();
   motherIdleSyncFromInteraction({ userInteraction: false });
@@ -28434,9 +28630,6 @@ async function setActiveImage(id, { preserveSelection = false, source = "system"
   renderQuickActions();
   chooseSpawnNodes();
   await setEngineActiveImage(item.path);
-  if (!item.visionDesc) {
-    scheduleVisionDescribe(item.path, { priority: true, fallback: true });
-  }
   try {
     item.img = await loadImage(item.path);
     item.width = item.img?.naturalWidth || null;
@@ -28474,10 +28667,6 @@ function addImage(item, { select = false, deferAlwaysOnVision = false, deferAmbi
   }
   ensureTimelineNodeForImageItem(item);
   appendFilmstripThumb(item);
-  if (state.canvasMode === "multi") {
-    // Multi-canvas is the "working set"; keep HUD descriptions available for all tiles.
-    scheduleVisionDescribe(item.path, { fallback: true });
-  }
   if (item.receiptPath && !item.receiptMetaChecked) {
     ensureReceiptMeta(item).catch(() => {});
   }
@@ -28728,7 +28917,6 @@ async function replaceImageInPlace(
       console.error(err);
     }
     await setEngineActiveImage(item.path);
-    if (!item.visionDesc) scheduleVisionDescribe(item.path, { priority: true, fallback: true });
     renderSelectionMeta();
     chooseSpawnNodes();
     renderHudReadout();
@@ -29098,7 +29286,6 @@ async function importLocalPathsAtCanvasPoint(
   let failed = 0;
   let lastErr = null;
   const importedIds = [];
-  const importedVisionPaths = [];
   for (let idx = 0; idx < importable.length; idx += 1) {
     const src = importable[idx];
     try {
@@ -29132,7 +29319,6 @@ async function importLocalPathsAtCanvasPoint(
         }
       );
       importedIds.push(artifactId);
-      importedVisionPaths.push(dest);
       ok += 1;
     } catch (err) {
       failed += 1;
@@ -29187,21 +29373,12 @@ async function importLocalPathsAtCanvasPoint(
     String(state.motherIdle?.phase || "") === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING;
   markAlwaysOnVisionDirty("image_add_batch");
   if (deferUploadVision) {
-    const burstPaths = importedVisionPaths.slice();
     setTimeout(() => {
       if (!state.images.length) return;
       scheduleAlwaysOnVision();
-      scheduleVisionDescribeBurst(burstPaths, {
-        priority: true,
-        maxConcurrent: 1,
-      });
     }, MOTHER_V2_UPLOAD_VISION_DEFER_MS);
   } else {
     scheduleAlwaysOnVision();
-    scheduleVisionDescribeBurst(importedVisionPaths, {
-      priority: true,
-      maxConcurrent: UPLOAD_DESCRIBE_PRIORITY_BURST,
-    });
   }
   const suffix = failed ? ` (${failed} failed)` : "";
   setStatus(`Engine: imported ${ok} photo${ok === 1 ? "" : "s"}${suffix}`, failed > 0);
@@ -31987,7 +32164,6 @@ async function spawnEngine() {
     const active = getActiveImage();
     if (active?.path) {
       await invoke("write_pty", { data: `${PTY_COMMANDS.USE} ${active.path}\n` }).catch(() => {});
-      if (!active.visionDesc) scheduleVisionDescribe(active.path, { priority: true, fallback: true });
     }
     processDescribeQueue();
     setStatus(`Engine: started (${state.engineLaunchMode})`);
@@ -38670,9 +38846,22 @@ function installSessionTabStripUi() {
 
   if (els.sessionTabDesignReview && els.sessionTabDesignReview.dataset.bound !== "1") {
     els.sessionTabDesignReview.dataset.bound = "1";
+    els.sessionTabDesignReview.addEventListener("pointerup", (event) => {
+      if (typeof event?.button === "number" && event.button !== 0) return;
+      bumpInteraction();
+      suppressNextDesignReviewTitlebarClick();
+      triggerCommunicationDesignReviewFromTitlebar({ source: "titlebar_pointer" });
+    });
+    els.sessionTabDesignReview.addEventListener("keydown", (event) => {
+      const key = String(event?.key || "");
+      if (key !== "Enter" && key !== " " && key !== "Spacebar") return;
+      bumpInteraction();
+      suppressNextDesignReviewTitlebarClick();
+      triggerCommunicationDesignReviewFromTitlebar({ source: "titlebar_keyboard" });
+    });
     els.sessionTabDesignReview.addEventListener("click", () => {
       bumpInteraction();
-      requestCommunicationDesignReview({ source: "titlebar" });
+      triggerCommunicationDesignReviewFromTitlebar({ source: "titlebar" });
     });
   }
 }
@@ -40225,6 +40414,7 @@ async function boot() {
   requestRender();
 }
 
+bindCommunicationReviewBootstrapBridge();
 exposeJuggernautShellHooks();
 syncJuggernautShellState();
 
