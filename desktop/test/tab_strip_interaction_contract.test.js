@@ -24,6 +24,11 @@ test("Titlebar tab strip binds live DOM ids and renders from the tab snapshot", 
 test("Titlebar tab strip routes activate, close, open, new, and design review actions", () => {
   assert.match(app, /els\.sessionTabList\.addEventListener\("click",\s*\(event\)\s*=>\s*{/);
   assert.match(app, /closest\("\.session-tab-title"\)/);
+  assert.match(app, /const isActive = String\(item\?\.dataset\?\.active \|\| ""\)\.trim\(\) === "true";/);
+  assert.match(
+    app,
+    /if \(!isActive\) \{[\s\S]*void activateTab\(tabId,\s*\{\s*spawnEngine:\s*true,\s*reason:\s*"titlebar_tab_click"\s*\}\)\.catch/s
+  );
   assert.match(app, /startSessionTabRename\(tabId\);/);
   assert.match(app, /closest\("\.session-tab-close"\)/);
   assert.match(app, /void closeTab\(tabId\)\.catch/);
@@ -38,6 +43,7 @@ test("Titlebar tab strip routes activate, close, open, new, and design review ac
 
 test("Titlebar tab strip supports inline rename and review-state badges", () => {
   assert.match(app, /function startSessionTabRename\(tabId = ""\)/);
+  assert.match(app, /if \(normalizedTabId !== String\(state\.activeTabId \|\| ""\)\.trim\(\)\) return false;/);
   assert.match(app, /function commitSessionTabRename\(tabId = "", rawTitle = sessionTabRenameState\.draft\)/);
   assert.match(app, /className = "session-tab-review-state"/);
   assert.match(app, /className = "session-tab-title-input"/);

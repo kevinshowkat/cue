@@ -31207,6 +31207,7 @@ function resetSessionTabRenameState({ render = false } = {}) {
 function startSessionTabRename(tabId = "") {
   const normalizedTabId = String(tabId || "").trim();
   if (!normalizedTabId) return false;
+  if (normalizedTabId !== String(state.activeTabId || "").trim()) return false;
   const record = tabbedSessions.getTab(normalizedTabId) || null;
   if (!record) return false;
   sessionTabRenameState = {
@@ -38603,6 +38604,15 @@ function installSessionTabStripUi() {
         const item = title.closest(".session-tab-item");
         const tabId = String(item?.dataset?.tabId || "").trim();
         if (!tabId) return;
+        const isActive = String(item?.dataset?.active || "").trim() === "true";
+        if (!isActive) {
+          bumpInteraction();
+          void activateTab(tabId, { spawnEngine: true, reason: "titlebar_tab_click" }).catch((err) => {
+            console.error(err);
+            showToast(err?.message || "Could not switch tabs.", "error", 2600);
+          });
+          return;
+        }
         bumpInteraction({ semantic: false });
         startSessionTabRename(tabId);
         return;

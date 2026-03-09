@@ -47,6 +47,13 @@ function extractFunctionSource(name) {
   throw new Error(`Could not extract function ${name}`);
 }
 
+function instantiateFunction(name, deps = {}) {
+  const source = extractFunctionSource(name);
+  const keys = Object.keys(deps);
+  const values = Object.values(deps);
+  return new Function(...keys, `return (${source});`)(...values);
+}
+
 test("ensureRun provisions the current blank tab instead of always creating another tab", () => {
   assert.equal(ensureRunChunk.includes("const activeTabId = String(state.activeTabId || \"\").trim();"), true);
   assert.equal(ensureRunChunk.includes("const activeTab = activeTabId ? tabbedSessions.getTab(activeTabId) : null;"), true);
@@ -92,4 +99,36 @@ test("tab activation is lazy and validates engine binding before reusing a PTY",
 test("boot creates the initial run without showing the new-tab toast", () => {
   assert.equal(bootChunk.includes('await createRun({ announce: false, source: "boot" });'), true);
   assert.equal(app.includes(createRunSignature), true);
+});
+
+test("tab rename can only start for the active tab", () => {
+  const state = {
+    activeTabId: "tab-active",
+  };
+  let renderCalls = 0;
+  const startSessionTabRename = instantiateFunction("startSessionTabRename", {
+    state,
+    tabbedSessions: {
+      getTab(tabId) {
+        if (tabId !== "tab-active") return { tabId, label: "Inactive tab" };
+        return { tabId, label: "Active tab" };
+      },
+    },
+    sessionTabDisplayLabel: (record, fallback) => String(record?.label || fallback || ""),
+    DEFAULT_UNTITLED_TAB_TITLE: "Untitled Canvas",
+    renderSessionTabStrip() {
+      renderCalls += 1;
+    },
+    sessionTabRenameState: {
+      tabId: null,
+      draft: "",
+      focusRequested: false,
+    },
+  });
+
+  assert.equal(startSessionTabRename("tab-inactive"), false);
+  assert.equal(renderCalls, 0);
+
+  assert.equal(startSessionTabRename("tab-active"), true);
+  assert.equal(renderCalls, 1);
 });
