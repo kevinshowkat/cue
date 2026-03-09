@@ -49,9 +49,12 @@ const MENU_CANVAS_SETTINGS: &str = "canvas_settings";
 const NATIVE_MENU_ACTION_EVENT: &str = "native-menu-action";
 const DESIGN_REVIEW_PLANNER_MODEL: &str = "gpt-5.4";
 const DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL: &str = "openai/gpt-5.4";
+// Provider-facing Gemini model id for the final apply path (marketed as Nano Banana 2).
+const DESIGN_REVIEW_APPLY_MODEL: &str = "gemini-3.1-flash-image-preview";
 const REVIEW_OPENAI_RESPONSES_WS_TRANSPORT: &str = "responses_websocket";
 const REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT: &str = "responses_http_fallback";
 const REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT: &str = "chat_completions";
+const REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT: &str = "generate_content";
 // GPT-5.4 planner responses can pause for longer stretches between websocket
 // events on image-heavy reviews; keep the transport budget loose enough to
 // avoid false timeouts without turning real hangs into multi-minute waits.
@@ -3237,7 +3240,7 @@ fn review_google_extract_images(
             }
             let bytes = BASE64_STANDARD
                 .decode(data.trim().as_bytes())
-                .map_err(|e| format!("Google preview image decode failed: {e}"))?;
+                .map_err(|e| format!("Google image decode failed: {e}"))?;
             let mime = inline
                 .get("mimeType")
                 .or_else(|| inline.get("mime_type"))
@@ -3346,6 +3349,454 @@ fn review_extract_openrouter_images(
         }
     }
     Ok(out)
+}
+
+fn review_apply_image_path(value: Option<&serde_json::Value>) -> Option<String> {
+    value.and_then(|entry| {
+        entry
+            .get("path")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string())
+            .or_else(|| entry.as_str().map(|value| value.to_string()))
+    })
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+}
+
+fn review_apply_reference_paths(value: Option<&serde_json::Value>) -> Vec<String> {
+    value.and_then(|entry| entry.as_array())
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|entry| review_apply_image_path(Some(&entry)))
+        .collect()
+}
+
+fn review_google_inline_image_part(path: &str) -> Result<serde_json::Value, String> {
+    let bytes = std::fs::read(path).map_err(|error| format!("{path}: {error}"))?;
+    Ok(serde_json::json!({
+        "inlineData": {
+            "mimeType": review_mime_type_from_path(Path::new(path)),
+            "data": BASE64_STANDARD.encode(bytes),
+        }
+    }))
+}
+
+fn review_build_google_apply_parts(
+    prompt: &str,
+    target_image_path: &str,
+    reference_image_paths: &[String],
+) -> Result<Vec<serde_json::Value>, String> {
+    let mut parts = vec![
+        serde_json::json!({ "text": prompt }),
+        serde_json::json!({ "text": "targetImage (editable image to modify)" }),
+        review_google_inline_image_part(target_image_path)?,
+    ];
+    for (index, reference_path) in reference_image_paths.iter().enumerate() {
+        parts.push(serde_json::json!({
+            "text": format!("referenceImages[{index}] (guidance only; do not edit directly)"),
+        }));
+        parts.push(review_google_inline_image_part(reference_path)?);
+    }
+    Ok(parts)
+}
+
+fn review_normalize_apply_model(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return DESIGN_REVIEW_APPLY_MODEL.to_string();
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower == "gemini nano banana 2" || lower == "nano banana 2" {
+        return DESIGN_REVIEW_APPLY_MODEL.to_string();
+    }
+    let without_models = trimmed
+        .strip_prefix("models/")
+        .map(str::trim)
+        .unwrap_or(trimmed);
+    let without_google = without_models
+        .strip_prefix("google/")
+        .map(str::trim)
+        .unwrap_or(without_models);
+    if without_google.eq_ignore_ascii_case(DESIGN_REVIEW_APPLY_MODEL) {
+        return DESIGN_REVIEW_APPLY_MODEL.to_string();
+    }
+    without_google.to_string()
+}
+
+fn review_apply_debug_payload(
+    provider: &str,
+    requested_model: &str,
+    normalized_model: &str,
+    transport: &str,
+    prompt: &str,
+    target_image_path: &str,
+    reference_image_paths: &[String],
+    output_path: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "provider": provider,
+        "requestedModel": requested_model,
+        "normalizedModel": normalized_model,
+        "transport": transport,
+        "prompt": prompt,
+        "targetImagePath": target_image_path,
+        "referenceImagePaths": reference_image_paths,
+        "outputPath": output_path,
+        "route": {
+            "kind": "apply",
+            "provider": provider,
+            "requestedModel": requested_model,
+            "normalizedModel": normalized_model,
+            "model": requested_model,
+            "apiPlan": {
+                "primaryTransport": transport,
+            },
+        },
+    })
+}
+
+fn review_apply_error(
+    message: &str,
+    provider: &str,
+    requested_model: &str,
+    normalized_model: &str,
+    transport: &str,
+    prompt: &str,
+    target_image_path: &str,
+    reference_image_paths: &[String],
+    output_path: &str,
+) -> String {
+    serde_json::json!({
+        "message": message,
+        "debugInfo": review_apply_debug_payload(
+            provider,
+            requested_model,
+            normalized_model,
+            transport,
+            prompt,
+            target_image_path,
+            reference_image_paths,
+            output_path,
+        ),
+        "failure": {
+            "message": message,
+        },
+    })
+    .to_string()
+}
+
+fn review_format_apply_http_error(
+    provider: &str,
+    normalized_model: &str,
+    transport: &str,
+    status: u16,
+    body: &str,
+) -> String {
+    let detail = review_extract_error_detail(body);
+    if detail.is_empty() {
+        return format!(
+            "Google final apply request failed (provider={provider}, normalized model={normalized_model}, transport={transport}, status={status})."
+        );
+    }
+    format!(
+        "Google final apply request failed (provider={provider}, normalized model={normalized_model}, transport={transport}, status={status}): {detail}"
+    )
+}
+
+fn run_design_review_apply_request(
+    request: &serde_json::Value,
+    vars: &HashMap<String, String>,
+) -> Result<serde_json::Value, String> {
+    let provider_pref = request
+        .get("provider")
+        .and_then(|value| value.as_str())
+        .unwrap_or("google")
+        .trim()
+        .to_ascii_lowercase();
+    let requested_model = request
+        .get("requestedModel")
+        .and_then(|value| value.as_str())
+        .or_else(|| request.get("model").and_then(|value| value.as_str()))
+        .unwrap_or(DESIGN_REVIEW_APPLY_MODEL)
+        .trim()
+        .to_string();
+    let normalized_model = review_normalize_apply_model(&requested_model);
+    let prompt = request
+        .get("prompt")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let target_image_path = review_apply_image_path(request.get("targetImage")).unwrap_or_default();
+    let mut reference_image_paths = review_apply_reference_paths(request.get("referenceImages"));
+    let output_path = request
+        .get("outputPath")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    reference_image_paths.retain(|path| path != &target_image_path);
+    let mut deduped_reference_image_paths = Vec::new();
+    for path in reference_image_paths {
+        if deduped_reference_image_paths.iter().any(|existing| existing == &path) {
+            continue;
+        }
+        deduped_reference_image_paths.push(path);
+    }
+    let reference_image_paths = deduped_reference_image_paths;
+
+    if provider_pref != "google" && provider_pref != "auto" {
+        return Err(review_apply_error(
+            &format!(
+                "Design review final apply only supports the Google Gemini transport right now (requested provider={provider_pref})."
+            ),
+            "google",
+            &requested_model,
+            &normalized_model,
+            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &prompt,
+            &target_image_path,
+            &reference_image_paths,
+            &output_path,
+        ));
+    }
+    if prompt.is_empty() {
+        return Err(review_apply_error(
+            "design review apply prompt missing",
+            "google",
+            &requested_model,
+            &normalized_model,
+            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &prompt,
+            &target_image_path,
+            &reference_image_paths,
+            &output_path,
+        ));
+    }
+    if target_image_path.is_empty() {
+        return Err(review_apply_error(
+            "design review apply targetImage path missing",
+            "google",
+            &requested_model,
+            &normalized_model,
+            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &prompt,
+            &target_image_path,
+            &reference_image_paths,
+            &output_path,
+        ));
+    }
+    if output_path.is_empty() {
+        return Err(review_apply_error(
+            "design review apply outputPath missing",
+            "google",
+            &requested_model,
+            &normalized_model,
+            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &prompt,
+            &target_image_path,
+            &reference_image_paths,
+            &output_path,
+        ));
+    }
+
+    let Some(api_key) = review_first_non_empty(vars, &["GEMINI_API_KEY", "GOOGLE_API_KEY"]) else {
+        return Err(review_apply_error(
+            "No Google Gemini credentials are configured for design review final apply. Set GEMINI_API_KEY or GOOGLE_API_KEY.",
+            "google",
+            &requested_model,
+            &normalized_model,
+            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &prompt,
+            &target_image_path,
+            &reference_image_paths,
+            &output_path,
+        ));
+    };
+
+    let parts = review_build_google_apply_parts(
+        &prompt,
+        &target_image_path,
+        &reference_image_paths,
+    )
+    .map_err(|error| {
+        review_apply_error(
+            &format!("design review apply could not stage image inputs: {error}"),
+            "google",
+            &requested_model,
+            &normalized_model,
+            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &prompt,
+            &target_image_path,
+            &reference_image_paths,
+            &output_path,
+        )
+    })?;
+
+    let endpoint_base = review_first_non_empty(vars, &["GEMINI_API_BASE"])
+        .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string());
+    let endpoint = format!("{endpoint_base}/models/{normalized_model}:generateContent");
+    let payload = serde_json::json!({
+        "contents": [{
+            "role": "user",
+            "parts": parts,
+        }],
+        "generationConfig": {
+            "candidateCount": 1,
+            "responseModalities": ["IMAGE"],
+            "imageConfig": {
+                "imageSize": "2K",
+            },
+            "temperature": 0.2,
+        }
+    });
+    let client = Client::builder()
+        .timeout(Duration::from_secs(150))
+        .build()
+        .map_err(|error| {
+            review_apply_error(
+                &format!("design review apply client setup failed: {error}"),
+                "google",
+                &requested_model,
+                &normalized_model,
+                REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                &prompt,
+                &target_image_path,
+                &reference_image_paths,
+                &output_path,
+            )
+        })?;
+    let response = client
+        .post(endpoint)
+        .query(&[("key", api_key)])
+        .header("content-type", "application/json")
+        .json(&payload)
+        .send()
+        .map_err(|error| {
+            review_apply_error(
+                &format!("Google final apply request failed: {error}"),
+                "google",
+                &requested_model,
+                &normalized_model,
+                REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                &prompt,
+                &target_image_path,
+                &reference_image_paths,
+                &output_path,
+            )
+        })?;
+    let status = response.status();
+    let body = response.text().map_err(|error| {
+        review_apply_error(
+            &format!("Google final apply response read failed: {error}"),
+            "google",
+            &requested_model,
+            &normalized_model,
+            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &prompt,
+            &target_image_path,
+            &reference_image_paths,
+            &output_path,
+        )
+    })?;
+    if !status.is_success() {
+        return Err(review_apply_error(
+            &review_format_apply_http_error(
+                "google",
+                &normalized_model,
+                REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                status.as_u16(),
+                &body,
+            ),
+            "google",
+            &requested_model,
+            &normalized_model,
+            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &prompt,
+            &target_image_path,
+            &reference_image_paths,
+            &output_path,
+        ));
+    }
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
+    let images = review_google_extract_images(&parsed).map_err(|error| {
+        review_apply_error(
+            &format!("Google final apply image decode failed: {error}"),
+            "google",
+            &requested_model,
+            &normalized_model,
+            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &prompt,
+            &target_image_path,
+            &reference_image_paths,
+            &output_path,
+        )
+    })?;
+    if images.len() != 1 {
+        return Err(review_apply_error(
+            &format!(
+                "Google final apply must return exactly one image for targetImage, but returned {}.",
+                images.len()
+            ),
+            "google",
+            &requested_model,
+            &normalized_model,
+            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &prompt,
+            &target_image_path,
+            &reference_image_paths,
+            &output_path,
+        ));
+    }
+    let (bytes, mime_type) = images.into_iter().next().unwrap_or_default();
+    if let Some(parent) = Path::new(&output_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|error| {
+                review_apply_error(
+                    &format!("design review apply could not create output directory: {error}"),
+                    "google",
+                    &requested_model,
+                    &normalized_model,
+                    REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                    &prompt,
+                    &target_image_path,
+                    &reference_image_paths,
+                    &output_path,
+                )
+            })?;
+        }
+    }
+    std::fs::write(&output_path, bytes).map_err(|error| {
+        review_apply_error(
+            &format!("design review apply could not write output image: {error}"),
+            "google",
+            &requested_model,
+            &normalized_model,
+            REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+            &prompt,
+            &target_image_path,
+            &reference_image_paths,
+            &output_path,
+        )
+    })?;
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "provider": "google",
+        "requestedModel": requested_model,
+        "normalizedModel": normalized_model,
+        "model": normalized_model,
+        "transport": REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+        "prompt": prompt,
+        "targetImagePath": target_image_path,
+        "referenceImagePaths": reference_image_paths,
+        "outputPath": output_path,
+        "mimeType": mime_type,
+        "raw": parsed,
+    }))
 }
 
 fn run_design_review_planner_request(
@@ -3719,6 +4170,7 @@ fn run_design_review_provider_request_sync(
     let vars = collect_brood_env_snapshot();
     match kind.as_str() {
         "planner" | "upload_analysis" => run_design_review_planner_request(&request, &vars),
+        "apply" => run_design_review_apply_request(&request, &vars),
         "preview" => run_design_review_preview_request(&request, &vars),
         other => Err(format!(
             "unsupported design review provider request kind: {other}"
@@ -4374,17 +4826,21 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
         encode_flattened_psd_rgba, is_native_engine_placeholder, push_native_path_candidate,
-        resolve_existing_env_binary_path, review_build_openai_planner_payload,
+        resolve_existing_env_binary_path, review_build_google_apply_parts,
+        review_build_openai_planner_payload,
+        review_normalize_apply_model, run_design_review_apply_request,
         review_build_openai_planner_ws_event, review_format_planner_http_error,
         review_format_planner_http_error_for_transport, review_format_planner_remote_failure,
         review_format_planner_transport_timeout, review_normalize_planner_model,
         review_should_fallback_openai_ws_error, EngineProgramCandidate, ReviewPlannerRequestError,
-        DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL, DESIGN_REVIEW_PLANNER_MODEL,
+        DESIGN_REVIEW_APPLY_MODEL, DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL,
+        DESIGN_REVIEW_PLANNER_MODEL, REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
         REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT, REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
         REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT,
     };
@@ -4659,5 +5115,119 @@ mod tests {
         assert!(ws_message.contains("normalized model=gpt-5.4"));
         assert!(ws_message.contains("transport=responses_websocket"));
         assert!(ws_message.contains("stage=response.failed"));
+    }
+
+    #[test]
+    fn apply_model_normalization_maps_nano_banana_alias_to_provider_id() {
+        assert_eq!(
+            review_normalize_apply_model("Gemini Nano Banana 2"),
+            DESIGN_REVIEW_APPLY_MODEL
+        );
+        assert_eq!(
+            review_normalize_apply_model("models/gemini-3.1-flash-image-preview"),
+            DESIGN_REVIEW_APPLY_MODEL
+        );
+        assert_eq!(
+            review_normalize_apply_model("google/gemini-3.1-flash-image-preview"),
+            DESIGN_REVIEW_APPLY_MODEL
+        );
+    }
+
+    #[test]
+    fn google_apply_parts_label_target_and_reference_images() {
+        let target_path = temp_file_path("review-apply-target.png");
+        let reference_path = temp_file_path("review-apply-reference.png");
+        let _ = std::fs::remove_file(&target_path);
+        let _ = std::fs::remove_file(&reference_path);
+        std::fs::write(&target_path, [137, 80, 78, 71]).expect("write target png bytes");
+        std::fs::write(&reference_path, [137, 80, 78, 71]).expect("write reference png bytes");
+
+        let parts = review_build_google_apply_parts(
+            "Edit only targetImage. Use referenceImages[] as guidance only.",
+            &target_path.to_string_lossy(),
+            &[reference_path.to_string_lossy().to_string()],
+        )
+        .expect("build apply parts");
+
+        assert_eq!(parts[0].get("text").and_then(|value| value.as_str()), Some("Edit only targetImage. Use referenceImages[] as guidance only."));
+        assert_eq!(parts[1].get("text").and_then(|value| value.as_str()), Some("targetImage (editable image to modify)"));
+        assert_eq!(parts[3].get("text").and_then(|value| value.as_str()), Some("referenceImages[0] (guidance only; do not edit directly)"));
+        assert_eq!(
+            parts[2]
+                .pointer("/inlineData/mimeType")
+                .and_then(|value| value.as_str()),
+            Some("image/png")
+        );
+        assert_eq!(
+            parts[4]
+                .pointer("/inlineData/mimeType")
+                .and_then(|value| value.as_str()),
+            Some("image/png")
+        );
+
+        let _ = std::fs::remove_file(target_path);
+        let _ = std::fs::remove_file(reference_path);
+    }
+
+    #[test]
+    fn apply_request_rejects_unsupported_provider_with_shaped_debug_payload() {
+        let request = serde_json::json!({
+            "kind": "apply",
+            "provider": "openrouter",
+            "model": "Gemini Nano Banana 2",
+            "prompt": "Edit only targetImage.",
+            "targetImage": {
+                "path": "/tmp/review-apply-target.png"
+            },
+            "referenceImages": [{
+                "path": "/tmp/review-apply-ref.png"
+            }],
+            "outputPath": "/tmp/review-apply-output.png"
+        });
+        let error = run_design_review_apply_request(&request, &HashMap::new()).unwrap_err();
+        let parsed: serde_json::Value = serde_json::from_str(&error).expect("parse apply error envelope");
+
+        assert_eq!(
+            parsed
+                .pointer("/debugInfo/provider")
+                .and_then(|value| value.as_str()),
+            Some("google")
+        );
+        assert_eq!(
+            parsed
+                .pointer("/debugInfo/requestedModel")
+                .and_then(|value| value.as_str()),
+            Some("Gemini Nano Banana 2")
+        );
+        assert_eq!(
+            parsed
+                .pointer("/debugInfo/normalizedModel")
+                .and_then(|value| value.as_str()),
+            Some(DESIGN_REVIEW_APPLY_MODEL)
+        );
+        assert_eq!(
+            parsed
+                .pointer("/debugInfo/transport")
+                .and_then(|value| value.as_str()),
+            Some(REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT)
+        );
+        assert_eq!(
+            parsed
+                .pointer("/debugInfo/targetImagePath")
+                .and_then(|value| value.as_str()),
+            Some("/tmp/review-apply-target.png")
+        );
+        assert_eq!(
+            parsed
+                .pointer("/debugInfo/referenceImagePaths/0")
+                .and_then(|value| value.as_str()),
+            Some("/tmp/review-apply-ref.png")
+        );
+        assert_eq!(
+            parsed
+                .pointer("/debugInfo/outputPath")
+                .and_then(|value| value.as_str()),
+            Some("/tmp/review-apply-output.png")
+        );
     }
 }

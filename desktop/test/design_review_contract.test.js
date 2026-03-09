@@ -2,7 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  DESIGN_REVIEW_FINAL_APPLY_MODEL,
   buildDesignReviewRequest,
+  buildDesignReviewApplyPrompt,
+  buildDesignReviewApplyRequest,
   buildDesignReviewPlannerPrompt,
   createDesignReviewSkeletonSlots,
   parseDesignReviewPlannerResponse,
@@ -117,4 +120,151 @@ test("design review planner prompt stays compact, restores canvas-scope constrai
   assert.match(prompt, /"actionType": "short edit intent like remove_object, brighten_area, simplify_background"/);
   assert.doesNotMatch(prompt, /"requestId": "review-compact"/);
   assert.doesNotMatch(prompt, /"visibleCanvasRef": "\/tmp\/review-visible\.png"/);
+});
+
+test("design review apply prompt explicitly constrains edits to targetImage and guidance references only", () => {
+  const prompt = buildDesignReviewApplyPrompt({
+    request: {
+      requestId: "review-apply-1",
+      sessionId: "session-1",
+      primaryImageId: "img-target",
+      imageIdsInView: ["img-target", "img-ref"],
+      markIds: ["mark-1"],
+      activeRegionCandidateId: "region-1",
+      selectedImageIds: ["img-target"],
+      visibleCanvasContext: {
+        runDir: "/tmp/run-apply",
+        canvasMode: "single",
+        imageCount: 2,
+        activeImageId: "img-target",
+      },
+    },
+    proposal: {
+      label: "Tighten background",
+      actionType: "background_replace",
+      applyBrief: "Replace the background with a cleaner warm studio wall.",
+      targetRegion: {
+        markIds: ["mark-1"],
+        regionCandidateId: "region-1",
+        bounds: { x: 10, y: 12, width: 220, height: 260 },
+      },
+      negativeConstraints: ["Do not alter the subject pose", "Do not change clothing colors"],
+    },
+  });
+
+  assert.match(prompt, /Edit only targetImage\./);
+  assert.match(prompt, /Use referenceImages\[\] as guidance only/);
+  assert.match(prompt, /Return exactly one final rendered image for targetImage\./);
+  assert.match(prompt, /"requestSnapshot"/);
+  assert.match(prompt, /"label": "Tighten background"/);
+  assert.match(prompt, /"negativeConstraints": \[/);
+});
+
+test("design review apply request keeps one target image and de-duplicates references", () => {
+  const applyRequest = buildDesignReviewApplyRequest({
+    request: {
+      requestId: "review-apply-2",
+      sessionId: "session-2",
+      primaryImageId: "img-target",
+    },
+    proposal: {
+      proposalId: "proposal-2",
+      imageId: "img-target",
+      label: "Clean edges",
+      actionType: "subject_isolation",
+      applyBrief: "Clean the subject edges and remove the grey fringe.",
+    },
+    targetImage: {
+      imageId: "img-target",
+      path: "/tmp/target.png",
+    },
+    referenceImages: [
+      { imageId: "img-ref-1", path: "/tmp/ref-a.png" },
+      { imageId: "img-ref-2", path: "/tmp/ref-a.png" },
+      { imageId: "img-target", path: "/tmp/target.png" },
+      "/tmp/ref-b.png",
+    ],
+    outputPath: "/tmp/output.png",
+    model: "Gemini Nano Banana 2",
+  });
+
+  assert.equal(applyRequest.schemaVersion, "design-review-apply-request-v1");
+  assert.equal(applyRequest.kind, "apply");
+  assert.equal(applyRequest.provider, "google");
+  assert.equal(applyRequest.requestedModel, "Gemini Nano Banana 2");
+  assert.equal(applyRequest.normalizedModel, DESIGN_REVIEW_FINAL_APPLY_MODEL);
+  assert.equal(applyRequest.model, "Gemini Nano Banana 2");
+  assert.deepEqual(applyRequest.targetImage, {
+    imageId: "img-target",
+    path: "/tmp/target.png",
+  });
+  assert.deepEqual(applyRequest.referenceImages, [
+    { imageId: "img-ref-1", path: "/tmp/ref-a.png" },
+    { imageId: null, path: "/tmp/ref-b.png" },
+  ]);
+  assert.equal(applyRequest.outputPath, "/tmp/output.png");
+  assert.match(applyRequest.prompt, /Edit only targetImage\./);
+});
+
+test("design review apply request resolves target and fallback references from the existing request snapshot", () => {
+  const applyRequest = buildDesignReviewApplyRequest({
+    request: {
+      requestId: "review-apply-3",
+      sessionId: "session-3",
+      primaryImageId: "img-primary",
+      visibleCanvasContext: {
+        images: [
+          { id: "img-primary", path: "/tmp/primary.png" },
+          { id: "img-target", path: "/tmp/target-from-request.png" },
+          { id: "img-ref", path: "/tmp/ref-from-request.png" },
+        ],
+      },
+    },
+    proposal: {
+      proposalId: "proposal-3",
+      imageId: "img-target",
+      label: "Warm background",
+      actionType: "background_replace",
+      applyBrief: "Replace only the background with a warmer studio wall.",
+    },
+    outputPath: "/tmp/output-from-request.png",
+  });
+
+  assert.deepEqual(applyRequest.targetImage, {
+    imageId: "img-target",
+    path: "/tmp/target-from-request.png",
+  });
+  assert.deepEqual(applyRequest.referenceImages, [
+    { imageId: "img-primary", path: "/tmp/primary.png" },
+    { imageId: "img-ref", path: "/tmp/ref-from-request.png" },
+  ]);
+});
+
+test("design review apply request falls back to request.primaryImageId when the proposal does not name a target image", () => {
+  const applyRequest = buildDesignReviewApplyRequest({
+    request: {
+      requestId: "review-apply-4",
+      sessionId: "session-4",
+      primaryImageId: "img-primary",
+      visibleCanvasContext: {
+        images: [
+          { id: "img-primary", path: "/tmp/primary-fallback.png" },
+          { id: "img-ref", path: "/tmp/ref-fallback.png" },
+        ],
+      },
+    },
+    proposal: {
+      proposalId: "proposal-4",
+      label: "Clean subject edges",
+      actionType: "subject_isolation",
+      applyBrief: "Clean the subject edges without changing the pose.",
+    },
+    outputPath: "/tmp/output-fallback.png",
+  });
+
+  assert.deepEqual(applyRequest.targetImage, {
+    imageId: "img-primary",
+    path: "/tmp/primary-fallback.png",
+  });
+  assert.deepEqual(applyRequest.referenceImages, [{ imageId: "img-ref", path: "/tmp/ref-fallback.png" }]);
 });

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { DESIGN_REVIEW_PLANNER_MODEL } from "../src/design_review_contract.js";
+import { DESIGN_REVIEW_FINAL_APPLY_MODEL, DESIGN_REVIEW_PLANNER_MODEL } from "../src/design_review_contract.js";
 import {
   createDesignReviewProviderRouter,
   resolveDesignReviewProviderSelection,
@@ -18,6 +18,7 @@ test("design review provider selection prefers OpenAI for planning and preserves
 
   assert.equal(selection.plannerProvider, "openai");
   assert.equal(selection.previewProvider, "google");
+  assert.equal(selection.applyProvider, "google");
 });
 
 test("design review provider selection falls back to OpenRouter for planning when OpenAI is unavailable", () => {
@@ -131,6 +132,150 @@ test("design review provider router attaches debug payloads to planner transport
       assert.equal(error?.debugInfo?.route?.apiPlan?.primaryTransport, "responses_websocket");
       assert.equal(error?.debugInfo?.providerRequest?.model, DESIGN_REVIEW_PLANNER_MODEL);
       assert.deepEqual(error?.debugInfo?.providerRequest?.images, ["/tmp/review-visible.png"]);
+      return true;
+    }
+  );
+});
+
+test("design review provider router resolves apply target and guidance references from the existing request snapshot", async () => {
+  const requests = [];
+  const router = createDesignReviewProviderRouter({
+    keyStatus: {
+      openai: true,
+      openrouter: true,
+      gemini: true,
+    },
+    requestProvider: async (request) => {
+      requests.push(request);
+      return {
+        ok: true,
+        provider: "google",
+        requestedModel: request.requestedModel,
+        normalizedModel: request.normalizedModel,
+        model: request.normalizedModel,
+        transport: "generate_content",
+        outputPath: request.outputPath,
+      };
+    },
+  });
+
+  const result = await router.runApply({
+    request: {
+      requestId: "review-apply-router",
+      sessionId: "session-router",
+      primaryImageId: "img-primary",
+      visibleCanvasContext: {
+        images: [
+          { id: "img-primary", path: "/tmp/primary-router.png" },
+          { id: "img-target", path: "/tmp/target-router.png" },
+          { id: "img-ref", path: "/tmp/ref-router.png" },
+        ],
+      },
+    },
+    proposal: {
+      proposalId: "proposal-router",
+      imageId: "img-target",
+      label: "Warm backdrop",
+      actionType: "background_replace",
+      applyBrief: "Replace the background with a warmer studio backdrop.",
+    },
+    outputPath: "/tmp/review-apply-router.png",
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].kind, "apply");
+  assert.equal(requests[0].provider, "google");
+  assert.equal(requests[0].requestedModel, DESIGN_REVIEW_FINAL_APPLY_MODEL);
+  assert.equal(requests[0].normalizedModel, DESIGN_REVIEW_FINAL_APPLY_MODEL);
+  assert.equal(requests[0].model, DESIGN_REVIEW_FINAL_APPLY_MODEL);
+  assert.deepEqual(requests[0].targetImage, {
+    imageId: "img-target",
+    path: "/tmp/target-router.png",
+  });
+  assert.deepEqual(requests[0].referenceImages, [
+    { imageId: "img-primary", path: "/tmp/primary-router.png" },
+    { imageId: "img-ref", path: "/tmp/ref-router.png" },
+  ]);
+  assert.equal(requests[0].outputPath, "/tmp/review-apply-router.png");
+  assert.match(requests[0].prompt, /Edit only targetImage\./);
+  assert.equal(result.debugInfo?.route?.requestedModel, DESIGN_REVIEW_FINAL_APPLY_MODEL);
+  assert.equal(result.debugInfo?.route?.normalizedModel, DESIGN_REVIEW_FINAL_APPLY_MODEL);
+  assert.equal(result.debugInfo?.targetImagePath, "/tmp/target-router.png");
+  assert.deepEqual(result.debugInfo?.referenceImagePaths, [
+    "/tmp/primary-router.png",
+    "/tmp/ref-router.png",
+  ]);
+});
+
+test("design review provider router fails clearly when Gemini credentials are missing for final apply", async () => {
+  const router = createDesignReviewProviderRouter({
+    keyStatus: {
+      openai: true,
+      openrouter: true,
+      gemini: false,
+    },
+    requestProvider: async () => ({ ok: true }),
+  });
+
+  await assert.rejects(
+    () =>
+      router.runApply({
+        request: { requestId: "review-apply-no-gemini" },
+        proposal: {
+          proposalId: "proposal-no-gemini",
+          applyBrief: "Tighten the background cleanup.",
+        },
+        targetImage: { path: "/tmp/no-gemini-target.png" },
+        outputPath: "/tmp/no-gemini-output.png",
+      }),
+    /GEMINI_API_KEY or GOOGLE_API_KEY/
+  );
+});
+
+test("design review provider router preserves shaped debug payloads for apply failures", async () => {
+  const router = createDesignReviewProviderRouter({
+    keyStatus: {
+      openai: true,
+      openrouter: true,
+      gemini: true,
+    },
+    requestProvider: async () => {
+      throw JSON.stringify({
+        message: "Google final apply request failed.",
+        debugInfo: {
+          provider: "google",
+          requestedModel: "Gemini Nano Banana 2",
+          normalizedModel: DESIGN_REVIEW_FINAL_APPLY_MODEL,
+          transport: "generate_content",
+          prompt: "Edit only targetImage.",
+          targetImagePath: "/tmp/apply-target.png",
+          referenceImagePaths: ["/tmp/apply-ref.png"],
+          outputPath: "/tmp/apply-output.png",
+        },
+      });
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      router.runApply({
+        request: { requestId: "review-apply-debug" },
+        proposal: {
+          proposalId: "proposal-apply-debug",
+          applyBrief: "Clean the background while keeping the subject intact.",
+        },
+        targetImage: { path: "/tmp/apply-target.png" },
+        referenceImages: [{ path: "/tmp/apply-ref.png" }],
+        outputPath: "/tmp/apply-output.png",
+      }),
+    (error) => {
+      assert.equal(error?.debugInfo?.provider, "google");
+      assert.equal(error?.debugInfo?.requestedModel, "Gemini Nano Banana 2");
+      assert.equal(error?.debugInfo?.normalizedModel, DESIGN_REVIEW_FINAL_APPLY_MODEL);
+      assert.equal(error?.debugInfo?.transport, "generate_content");
+      assert.equal(error?.debugInfo?.targetImagePath, "/tmp/apply-target.png");
+      assert.deepEqual(error?.debugInfo?.referenceImagePaths, ["/tmp/apply-ref.png"]);
+      assert.equal(error?.debugInfo?.outputPath, "/tmp/apply-output.png");
       return true;
     }
   );

@@ -3,10 +3,13 @@ const DESIGN_REVIEW_DEFAULT_SLOT_COUNT = 3;
 export const DESIGN_REVIEW_REQUEST_SCHEMA = "design-review-request-v1";
 export const DESIGN_REVIEW_PROPOSAL_SCHEMA = "design-review-proposal-v1";
 export const DESIGN_REVIEW_PREVIEW_JOB_SCHEMA = "proposal-preview-job-v1";
+export const DESIGN_REVIEW_APPLY_REQUEST_SCHEMA = "design-review-apply-request-v1";
 export const DESIGN_REVIEW_ACCOUNT_MEMORY_SCHEMA = "design-review-account-memory-v1";
 export const DESIGN_REVIEW_UPLOAD_ANALYSIS_SCHEMA = "design-review-upload-analysis-v1";
 export const DESIGN_REVIEW_PLANNER_MODEL = "gpt-5.4";
 export const DESIGN_REVIEW_PREVIEW_MODEL = "gemini-3.1-flash-image-preview";
+// Provider-facing Gemini model id for the final apply path (marketed as Nano Banana 2).
+export const DESIGN_REVIEW_FINAL_APPLY_MODEL = "gemini-3.1-flash-image-preview";
 export const DESIGN_REVIEW_TRIGGER = "design_review_button";
 
 const KNOWN_ACTION_TYPES = Object.freeze({
@@ -102,6 +105,97 @@ function normalizeTargetRegion(raw = {}) {
     regionCandidateId,
     bounds,
   };
+}
+
+function normalizeVisibleCanvasApplyImages(request = {}) {
+  const visibleCanvasContext = asRecord(request.visibleCanvasContext) || {};
+  const images = Array.isArray(visibleCanvasContext.images) ? visibleCanvasContext.images : [];
+  const byId = new Map();
+  const ordered = [];
+  for (const rawImage of images) {
+    const record = asRecord(rawImage);
+    if (!record) continue;
+    const imageId = readFirstString(record.id, record.imageId, record.image_id) || null;
+    const path = readFirstString(record.path, record.imagePath, record.image_path) || null;
+    if (!imageId && !path) continue;
+    const existing = imageId ? byId.get(imageId) : null;
+    if (existing) {
+      if (!existing.path && path) existing.path = path;
+      continue;
+    }
+    if (path && ordered.some((entry) => entry.path === path)) continue;
+    const next = { imageId, path };
+    ordered.push(next);
+    if (imageId) byId.set(imageId, next);
+  }
+  return { ordered, byId };
+}
+
+function resolveApplyImageFromVisibleCanvas(imageId = null, visibleImagesById = null) {
+  const normalizedImageId = readFirstString(imageId) || null;
+  if (!normalizedImageId || !(visibleImagesById instanceof Map)) return null;
+  const match = visibleImagesById.get(normalizedImageId);
+  return match?.path
+    ? {
+        imageId: match.imageId || normalizedImageId,
+        path: match.path,
+      }
+    : null;
+}
+
+function normalizeApplyImage(rawImage = null, { fallbackImageId = null, visibleImagesById = null } = {}) {
+  if (typeof rawImage === "string") {
+    const text = readFirstString(rawImage) || null;
+    if (!text) return null;
+    return (
+      resolveApplyImageFromVisibleCanvas(text, visibleImagesById) || {
+        imageId: readFirstString(fallbackImageId) || null,
+        path: text,
+      }
+    );
+  }
+  const record = asRecord(rawImage);
+  if (!record) {
+    return resolveApplyImageFromVisibleCanvas(fallbackImageId, visibleImagesById);
+  }
+  const imageId = readFirstString(record.imageId, record.image_id, record.id, fallbackImageId) || null;
+  const path = readFirstString(record.path, record.imagePath, record.image_path) || null;
+  if (path) return { imageId, path };
+  return resolveApplyImageFromVisibleCanvas(imageId, visibleImagesById);
+}
+
+function collectApplyReferenceImages({ referenceImages = [], visibleImages = [], visibleImagesById = null, target = null } = {}) {
+  const references = [];
+  const appendImage = (rawImage = null) => {
+    const image = normalizeApplyImage(rawImage, { visibleImagesById });
+    if (!image?.path) return;
+    if (target?.path && image.path === target.path) return;
+    if (target?.imageId && image.imageId && image.imageId === target.imageId) return;
+    if (references.some((entry) => entry.path === image.path)) return;
+    references.push(image);
+  };
+
+  const explicitImages = Array.isArray(referenceImages) ? referenceImages : [];
+  explicitImages.forEach(appendImage);
+  if (!references.length) {
+    visibleImages.forEach(appendImage);
+  }
+  return references;
+}
+
+export function normalizeDesignReviewApplyModel(rawModel = "") {
+  const trimmed = readFirstString(rawModel);
+  if (!trimmed) return DESIGN_REVIEW_FINAL_APPLY_MODEL;
+  const lower = trimmed.toLowerCase();
+  if (lower === "gemini nano banana 2" || lower === "nano banana 2") {
+    return DESIGN_REVIEW_FINAL_APPLY_MODEL;
+  }
+  const withoutModelsPrefix = lower.startsWith("models/") ? trimmed.slice("models/".length).trim() : trimmed;
+  const withoutGooglePrefix =
+    withoutModelsPrefix.toLowerCase().startsWith("google/")
+      ? withoutModelsPrefix.slice("google/".length).trim()
+      : withoutModelsPrefix;
+  return withoutGooglePrefix || DESIGN_REVIEW_FINAL_APPLY_MODEL;
 }
 
 export function buildDesignReviewRequest({
@@ -293,6 +387,112 @@ export function buildDesignReviewPreviewPrompt({ request = {}, proposal = {} } =
     "Treat negativeConstraints as hard limits.",
     JSON.stringify(payload, null, 2),
   ].join("\n\n");
+}
+
+function buildDesignReviewApplyRequestSnapshot(request = {}) {
+  const normalized = asRecord(request) || {};
+  const visibleCanvasContext = asRecord(normalized.visibleCanvasContext) || {};
+  const chosenRegionCandidate = asRecord(normalized.chosenRegionCandidate) || null;
+  return {
+    requestId: readFirstString(normalized.requestId) || null,
+    sessionId: readFirstString(normalized.sessionId) || null,
+    primaryImageId: readFirstString(normalized.primaryImageId, visibleCanvasContext.activeImageId) || null,
+    imageIdsInView: uniqueStrings(normalized.imageIdsInView || [], { limit: 12 }),
+    selectedImageIds: uniqueStrings(normalized.selectedImageIds || [], { limit: 8 }),
+    markIds: uniqueStrings(normalized.markIds || [], { limit: 8 }),
+    activeRegionCandidateId: readFirstString(normalized.activeRegionCandidateId) || null,
+    selectionState: readFirstString(normalized.selectionState) || "none",
+    visibleCanvasContext: {
+      runDir: readFirstString(visibleCanvasContext.runDir) || null,
+      canvasMode: readFirstString(visibleCanvasContext.canvasMode) || null,
+      imageCount:
+        Number.isFinite(Number(visibleCanvasContext.imageCount)) && Number(visibleCanvasContext.imageCount) >= 0
+          ? Number(visibleCanvasContext.imageCount)
+          : null,
+      activeImageId: readFirstString(visibleCanvasContext.activeImageId) || null,
+    },
+    chosenRegionCandidate: chosenRegionCandidate
+      ? {
+          id: readFirstString(
+            chosenRegionCandidate.id,
+            chosenRegionCandidate.regionCandidateId,
+            chosenRegionCandidate.region_candidate_id
+          ) || null,
+          imageId: readFirstString(chosenRegionCandidate.imageId, chosenRegionCandidate.image_id) || null,
+          bounds: normalizeBounds(chosenRegionCandidate.bounds),
+        }
+      : null,
+  };
+}
+
+export function buildDesignReviewApplyPrompt({ request = {}, proposal = {} } = {}) {
+  const normalizedProposal = asRecord(proposal) || {};
+  const negativeConstraints = uniqueStrings(
+    normalizedProposal.negativeConstraints || normalizedProposal.negative_constraints || [],
+    { limit: 8 }
+  );
+  const payload = {
+    requestSnapshot: buildDesignReviewApplyRequestSnapshot(request),
+    proposal: {
+      label: clampText(normalizedProposal.label, 90),
+      actionType: clampText(normalizedProposal.actionType, 96),
+      applyBrief: clampText(normalizedProposal.applyBrief, 320),
+      targetRegion: normalizeTargetRegion(normalizedProposal.targetRegion || normalizedProposal.target_region || {}),
+      negativeConstraints,
+    },
+  };
+  return [
+    "Apply this accepted Juggernaut design-review proposal to exactly one editable image.",
+    "Edit only targetImage.",
+    "Use referenceImages[] as guidance only and do not modify or return separate outputs for them.",
+    "Return exactly one final rendered image for targetImage.",
+    "Treat negativeConstraints as hard requirements.",
+    JSON.stringify(payload, null, 2),
+  ].join("\n\n");
+}
+
+export function buildDesignReviewApplyRequest({
+  request = {},
+  proposal = {},
+  targetImage = null,
+  referenceImages = [],
+  outputPath = "",
+  provider = "google",
+  model = DESIGN_REVIEW_FINAL_APPLY_MODEL,
+} = {}) {
+  const normalizedRequest = asRecord(request) || {};
+  const normalizedProposal = asRecord(proposal) || {};
+  const requestedModel = readFirstString(model) || DESIGN_REVIEW_FINAL_APPLY_MODEL;
+  const normalizedModel = normalizeDesignReviewApplyModel(requestedModel);
+  const { ordered: visibleImages, byId: visibleImagesById } = normalizeVisibleCanvasApplyImages(normalizedRequest);
+  const target = normalizeApplyImage(targetImage, {
+    fallbackImageId: readFirstString(normalizedProposal.imageId, normalizedRequest.primaryImageId) || null,
+    visibleImagesById,
+  });
+  const referenceImageList = collectApplyReferenceImages({
+    referenceImages,
+    visibleImages,
+    visibleImagesById,
+    target,
+  });
+  return {
+    schemaVersion: DESIGN_REVIEW_APPLY_REQUEST_SCHEMA,
+    kind: "apply",
+    provider: readFirstString(provider) || "google",
+    requestId: readFirstString(normalizedRequest.requestId) || null,
+    sessionId: readFirstString(normalizedRequest.sessionId) || null,
+    proposalId: readFirstString(normalizedProposal.proposalId) || null,
+    requestedModel,
+    normalizedModel,
+    model: requestedModel,
+    prompt: buildDesignReviewApplyPrompt({
+      request: normalizedRequest,
+      proposal: normalizedProposal,
+    }),
+    targetImage: target,
+    referenceImages: referenceImageList,
+    outputPath: readFirstString(outputPath) || null,
+  };
 }
 
 function stripJsonFences(raw = "") {
