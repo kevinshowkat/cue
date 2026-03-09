@@ -84,6 +84,11 @@ import { installCanvasPointerHandlers } from "./canvas_handlers/pointer_handlers
 import { installCanvasWheelHandlers } from "./canvas_handlers/wheel_handlers.js";
 import { POINTER_KINDS, isEffectTokenPath, isMotherRolePath } from "./canvas_handlers/pointer_paths.js";
 import { applyToolRuntimeRequest, installToolApplyBridge } from "./tool_apply_runtime.js";
+import {
+  TABBED_SESSIONS_BRIDGE_KEY,
+  TABBED_SESSIONS_CHANGED_EVENT,
+  createTabbedSessionsStore,
+} from "./tabbed_sessions.js";
 
 const SINGLE_IMAGE_RAIL_REGISTERED_ADAPTER = Object.freeze({
   id: "single-image-rail-intent-runtime-v1",
@@ -720,7 +725,7 @@ localStorage.setItem("brood.rsNative", "1");
 localStorage.setItem("brood.rsNative.default.v2", "1");
 localStorage.removeItem("brood.emergencyCompatFallback");
 
-const sessionToolRegistry = createInSessionToolRegistry();
+let sessionToolRegistry = createInSessionToolRegistry();
 
 function normalizePromptStrategyMode(raw) {
   const value = String(raw || "").trim().toLowerCase();
@@ -1640,6 +1645,9 @@ const openrouterOnboardingState = {
 };
 
 const state = {
+  tabsOrder: [],
+  tabsById: new Map(),
+  activeTabId: null,
   runDir: null,
   eventsPath: null,
   ptySpawned: false,
@@ -2108,11 +2116,293 @@ const state = {
   },
 };
 
+function createTabTopMetricsState() {
+  return {
+    tokenInByMinute: new Map(),
+    tokenOutByMinute: new Map(),
+    queueDepthByMinute: new Map(),
+    sessionEstimatedCostUsd: 0,
+    renderDurationsS: [],
+  };
+}
+
+function createTabMotherState() {
+  return {
+    running: false,
+    startedAt: 0,
+    runId: 0,
+    action: null,
+    status: null,
+    stopRequested: false,
+    timer: null,
+    rtHoldUntil: 0,
+    rtHoldTimer: null,
+    rtVisualActive: false,
+    rtVisualRawSince: 0,
+    rtVisualMinUntil: 0,
+    hotSyncAt: 0,
+  };
+}
+
+function createTabMotherIdleState() {
+  return {
+    phase: motherIdleInitialState(),
+    firstIdleTimer: null,
+    intentIdleTimer: null,
+    takeoverTimer: null,
+    cooldownTimer: null,
+    hasGeneratedSinceInteraction: false,
+    generatedImageId: null,
+    generatedVersionId: null,
+    pendingDispatchToken: 0,
+    dispatchTimeoutTimer: null,
+    dispatchTimeoutExtensions: 0,
+    pendingPromptLine: null,
+    promptMotionProfile: null,
+    pendingVersionId: null,
+    ignoredVersionIds: new Set(),
+    waitingSince: 0,
+    pendingSuggestionLog: null,
+    lastSuggestionAt: 0,
+    suppressFailureUntil: 0,
+    retryAttempted: false,
+    lastDispatchModel: null,
+    blockedUntilUserInteraction: false,
+    actionVersion: 0,
+    pendingActionVersion: 0,
+    cooldownUntil: 0,
+    multiUploadIdleBoostUntil: 0,
+    lastUploadCompletedAt: 0,
+    lastSpeculativePrefetchUploadAt: 0,
+    speculativePrefetchTimer: null,
+    speculativePrefetchInFlight: false,
+    speculativePrefetchReadyMode: null,
+    pendingIntent: false,
+    pendingIntentRequestId: null,
+    pendingIntentTransportRetryCount: 0,
+    pendingIntentStartedAt: 0,
+    pendingIntentUpgradeUntil: 0,
+    pendingIntentRealtimePath: null,
+    intentRealtimeBusyPath: null,
+    intentRealtimeBusyRequestId: null,
+    intentRealtimeBusyUntil: 0,
+    intentReplayQueued: false,
+    intentReplayReason: null,
+    intentReplayTimer: null,
+    lastIntentRequestAt: 0,
+    pendingIntentPath: null,
+    pendingIntentPayload: null,
+    pendingIntentTimeout: null,
+    pendingPromptCompile: false,
+    pendingPromptCompileSpeculative: false,
+    pendingPromptCompilePath: null,
+    pendingPromptCompileTimeout: null,
+    pendingVisionImageIds: [],
+    pendingVisionRetryTimer: null,
+    pendingGeneration: false,
+    pendingDispatchSpeculative: false,
+    pendingDispatchProposalMode: null,
+    liveProposalRefreshTimer: null,
+    liveProposalUpdating: false,
+    lastLiveProposalRefreshAt: 0,
+    pendingFollowupAfterCooldown: false,
+    pendingFollowupReason: null,
+    lastRejectedProposal: null,
+    rejectedModeHistoryByContext: {},
+    cancelArtifactUntil: 0,
+    cancelArtifactReason: null,
+    intent: null,
+    currentOperationSpec: null,
+    roles: { subject: [], model: [], mediator: [], object: [] },
+    drafts: [],
+    selectedDraftId: null,
+    hoverDraftId: null,
+    draftCommitRectCss: null,
+    commitMutationInFlight: false,
+    roleGlyphHits: [],
+    offerDetailsOpen: false,
+    roleGlyphDrag: null,
+    advancedOpen: false,
+    optionReveal: false,
+    hintLevel: 0,
+    hintVisibleUntil: 0,
+    hintFadeTimer: null,
+    intensity: 62,
+    commitUndo: null,
+    telemetry: {
+      traceId: `mother-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`,
+      stateTransitions: [],
+      accepted: 0,
+      rejected: 0,
+      deployed: 0,
+      stale: 0,
+    },
+  };
+}
+
+function createTabIntentState() {
+  return {
+    locked: true,
+    lockedAt: 0,
+    lockedBranchId: null,
+    startedAt: 0,
+    deadlineAt: 0,
+    totalRounds: 3,
+    round: 1,
+    selections: [],
+    focusBranchId: null,
+    iconState: null,
+    iconStateAt: 0,
+    pending: false,
+    pendingPath: null,
+    pendingAt: 0,
+    pendingFrameId: null,
+    frameSeq: 0,
+    rtState: "off",
+    disabledReason: null,
+    lastError: null,
+    lastErrorAt: 0,
+    lastSignature: null,
+    lastRunAt: 0,
+    forceChoice: false,
+    uiHideSuggestion: false,
+    uiHits: [],
+  };
+}
+
+function createTabIntentAmbientState() {
+  return {
+    enabled: false,
+    pending: false,
+    pendingPath: null,
+    pendingAt: 0,
+    pendingFrameId: null,
+    frameSeq: 0,
+    rtState: "off",
+    disabledReason: null,
+    lastError: null,
+    lastErrorAt: 0,
+    lastSignature: null,
+    lastRunAt: 0,
+    iconState: null,
+    iconStateAt: 0,
+    touchedImageIds: [],
+    suggestions: [],
+    uiHits: [],
+    lastReason: null,
+  };
+}
+
+function createTabAlwaysOnVisionState() {
+  return {
+    enabled: settings.alwaysOnVision,
+    pending: false,
+    pendingPath: null,
+    pendingAt: 0,
+    contentDirty: false,
+    dirtyReason: null,
+    lastSignature: null,
+    lastRunAt: 0,
+    lastText: null,
+    lastMeta: null,
+    rtState: settings.alwaysOnVision ? "connecting" : "off",
+    disabledReason: null,
+    portraitOverride: null,
+  };
+}
+
+function createFreshTabSession({ runDir = null, eventsPath = null } = {}) {
+  return {
+    runDir,
+    eventsPath,
+    eventsByteOffset: 0,
+    eventsTail: "",
+    eventsDecoder: new TextDecoder("utf-8"),
+    fallbackToFullRead: false,
+    fallbackLineOffset: 0,
+    images: [],
+    imagesById: new Map(),
+    imagePaletteSeed: 0,
+    activeId: null,
+    selectedIds: [],
+    timelineNodes: [],
+    timelineNodesById: new Map(),
+    timelineOpen: false,
+    canvasMode: "multi",
+    freeformRects: new Map(),
+    freeformZOrder: [],
+    multiRects: new Map(),
+    view: { scale: 1, offsetX: 0, offsetY: 0 },
+    multiView: { scale: 1, offsetX: 0, offsetY: 0 },
+    selection: null,
+    lassoDraft: [],
+    annotateDraft: null,
+    annotateBox: null,
+    promptGenerateDraft: { prompt: "", model: "" },
+    promptGenerateDraftAnchor: null,
+    customToolDraft: { name: "", description: "" },
+    toolRegistry: createInSessionToolRegistry(),
+    sessionTools: [],
+    activeCustomToolId: null,
+    lastToolInvocation: null,
+    toolInvocationSeq: 1,
+    circleDraft: null,
+    circlesByImageId: new Map(),
+    activeCircle: null,
+    tripletRuleAnnotations: new Map(),
+    tripletOddOneOutId: null,
+    motherResultDetailsOpenId: null,
+    wheelMenu: {
+      open: false,
+      hideTimer: null,
+      anchorCss: null,
+      anchorWorld: null,
+    },
+    userEvents: [],
+    userTelemetryEvents: [],
+    userEventSeq: 0,
+    mother: createTabMotherState(),
+    motherIdle: createTabMotherIdleState(),
+    intent: createTabIntentState(),
+    intentAmbient: createTabIntentAmbientState(),
+    alwaysOnVision: createTabAlwaysOnVisionState(),
+    canvasContextSuggestion: null,
+    lastRecreatePrompt: null,
+    lastAction: null,
+    lastTipText: DEFAULT_TIP,
+    lastDirectorText: null,
+    lastDirectorMeta: null,
+    lastCostLatency: null,
+    sessionApiCalls: 0,
+    topMetrics: createTabTopMetricsState(),
+    lastStatusText: "Engine: idle",
+    lastStatusError: false,
+    juggernautShellRecentSuccessfulJobs: [],
+    juggernautShellLastToolKey: "",
+  };
+}
+
+function syncTabbedSessionsStateFromStore() {
+  state.tabsOrder = tabbedSessions.tabsOrder.slice();
+  state.tabsById = tabbedSessions.tabsById;
+  state.activeTabId = tabbedSessions.activeTabId || null;
+}
+
+const tabbedSessions = createTabbedSessionsStore({
+  onChange(snapshot) {
+    syncTabbedSessionsStateFromStore();
+    publishTabbedSessionsSnapshot(snapshot);
+  },
+});
+
+syncTabbedSessionsStateFromStore();
+
 syncSessionToolsFromRegistry();
 publishToolRuntimeBridge();
 promptBenchmarkHydrateState();
 
 let flushDeferredEnginePtyExit = async () => {};
+let activeEventsPollToken = 0;
 
 const DEFAULT_TIP = "Click Studio White to replace the background. Use 4 (Lasso) if you want a manual mask.";
 const VISUAL_PROMPT_FILENAME = "visual_prompt.json";
@@ -10378,6 +10668,55 @@ async function requestJuggernautPsdExport({ source = "shell" } = {}) {
   return exportJuggernautPsd();
 }
 
+function publishTabbedSessionsSnapshot(snapshot = null) {
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") return null;
+  const payload =
+    snapshot && typeof snapshot === "object" && Array.isArray(snapshot.tabs)
+      ? {
+          tabsOrder: Array.isArray(snapshot.tabsOrder) ? snapshot.tabsOrder.slice() : state.tabsOrder.slice(),
+          activeTabId: snapshot.activeTabId || state.activeTabId || null,
+          tabs: listTabs(),
+        }
+      : getTabsSnapshot();
+  window.dispatchEvent(
+    new CustomEvent(TABBED_SESSIONS_CHANGED_EVENT, {
+      detail: payload,
+    })
+  );
+  return payload;
+}
+
+function installTabbedSessionsBridge(shellBridge = null) {
+  if (typeof window === "undefined") return null;
+  const bridge = {
+    listTabs,
+    createNewRunTab() {
+      return createRun();
+    },
+    openRunTab() {
+      return openExistingRun();
+    },
+    activateTab,
+    closeTab,
+    subscribeTabs,
+    getActiveTabId() {
+      return state.activeTabId || null;
+    },
+  };
+  window[TABBED_SESSIONS_BRIDGE_KEY] = bridge;
+  if (shellBridge && typeof shellBridge === "object") {
+    shellBridge.tabsBridgeKey = TABBED_SESSIONS_BRIDGE_KEY;
+    shellBridge.listTabs = listTabs;
+    shellBridge.createNewRunTab = bridge.createNewRunTab;
+    shellBridge.openRunTab = bridge.openRunTab;
+    shellBridge.activateTab = activateTab;
+    shellBridge.closeTab = closeTab;
+    shellBridge.subscribeTabs = subscribeTabs;
+  }
+  publishTabbedSessionsSnapshot();
+  return bridge;
+}
+
 function installJuggernautShellBridge() {
   if (typeof window === "undefined") return;
   window.__JUGGERNAUT_SHELL__ = {
@@ -10438,10 +10777,21 @@ function installJuggernautShellBridge() {
     importImages() {
       return importPhotos();
     },
+    listTabs,
+    createNewRunTab() {
+      return createRun();
+    },
+    openRunTab() {
+      return openExistingRun();
+    },
+    activateTab,
+    closeTab,
+    subscribeTabs,
     getCanvasSnapshot() {
       return buildJuggernautShellContext();
     },
   };
+  installTabbedSessionsBridge(window.__JUGGERNAUT_SHELL__);
   window.__JUGGERNAUT_RUNTIME_FLAGS__ = {
     getRuntimeVisibility() {
       return runtimeChromeVisibilitySnapshot();
@@ -28313,255 +28663,528 @@ async function exportRun() {
   }
 }
 
+function createTabId() {
+  return `tab-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function tabLabelForRunDir(runDir, fallback = "Run") {
+  const label = basename(String(runDir || "").trim());
+  return label || String(fallback || "Run");
+}
+
+function currentTabSwitchBlockReason() {
+  if (state.pointer?.active || state.gestureZoom?.active) return "manipulating_canvas";
+  if (state.mother?.running || state.motherIdle?.commitMutationInFlight) return "assistant_busy";
+  if (state.actionQueueActive || state.actionQueue.length) return "queued_actions";
+  if (isEngineBusy()) return "engine_busy";
+  return null;
+}
+
+function currentTabSwitchBlockMessage(reason = currentTabSwitchBlockReason()) {
+  const normalized = String(reason || "").trim();
+  if (normalized === "manipulating_canvas") return "Finish the current canvas gesture before switching tabs.";
+  if (normalized === "assistant_busy") return "Wait for the current tab to finish drafting before switching tabs.";
+  if (normalized === "queued_actions") return "Wait for queued actions to finish before switching tabs.";
+  if (normalized === "engine_busy") return "Wait for the active run to finish before switching tabs.";
+  return "The current tab is busy.";
+}
+
+function captureActiveTabSession(session = null) {
+  const next = session && typeof session === "object" ? session : createFreshTabSession();
+  next.runDir = state.runDir || null;
+  next.eventsPath = state.eventsPath || null;
+  next.eventsByteOffset = Math.max(0, Number(state.eventsByteOffset) || 0);
+  next.eventsTail = String(state.eventsTail || "");
+  next.eventsDecoder = state.eventsDecoder instanceof TextDecoder ? state.eventsDecoder : new TextDecoder("utf-8");
+  next.fallbackToFullRead = Boolean(state.fallbackToFullRead);
+  next.fallbackLineOffset = Math.max(0, Number(fallbackLineOffset) || 0);
+  next.images = Array.isArray(state.images) ? state.images : [];
+  next.imagesById = state.imagesById instanceof Map ? state.imagesById : new Map();
+  next.imagePaletteSeed = Math.max(0, Number(state.imagePaletteSeed) || 0);
+  next.activeId = state.activeId ? String(state.activeId) : null;
+  next.selectedIds = Array.isArray(state.selectedIds) ? state.selectedIds.slice() : [];
+  next.timelineNodes = Array.isArray(state.timelineNodes) ? state.timelineNodes : [];
+  next.timelineNodesById = state.timelineNodesById instanceof Map ? state.timelineNodesById : new Map();
+  next.timelineOpen = Boolean(state.timelineOpen);
+  next.canvasMode = String(state.canvasMode || "multi");
+  next.freeformRects = state.freeformRects instanceof Map ? state.freeformRects : new Map();
+  next.freeformZOrder = Array.isArray(state.freeformZOrder) ? state.freeformZOrder.slice() : [];
+  next.multiRects = state.multiRects instanceof Map ? state.multiRects : new Map();
+  next.view = state.view && typeof state.view === "object" ? { ...state.view } : { scale: 1, offsetX: 0, offsetY: 0 };
+  next.multiView =
+    state.multiView && typeof state.multiView === "object"
+      ? { ...state.multiView }
+      : { scale: 1, offsetX: 0, offsetY: 0 };
+  next.selection = state.selection && typeof state.selection === "object" ? state.selection : null;
+  next.lassoDraft = Array.isArray(state.lassoDraft) ? state.lassoDraft.slice() : [];
+  next.annotateDraft = state.annotateDraft && typeof state.annotateDraft === "object" ? state.annotateDraft : null;
+  next.annotateBox = state.annotateBox && typeof state.annotateBox === "object" ? state.annotateBox : null;
+  next.promptGenerateDraft =
+    state.promptGenerateDraft && typeof state.promptGenerateDraft === "object"
+      ? { ...state.promptGenerateDraft }
+      : { prompt: "", model: "" };
+  next.promptGenerateDraftAnchor =
+    state.promptGenerateDraftAnchor && typeof state.promptGenerateDraftAnchor === "object"
+      ? {
+          anchorCss: state.promptGenerateDraftAnchor.anchorCss ? { ...state.promptGenerateDraftAnchor.anchorCss } : null,
+          anchorWorldCss: state.promptGenerateDraftAnchor.anchorWorldCss
+            ? { ...state.promptGenerateDraftAnchor.anchorWorldCss }
+            : null,
+        }
+      : null;
+  next.customToolDraft =
+    state.customToolDraft && typeof state.customToolDraft === "object"
+      ? { ...state.customToolDraft }
+      : { name: "", description: "" };
+  next.toolRegistry =
+    sessionToolRegistry && typeof sessionToolRegistry.list === "function"
+      ? sessionToolRegistry
+      : createInSessionToolRegistry();
+  next.sessionTools = next.toolRegistry.list();
+  next.activeCustomToolId = state.activeCustomToolId ? String(state.activeCustomToolId) : null;
+  next.lastToolInvocation = state.lastToolInvocation ? cloneToolRuntimeValue(state.lastToolInvocation) : null;
+  next.toolInvocationSeq = Math.max(1, Number(state.toolInvocationSeq) || 1);
+  next.circleDraft = state.circleDraft && typeof state.circleDraft === "object" ? state.circleDraft : null;
+  next.circlesByImageId = state.circlesByImageId instanceof Map ? state.circlesByImageId : new Map();
+  next.activeCircle = state.activeCircle && typeof state.activeCircle === "object" ? state.activeCircle : null;
+  next.tripletRuleAnnotations =
+    state.tripletRuleAnnotations instanceof Map ? state.tripletRuleAnnotations : new Map();
+  next.tripletOddOneOutId = state.tripletOddOneOutId ? String(state.tripletOddOneOutId) : null;
+  next.motherResultDetailsOpenId = state.motherResultDetailsOpenId ? String(state.motherResultDetailsOpenId) : null;
+  next.wheelMenu = {
+    open: false,
+    hideTimer: null,
+    anchorCss: state.wheelMenu?.anchorCss ? { ...state.wheelMenu.anchorCss } : null,
+    anchorWorld: state.wheelMenu?.anchorWorld ? { ...state.wheelMenu.anchorWorld } : null,
+  };
+  next.userEvents = Array.isArray(state.userEvents) ? state.userEvents : [];
+  next.userTelemetryEvents = Array.isArray(state.userTelemetryEvents) ? state.userTelemetryEvents : [];
+  next.userEventSeq = Math.max(0, Number(state.userEventSeq) || 0);
+  next.mother = state.mother && typeof state.mother === "object" ? state.mother : createTabMotherState();
+  next.motherIdle =
+    state.motherIdle && typeof state.motherIdle === "object" ? state.motherIdle : createTabMotherIdleState();
+  next.intent = state.intent && typeof state.intent === "object" ? state.intent : createTabIntentState();
+  next.intentAmbient =
+    state.intentAmbient && typeof state.intentAmbient === "object"
+      ? state.intentAmbient
+      : createTabIntentAmbientState();
+  next.alwaysOnVision =
+    state.alwaysOnVision && typeof state.alwaysOnVision === "object"
+      ? state.alwaysOnVision
+      : createTabAlwaysOnVisionState();
+  next.canvasContextSuggestion =
+    state.canvasContextSuggestion && typeof state.canvasContextSuggestion === "object"
+      ? state.canvasContextSuggestion
+      : null;
+  next.lastRecreatePrompt = state.lastRecreatePrompt ? String(state.lastRecreatePrompt) : null;
+  next.lastAction = state.lastAction ? String(state.lastAction) : null;
+  next.lastTipText = typeof state.lastTipText === "string" ? state.lastTipText : DEFAULT_TIP;
+  next.lastDirectorText = state.lastDirectorText ? String(state.lastDirectorText) : null;
+  next.lastDirectorMeta = state.lastDirectorMeta && typeof state.lastDirectorMeta === "object" ? state.lastDirectorMeta : null;
+  next.lastCostLatency = state.lastCostLatency && typeof state.lastCostLatency === "object" ? state.lastCostLatency : null;
+  next.sessionApiCalls = Math.max(0, Number(state.sessionApiCalls) || 0);
+  next.topMetrics = state.topMetrics && typeof state.topMetrics === "object" ? state.topMetrics : createTabTopMetricsState();
+  next.lastStatusText = String(state.lastStatusText || "Engine: idle");
+  next.lastStatusError = Boolean(state.lastStatusError);
+  next.juggernautShellRecentSuccessfulJobs = Array.isArray(state.juggernautShell?.singleImageRail?.recentSuccessfulJobs)
+    ? state.juggernautShell.singleImageRail.recentSuccessfulJobs.slice()
+    : [];
+  next.juggernautShellLastToolKey = String(state.juggernautShell?.lastToolKey || "");
+  return next;
+}
+
+function bindTabSessionToState(session = null) {
+  const current = session && typeof session === "object" ? session : createFreshTabSession();
+  state.runDir = current.runDir || null;
+  state.eventsPath = current.eventsPath || null;
+  state.eventsByteOffset = Math.max(0, Number(current.eventsByteOffset) || 0);
+  state.eventsTail = String(current.eventsTail || "");
+  state.eventsDecoder = current.eventsDecoder instanceof TextDecoder ? current.eventsDecoder : new TextDecoder("utf-8");
+  state.fallbackToFullRead = Boolean(current.fallbackToFullRead);
+  fallbackLineOffset = Math.max(0, Number(current.fallbackLineOffset) || 0);
+  state.images = Array.isArray(current.images) ? current.images : [];
+  state.imagesById = current.imagesById instanceof Map ? current.imagesById : new Map();
+  state.imagePaletteSeed = Math.max(0, Number(current.imagePaletteSeed) || 0);
+  state.activeId = current.activeId ? String(current.activeId) : null;
+  state.selectedIds = Array.isArray(current.selectedIds) ? current.selectedIds.slice() : [];
+  state.timelineNodes = Array.isArray(current.timelineNodes) ? current.timelineNodes : [];
+  state.timelineNodesById = current.timelineNodesById instanceof Map ? current.timelineNodesById : new Map();
+  state.timelineOpen = Boolean(current.timelineOpen);
+  state.canvasMode = String(current.canvasMode || "multi");
+  state.freeformRects = current.freeformRects instanceof Map ? current.freeformRects : new Map();
+  state.freeformZOrder = Array.isArray(current.freeformZOrder) ? current.freeformZOrder.slice() : [];
+  state.multiRects = current.multiRects instanceof Map ? current.multiRects : new Map();
+  state.view =
+    current.view && typeof current.view === "object" ? current.view : { scale: 1, offsetX: 0, offsetY: 0 };
+  state.multiView =
+    current.multiView && typeof current.multiView === "object"
+      ? current.multiView
+      : { scale: 1, offsetX: 0, offsetY: 0 };
+  state.selection = current.selection && typeof current.selection === "object" ? current.selection : null;
+  state.lassoDraft = Array.isArray(current.lassoDraft) ? current.lassoDraft.slice() : [];
+  state.annotateDraft = current.annotateDraft && typeof current.annotateDraft === "object" ? current.annotateDraft : null;
+  state.annotateBox = current.annotateBox && typeof current.annotateBox === "object" ? current.annotateBox : null;
+  state.promptGenerateDraft =
+    current.promptGenerateDraft && typeof current.promptGenerateDraft === "object"
+      ? current.promptGenerateDraft
+      : { prompt: "", model: "" };
+  state.promptGenerateDraftAnchor =
+    current.promptGenerateDraftAnchor && typeof current.promptGenerateDraftAnchor === "object"
+      ? current.promptGenerateDraftAnchor
+      : null;
+  state.customToolDraft =
+    current.customToolDraft && typeof current.customToolDraft === "object"
+      ? current.customToolDraft
+      : { name: "", description: "" };
+  sessionToolRegistry =
+    current.toolRegistry && typeof current.toolRegistry.list === "function"
+      ? current.toolRegistry
+      : createInSessionToolRegistry();
+  state.sessionTools = Array.isArray(current.sessionTools) ? current.sessionTools : sessionToolRegistry.list();
+  state.activeCustomToolId = current.activeCustomToolId ? String(current.activeCustomToolId) : null;
+  state.lastToolInvocation = current.lastToolInvocation ? cloneToolRuntimeValue(current.lastToolInvocation) : null;
+  state.toolInvocationSeq = Math.max(1, Number(current.toolInvocationSeq) || 1);
+  state.circleDraft = current.circleDraft && typeof current.circleDraft === "object" ? current.circleDraft : null;
+  state.circlesByImageId = current.circlesByImageId instanceof Map ? current.circlesByImageId : new Map();
+  state.activeCircle = current.activeCircle && typeof current.activeCircle === "object" ? current.activeCircle : null;
+  state.tripletRuleAnnotations =
+    current.tripletRuleAnnotations instanceof Map ? current.tripletRuleAnnotations : new Map();
+  state.tripletOddOneOutId = current.tripletOddOneOutId ? String(current.tripletOddOneOutId) : null;
+  state.motherResultDetailsOpenId = current.motherResultDetailsOpenId ? String(current.motherResultDetailsOpenId) : null;
+  state.wheelMenu =
+    current.wheelMenu && typeof current.wheelMenu === "object"
+      ? current.wheelMenu
+      : { open: false, hideTimer: null, anchorCss: null, anchorWorld: null };
+  state.userEvents = Array.isArray(current.userEvents) ? current.userEvents : [];
+  state.userTelemetryEvents = Array.isArray(current.userTelemetryEvents) ? current.userTelemetryEvents : [];
+  state.userEventSeq = Math.max(0, Number(current.userEventSeq) || 0);
+  state.mother = current.mother && typeof current.mother === "object" ? current.mother : createTabMotherState();
+  state.motherIdle =
+    current.motherIdle && typeof current.motherIdle === "object" ? current.motherIdle : createTabMotherIdleState();
+  state.intent = current.intent && typeof current.intent === "object" ? current.intent : createTabIntentState();
+  state.intentAmbient =
+    current.intentAmbient && typeof current.intentAmbient === "object"
+      ? current.intentAmbient
+      : createTabIntentAmbientState();
+  state.intentAmbient.enabled = false;
+  state.alwaysOnVision =
+    current.alwaysOnVision && typeof current.alwaysOnVision === "object"
+      ? current.alwaysOnVision
+      : createTabAlwaysOnVisionState();
+  state.alwaysOnVision.enabled = Boolean(settings.alwaysOnVision);
+  if (!state.alwaysOnVision.enabled && state.alwaysOnVision.rtState === "connecting") {
+    state.alwaysOnVision.rtState = "off";
+  }
+  state.canvasContextSuggestion =
+    current.canvasContextSuggestion && typeof current.canvasContextSuggestion === "object"
+      ? current.canvasContextSuggestion
+      : null;
+  state.lastRecreatePrompt = current.lastRecreatePrompt ? String(current.lastRecreatePrompt) : null;
+  state.lastAction = current.lastAction ? String(current.lastAction) : null;
+  state.lastTipText = typeof current.lastTipText === "string" ? current.lastTipText : DEFAULT_TIP;
+  state.lastDirectorText = current.lastDirectorText ? String(current.lastDirectorText) : null;
+  state.lastDirectorMeta = current.lastDirectorMeta && typeof current.lastDirectorMeta === "object" ? current.lastDirectorMeta : null;
+  state.lastCostLatency = current.lastCostLatency && typeof current.lastCostLatency === "object" ? current.lastCostLatency : null;
+  state.sessionApiCalls = Math.max(0, Number(current.sessionApiCalls) || 0);
+  state.topMetrics =
+    current.topMetrics && typeof current.topMetrics === "object" ? current.topMetrics : createTabTopMetricsState();
+  state.lastStatusText = String(current.lastStatusText || "Engine: idle");
+  state.lastStatusError = Boolean(current.lastStatusError);
+  state.juggernautShell.singleImageRail.recentSuccessfulJobs = Array.isArray(current.juggernautShellRecentSuccessfulJobs)
+    ? current.juggernautShellRecentSuccessfulJobs
+    : [];
+  state.juggernautShell.lastToolKey = String(current.juggernautShellLastToolKey || "");
+  state.imageMenuTargetId = null;
+  state.promptGenerateHoverCss = null;
+  state.effectTokenDrag = null;
+  state.motherOverlayUiHits = [];
+  state.activeImageTransformUiHits = [];
+  state.motherRolePreviewHoverImageId = null;
+}
+
+function syncActiveTabRecord({ capture = true } = {}) {
+  const tabId = String(state.activeTabId || "").trim();
+  if (!tabId) return null;
+  const record = tabbedSessions.getTab(tabId);
+  if (!record) return null;
+  if (capture) {
+    record.session = captureActiveTabSession(record.session);
+  }
+  record.runDir = record.session?.runDir || null;
+  record.label = tabLabelForRunDir(record.runDir, record.label || record.tabId);
+  record.busy = Boolean(currentTabSwitchBlockReason());
+  record.updatedAt = Date.now();
+  return record;
+}
+
+function getTabsSnapshot() {
+  syncActiveTabRecord({ capture: true });
+  syncTabbedSessionsStateFromStore();
+  return {
+    tabsOrder: state.tabsOrder.slice(),
+    activeTabId: state.activeTabId || null,
+    tabs: tabbedSessions.listTabs(),
+  };
+}
+
+function listTabs() {
+  return getTabsSnapshot().tabs;
+}
+
+function subscribeTabs(listener) {
+  if (typeof listener !== "function") return () => {};
+  return tabbedSessions.subscribe(() => {
+    listener(getTabsSnapshot());
+  });
+}
+
+function suspendActiveTabRuntimeForSwitch() {
+  stopEventsPolling();
+  state.pollInFlight = false;
+  resetDescribeQueue({ clearPending: true });
+  stopIntentTicker();
+  clearTimeout(intentInferenceTimer);
+  intentInferenceTimer = null;
+  clearTimeout(intentInferenceTimeout);
+  intentInferenceTimeout = null;
+  clearTimeout(intentStateWriteTimer);
+  intentStateWriteTimer = null;
+  clearAmbientIntentTimers();
+  clearMotherIdleTimers({ first: true, takeover: true });
+  clearMotherIdleDispatchTimeout();
+  if (state.motherIdle) {
+    clearTimeout(state.motherIdle.cooldownTimer);
+    state.motherIdle.cooldownTimer = null;
+    clearTimeout(state.motherIdle.pendingIntentTimeout);
+    state.motherIdle.pendingIntentTimeout = null;
+    clearTimeout(state.motherIdle.pendingPromptCompileTimeout);
+    state.motherIdle.pendingPromptCompileTimeout = null;
+    clearTimeout(state.motherIdle.speculativePrefetchTimer);
+    state.motherIdle.speculativePrefetchTimer = null;
+    clearTimeout(state.motherIdle.liveProposalRefreshTimer);
+    state.motherIdle.liveProposalRefreshTimer = null;
+    clearTimeout(state.motherIdle.intentReplayTimer);
+    state.motherIdle.intentReplayTimer = null;
+    clearTimeout(state.motherIdle.pendingVisionRetryTimer);
+    state.motherIdle.pendingVisionRetryTimer = null;
+    clearTimeout(state.motherIdle.hintFadeTimer);
+    state.motherIdle.hintFadeTimer = null;
+  }
+  invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_STOP}\n` }).catch(() => {});
+  invoke("write_pty", { data: `${PTY_COMMANDS.CANVAS_CONTEXT_RT_STOP}\n` }).catch(() => {});
+  invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_MOTHER_STOP}\n` }).catch(() => {});
+  hideImageMenu();
+  hideAnnotatePanel();
+  hidePromptGeneratePanel();
+  hideCreateToolPanel();
+  hideMarkPanel();
+  closeMotherWheelMenu({ immediate: true });
+  if (els.timelineOverlay) els.timelineOverlay.classList.add("hidden");
+  if (state.wheelMenu) {
+    clearTimeout(state.wheelMenu.hideTimer);
+    state.wheelMenu.hideTimer = null;
+    state.wheelMenu.open = false;
+  }
+}
+
+async function attachActiveTabRuntime({ spawnEngine = true, reason = "tab_activate" } = {}) {
+  setRunInfo(state.runDir ? `Run: ${state.runDir}` : "No run");
+  setTip(state.lastTipText || DEFAULT_TIP);
+  setDirectorText(state.lastDirectorText, state.lastDirectorMeta);
+  syncSessionToolsFromRegistry();
+  renderCreateToolPreview();
+  renderCustomToolDock();
+  renderSelectionMeta();
+  renderFilmstrip();
+  chooseSpawnNodes();
+  renderQuickActions();
+  renderSessionApiCallsReadout();
+  updateEmptyCanvasHint();
+  syncIntentModeClass();
+  syncJuggernautShellState();
+  applyRuntimeChromeVisibility({ source: reason });
+  renderMotherMoodStatus();
+  if (state.timelineOpen) {
+    if (els.timelineOverlay) els.timelineOverlay.classList.remove("hidden");
+    renderTimeline();
+  } else if (els.timelineOverlay) {
+    els.timelineOverlay.classList.add("hidden");
+  }
+  requestRender();
+  scheduleVisualPromptWrite({ immediate: true });
+  if (spawnEngine && state.runDir) {
+    await spawnEngine();
+    startEventsPolling();
+    if (state.ptySpawned) setStatus("Engine: ready");
+  } else {
+    renderSessionApiCallsReadout();
+  }
+  return true;
+}
+
+async function activateTab(tabId, { spawnEngine = true, reason = "tab_activate" } = {}) {
+  const normalized = String(tabId || "").trim();
+  if (!normalized) {
+    return { ok: false, reason: "missing_tab", tabs: listTabs() };
+  }
+  const target = tabbedSessions.getTab(normalized);
+  if (!target) {
+    return { ok: false, reason: "missing_tab", tabs: listTabs() };
+  }
+  if (normalized === String(state.activeTabId || "").trim()) {
+    await attachActiveTabRuntime({ spawnEngine, reason });
+    return { ok: true, tabId: normalized, activeTabId: state.activeTabId || null, tabs: listTabs() };
+  }
+  const blockReason = currentTabSwitchBlockReason();
+  if (blockReason) {
+    showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
+    return { ok: false, reason: blockReason, activeTabId: state.activeTabId || null, tabs: listTabs() };
+  }
+  if (state.activeTabId) {
+    suspendActiveTabRuntimeForSwitch();
+    syncActiveTabRecord({ capture: true });
+  }
+  target.session = target.session || createFreshTabSession({ runDir: target.runDir || null, eventsPath: target.eventsPath || null });
+  bindTabSessionToState(target.session);
+  tabbedSessions.setActiveTab(normalized);
+  syncActiveTabRecord({ capture: false });
+  await attachActiveTabRuntime({ spawnEngine, reason });
+  return {
+    ok: true,
+    tabId: normalized,
+    activeTabId: state.activeTabId || null,
+    tabs: listTabs(),
+  };
+}
+
+async function closeTab(tabId) {
+  const normalized = String(tabId || "").trim();
+  if (!normalized) {
+    return { ok: false, reason: "missing_tab", tabs: listTabs() };
+  }
+  if (!tabbedSessions.getTab(normalized)) {
+    return { ok: false, reason: "missing_tab", tabs: listTabs() };
+  }
+  if (tabbedSessions.tabsOrder.length <= 1) {
+    showToast("Keep one tab open in this build.", "tip", 2200);
+    return { ok: false, reason: "last_tab", tabs: listTabs() };
+  }
+  if (normalized === String(state.activeTabId || "").trim()) {
+    const blockReason = currentTabSwitchBlockReason();
+    if (blockReason) {
+      showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
+      return { ok: false, reason: blockReason, tabs: listTabs() };
+    }
+    suspendActiveTabRuntimeForSwitch();
+    syncActiveTabRecord({ capture: true });
+    const order = tabbedSessions.tabsOrder.slice();
+    const index = order.indexOf(normalized);
+    const remaining = order.filter((id) => id !== normalized);
+    const nextIndex = Math.max(0, Math.min(index, remaining.length - 1));
+    const nextActiveId = remaining[nextIndex] || remaining[remaining.length - 1] || null;
+    const nextTab = nextActiveId ? tabbedSessions.getTab(nextActiveId) || null : null;
+    if (nextTab) {
+      bindTabSessionToState(nextTab.session || createFreshTabSession({ runDir: nextTab.runDir || null }));
+    }
+    const closed = tabbedSessions.closeTab(normalized, { activateNeighbor: true });
+    if (closed?.nextActiveId) {
+      await attachActiveTabRuntime({ spawnEngine: true, reason: "close_tab" });
+    }
+    showToast(`Closed ${tabLabelForRunDir(closed?.closed?.runDir, "tab")}.`, "tip", 1800);
+    return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: listTabs() };
+  }
+  const closed = tabbedSessions.closeTab(normalized, { activateNeighbor: false });
+  showToast(`Closed ${tabLabelForRunDir(closed?.closed?.runDir, "tab")}.`, "tip", 1800);
+  return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: listTabs() };
+}
+
 async function ensureRun() {
   if (state.runDir) return;
   await createRun();
 }
 
 async function createRun() {
-  const previous = captureRunResetSnapshot();
-  announceRunTransition("new", previous);
+  const blockReason = currentTabSwitchBlockReason();
+  if (blockReason) {
+    showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
+    return { ok: false, reason: blockReason, tabs: listTabs() };
+  }
+  setStatus("Engine: creating run tab…");
   const payload = await invoke("create_run_dir");
-  state.runDir = payload.run_dir;
   state.installTelemetry.runSequence = (Number(state.installTelemetry.runSequence) || 0) + 1;
   emitInstallTelemetryAsync("new_run_created", {
     run_sequence: Number(state.installTelemetry.runSequence) || 1,
     source: "new_run",
   });
   state.installTelemetry.firstRunLogged = true;
-  state.eventsPath = payload.events_path;
-  state.eventsByteOffset = 0;
-  state.eventsTail = "";
-  state.eventsDecoder = new TextDecoder("utf-8");
-  state.fallbackToFullRead = false;
-  fallbackLineOffset = 0;
-  state.sessionApiCalls = 0;
-  resetTopMetrics();
-  resetDescribeQueue();
-  // Run-local interaction history for canvas context envelopes.
-  state.userEvents = [];
-  state.userTelemetryEvents = [];
-  state.userEventSeq = 0;
-  state.images = [];
-  state.imagesById.clear();
-  state.imagePaletteSeed = 0;
-  state.activeId = null;
-  state.selectedIds = [];
-  state.timelineNodes = [];
-  state.timelineNodesById.clear();
-  closeTimeline();
-  state.canvasMode = "multi";
-  state.freeformRects.clear();
-  state.freeformZOrder = [];
-  state.multiRects.clear();
-  state.pendingBlend = null;
-  state.pendingSwapDna = null;
-  state.pendingBridge = null;
-  state.pendingExtractDna = null;
-  state.pendingSoulLeech = null;
-  state.pendingExtractRule = null;
-  state.pendingOddOneOut = null;
-  state.pendingTriforce = null;
-  state.pendingRecast = null;
-  state.pendingCreateLayers = null;
-  state.pendingPromptGenerate = null;
-  state.pendingRecreate = null;
-  resetActionQueue();
-  state.tripletRuleAnnotations.clear();
-  state.tripletOddOneOutId = null;
-  clearImageCache();
-  clearAllEffectTokens();
-  state.selection = null;
-  state.lassoDraft = [];
-  state.annotateDraft = null;
-  state.annotateBox = null;
-  hideAnnotatePanel();
-  hidePromptGeneratePanel({ clearDraft: true });
-  state.circleDraft = null;
-  state.circlesByImageId.clear();
-  hideMarkPanel();
-  state.expectingArtifacts = false;
-  state.lastRecreatePrompt = null;
-  state.lastDirectorText = null;
-  state.lastDirectorMeta = null;
-  resetMotherIdleAndWheelState();
-  state.intent.locked = true;
-  state.intent.lockedAt = 0;
-  state.intent.lockedBranchId = null;
-  state.intent.startedAt = 0;
-  state.intent.deadlineAt = 0;
-  state.intent.round = 1;
-  state.intent.selections = [];
-  state.intent.focusBranchId = null;
-  state.intent.iconState = null;
-  state.intent.iconStateAt = 0;
-  state.intent.pending = false;
-  state.intent.pendingPath = null;
-  state.intent.rtState = "off";
-  state.intent.disabledReason = null;
-  state.intent.lastError = null;
-  state.intent.lastErrorAt = 0;
-  state.intent.lastSignature = null;
-  state.intent.lastRunAt = 0;
-  state.intent.forceChoice = false;
-  state.intent.uiHits = [];
-  resetAmbientIntentState();
-  if (state.alwaysOnVision) {
-    state.alwaysOnVision.pending = false;
-    state.alwaysOnVision.pendingPath = null;
-    state.alwaysOnVision.pendingAt = 0;
-    state.alwaysOnVision.contentDirty = false;
-    state.alwaysOnVision.dirtyReason = null;
-    state.alwaysOnVision.lastSignature = null;
-    state.alwaysOnVision.lastRunAt = 0;
-    state.alwaysOnVision.lastText = null;
-    state.alwaysOnVision.lastMeta = null;
-    state.alwaysOnVision.disabledReason = null;
-    state.alwaysOnVision.rtState = state.alwaysOnVision.enabled ? "connecting" : "off";
+  const tabId = createTabId();
+  const session = createFreshTabSession({
+    runDir: payload.run_dir,
+    eventsPath: payload.events_path,
+  });
+  tabbedSessions.upsertTab(
+    {
+      tabId,
+      label: tabLabelForRunDir(payload.run_dir, `Run ${tabbedSessions.tabsOrder.length + 1}`),
+      runDir: payload.run_dir,
+      eventsPath: payload.events_path,
+      session,
+      busy: false,
+    },
+    { activate: false }
+  );
+  const result = await activateTab(tabId, { spawnEngine: true, reason: "new_run_tab" });
+  if (state.ptySpawned) {
+    showToast(`New tab ready: ${tabLabelForRunDir(payload.run_dir)}.`, "tip", 2600);
+  } else {
+    showToast(`Created ${tabLabelForRunDir(payload.run_dir)}, but the engine did not start.`, "error", 3200);
   }
-  setRunInfo(`Run: ${state.runDir}`);
-  setTip(DEFAULT_TIP);
-  setDirectorText(null, null);
-  stopIntentTicker();
-  clearTimeout(intentInferenceTimer);
-  intentInferenceTimer = null;
-  clearTimeout(intentInferenceTimeout);
-  intentInferenceTimeout = null;
-  clearTimeout(intentStateWriteTimer);
-  intentStateWriteTimer = null;
-  clearAmbientIntentTimers();
-  syncIntentModeClass();
-  updateEmptyCanvasHint();
-  renderFilmstrip();
-  chooseSpawnNodes();
-  scheduleVisualPromptWrite({ immediate: true });
-  await spawnEngine();
-  await startEventsPolling();
-  if (state.ptySpawned) setStatus("Engine: ready");
-  finalizeRunTransition("new", { engineReady: state.ptySpawned });
+  return result;
 }
 
 async function openExistingRun() {
   bumpInteraction();
-  const selected = await open({ directory: true, multiple: false });
-  if (!selected) return;
-  const previous = captureRunResetSnapshot();
-  announceRunTransition("open", previous);
-  state.runDir = selected;
-  state.eventsPath = `${selected}/events.jsonl`;
-  state.eventsByteOffset = 0;
-  state.eventsTail = "";
-  state.eventsDecoder = new TextDecoder("utf-8");
-  state.fallbackToFullRead = false;
-  fallbackLineOffset = 0;
-  state.sessionApiCalls = 0;
-  resetTopMetrics();
-  resetDescribeQueue();
-  // Run-local interaction history for canvas context envelopes.
-  state.userEvents = [];
-  state.userTelemetryEvents = [];
-  state.userEventSeq = 0;
-  state.images = [];
-  state.imagesById.clear();
-  state.imagePaletteSeed = 0;
-  state.activeId = null;
-  state.selectedIds = [];
-  state.timelineNodes = [];
-  state.timelineNodesById.clear();
-  closeTimeline();
-  state.canvasMode = "multi";
-  state.freeformRects.clear();
-  state.freeformZOrder = [];
-  state.multiRects.clear();
-  state.pendingBlend = null;
-  state.pendingSwapDna = null;
-  state.pendingBridge = null;
-  state.pendingExtractDna = null;
-  state.pendingSoulLeech = null;
-  state.pendingExtractRule = null;
-  state.pendingOddOneOut = null;
-  state.pendingTriforce = null;
-  state.pendingRecast = null;
-  state.pendingCreateLayers = null;
-  state.pendingPromptGenerate = null;
-  state.pendingRecreate = null;
-  resetActionQueue();
-  state.tripletRuleAnnotations.clear();
-  state.tripletOddOneOutId = null;
-  renderFilmstrip();
-  clearImageCache();
-  clearAllEffectTokens();
-  state.selection = null;
-  state.lassoDraft = [];
-  state.annotateDraft = null;
-  state.annotateBox = null;
-  hideAnnotatePanel();
-  hidePromptGeneratePanel({ clearDraft: true });
-  state.circleDraft = null;
-  state.circlesByImageId.clear();
-  hideMarkPanel();
-  state.expectingArtifacts = false;
-  state.lastRecreatePrompt = null;
-  state.lastDirectorText = null;
-  state.lastDirectorMeta = null;
-  resetMotherIdleAndWheelState();
-  state.intent.locked = true;
-  state.intent.lockedAt = 0;
-  state.intent.lockedBranchId = null;
-  state.intent.startedAt = 0;
-  state.intent.deadlineAt = 0;
-  state.intent.round = 1;
-  state.intent.selections = [];
-  state.intent.focusBranchId = null;
-  state.intent.iconState = null;
-  state.intent.iconStateAt = 0;
-  state.intent.pending = false;
-  state.intent.pendingPath = null;
-  state.intent.rtState = "off";
-  state.intent.disabledReason = null;
-  state.intent.lastError = null;
-  state.intent.lastErrorAt = 0;
-  state.intent.lastSignature = null;
-  state.intent.lastRunAt = 0;
-  state.intent.forceChoice = false;
-  state.intent.uiHits = [];
-  resetAmbientIntentState();
-  if (state.alwaysOnVision) {
-    state.alwaysOnVision.pending = false;
-    state.alwaysOnVision.pendingPath = null;
-    state.alwaysOnVision.pendingAt = 0;
-    state.alwaysOnVision.contentDirty = false;
-    state.alwaysOnVision.dirtyReason = null;
-    state.alwaysOnVision.lastSignature = null;
-    state.alwaysOnVision.lastRunAt = 0;
-    state.alwaysOnVision.lastText = null;
-    state.alwaysOnVision.lastMeta = null;
-    state.alwaysOnVision.disabledReason = null;
-    state.alwaysOnVision.rtState = state.alwaysOnVision.enabled ? "connecting" : "off";
+  const blockReason = currentTabSwitchBlockReason();
+  if (blockReason) {
+    showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
+    return { ok: false, reason: blockReason, tabs: listTabs() };
   }
-  setRunInfo(`Run: ${state.runDir}`);
-  setTip(DEFAULT_TIP);
-  setDirectorText(null, null);
-  stopIntentTicker();
-  clearTimeout(intentInferenceTimer);
-  intentInferenceTimer = null;
-  clearTimeout(intentInferenceTimeout);
-  intentInferenceTimeout = null;
-  clearTimeout(intentStateWriteTimer);
-  intentStateWriteTimer = null;
-  clearAmbientIntentTimers();
-  syncIntentModeClass();
-  updateEmptyCanvasHint();
+  const selected = await open({ directory: true, multiple: false });
+  if (!selected) return { ok: false, reason: "cancelled", tabs: listTabs() };
+  setStatus("Engine: opening run tab…");
+  const tabId = createTabId();
+  const session = createFreshTabSession({
+    runDir: selected,
+    eventsPath: `${selected}/events.jsonl`,
+  });
+  tabbedSessions.upsertTab(
+    {
+      tabId,
+      label: tabLabelForRunDir(selected, `Run ${tabbedSessions.tabsOrder.length + 1}`),
+      runDir: selected,
+      eventsPath: `${selected}/events.jsonl`,
+      session,
+      busy: false,
+    },
+    { activate: false }
+  );
+  await activateTab(tabId, { spawnEngine: false, reason: "open_run_tab" });
   await restoreIntentStateFromRunDir().catch(() => {});
   const restoredArtifacts = await loadExistingArtifacts();
-  await spawnEngine();
-  await startEventsPolling();
-  scheduleVisualPromptWrite({ immediate: true });
+  await attachActiveTabRuntime({ spawnEngine: true, reason: "open_run_attach" });
   if (intentAmbientActive() && getVisibleCanvasImages().length) {
     scheduleAmbientIntentInference({ immediate: true, reason: "composition_change" });
   }
-  if (state.ptySpawned) setStatus("Engine: ready");
-  finalizeRunTransition("open", { restoredArtifacts, engineReady: state.ptySpawned });
+  if (state.ptySpawned) {
+    showToast(
+      `Opened ${tabLabelForRunDir(selected)} in a new tab${restoredArtifacts ? ` (${restoredArtifacts} artifacts)` : ""}.`,
+      "tip",
+      3200
+    );
+  } else {
+    showToast(`Opened ${tabLabelForRunDir(selected)}, but the engine did not start.`, "error", 3200);
+  }
+  return { ok: true, tabId, activeTabId: state.activeTabId || null, tabs: listTabs() };
 }
 
 async function loadExistingArtifacts() {
@@ -28689,21 +29312,33 @@ async function spawnEngine() {
 }
 
 function startEventsPolling() {
+  if (!state.activeTabId || !state.eventsPath) return;
   if (state.poller) return;
+  const pollToken = ++activeEventsPollToken;
   // Poll fast, but incrementally (offset-based) for responsiveness.
   state.poller = setInterval(() => {
-    pollEventsOnce().catch(() => {});
+    pollEventsOnce(pollToken).catch(() => {});
   }, 250);
 }
 
-async function pollEventsOnce() {
+function stopEventsPolling() {
+  activeEventsPollToken += 1;
+  if (state.poller) {
+    clearInterval(state.poller);
+    state.poller = null;
+  }
+}
+
+async function pollEventsOnce(pollToken = activeEventsPollToken) {
+  if (pollToken !== activeEventsPollToken) return;
   if (!state.eventsPath) return;
   if (!(await exists(state.eventsPath))) return;
+  if (pollToken !== activeEventsPollToken) return;
   if (state.pollInFlight) return;
   state.pollInFlight = true;
   try {
     if (state.fallbackToFullRead) {
-      await pollEventsFallback();
+      await pollEventsFallback(pollToken);
       return;
     }
     const resp = await invoke("read_file_since", {
@@ -28711,6 +29346,7 @@ async function pollEventsOnce() {
       offset: state.eventsByteOffset,
       maxBytes: 1024 * 256,
     });
+    if (pollToken !== activeEventsPollToken) return;
     const chunk = resp?.chunk;
     const clampedOffset = Number(resp?.clamped_offset);
     const newOffset = Number(resp?.new_offset);
@@ -28733,6 +29369,7 @@ async function pollEventsOnce() {
     const lines = state.eventsTail.split("\n");
     state.eventsTail = lines.pop() || "";
     for (const line of lines) {
+      if (pollToken !== activeEventsPollToken) return;
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
@@ -28753,10 +29390,13 @@ async function pollEventsOnce() {
 }
 
 let fallbackLineOffset = 0;
-async function pollEventsFallback() {
+async function pollEventsFallback(pollToken = activeEventsPollToken) {
+  if (pollToken !== activeEventsPollToken) return;
   const content = await readTextFile(state.eventsPath);
+  if (pollToken !== activeEventsPollToken) return;
   const lines = content.trim().split("\n").filter(Boolean);
   for (let i = fallbackLineOffset; i < lines.length; i += 1) {
+    if (pollToken !== activeEventsPollToken) return;
     try {
       await handleEvent(JSON.parse(lines[i]));
     } catch {
