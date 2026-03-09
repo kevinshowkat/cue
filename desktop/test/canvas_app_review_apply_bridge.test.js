@@ -566,6 +566,14 @@ test("communication tray host preserves runtime-owned review slots while still p
       replaceCalls.push(args);
     },
   };
+  const communicationTrayAnchorPlacement = instantiateFunction("communicationTrayAnchorPlacement");
+  const positionCommunicationProposalTrayElement = instantiateFunction("positionCommunicationProposalTrayElement", {
+    els: {
+      canvasWrap: { clientWidth: 500, clientHeight: 400 },
+    },
+    clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
+    communicationTrayAnchorPlacement,
+  });
   const renderCommunicationProposalTray = instantiateFunction("renderCommunicationProposalTray", {
     els: {
       communicationProposalTray: trayEl,
@@ -584,6 +592,7 @@ test("communication tray host preserves runtime-owned review slots while still p
     communicationProposalSlotIsPending: () => false,
     requestAnimationFrame: (callback) => callback(),
     clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
+    positionCommunicationProposalTrayElement,
   });
 
   renderCommunicationProposalTray();
@@ -606,6 +615,14 @@ test("communication tray host still rebuilds shell slots when the tray is no lon
       replaceCalls.push(args);
     },
   };
+  const communicationTrayAnchorPlacement = instantiateFunction("communicationTrayAnchorPlacement");
+  const positionCommunicationProposalTrayElement = instantiateFunction("positionCommunicationProposalTrayElement", {
+    els: {
+      canvasWrap: { clientWidth: 500, clientHeight: 400 },
+    },
+    clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
+    communicationTrayAnchorPlacement,
+  });
   const renderCommunicationProposalTray = instantiateFunction("renderCommunicationProposalTray", {
     els: {
       communicationProposalTray: trayEl,
@@ -626,6 +643,7 @@ test("communication tray host still rebuilds shell slots when the tray is no lon
     communicationProposalSlotIsPending: (status) => status === "planning",
     requestAnimationFrame: (callback) => callback(),
     clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
+    positionCommunicationProposalTrayElement,
     document: {
       createDocumentFragment() {
         return {
