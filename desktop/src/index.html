@@ -393,6 +393,138 @@
             <div id="image-fx" class="image-fx hidden" aria-hidden="true"></div>
             <div id="image-fx-2" class="image-fx hidden" aria-hidden="true"></div>
             <canvas id="overlay-canvas" tabindex="0" aria-label="Canvas"></canvas>
+            <div
+              id="communication-proposal-tray"
+              class="communication-proposal-tray hidden"
+              role="group"
+              aria-label="Design review proposals"
+            >
+              <div class="communication-proposal-tray-head">
+                <div class="communication-proposal-tray-title">Design Review</div>
+                <button
+                  id="communication-proposal-tray-close"
+                  class="communication-proposal-tray-close"
+                  type="button"
+                  aria-label="Close design review tray"
+                >
+                  Close
+                </button>
+              </div>
+              <div
+                id="communication-proposal-slot-list"
+                class="communication-proposal-slot-list"
+                role="list"
+                aria-label="Proposal slots"
+              >
+                <div class="communication-proposal-slot is-skeleton" data-slot-index="0" data-slot-state="skeleton" role="listitem">
+                  <div class="communication-proposal-slot-eyebrow">Proposal 1</div>
+                  <div class="communication-proposal-slot-title">Review warming up</div>
+                  <div class="communication-proposal-slot-copy">Waiting for planner and previews.</div>
+                </div>
+                <div class="communication-proposal-slot is-skeleton" data-slot-index="1" data-slot-state="skeleton" role="listitem">
+                  <div class="communication-proposal-slot-eyebrow">Proposal 2</div>
+                  <div class="communication-proposal-slot-title">Review warming up</div>
+                  <div class="communication-proposal-slot-copy">Waiting for planner and previews.</div>
+                </div>
+                <div class="communication-proposal-slot is-skeleton" data-slot-index="2" data-slot-state="skeleton" role="listitem">
+                  <div class="communication-proposal-slot-eyebrow">Proposal 3</div>
+                  <div class="communication-proposal-slot-title">Review warming up</div>
+                  <div class="communication-proposal-slot-copy">Waiting for planner and previews.</div>
+                </div>
+              </div>
+            </div>
+            <div id="communication-rail" class="communication-rail" role="toolbar" aria-label="Communication rail">
+              <button
+                id="communication-tool-marker"
+                class="communication-tool"
+                type="button"
+                data-communication-tool="marker"
+                aria-label="Marker"
+                title="Marker"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4.5 16.5 9 12l2.6 2.6L18 8.2l1.5 1.5-6.4 6.4L10.5 13.5 6 18z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.9"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d="M17.9 7.9 19.8 6"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.9"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <span class="communication-tool-label">Marker</span>
+              </button>
+              <button
+                id="communication-tool-magic-select"
+                class="communication-tool"
+                type="button"
+                data-communication-tool="magic_select"
+                aria-label="Magic Select"
+                title="Magic Select"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M12 3.8 13.8 8l4.2 1.8-4.2 1.8L12 15.8l-1.8-4.2L6 9.8 10.2 8z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d="M18.4 14.2 19.2 16l1.8.8-1.8.8-.8 1.8-.8-1.8-1.8-.8 1.8-.8z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <circle
+                    cx="7.2"
+                    cy="16.8"
+                    r="2.4"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                </svg>
+                <span class="communication-tool-label">Magic Select</span>
+              </button>
+              <button
+                id="communication-tool-eraser"
+                class="communication-tool"
+                type="button"
+                data-communication-tool="eraser"
+                aria-label="Eraser"
+                title="Eraser"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="m7.2 15.8 6.3-6.3a2.2 2.2 0 0 1 3.1 0l2 2a2.2 2.2 0 0 1 0 3.1l-4.8 4.8H8.9a2.4 2.4 0 0 1-1.7-.7l-1.3-1.3a1.2 1.2 0 0 1 0-1.6z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d="M12.2 19.4h7.3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <span class="communication-tool-label">Eraser</span>
+              </button>
+            </div>
             <div id="image-menu" class="canvas-menu hidden image-menu" role="menu" aria-label="Image menu">
               <button type="button" data-action="remove">Remove from canvas</button>
               <button class="ghost" type="button" data-action="cancel">Cancel</button>
