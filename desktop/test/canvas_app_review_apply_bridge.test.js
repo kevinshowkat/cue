@@ -47,6 +47,31 @@ function instantiateFunction(name, deps = {}) {
   return new Function(...keys, `return (${source});`)(...values);
 }
 
+function createClassList(initial = []) {
+  const values = new Set(initial);
+  return {
+    add(name) {
+      values.add(name);
+    },
+    remove(name) {
+      values.delete(name);
+    },
+    contains(name) {
+      return values.has(name);
+    },
+    toggle(name, force) {
+      if (force === undefined) {
+        if (values.has(name)) values.delete(name);
+        else values.add(name);
+        return values.has(name);
+      }
+      if (force) values.add(name);
+      else values.delete(name);
+      return values.has(name);
+    },
+  };
+}
+
 function buildReviewApplyHarness({
   activeTabId = "tab-a",
   pendingRequestId = "review-1",
@@ -318,4 +343,112 @@ test("canvas runtime binds the unified review-apply lifecycle event", () => {
   assert.match(app, /if \(phase === "succeeded"[\s\S]*void applyAcceptedDesignReviewOutput\(detail\);/);
   assert.match(app, /if \(phase === "failed"[\s\S]*handleDesignReviewApplyFailure\(detail\);/);
   assert.match(app, /bindDesignReviewApplyRuntimeBridge\(\);/);
+});
+
+test("communication tray host preserves runtime-owned review slots while still positioning the tray", () => {
+  const replaceCalls = [];
+  const trayEl = {
+    classList: createClassList(["is-design-review-runtime"]),
+    style: {},
+    offsetWidth: 120,
+    offsetHeight: 80,
+  };
+  const listEl = {
+    replaceChildren(...args) {
+      replaceCalls.push(args);
+    },
+  };
+  const renderCommunicationProposalTray = instantiateFunction("renderCommunicationProposalTray", {
+    els: {
+      communicationProposalTray: trayEl,
+      communicationProposalSlotList: listEl,
+      canvasWrap: { clientWidth: 500, clientHeight: 400 },
+    },
+    buildCommunicationProposalTraySnapshot: () => ({
+      visible: true,
+      source: "review_runtime",
+      anchor: { x: 50, y: 60 },
+      slots: [
+        { index: 0, status: "ready", label: "Proposal 1", title: "T1", copy: "C1" },
+      ],
+    }),
+    communicationAnchorCanvasCss: () => ({ x: 50, y: 60 }),
+    communicationProposalSlotIsPending: () => false,
+    requestAnimationFrame: (callback) => callback(),
+    clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
+  });
+
+  renderCommunicationProposalTray();
+
+  assert.equal(replaceCalls.length, 0);
+  assert.equal(trayEl.style.left, "68px");
+  assert.equal(trayEl.style.top, "12px");
+});
+
+test("communication tray host still rebuilds shell slots when the tray is no longer in review runtime mode", () => {
+  const replaceCalls = [];
+  const trayEl = {
+    classList: createClassList(["is-design-review-runtime"]),
+    style: {},
+    offsetWidth: 120,
+    offsetHeight: 80,
+  };
+  const listEl = {
+    replaceChildren(...args) {
+      replaceCalls.push(args);
+    },
+  };
+  const renderCommunicationProposalTray = instantiateFunction("renderCommunicationProposalTray", {
+    els: {
+      communicationProposalTray: trayEl,
+      communicationProposalSlotList: listEl,
+      canvasWrap: { clientWidth: 500, clientHeight: 400 },
+    },
+    buildCommunicationProposalTraySnapshot: () => ({
+      visible: true,
+      source: "shell",
+      anchor: { x: 50, y: 60 },
+      slots: [
+        { index: 0, status: "planning", label: "Proposal 1", title: "T1", copy: "C1" },
+        { index: 1, status: "hidden", label: "Proposal 2", title: "T2", copy: "C2" },
+        { index: 2, status: "failed", label: "Proposal 3", title: "T3", copy: "C3" },
+      ],
+    }),
+    communicationAnchorCanvasCss: () => ({ x: 50, y: 60 }),
+    communicationProposalSlotIsPending: (status) => status === "planning",
+    requestAnimationFrame: (callback) => callback(),
+    clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
+    document: {
+      createDocumentFragment() {
+        return {
+          children: [],
+          append(node) {
+            this.children.push(node);
+          },
+        };
+      },
+      createElement() {
+        return {
+          className: "",
+          dataset: {},
+          attributes: {},
+          textContent: "",
+          setAttribute(name, value) {
+            this.attributes[name] = value;
+          },
+          append(...nodes) {
+            this.children = (this.children || []).concat(nodes);
+          },
+        };
+      },
+    },
+  });
+
+  renderCommunicationProposalTray();
+
+  assert.equal(replaceCalls.length, 1);
+  assert.equal(replaceCalls[0].length, 1);
+  assert.equal(replaceCalls[0][0].children.length, 2);
+  assert.equal(trayEl.style.left, "68px");
+  assert.equal(trayEl.style.top, "12px");
 });
