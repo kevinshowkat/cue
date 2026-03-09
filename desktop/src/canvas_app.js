@@ -3578,13 +3578,20 @@ function oldestDescribeInFlightPath() {
 }
 
 let ptyStatusPromise = null;
-async function ensureEngineSpawned({ reason = "engine" } = {}) {
-  if (state.ptySpawned) return true;
-  if (state.ptySpawning) return false;
-  if (!state.runDir || !state.eventsPath) return false;
+function ptyStatusMatchesActiveRun(status) {
+  if (!status || typeof status !== "object" || !status.running) return false;
+  const runDir = String(state.runDir || "").trim();
+  const eventsPath = String(state.eventsPath || "").trim();
+  if (!runDir || !eventsPath) return false;
+  return String(status.run_dir || "").trim() === runDir && String(status.events_path || "").trim() === eventsPath;
+}
 
-  // Try to re-sync with the Rust backend in dev/HMR scenarios where the PTY
-  // may still be alive but the frontend state was reset.
+async function syncActiveRunPtyBinding() {
+  if (!state.runDir || !state.eventsPath || state.ptySpawning) {
+    state.ptySpawned = false;
+    return false;
+  }
+
   try {
     if (!ptyStatusPromise) {
       ptyStatusPromise = invoke("get_pty_status").finally(() => {
@@ -3592,16 +3599,25 @@ async function ensureEngineSpawned({ reason = "engine" } = {}) {
       });
     }
     const status = await ptyStatusPromise;
-    if (status && typeof status === "object" && status.running) {
-      state.ptySpawned = true;
-      setStatus("Engine: connected");
-      return true;
-    }
+    state.ptySpawned = ptyStatusMatchesActiveRun(status);
   } catch (_) {
-    // Ignore and fall back to spawning.
+    state.ptySpawned = false;
+  }
+  return Boolean(state.ptySpawned);
+}
+
+async function ensureEngineSpawned({ reason = "engine" } = {}) {
+  if (state.ptySpawning) return false;
+  if (!state.runDir || !state.eventsPath) return false;
+
+  if (await syncActiveRunPtyBinding()) {
+    startEventsPolling();
+    setStatus("Engine: connected");
+    return true;
   }
 
   await spawnEngine();
+  if (state.ptySpawned) startEventsPolling();
   if (!state.ptySpawned) {
     showToast(`Engine failed to start for ${reason}.`, "error", 3200);
   }
@@ -28946,6 +28962,7 @@ function subscribeTabs(listener) {
 
 function suspendActiveTabRuntimeForSwitch() {
   stopEventsPolling();
+  state.ptySpawned = false;
   state.pollInFlight = false;
   resetDescribeQueue({ clearPending: true });
   stopIntentTicker();
@@ -28993,7 +29010,7 @@ function suspendActiveTabRuntimeForSwitch() {
   }
 }
 
-async function attachActiveTabRuntime({ spawnEngine: shouldSpawnEngine = true, reason = "tab_activate" } = {}) {
+async function attachActiveTabRuntime({ spawnEngine: shouldSpawnEngine = false, reason = "tab_activate" } = {}) {
   setRunInfo(state.runDir ? `Run: ${state.runDir}` : "No run");
   setTip(state.lastTipText || DEFAULT_TIP);
   setDirectorText(state.lastDirectorText, state.lastDirectorMeta);
@@ -29017,18 +29034,19 @@ async function attachActiveTabRuntime({ spawnEngine: shouldSpawnEngine = true, r
     els.timelineOverlay.classList.add("hidden");
   }
   requestRender();
-  scheduleVisualPromptWrite({ immediate: true });
+  scheduleVisualPromptWrite();
   if (shouldSpawnEngine && state.runDir) {
-    await spawnEngine();
-    startEventsPolling();
-    if (state.ptySpawned) setStatus("Engine: ready");
+    const ok = await ensureEngineSpawned({ reason });
+    if (ok) setStatus("Engine: ready");
   } else {
+    await syncActiveRunPtyBinding();
+    startEventsPolling();
     renderSessionApiCallsReadout();
   }
   return true;
 }
 
-async function activateTab(tabId, { spawnEngine = true, reason = "tab_activate" } = {}) {
+async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate" } = {}) {
   const normalized = String(tabId || "").trim();
   if (!normalized) {
     return { ok: false, reason: "missing_tab", tabs: listTabs() };
@@ -29094,7 +29112,7 @@ async function closeTab(tabId) {
     }
     const closed = tabbedSessions.closeTab(normalized, { activateNeighbor: true });
     if (closed?.nextActiveId) {
-      await attachActiveTabRuntime({ spawnEngine: true, reason: "close_tab" });
+      await attachActiveTabRuntime({ spawnEngine: false, reason: "close_tab" });
     }
     showToast(`Closed ${tabLabelForRunDir(closed?.closed?.runDir, "tab")}.`, "tip", 1800);
     return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: listTabs() };
@@ -29106,7 +29124,45 @@ async function closeTab(tabId) {
 
 async function ensureRun() {
   if (state.runDir) return;
-  await createRun();
+  const activeTabId = String(state.activeTabId || "").trim();
+  const activeTab = activeTabId ? tabbedSessions.getTab(activeTabId) : null;
+  if (!activeTabId || !activeTab) {
+    await createRun();
+    return;
+  }
+  setStatus("Engine: creating run…");
+  const payload = await invoke("create_run_dir");
+  state.installTelemetry.runSequence = (Number(state.installTelemetry.runSequence) || 0) + 1;
+  emitInstallTelemetryAsync("new_run_created", {
+    run_sequence: Number(state.installTelemetry.runSequence) || 1,
+    source: "active_tab_run",
+  });
+  state.installTelemetry.firstRunLogged = true;
+  const session = captureActiveTabSession(activeTab.session || createFreshTabSession());
+  session.runDir = payload.run_dir;
+  session.eventsPath = payload.events_path;
+  session.eventsByteOffset = 0;
+  session.eventsTail = "";
+  session.eventsDecoder = new TextDecoder("utf-8");
+  session.fallbackToFullRead = false;
+  session.fallbackLineOffset = 0;
+  bindTabSessionToState(session);
+  tabbedSessions.upsertTab(
+    {
+      ...activeTab,
+      tabId: activeTabId,
+      label: tabLabelForRunDir(payload.run_dir, activeTab.label || activeTabId),
+      runDir: payload.run_dir,
+      eventsPath: payload.events_path,
+      session,
+      busy: false,
+    },
+    { activate: true, index: tabbedSessions.tabsOrder.indexOf(activeTabId) }
+  );
+  syncActiveTabRecord({ capture: false });
+  setRunInfo(`Run: ${payload.run_dir}`);
+  await syncActiveRunPtyBinding();
+  startEventsPolling();
 }
 
 async function createRun() {
@@ -29177,19 +29233,15 @@ async function openExistingRun() {
   await activateTab(tabId, { spawnEngine: false, reason: "open_run_tab" });
   await restoreIntentStateFromRunDir().catch(() => {});
   const restoredArtifacts = await loadExistingArtifacts();
-  await attachActiveTabRuntime({ spawnEngine: true, reason: "open_run_attach" });
+  await attachActiveTabRuntime({ spawnEngine: false, reason: "open_run_attach" });
   if (intentAmbientActive() && getVisibleCanvasImages().length) {
     scheduleAmbientIntentInference({ immediate: true, reason: "composition_change" });
   }
-  if (state.ptySpawned) {
-    showToast(
-      `Opened ${tabLabelForRunDir(selected)} in a new tab${restoredArtifacts ? ` (${restoredArtifacts} artifacts)` : ""}.`,
-      "tip",
-      3200
-    );
-  } else {
-    showToast(`Opened ${tabLabelForRunDir(selected)}, but the engine did not start.`, "error", 3200);
-  }
+  showToast(
+    `Opened ${tabLabelForRunDir(selected)} in a new tab${restoredArtifacts ? ` (${restoredArtifacts} artifacts)` : ""}.`,
+    "tip",
+    3200
+  );
   return { ok: true, tabId, activeTabId: state.activeTabId || null, tabs: listTabs() };
 }
 
