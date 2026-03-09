@@ -64,15 +64,10 @@ export function resolveDesignReviewProviderSelection({
 export function createDesignReviewProviderRouter({
   requestProvider = null,
   keyStatus = {},
+  getKeyStatus = null,
   preferredPlannerProvider = "",
   preferredPreviewProvider = "",
 } = {}) {
-  const providerSelection = resolveDesignReviewProviderSelection({
-    keyStatus,
-    preferredPlannerProvider,
-    preferredPreviewProvider,
-  });
-
   async function runProviderRequest(request) {
     if (typeof requestProvider !== "function") {
       throw new Error("Design-review provider request handler is unavailable.");
@@ -80,16 +75,42 @@ export function createDesignReviewProviderRouter({
     return requestProvider(request);
   }
 
-  function assertPlannerProviderAvailable() {
-    if (!VALID_PLANNER_PROVIDERS.has(providerSelection.plannerProvider)) {
+  async function resolveProviderSelectionLive() {
+    let liveKeyStatus = keyStatus;
+    if (typeof getKeyStatus === "function") {
+      try {
+        const next = await getKeyStatus();
+        if (next && typeof next === "object") {
+          liveKeyStatus = next;
+        }
+      } catch {
+        // Keep the last known fallback if key-status refresh fails.
+      }
+    }
+    return resolveDesignReviewProviderSelection({
+      keyStatus: liveKeyStatus,
+      preferredPlannerProvider,
+      preferredPreviewProvider,
+    });
+  }
+
+  function assertPlannerProviderAvailable(providerSelection) {
+    if (!VALID_PLANNER_PROVIDERS.has(providerSelection?.plannerProvider)) {
       throw new Error(DESIGN_REVIEW_PLANNER_PROVIDER_ERROR);
     }
   }
 
   return {
-    providerSelection,
+    get providerSelection() {
+      return resolveDesignReviewProviderSelection({
+        keyStatus,
+        preferredPlannerProvider,
+        preferredPreviewProvider,
+      });
+    },
     async runPlanner({ request = {}, prompt = "", images = [] } = {}) {
-      assertPlannerProviderAvailable();
+      const providerSelection = await resolveProviderSelectionLive();
+      assertPlannerProviderAvailable(providerSelection);
       return runProviderRequest({
         kind: "planner",
         provider: providerSelection.plannerProvider,
@@ -100,7 +121,8 @@ export function createDesignReviewProviderRouter({
       });
     },
     async runUploadAnalysis({ image = {}, prompt = "" } = {}) {
-      assertPlannerProviderAvailable();
+      const providerSelection = await resolveProviderSelectionLive();
+      assertPlannerProviderAvailable(providerSelection);
       return runProviderRequest({
         kind: "upload_analysis",
         provider: providerSelection.plannerProvider,
@@ -110,6 +132,7 @@ export function createDesignReviewProviderRouter({
       });
     },
     async runPreview({ request = {}, proposal = {}, inputImage = null, outputPath = "" } = {}) {
+      const providerSelection = await resolveProviderSelectionLive();
       return runProviderRequest({
         kind: "preview",
         provider: providerSelection.previewProvider,

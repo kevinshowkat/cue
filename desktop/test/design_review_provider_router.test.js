@@ -76,3 +76,31 @@ test("design review provider router fails clearly when no planner credentials ar
     /OPENAI_API_KEY or OPENROUTER_API_KEY/
   );
 });
+
+test("design review provider router resolves live key status before planner requests", async () => {
+  const requests = [];
+  const router = createDesignReviewProviderRouter({
+    keyStatus: {
+      openai: false,
+      openrouter: false,
+      gemini: false,
+    },
+    getKeyStatus: async () => ({
+      openai: true,
+      openrouter: true,
+      gemini: false,
+    }),
+    requestProvider: async (request) => {
+      requests.push(request);
+      return { ok: true };
+    },
+  });
+
+  await router.runPlanner({
+    request: { requestId: "review-live" },
+    prompt: "Return proposals",
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].provider, "openai");
+});

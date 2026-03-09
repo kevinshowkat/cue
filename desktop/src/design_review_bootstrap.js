@@ -1,6 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/tauri";
 import { exists, readBinaryFile, readTextFile, writeBinaryFile } from "@tauri-apps/api/fs";
 import { join } from "@tauri-apps/api/path";
+import { invoke } from "@tauri-apps/api/tauri";
 
 import { buildDesignReviewRequest } from "./design_review_contract.js";
 import {
@@ -443,6 +444,7 @@ export async function installDesignReviewBootstrap() {
   const uploadAnalysisCache = createUploadAnalysisCacheStore(storage);
   const providerRouter = createDesignReviewProviderRouter({
     requestProvider: invokeDesignReviewProviderRequest,
+    getKeyStatus: () => invoke("get_key_status"),
   });
   const pathHashCache = new Map();
   const runtimeState = {
