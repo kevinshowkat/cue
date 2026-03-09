@@ -47,6 +47,16 @@ test("design review bootstrap dispatches structured apply events and routes tray
   assert.match(bootstrap, /void pipeline\.applyProposal\(proposalId,\s*\{[\s\S]*reviewState,[\s\S]*onStateChange:/s);
 });
 
+test("design review bootstrap makes proposal cards directly clickable for apply", () => {
+  assert.match(bootstrap, /function slotCanAcceptProposal\(slot = null, requestApplyLocked = false\)/);
+  assert.match(bootstrap, /card\.classList\.toggle\("is-actionable", canAcceptSlot\)/);
+  assert.match(bootstrap, /card\.tabIndex = canAcceptSlot \? 0 : -1/);
+  assert.match(bootstrap, /card\.addEventListener\("click", \(\) => \{\s*handleAccept\(\);/s);
+  assert.match(bootstrap, /card\.addEventListener\("keydown", \(event\) => \{\s*if \(event\.key !== "Enter" && event\.key !== " "\) return;/s);
+  assert.match(bootstrap, /hint\.textContent = "Click anywhere on this proposal to apply\.";/);
+  assert.match(bootstrap, /accept\.addEventListener\("click", \(event\) => \{\s*event\.stopPropagation\(\);/s);
+});
+
 test("design review bootstrap keeps tab-local review runtime state instead of one shared tray state", () => {
   assert.match(bootstrap, /createDesignReviewRuntimeRegistry/);
   assert.match(bootstrap, /const runtimeStateBySession = new Map\(\)/);

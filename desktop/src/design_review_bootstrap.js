@@ -422,6 +422,17 @@ function ensureReviewStyle() {
   gap: 12px;
   align-items: start;
 }
+.communication-proposal-slot.is-actionable {
+  cursor: pointer;
+}
+.communication-proposal-slot.is-actionable:hover {
+  border-color: rgba(28, 118, 242, 0.22);
+  box-shadow: 0 16px 28px rgba(17, 31, 48, 0.12);
+}
+.communication-proposal-slot.is-actionable:focus-visible {
+  outline: 2px solid rgba(28, 118, 242, 0.52);
+  outline-offset: 2px;
+}
 .design-review-runtime-media {
   position: relative;
   width: 76px;
@@ -505,6 +516,11 @@ function ensureReviewStyle() {
   font-size: 12px;
   line-height: 1.42;
   color: rgba(72, 90, 111, 0.8);
+}
+.design-review-runtime-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(28, 118, 242, 0.82);
 }
 .design-review-runtime-why.is-error {
   color: rgba(158, 56, 56, 0.92);
@@ -904,6 +920,13 @@ function communicationTraySlotList() {
   return document.getElementById("communication-proposal-slot-list");
 }
 
+function slotCanAcceptProposal(slot = null, requestApplyLocked = false) {
+  if (!slot?.proposal) return false;
+  const status = String(slot?.status || "");
+  if (status === "apply_running" || status === "apply_succeeded") return false;
+  return !requestApplyLocked;
+}
+
 function renderCommunicationTrayDetails(state = {}, onAccept = null) {
   ensureReviewStyle();
   const tray = communicationTrayRoot();
@@ -974,10 +997,13 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
   const fragment = document.createDocumentFragment();
   slots.forEach((slot, index) => {
     const card = document.createElement("div");
+    const canAcceptSlot = slotCanAcceptProposal(slot, requestApplyLocked);
     card.className = "communication-proposal-slot";
     card.dataset.slotIndex = String(index);
     card.setAttribute("role", "listitem");
     card.dataset.reviewStatus = readFirstString(slot?.status) || "skeleton";
+    card.classList.toggle("is-actionable", canAcceptSlot);
+    card.tabIndex = canAcceptSlot ? 0 : -1;
     card.classList.toggle(
       "is-skeleton",
       !["ready", "failed", "apply_running", "apply_succeeded", "apply_failed"].includes(
@@ -988,6 +1014,20 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
       "is-failed",
       ["failed", "apply_failed"].includes(String(slot?.status || ""))
     );
+    const handleAccept = () => {
+      if (!canAcceptSlot) return;
+      if (typeof onAccept === "function") onAccept(slot.proposal);
+    };
+    if (canAcceptSlot) {
+      card.addEventListener("click", () => {
+        handleAccept();
+      });
+      card.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        handleAccept();
+      });
+    }
 
     const layout = document.createElement("div");
     layout.className = "design-review-runtime-card";
@@ -1031,6 +1071,12 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
     why.textContent = slotSummaryText(slot);
 
     copy.append(row, titleNode, why);
+    if (canAcceptSlot) {
+      const hint = document.createElement("div");
+      hint.className = "design-review-runtime-hint";
+      hint.textContent = "Click anywhere on this proposal to apply.";
+      copy.appendChild(hint);
+    }
 
     const slotDebugInfo = slot?.apply?.debugInfo || slot?.debugInfo || null;
     if (
@@ -1052,12 +1098,11 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
                 ? "Retry Apply"
                 : "Apply via Runtime";
         accept.disabled =
-          slot?.status === "apply_running" ||
-          slot?.status === "apply_succeeded" ||
-          requestApplyLocked;
-        accept.addEventListener("click", () => {
+          !canAcceptSlot;
+        accept.addEventListener("click", (event) => {
+          event.stopPropagation();
           if (accept.disabled) return;
-          if (typeof onAccept === "function") onAccept(slot.proposal);
+          handleAccept();
         });
         actions.appendChild(accept);
       }
@@ -1066,7 +1111,8 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
         debug.type = "button";
         debug.className = "design-review-runtime-action design-review-runtime-action-secondary";
         debug.textContent = "Debug Payload";
-        debug.addEventListener("click", () => {
+        debug.addEventListener("click", (event) => {
+          event.stopPropagation();
           openReviewDebugModal(slotDebugInfo);
         });
         actions.appendChild(debug);
