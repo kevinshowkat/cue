@@ -5,7 +5,7 @@ Use these prompts for the March 9, 2026 review-apply wave. The goal is to let us
 ## Review Apply Contract
 - Communication tray remains the only review surface.
 - Planner stays `gpt-5.4`.
-- Planner reasoning remains `medium`.
+- Planner reasoning remains `xhigh`.
 - Preview stays `gemini-3.1-flash-image-preview`.
 - Final apply uses Gemini Nano Banana 2.
 - If the provider-facing model id differs from the nickname, pin that mapping once in shared constants and preserve the requested vs normalized model in debug info.
