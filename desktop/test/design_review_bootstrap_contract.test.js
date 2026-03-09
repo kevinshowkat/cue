@@ -33,6 +33,8 @@ test("design review bootstrap exposes a failure debug payload modal from the com
   assert.match(bootstrap, /function openReviewDebugModal\(payload = null\)/);
   assert.match(bootstrap, /debug\.textContent = "Debug Payload"/);
   assert.match(bootstrap, /slot\?\.status === "failed" && slot\?\.debugInfo/);
+  assert.match(bootstrap, /const fragment = document\.createDocumentFragment\(\)/);
+  assert.match(bootstrap, /list\.replaceChildren\(fragment\)/);
 });
 
 test("design review bootstrap keeps tab-local review runtime state instead of one shared tray state", () => {

@@ -844,14 +844,15 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
   }
 
   const slots = Array.isArray(state?.slots) ? state.slots : [];
-  const cards = Array.from(list.children);
+  const fragment = document.createDocumentFragment();
   slots.forEach((slot, index) => {
-    const card = cards[index];
-    if (!card) return;
+    const card = document.createElement("div");
+    card.className = "communication-proposal-slot";
+    card.dataset.slotIndex = String(index);
+    card.setAttribute("role", "listitem");
     card.dataset.reviewStatus = readFirstString(slot?.status) || "skeleton";
     card.classList.toggle("is-skeleton", !["ready", "failed"].includes(String(slot?.status || "")));
     card.classList.toggle("is-failed", String(slot?.status || "") === "failed");
-    card.replaceChildren();
 
     const layout = document.createElement("div");
     layout.className = "design-review-runtime-card";
@@ -927,7 +928,9 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
 
     layout.append(media, copy);
     card.appendChild(layout);
+    fragment.appendChild(card);
   });
+  list.replaceChildren(fragment);
   requestAnimationFrame(() => {
     clampTrayIntoCanvasWrap(tray);
   });
