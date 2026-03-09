@@ -210,6 +210,9 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
     "View the canvas image and visible annotations only.",
     "An action is a concrete visual edit the editor could apply to the image.",
     "Write actions as short edit intents, not advice, critique, or conversation.",
+    "Use the whole visible canvas as context, not just the local annotation area.",
+    "Treat annotations and the chosen region candidate as focus hints, not crop-only constraints.",
+    "Prefer edits that can plausibly route through the normal execution layer later.",
     `Return ${slotCount} ranked proposals as JSON only.`,
     JSON.stringify(
       {

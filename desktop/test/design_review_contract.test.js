@@ -98,7 +98,7 @@ test("design review skeleton slots reserve 2-3 preview slots immediately", () =>
   assert.equal(slots.every((slot) => slot.previewJob.status === "queued"), true);
 });
 
-test("design review planner prompt stays compact and defines actions as edit intents", () => {
+test("design review planner prompt stays compact, restores canvas-scope constraints, and defines actions as edit intents", () => {
   const prompt = buildDesignReviewPlannerPrompt({
     requestId: "review-compact",
     visibleCanvasRef: "/tmp/review-visible.png",
@@ -109,6 +109,9 @@ test("design review planner prompt stays compact and defines actions as edit int
   assert.match(prompt, /View the canvas image and visible annotations only\./);
   assert.match(prompt, /An action is a concrete visual edit the editor could apply to the image\./);
   assert.match(prompt, /Write actions as short edit intents, not advice, critique, or conversation\./);
+  assert.match(prompt, /Use the whole visible canvas as context, not just the local annotation area\./);
+  assert.match(prompt, /Treat annotations and the chosen region candidate as focus hints, not crop-only constraints\./);
+  assert.match(prompt, /Prefer edits that can plausibly route through the normal execution layer later\./);
   assert.match(prompt, /Return 3 ranked proposals as JSON only\./);
   assert.match(prompt, /"markIds": \[\s*"optional annotation ids"\s*\]/);
   assert.match(prompt, /"actionType": "short edit intent like remove_object, brighten_area, simplify_background"/);
