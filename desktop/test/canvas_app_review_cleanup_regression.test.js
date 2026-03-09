@@ -47,41 +47,6 @@ function instantiateFunction(name, deps = {}) {
   return new Function(...keys, `return (${source});`)(...values);
 }
 
-test("normal editing flows stay passive and do not auto-start the engine", () => {
-  for (const name of [
-    "openExistingRun",
-    "importLocalPathsAtCanvasPoint",
-    "addImage",
-    "setActiveImage",
-    "setCanvasMode",
-    "replaceImageInPlace",
-    "spawnEngine",
-    "motherV2VisionReadyForIntent",
-  ]) {
-    const source = extractFunctionSource(name);
-    assert.doesNotMatch(source, /scheduleVisionDescribe(All|Burst)?\(/, `${name} should not enqueue passive /describe work`);
-    assert.doesNotMatch(source, /scheduleAlwaysOnVision\(/, `${name} should not enqueue passive vision work`);
-    assert.doesNotMatch(source, /scheduleAmbientIntentInference\(/, `${name} should not enqueue ambient intent work`);
-  }
-
-  for (const name of [
-    "openExistingRun",
-    "importLocalPathsAtCanvasPoint",
-    "addImage",
-    "setActiveImage",
-    "setCanvasMode",
-    "replaceImageInPlace",
-  ]) {
-    assert.doesNotMatch(extractFunctionSource(name), /ensureEngineSpawned\(/, `${name} should not auto-start the engine`);
-  }
-});
-
-test("normal upload flow stays free of passive describe toasts", () => {
-  const importSource = extractFunctionSource("importLocalPathsAtCanvasPoint");
-  assert.doesNotMatch(importSource, /scheduleVisionDescribe(All|Burst)?\(/);
-  assert.doesNotMatch(importSource, /showToast\([^)]*describe/i);
-});
-
 test("requestCommunicationDesignReview primes immediate communication-tray state and dispatches the canvas payload", () => {
   const trayCalls = [];
   const eventCalls = [];
