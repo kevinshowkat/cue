@@ -8,6 +8,7 @@ const VALID_PLANNER_PROVIDERS = new Set(["openai", "openrouter"]);
 const VALID_PREVIEW_PROVIDERS = new Set(["google", "openrouter"]);
 const DESIGN_REVIEW_PLANNER_PROVIDER_ERROR =
   "Design review planner requires OPENAI_API_KEY or OPENROUTER_API_KEY.";
+const DESIGN_REVIEW_PROVIDER_COMMAND = "run_design_review_provider_request";
 
 function readFirstString(...values) {
   for (const value of values) {
@@ -22,9 +23,110 @@ function asRecord(value) {
   return value;
 }
 
+function cloneJson(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
 function normalizeProviderPreference(value, validProviders) {
   const provider = readFirstString(value).toLowerCase();
   return validProviders.has(provider) ? provider : "";
+}
+
+function resolveProviderApiPlan(request = {}) {
+  const kind = readFirstString(request?.kind) || "unknown";
+  const provider = readFirstString(request?.provider) || "unknown";
+  if (kind === "planner" && provider === "openai") {
+    return {
+      primaryTransport: "responses_websocket",
+      fallbackTransport: "responses_http_fallback_on_transport_error",
+    };
+  }
+  if (kind === "planner" && provider === "openrouter") {
+    return {
+      primaryTransport: "chat_completions",
+    };
+  }
+  if (kind === "upload_analysis" && provider === "openai") {
+    return {
+      primaryTransport: "responses_http",
+    };
+  }
+  if (kind === "upload_analysis" && provider === "openrouter") {
+    return {
+      primaryTransport: "chat_completions",
+    };
+  }
+  if (kind === "preview" && provider === "google") {
+    return {
+      primaryTransport: "gemini_image_preview",
+    };
+  }
+  if (kind === "preview" && provider === "openrouter") {
+    return {
+      primaryTransport: "openrouter_image_generation",
+    };
+  }
+  return {
+    primaryTransport: "unknown",
+  };
+}
+
+function buildProviderDebugInfo(request = {}, { response = null, error = null } = {}) {
+  const providerRequest = cloneJson(request);
+  const providerResponse = asRecord(response)
+    ? {
+        provider: readFirstString(response.provider) || null,
+        model: readFirstString(response.model) || null,
+        transport: readFirstString(response.transport) || null,
+        responseId: readFirstString(response.responseId, response.response_id) || null,
+        outputPath: readFirstString(response.outputPath, response.outputPreviewRef) || null,
+        text:
+          readFirstString(response.text, response.outputText, response.rawText) ||
+          null,
+      }
+    : null;
+  return {
+    capturedAt: new Date().toISOString(),
+    tauriCommand: DESIGN_REVIEW_PROVIDER_COMMAND,
+    route: {
+      kind: readFirstString(request?.kind) || null,
+      provider: readFirstString(request?.provider) || null,
+      model: readFirstString(request?.model) || null,
+      apiPlan: resolveProviderApiPlan(request),
+    },
+    providerRequest,
+    providerResponse,
+    failure: error
+      ? {
+          name: readFirstString(error?.name) || null,
+          message: readFirstString(error?.message, error) || "Design review provider request failed.",
+        }
+      : null,
+  };
+}
+
+function decorateProviderError(error, request = {}) {
+  const message =
+    readFirstString(error?.message, error) || "Design review provider request failed.";
+  const wrapped = error instanceof Error ? error : new Error(message);
+  if (!wrapped.message) wrapped.message = message;
+  wrapped.debugInfo = buildProviderDebugInfo(request, { error });
+  return wrapped;
+}
+
+function decorateProviderResult(result, request = {}) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return {
+      value: result,
+      debugInfo: buildProviderDebugInfo(request, {
+        response: { text: readFirstString(result) || null },
+      }),
+    };
+  }
+  return {
+    ...result,
+    debugInfo: buildProviderDebugInfo(request, { response: result }),
+  };
 }
 
 export function resolveDesignReviewProviderSelection({
@@ -72,7 +174,12 @@ export function createDesignReviewProviderRouter({
     if (typeof requestProvider !== "function") {
       throw new Error("Design-review provider request handler is unavailable.");
     }
-    return requestProvider(request);
+    try {
+      const result = await requestProvider(request);
+      return decorateProviderResult(result, request);
+    } catch (error) {
+      throw decorateProviderError(error, request);
+    }
   }
 
   async function resolveProviderSelectionLive() {

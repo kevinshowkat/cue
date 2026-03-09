@@ -38,6 +38,7 @@ function freshState() {
     slots: [],
     proposals: [],
     previewJobs: [],
+    plannerDebugInfo: null,
     errors: [],
     startedAt: null,
     completedAt: null,
@@ -148,6 +149,7 @@ export function createDesignReviewPipeline({
         slots: initialSlots,
         proposals: [],
         previewJobs: initialSlots.map((slot) => slot.previewJob),
+        plannerDebugInfo: null,
         errors: [],
         startedAt: new Date().toISOString(),
         completedAt: null,
@@ -176,6 +178,7 @@ export function createDesignReviewPipeline({
         prompt: plannerPrompt,
         images: [request.visibleCanvasRef].filter(Boolean),
       });
+      const plannerDebugInfo = cloneJson(plannerResult?.debugInfo || null);
       if (!isCurrentRun()) return cloneJson(state);
       const parsed = parseDesignReviewPlannerResponse(
         plannerResult?.text || plannerResult?.outputText || plannerResult?.rawText || "",
@@ -199,12 +202,14 @@ export function createDesignReviewPipeline({
         proposal: rankedProposals[index] ? { ...rankedProposals[index] } : null,
         previewJob: previewJobs[index] ? { ...previewJobs[index] } : slot.previewJob,
         error: rankedProposals[index] ? null : "planner_returned_no_proposal",
+        debugInfo: rankedProposals[index] ? null : plannerDebugInfo,
       }));
       setState({
         ...state,
         status: rankedProposals.length ? "previewing" : "failed",
         proposals: rankedProposals,
         previewJobs,
+        plannerDebugInfo,
         slots: nextSlots,
         errors: rankedProposals.length ? [] : ["planner_returned_no_proposal"],
       });
@@ -292,10 +297,12 @@ export function createDesignReviewPipeline({
               slots: patchSlot(state.slots, rank, {
                 status: "failed",
                 error: String(error?.message || error || "preview_failed"),
+                debugInfo: cloneJson(error?.debugInfo || null),
                 previewJob: {
                   ...previewJob,
                   status: "failed",
                   failureReason: String(error?.message || error || "preview_failed"),
+                  debugInfo: cloneJson(error?.debugInfo || null),
                 },
               }),
             };

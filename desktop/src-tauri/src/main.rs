@@ -52,9 +52,12 @@ const DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL: &str = "openai/gpt-5.4";
 const REVIEW_OPENAI_RESPONSES_WS_TRANSPORT: &str = "responses_websocket";
 const REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT: &str = "responses_http_fallback";
 const REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT: &str = "chat_completions";
-const REVIEW_OPENAI_RESPONSES_WS_IO_TIMEOUT: Duration = Duration::from_secs(20);
-const REVIEW_OPENAI_RESPONSES_WS_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(20);
-const REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT: Duration = Duration::from_secs(60);
+// GPT-5.4 planner responses can pause for longer stretches between websocket
+// events on image-heavy reviews; keep the transport budget loose enough to
+// avoid false timeouts without turning real hangs into multi-minute waits.
+const REVIEW_OPENAI_RESPONSES_WS_IO_TIMEOUT: Duration = Duration::from_secs(45);
+const REVIEW_OPENAI_RESPONSES_WS_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(45);
+const REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT: Duration = Duration::from_secs(90);
 
 fn build_app_menu(app_name: &str) -> Menu {
     let import = CustomMenuItem::new(MENU_CANVAS_IMPORT.to_string(), "Import Photos")
@@ -4595,7 +4598,7 @@ mod tests {
         assert!(message.contains("normalized model=gpt-5.4"));
         assert!(message.contains("transport=responses_websocket"));
         assert!(message.contains("stage=completion_wait"));
-        assert!(message.contains("timeout_seconds=60"));
+        assert!(message.contains("timeout_seconds=90"));
     }
 
     #[test]

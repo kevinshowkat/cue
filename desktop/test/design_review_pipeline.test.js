@@ -163,3 +163,56 @@ test("design review pipeline ignores stale review completions after a newer revi
   assert.equal(secondResult.proposals[0].label, "Second review wins");
   assert.equal(pipeline.getState().request.requestId, "review-2");
 });
+
+test("design review pipeline preserves preview debug payloads on failed proposal slots", async () => {
+  const pipeline = createDesignReviewPipeline({
+    providerRouter: {
+      async runPlanner() {
+        return {
+          text: JSON.stringify({
+            proposals: [
+              {
+                label: "Swap background",
+                imageId: "img-1",
+                actionType: "background_replace",
+                why: "A cleaner backdrop will make the product read faster.",
+                previewBrief: "Preview a soft studio sweep background.",
+                applyBrief: "Replace the background only.",
+              },
+            ],
+          }),
+        };
+      },
+      async runPreview() {
+        const error = new Error("The review preview could not be prepared.");
+        error.debugInfo = {
+          tauriCommand: "run_design_review_provider_request",
+          route: {
+            kind: "preview",
+            provider: "google",
+          },
+          providerRequest: {
+            model: "gemini-3.1-flash-image-preview",
+          },
+        };
+        throw error;
+      },
+    },
+  });
+
+  const result = await pipeline.startReview({
+    request: {
+      requestId: "review-preview-debug",
+      primaryImageId: "img-1",
+      visibleCanvasRef: "/tmp/review-visible.png",
+      visibleCanvasContext: {
+        runDir: "/tmp/review-run",
+      },
+    },
+  });
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.slots[0].status, "failed");
+  assert.equal(result.slots[0].debugInfo?.route?.kind, "preview");
+  assert.equal(result.slots[0].debugInfo?.providerRequest?.model, "gemini-3.1-flash-image-preview");
+});

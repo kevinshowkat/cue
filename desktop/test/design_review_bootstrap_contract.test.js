@@ -28,6 +28,13 @@ test("design review bootstrap keeps the integrated communication tray light and 
   assert.doesNotMatch(bootstrap, /design-review-tray/);
 });
 
+test("design review bootstrap exposes a failure debug payload modal from the communication tray", () => {
+  assert.match(bootstrap, /const REVIEW_DEBUG_MODAL_ID = "design-review-debug-modal"/);
+  assert.match(bootstrap, /function openReviewDebugModal\(payload = null\)/);
+  assert.match(bootstrap, /debug\.textContent = "Debug Payload"/);
+  assert.match(bootstrap, /slot\?\.status === "failed" && slot\?\.debugInfo/);
+});
+
 test("design review bootstrap keeps tab-local review runtime state instead of one shared tray state", () => {
   assert.match(bootstrap, /createDesignReviewRuntimeRegistry/);
   assert.match(bootstrap, /const runtimeStateBySession = new Map\(\)/);

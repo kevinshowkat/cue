@@ -19,6 +19,7 @@ import {
 import { invokeDesignReviewProviderRequest } from "./design_review_backend.js";
 
 const REVIEW_CONSENT_ID = "design-review-consent";
+const REVIEW_DEBUG_MODAL_ID = "design-review-debug-modal";
 const REVIEW_STYLE_ID = "design-review-style";
 const REVIEW_STATE_EVENT = "juggernaut:design-review-state";
 const REVIEW_ACCEPT_EVENT = "juggernaut:design-review-accept";
@@ -217,6 +218,74 @@ function ensureReviewStyle() {
   background: rgba(223, 229, 235, 0.92);
   color: rgba(46, 61, 79, 0.82);
 }
+#${REVIEW_DEBUG_MODAL_ID}.hidden {
+  display: none !important;
+}
+#${REVIEW_DEBUG_MODAL_ID} {
+  position: fixed;
+  inset: 0;
+  z-index: 145;
+  display: grid;
+  place-items: center;
+  background: rgba(14, 20, 28, 0.38);
+  backdrop-filter: blur(8px);
+}
+#${REVIEW_DEBUG_MODAL_ID} .design-review-debug-panel {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(78vh, 900px);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(203, 212, 222, 0.94);
+  background:
+    radial-gradient(240px 140px at 12% -6%, rgba(255, 149, 92, 0.10), transparent 60%),
+    radial-gradient(240px 148px at 104% 8%, rgba(94, 161, 255, 0.10), transparent 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.985), rgba(246, 249, 252, 0.972));
+  box-shadow:
+    0 26px 68px rgba(18, 28, 40, 0.22),
+    0 1px 0 rgba(255, 255, 255, 0.86) inset;
+}
+#${REVIEW_DEBUG_MODAL_ID} .design-review-debug-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+#${REVIEW_DEBUG_MODAL_ID} .design-review-debug-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(82, 98, 118, 0.88);
+}
+#${REVIEW_DEBUG_MODAL_ID} .design-review-debug-close {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(233, 238, 244, 0.92);
+  color: rgba(60, 77, 98, 0.82);
+}
+#${REVIEW_DEBUG_MODAL_ID} .design-review-debug-body {
+  overflow: auto;
+  border-radius: 16px;
+  background: rgba(15, 23, 34, 0.96);
+  box-shadow: inset 0 0 0 1px rgba(52, 69, 88, 0.62);
+}
+#${REVIEW_DEBUG_MODAL_ID} pre {
+  margin: 0;
+  padding: 14px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(226, 236, 247, 0.96);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 #communication-proposal-tray.is-design-review-runtime {
   width: min(388px, calc(100vw - 34px));
   min-width: 296px;
@@ -351,6 +420,10 @@ function ensureReviewStyle() {
   background: rgba(28, 118, 242, 0.92);
   color: rgba(255, 255, 255, 0.98);
 }
+.design-review-runtime-action.design-review-runtime-action-secondary {
+  background: rgba(233, 238, 244, 0.96);
+  color: rgba(61, 78, 98, 0.84);
+}
 `;
   document.head.appendChild(style);
 }
@@ -373,6 +446,58 @@ function ensureConsentUi() {
     </div>
   `;
   document.body.appendChild(root);
+  return root;
+}
+
+function stringifyReviewDebugPayload(payload = null) {
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch (error) {
+    return JSON.stringify(
+      {
+        failure: "Could not serialize review debug payload.",
+        error: readFirstString(error?.message, error) || null,
+      },
+      null,
+      2
+    );
+  }
+}
+
+function ensureReviewDebugModal() {
+  ensureReviewStyle();
+  let root = document.getElementById(REVIEW_DEBUG_MODAL_ID);
+  if (root) return root;
+  root = document.createElement("section");
+  root.id = REVIEW_DEBUG_MODAL_ID;
+  root.className = "hidden";
+  root.innerHTML = `
+    <div class="design-review-debug-panel" role="dialog" aria-modal="true" aria-labelledby="${REVIEW_DEBUG_MODAL_ID}-title">
+      <div class="design-review-debug-head">
+        <div class="design-review-debug-title" id="${REVIEW_DEBUG_MODAL_ID}-title">Review Debug Payload</div>
+        <button type="button" class="design-review-debug-close" data-review-debug-close="1">Close</button>
+      </div>
+      <div class="design-review-debug-body">
+        <pre class="design-review-debug-json"></pre>
+      </div>
+    </div>
+  `;
+  const close = () => {
+    root.classList.add("hidden");
+  };
+  root.addEventListener("click", (event) => {
+    if (event.target === root) close();
+  });
+  root.querySelector('[data-review-debug-close="1"]')?.addEventListener("click", close);
+  document.body.appendChild(root);
+  return root;
+}
+
+function openReviewDebugModal(payload = null) {
+  const root = ensureReviewDebugModal();
+  const pre = root.querySelector(".design-review-debug-json");
+  if (pre) pre.textContent = stringifyReviewDebugPayload(payload);
+  root.classList.remove("hidden");
   return root;
 }
 
@@ -690,17 +815,32 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
 
     copy.append(row, titleNode, why);
 
-    if (slot?.proposal && (slot?.status === "ready" || slot?.status === "failed")) {
+    if (
+      (slot?.proposal && (slot?.status === "ready" || slot?.status === "failed")) ||
+      (slot?.status === "failed" && slot?.debugInfo)
+    ) {
       const actions = document.createElement("div");
       actions.className = "design-review-runtime-actions";
-      const accept = document.createElement("button");
-      accept.type = "button";
-      accept.className = "design-review-runtime-action";
-      accept.textContent = slot?.status === "ready" ? "Apply via Runtime" : "Accept Intent";
-      accept.addEventListener("click", () => {
-        if (typeof onAccept === "function") onAccept(slot.proposal);
-      });
-      actions.appendChild(accept);
+      if (slot?.proposal && (slot?.status === "ready" || slot?.status === "failed")) {
+        const accept = document.createElement("button");
+        accept.type = "button";
+        accept.className = "design-review-runtime-action";
+        accept.textContent = slot?.status === "ready" ? "Apply via Runtime" : "Accept Intent";
+        accept.addEventListener("click", () => {
+          if (typeof onAccept === "function") onAccept(slot.proposal);
+        });
+        actions.appendChild(accept);
+      }
+      if (slot?.status === "failed" && slot?.debugInfo) {
+        const debug = document.createElement("button");
+        debug.type = "button";
+        debug.className = "design-review-runtime-action design-review-runtime-action-secondary";
+        debug.textContent = "Debug Payload";
+        debug.addEventListener("click", () => {
+          openReviewDebugModal(slot.debugInfo);
+        });
+        actions.appendChild(debug);
+      }
       copy.appendChild(actions);
     }
 
@@ -876,7 +1016,13 @@ function syncCommunicationTray(runtimeState, state = {}, onAccept = null) {
   renderCommunicationTrayDetails(state, onAccept);
 }
 
-function renderReviewFailure(runtimeState, request = null, errorMessage = "Design review failed.", onAccept = null) {
+function renderReviewFailure(
+  runtimeState,
+  request = null,
+  errorMessage = "Design review failed.",
+  onAccept = null,
+  debugInfo = null
+) {
   const failureRequest =
     (request && typeof request === "object" && { ...request }) ||
     (runtimeState?.activeRequestId || runtimeState?.sessionKey
@@ -897,6 +1043,7 @@ function renderReviewFailure(runtimeState, request = null, errorMessage = "Desig
           why: clampText(errorMessage, 220),
         },
         error: clampText(errorMessage, 220),
+        debugInfo: debugInfo && typeof debugInfo === "object" ? JSON.parse(JSON.stringify(debugInfo)) : null,
       },
     ],
   };
@@ -1118,7 +1265,8 @@ export async function installDesignReviewBootstrap() {
         runtimeState,
         request,
         error?.message || error || "Design review failed to start.",
-        acceptProposal
+        acceptProposal,
+        error?.debugInfo || null
       );
     }
   };

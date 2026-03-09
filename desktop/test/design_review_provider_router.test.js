@@ -104,3 +104,34 @@ test("design review provider router resolves live key status before planner requ
   assert.equal(requests.length, 1);
   assert.equal(requests[0].provider, "openai");
 });
+
+test("design review provider router attaches debug payloads to planner transport failures", async () => {
+  const router = createDesignReviewProviderRouter({
+    keyStatus: {
+      openai: true,
+      openrouter: false,
+      gemini: false,
+    },
+    requestProvider: async () => {
+      throw new Error("OpenAI planner transport timed out.");
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      router.runPlanner({
+        request: { requestId: "review-debug" },
+        prompt: "Return proposals",
+        images: ["/tmp/review-visible.png"],
+      }),
+    (error) => {
+      assert.equal(error?.debugInfo?.tauriCommand, "run_design_review_provider_request");
+      assert.equal(error?.debugInfo?.route?.kind, "planner");
+      assert.equal(error?.debugInfo?.route?.provider, "openai");
+      assert.equal(error?.debugInfo?.route?.apiPlan?.primaryTransport, "responses_websocket");
+      assert.equal(error?.debugInfo?.providerRequest?.model, DESIGN_REVIEW_PLANNER_MODEL);
+      assert.deepEqual(error?.debugInfo?.providerRequest?.images, ["/tmp/review-visible.png"]);
+      return true;
+    }
+  );
+});
