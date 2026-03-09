@@ -50,7 +50,8 @@ test("communication input layer intercepts marker, magic select, eraser, and tit
   assert.match(app, /state\.pointer\.kind = COMMUNICATION_POINTER_KINDS\.MAGIC_SELECT;/);
   assert.match(app, /function requestCommunicationDesignReview\(\{ source = "titlebar" \} = \{\}\) \{/);
   assert.match(app, /els\.sessionTabDesignReview\.addEventListener\("click", \(\) => \{/);
-  assert.match(app, /requestCommunicationDesignReview\(\{ source: "titlebar" \}\);/);
+  assert.match(app, /function triggerCommunicationDesignReviewFromTitlebar\(\{ source = "titlebar" \} = \{\}\) \{/);
+  assert.match(app, /triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar" \}\);/);
 });
 
 test("communication marker keeps the draft in screen space, commits canvas marks, and renders a smoothed freehand path", () => {
