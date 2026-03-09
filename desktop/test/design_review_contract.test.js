@@ -33,7 +33,17 @@ test("design review request builder carries visible canvas context, marks, selec
       },
     ],
     activeRegionCandidateId: "region-1",
-    cachedImageAnalyses: [{ hash: "hash-1", analysisRef: "analysis/hash-1.json" }],
+    cachedImageAnalyses: [
+      {
+        hash: "hash-1",
+        analysisRef: "analysis/hash-1.json",
+        imageId: "img-1",
+        imagePath: "/tmp/input.png",
+        summary: "Michael Jordan portrait against a clean studio backdrop.",
+        subjectTags: ["Michael Jordan", "basketball player"],
+        styleTags: ["studio", "portrait"],
+      },
+    ],
     accountMemorySummary: { memoryRef: "memory/account.json" },
   });
 
@@ -45,6 +55,17 @@ test("design review request builder carries visible canvas context, marks, selec
   assert.equal(request.cachedImageAnalyses[0].hash, "hash-1");
   assert.equal(request.uploadAnalysisRef, "analysis/hash-1.json");
   assert.equal(request.accountMemoryRef, "memory/account.json");
+  assert.deepEqual(request.imageIdentityHints, [
+    {
+      imageId: "img-1",
+      role: "target",
+      label: "/tmp/input.png",
+      subject: "Michael Jordan",
+      summary: "Michael Jordan portrait against a clean studio backdrop.",
+      subjectTags: ["Michael Jordan", "basketball player"],
+      styleTags: ["studio", "portrait"],
+    },
+  ]);
 });
 
 test("design review planner response parser accepts fenced JSON and normalizes proposal fields", () => {
@@ -107,6 +128,15 @@ test("design review planner prompt stays compact, restores canvas-scope constrai
     visibleCanvasRef: "/tmp/review-visible.png",
     markIds: ["mark-1"],
     slotCount: 3,
+    imageIdentityHints: [
+      {
+        imageId: "img-ref-2",
+        role: "reference",
+        subject: "Michael Jordan",
+        summary: "Michael Jordan in a red jersey.",
+        subjectTags: ["Michael Jordan", "basketball"],
+      },
+    ],
   });
 
   assert.match(prompt, /View the canvas image and visible annotations only\./);
@@ -116,8 +146,11 @@ test("design review planner prompt stays compact, restores canvas-scope constrai
   assert.match(prompt, /Use concise effect statements, not rationale essays\./);
   assert.match(prompt, /Use the whole visible canvas as context, not just the local annotation area\./);
   assert.match(prompt, /Treat annotations and the chosen region candidate as focus hints, not crop-only constraints\./);
+  assert.match(prompt, /Use image identity hints when they exist so subjects are named concretely/);
   assert.match(prompt, /Prefer edits that can plausibly route through the normal execution layer later\./);
   assert.match(prompt, /Return 3 ranked proposals as JSON only\./);
+  assert.match(prompt, /"imageIdentityHints": \[/);
+  assert.match(prompt, /"subject": "Michael Jordan"/);
   assert.match(prompt, /"markIds": \[\s*"optional annotation ids"\s*\]/);
   assert.match(prompt, /"actionType": "short edit intent like remove_object, brighten_area, simplify_background"/);
   assert.match(prompt, /"previewBrief": "short verb-first effect statement"/);

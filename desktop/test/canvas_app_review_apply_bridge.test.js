@@ -83,6 +83,7 @@ function buildReviewApplyHarness({
     runDir: "/runs/a",
     communication: {
       tool: "marker",
+      reviewHistory: [],
       proposalTray: {
         requestId: pendingRequestId,
       },
@@ -193,10 +194,14 @@ function buildReviewApplyHarness({
   const toastCalls = [];
   const topMetricCalls = [];
   const removeImageCalls = [];
+  const archiveCalls = [];
+  const dispatchCalls = [];
   const communicationToolCalls = [];
   const toolCalls = [];
+  let clearVisibleCalls = 0;
   let requestRenderCalls = 0;
   let processActionQueueCalls = 0;
+  let syncReviewFlowCalls = 0;
 
   const clearDesignReviewApplyState = ({ capture = true, publish = true } = {}) => {
     clearCalls.push({ capture, publish });
@@ -230,6 +235,11 @@ function buildReviewApplyHarness({
     state.imagesById.delete(String(imageId || ""));
     return true;
   };
+  const archiveCommunicationReviewContext = (payload = {}) => {
+    archiveCalls.push(payload);
+    state.communication.reviewHistory = [payload];
+    return payload;
+  };
   const setCommunicationTool = (tool = null, options = {}) => {
     communicationToolCalls.push({ tool, options });
     state.communication.tool = tool;
@@ -250,11 +260,28 @@ function buildReviewApplyHarness({
   const showToast = (message, kind, duration) => {
     toastCalls.push({ message, kind, duration });
   };
+  const clearVisibleCommunicationReviewState = () => {
+    clearVisibleCalls += 1;
+    state.communication.markDraft = null;
+    state.communication.eraseDraft = null;
+    state.communication.marksByImageId = new Map();
+    state.communication.canvasMarks = [];
+    state.communication.regionProposalsByImageId = new Map();
+    state.communication.lastAnchor = null;
+    return state.communication;
+  };
+  const dispatchJuggernautShellEvent = (name, detail) => {
+    dispatchCalls.push({ name, detail });
+  };
   const requestRender = () => {
     requestRenderCalls += 1;
   };
   const processActionQueue = async () => {
     processActionQueueCalls += 1;
+  };
+  const syncActiveTabReviewFlowState = () => {
+    syncReviewFlowCalls += 1;
+    return "";
   };
 
   const applyAcceptedDesignReviewOutput = instantiateFunction("applyAcceptedDesignReviewOutput", {
@@ -270,9 +297,15 @@ function buildReviewApplyHarness({
     ingestTopMetricsFromReceiptPath,
     uniqueStringList,
     removeImageFromCanvas,
+    archiveCommunicationReviewContext,
     setCommunicationTool,
     setTool,
+    clearVisibleCommunicationReviewState,
     clearDesignReviewApplyState,
+    dispatchJuggernautShellEvent,
+    buildCommunicationBridgeSnapshot: () => ({ markCount: 0, regionGroupCount: 0 }),
+    buildJuggernautShellContext: () => ({ activeTabId }),
+    syncActiveTabReviewFlowState,
     dismissCommunicationProposalTrayAfterReviewApply,
     setStatus,
     showToast,
@@ -281,6 +314,7 @@ function buildReviewApplyHarness({
     basename,
     state,
     removeFile: async () => {},
+    COMMUNICATION_STATE_CHANGED_EVENT: "juggernaut:communication-state-changed",
     DESIGN_REVIEW_APPLY_SOURCE: "design_review_apply",
   });
 
@@ -295,13 +329,21 @@ function buildReviewApplyHarness({
     toastCalls,
     topMetricCalls,
     removeImageCalls,
+    archiveCalls,
+    dispatchCalls,
     communicationToolCalls,
     toolCalls,
+    get clearVisibleCalls() {
+      return clearVisibleCalls;
+    },
     get requestRenderCalls() {
       return requestRenderCalls;
     },
     get processActionQueueCalls() {
       return processActionQueueCalls;
+    },
+    get syncReviewFlowCalls() {
+      return syncReviewFlowCalls;
     },
     applyAcceptedDesignReviewOutput,
   };
@@ -353,6 +395,9 @@ test("review apply success replaces the target image in place and records a time
   assert.equal(harness.timelineCalls[0].imageId, "img-1");
   assert.equal(harness.state.imagesById.get("img-1")?.source, "design_review_apply");
   assert.equal(harness.state.imagesById.get("img-1")?.timelineNodeId, "tl-2");
+  assert.equal(harness.archiveCalls.length, 1);
+  assert.equal(harness.archiveCalls[0].targetBefore.id, "img-1");
+  assert.equal(harness.clearVisibleCalls, 1);
   assert.deepEqual(harness.removeImageCalls, ["img-2"]);
   assert.equal(harness.state.imagesById.has("img-2"), false);
   assert.deepEqual(harness.communicationToolCalls, [
@@ -366,7 +411,9 @@ test("review apply success replaces the target image in place and records a time
   assert.equal(harness.state.lastCostLatency?.provider, "google");
   assert.equal(harness.state.lastCostLatency?.model, "gemini-nano-banana-2");
   assert.equal(harness.clearCalls.length, 1);
+  assert.equal(harness.syncReviewFlowCalls, 1);
   assert.deepEqual(harness.dismissCalls, [{ requestId: "review-1" }]);
+  assert.equal(harness.dispatchCalls.length, 1);
   assert.equal(harness.topMetricCalls.length, 1);
   assert.equal(harness.requestRenderCalls, 1);
   assert.equal(harness.processActionQueueCalls, 1);
@@ -558,6 +605,7 @@ test("communication tray host preserves runtime-owned review slots while still p
   const trayEl = {
     classList: createClassList(["is-design-review-runtime"]),
     style: {},
+    dataset: {},
     offsetWidth: 120,
     offsetHeight: 80,
   };
@@ -573,6 +621,9 @@ test("communication tray host preserves runtime-owned review slots while still p
     },
     clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
     communicationTrayAnchorPlacement,
+    communicationTrayAnchorPinnedToTitlebar: () => false,
+    designReviewButtonTrayAnchor: () => null,
+    communicationAnchorCanvasCss: () => ({ x: 50, y: 60 }),
   });
   const renderCommunicationProposalTray = instantiateFunction("renderCommunicationProposalTray", {
     els: {
@@ -607,6 +658,7 @@ test("communication tray host still rebuilds shell slots when the tray is no lon
   const trayEl = {
     classList: createClassList(["is-design-review-runtime"]),
     style: {},
+    dataset: {},
     offsetWidth: 120,
     offsetHeight: 80,
   };
@@ -622,6 +674,9 @@ test("communication tray host still rebuilds shell slots when the tray is no lon
     },
     clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
     communicationTrayAnchorPlacement,
+    communicationTrayAnchorPinnedToTitlebar: () => false,
+    designReviewButtonTrayAnchor: () => null,
+    communicationAnchorCanvasCss: () => ({ x: 50, y: 60 }),
   });
   const renderCommunicationProposalTray = instantiateFunction("renderCommunicationProposalTray", {
     els: {

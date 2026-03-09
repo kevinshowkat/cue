@@ -19,9 +19,16 @@ test("Intent Canvas: onboarding gate stays disabled while ambient inference is d
 });
 
 test("Vision descriptions: ambient realtime is preferred and /describe is fallback-only", () => {
-  assert.match(app, /function preferRealtimeVisionDescriptions\(\)/);
-  assert.match(app, /if \(ambient\.rtState === "failed"\) return false;/);
-  assert.match(app, /if \(preferRealtimeVisionDescriptions\(\)\) return Boolean\(fallback\);/);
+  for (const name of [
+    "preferRealtimeVisionDescriptions",
+    "scheduleVisionDescribe",
+    "scheduleVisionDescribeBurst",
+    "scheduleVisionDescribeAll",
+    "maybeScheduleVisionDescribeFallbackForAmbientRealtime",
+  ]) {
+    assert.equal(app.includes(`function ${name}(`), false, `${name} should stay removed`);
+    assert.equal(app.includes(`async function ${name}(`), false, `${name} should stay removed`);
+  }
 });
 
 test("Intent Canvas: ambient suggestion model uses future-ready asset fields", () => {
@@ -38,7 +45,11 @@ test("Intent Canvas: CSS still hides HUD only for explicit intent-mode onboardin
 });
 
 test("Intent Canvas: ambient icon placement/rendering is hard-gated off", () => {
-  assert.match(app, /if \(!INTENT_AMBIENT_ICON_PLACEMENT_ENABLED\) return false;\s*const ambient = state\.intentAmbient;/);
-  assert.match(app, /if \(!INTENT_AMBIENT_ICON_PLACEMENT_ENABLED\) return null;/);
-  assert.match(app, /if \(!INTENT_AMBIENT_ICON_PLACEMENT_ENABLED\) \{\s*if \(ambient\) ambient\.uiHits = \[\];\s*return;\s*\}/);
+  assert.match(app, /function intentAmbientRealtimePulseActive\(\) \{\s*if \(!INTENT_AMBIENT_ICON_PLACEMENT_ENABLED\) return false;\s*const ambient = state\.intentAmbient;/);
+  assert.match(
+    app,
+    /function renderAmbientIntentNudges\(octx, canvasW, canvasH\) \{\s*void octx;\s*void canvasW;\s*void canvasH;\s*const ambient = state\.intentAmbient;\s*if \(ambient\) ambient\.uiHits = \[\];\s*\}/
+  );
+  assert.doesNotMatch(app, /function hitTestAmbientIntentNudge\(/);
+  assert.doesNotMatch(app, /function activateAmbientIntentNudge\(/);
 });

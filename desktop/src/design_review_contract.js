@@ -103,6 +103,57 @@ function selectionStateFromInputs({
   return "none";
 }
 
+function normalizeImageIdentityHints({
+  imagesInView = [],
+  cachedImageAnalyses = [],
+  primaryImageId = null,
+  selectedImageIds = [],
+} = {}) {
+  const images = Array.isArray(imagesInView) ? imagesInView.filter((item) => item && typeof item === "object") : [];
+  const analyses = Array.isArray(cachedImageAnalyses)
+    ? cachedImageAnalyses.filter((entry) => entry && typeof entry === "object")
+    : [];
+  const selectedSet = new Set(uniqueStrings(selectedImageIds || []));
+  const normalizedPrimaryImageId = readFirstString(primaryImageId) || null;
+  const findAnalysisForImage = (image = null) => {
+    const imageId = readFirstString(image?.id, image?.imageId, image?.image_id);
+    const imagePath = readFirstString(image?.path, image?.imagePath, image?.image_path);
+    return analyses.find((analysis) => {
+      const analysisImageId = readFirstString(analysis?.imageId, analysis?.image_id);
+      const analysisImagePath = readFirstString(analysis?.imagePath, analysis?.image_path);
+      if (imageId && analysisImageId && analysisImageId === imageId) return true;
+      if (imagePath && analysisImagePath && analysisImagePath === imagePath) return true;
+      return false;
+    }) || null;
+  };
+  return images.slice(0, 6).map((image, index) => {
+    const imageId = readFirstString(image?.id, image?.imageId, image?.image_id) || null;
+    const analysis = findAnalysisForImage(image);
+    const subjectTags = uniqueStrings(analysis?.subjectTags || analysis?.subject_tags || [], { limit: 4 });
+    const styleTags = uniqueStrings(analysis?.styleTags || analysis?.style_tags || [], { limit: 3 });
+    const label = clampText(
+      readFirstString(image?.label, image?.name, image?.title, image?.path, image?.imagePath) || `Image ${index + 1}`,
+      80
+    );
+    const subject = clampText(subjectTags[0] || label, 60);
+    const role =
+      imageId && normalizedPrimaryImageId && imageId === normalizedPrimaryImageId
+        ? "target"
+        : imageId && selectedSet.has(imageId)
+          ? "selected_reference"
+          : "reference";
+    return {
+      imageId,
+      role,
+      label,
+      subject,
+      summary: clampText(analysis?.summary, 120) || null,
+      subjectTags,
+      styleTags,
+    };
+  });
+}
+
 function normalizeTargetRegion(raw = {}) {
   const record = asRecord(raw) || {};
   const markIds = uniqueStrings(record.markIds || record.mark_ids || [], { limit: 6 });
@@ -247,6 +298,12 @@ export function buildDesignReviewRequest({
   const analyses = (Array.isArray(cachedImageAnalyses) ? cachedImageAnalyses : [])
     .filter((entry) => entry && typeof entry === "object")
     .map((entry) => ({ ...entry }));
+  const imageIdentityHints = normalizeImageIdentityHints({
+    imagesInView,
+    cachedImageAnalyses: analyses,
+    primaryImageId,
+    selectedImageIds: selected,
+  });
   const firstAnalysisRef =
     readFirstString(uploadAnalysisRef, analyses[0]?.analysisRef, analyses[0]?.analysis_ref) || null;
   const normalizedRequestId = readFirstString(requestId) || nowId("review");
@@ -278,6 +335,7 @@ export function buildDesignReviewRequest({
       canvas: asRecord(visual.canvas) ? { ...visual.canvas } : null,
       images: imagesInView.map((item) => ({ ...item })),
     },
+    imageIdentityHints,
     marks: marks.map((item) => ({ ...item })),
     regionCandidates: (Array.isArray(regionCandidates) ? regionCandidates : [])
       .filter((item) => item && typeof item === "object")
@@ -308,7 +366,19 @@ export function buildDesignReviewRequest({
 export function buildDesignReviewPlannerPrompt(request = {}) {
   const normalized = asRecord(request) || {};
   const slotCount = clamp(normalized.slotCount, 2, 3);
-  return [
+  const identityHints = Array.isArray(normalized.imageIdentityHints)
+    ? normalized.imageIdentityHints
+        .filter((entry) => entry && typeof entry === "object")
+        .slice(0, 4)
+        .map((entry) => ({
+          imageId: readFirstString(entry?.imageId) || null,
+          role: readFirstString(entry?.role) || "reference",
+          subject: clampText(entry?.subject, 60) || null,
+          summary: clampText(entry?.summary, 90) || null,
+          subjectTags: uniqueStrings(entry?.subjectTags || [], { limit: 3 }),
+        }))
+    : [];
+  const promptSections = [
     "View the canvas image and visible annotations only.",
     "An action is a concrete visual edit the editor could apply to the image.",
     "Write actions as short edit intents, not advice, critique, or conversation.",
@@ -316,8 +386,22 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
     "Use concise effect statements, not rationale essays.",
     "Use the whole visible canvas as context, not just the local annotation area.",
     "Treat annotations and the chosen region candidate as focus hints, not crop-only constraints.",
+    "Use image identity hints when they exist so subjects are named concretely; do not say second image or reference image generically.",
     "Prefer edits that can plausibly route through the normal execution layer later.",
     `Return ${slotCount} ranked proposals as JSON only.`,
+  ];
+  if (identityHints.length) {
+    promptSections.push(
+      JSON.stringify(
+        {
+          imageIdentityHints: identityHints,
+        },
+        null,
+        2
+      )
+    );
+  }
+  promptSections.push(
     JSON.stringify(
       {
         proposals: [
@@ -339,8 +423,9 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
       },
       null,
       2
-    ),
-  ].join("\n\n");
+    )
+  );
+  return promptSections.join("\n\n");
 }
 
 export function buildUploadAnalysisPrompt({

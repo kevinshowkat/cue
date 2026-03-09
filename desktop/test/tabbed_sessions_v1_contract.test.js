@@ -58,7 +58,7 @@ test("tabbed session store preserves the current tab until activation and closin
 test("canvas app routes New Run and Open Run into fresh tabs instead of wiping the current shell session", () => {
   assert.match(
     app,
-    /async function createRun\(\) \{[\s\S]*const tabId = createTabId\(\);[\s\S]*tabbedSessions\.upsertTab\([\s\S]*runDir: payload\.run_dir,[\s\S]*eventsPath: payload\.events_path,[\s\S]*\{\s*activate: false\s*\}[\s\S]*activateTab\(tabId, \{ spawnEngine: true, reason: "new_run_tab" \}\);/
+    /async function createRun\(\{[\s\S]*announce = true,[\s\S]*source = "new_run"[\s\S]*\} = \{\}\) \{[\s\S]*const tabId = createTabId\(\);[\s\S]*tabbedSessions\.upsertTab\([\s\S]*runDir: payload\.run_dir,[\s\S]*eventsPath: payload\.events_path,[\s\S]*\{\s*activate: false\s*\}[\s\S]*activateTab\(tabId, \{ spawnEngine: true, reason: "new_run_tab" \}\);/
   );
   assert.match(
     app,

@@ -42,7 +42,10 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-item\.is-active\s*\{/);
   assert.match(css, /\.session-tab-item\.is-busy\s+\.session-tab-busy-indicator\s*\{/);
   assert.match(css, /\.session-tab-item\.is-dirty\s+\.session-tab-dirty-dot\s*\{/);
+  assert.match(css, /\.session-tab-review-state\s*\{/);
+  assert.match(css, /\.session-tab-title-input\s*\{/);
   assert.match(css, /\.session-tab-close\s*\{/);
   assert.match(css, /\.session-tab-strip-review\s*\{/);
   assert.match(css, /@keyframes\s+sessionTabBusyPulse/);
+  assert.match(css, /@keyframes\s+sessionTabReviewPulse/);
 });

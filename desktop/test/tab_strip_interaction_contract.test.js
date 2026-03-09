@@ -18,11 +18,13 @@ test("Titlebar tab strip binds live DOM ids and renders from the tab snapshot", 
   assert.match(app, /els\.sessionTabList\.replaceChildren\(fragment\)/);
   assert.match(app, /releaseSessionTabStripSubscription\s*=\s*subscribeTabs\(\(snapshot\)\s*=>\s*{\s*renderSessionTabStrip\(snapshot\);/);
   assert.match(app, /const uiMeta = normalizeTabUiMeta\(record\?\.tabUiMeta \|\| record\?\.session\?\.tabUiMeta\);/);
-  assert.equal(app.includes("const session = record?.session"), false);
+  assert.match(app, /const title = sessionTabDisplayLabel\(record \|\| tab,\s*DEFAULT_UNTITLED_TAB_TITLE\);/);
 });
 
 test("Titlebar tab strip routes activate, close, open, new, and design review actions", () => {
   assert.match(app, /els\.sessionTabList\.addEventListener\("click",\s*\(event\)\s*=>\s*{/);
+  assert.match(app, /closest\("\.session-tab-title"\)/);
+  assert.match(app, /startSessionTabRename\(tabId\);/);
   assert.match(app, /closest\("\.session-tab-close"\)/);
   assert.match(app, /void closeTab\(tabId\)\.catch/);
   assert.match(app, /closest\("\.session-tab-hit"\)/);
@@ -32,4 +34,13 @@ test("Titlebar tab strip routes activate, close, open, new, and design review ac
   assert.match(app, /els\.sessionTabNew\.addEventListener\("click"/);
   assert.match(app, /runWithUserError\("New session",\s*\(\)\s*=>\s*createRun\(\)/);
   assert.match(app, /els\.sessionTabDesignReview\.addEventListener\("click"/);
+});
+
+test("Titlebar tab strip supports inline rename and review-state badges", () => {
+  assert.match(app, /function startSessionTabRename\(tabId = ""\)/);
+  assert.match(app, /function commitSessionTabRename\(tabId = "", rawTitle = sessionTabRenameState\.draft\)/);
+  assert.match(app, /className = "session-tab-review-state"/);
+  assert.match(app, /className = "session-tab-title-input"/);
+  assert.match(app, /input\.maxLength = SESSION_TAB_TITLE_MAX_LENGTH;/);
+  assert.match(app, /focusSessionTabRenameInput\(\);/);
 });

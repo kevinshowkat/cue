@@ -94,16 +94,14 @@ export const SINGLE_IMAGE_RAIL_INVENTORY = Object.freeze([
 
 function reframeIconSvg() {
   return `<svg class="tool-icon tool-icon-reframe" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M7 5.4h4.3" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M7 5.4V9.7" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M17 18.6h-4.3" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M17 18.6v-4.3" />
-  <rect fill="currentColor" fill-opacity="0.14" x="8.65" y="8.15" width="6.7" height="7.7" rx="1.6" />
-  <rect fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" x="8.65" y="8.15" width="6.7" height="7.7" rx="1.6" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M17 5.4h-4.3" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M17 5.4V9.7" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M7 18.6h4.3" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M7 18.6v-4.3" />
+  <rect fill="currentColor" fill-opacity="0.14" x="8.2" y="7.2" width="7.6" height="8.6" rx="1.7" />
+  <rect fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" x="8.2" y="7.2" width="7.6" height="8.6" rx="1.7" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M5.2 8.85V5.6h3.25" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M18.8 8.85V5.6h-3.25" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M5.2 15.15v3.25h3.25" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M18.8 15.15v3.25h-3.25" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M10.65 12l-1.55 1.55 1.55 1.55" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M13.35 15.1l1.55-1.55L13.35 12" />
 </svg>`;
 }
 
@@ -444,7 +442,7 @@ function syncButtonClasses(toolEl, button) {
 }
 
 function syncButtonContent(toolEl, button) {
-  const html = `${button.iconSvg}<span class="tool-hint" aria-hidden="true">${button.hotkey}</span>`;
+  const html = `${button.iconSvg}`;
   if (toolEl.__juggernautRailHtml !== html) {
     toolEl.innerHTML = html;
     toolEl.__juggernautRailHtml = html;

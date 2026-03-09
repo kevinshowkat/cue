@@ -94,6 +94,71 @@ test("marker pointer down consumes blank-canvas drags and seeds a screen-space d
   assert.equal(calls.filter(([name]) => name === "stop").length, 1);
 });
 
+test("eraser pointer down on an image starts a real image-erase stroke instead of clearing annotations wholesale", () => {
+  const calls = [];
+  const state = {
+    pointer: {},
+    communication: {
+      eraseDraft: null,
+    },
+  };
+  const COMMUNICATION_POINTER_KINDS = {
+    MARKER: "communication_marker",
+    MAGIC_SELECT: "communication_magic_select",
+    ERASER: "communication_eraser",
+  };
+  const els = {
+    overlayCanvas: {
+      setPointerCapture(pointerId) {
+        calls.push(["capture", pointerId]);
+      },
+    },
+  };
+  const requestRender = () => calls.push(["render"]);
+  const bumpInteraction = (meta) => calls.push(["bump", meta]);
+  const beginCommunicationImageEraseStroke = instantiateFunction("beginCommunicationImageEraseStroke", {
+    bumpInteraction,
+    els,
+    state,
+    COMMUNICATION_POINTER_KINDS,
+    COMMUNICATION_IMAGE_ERASE_BRUSH_CSS_PX: 22,
+    requestRender,
+  });
+  const handleCommunicationCanvasPointerDown = instantiateFunction("handleCommunicationCanvasPointerDown", {
+    communicationToolId: () => "eraser",
+    eraseCommunicationAtCanvasPoint: () => null,
+    invalidateActiveTabPreview: () => calls.push(["invalidate"]),
+    dispatchJuggernautShellEvent: () => calls.push(["dispatch"]),
+    COMMUNICATION_STATE_CHANGED_EVENT: "juggernaut:communication-state-changed",
+    buildCommunicationBridgeSnapshot: () => ({}),
+    buildJuggernautShellContext: () => ({}),
+    requestRender,
+    hitTestVisibleCanvasImage: () => "img-hero",
+    beginCommunicationImageEraseStroke,
+    beginCommunicationMarkerStroke: () => false,
+    canvasToImageForImageId: () => ({ x: 10, y: 12 }),
+    beginCommunicationMagicSelectStroke: () => false,
+  });
+
+  const event = {
+    button: 0,
+    pointerId: 11,
+  };
+  const consumed = handleCommunicationCanvasPointerDown(
+    event,
+    { x: 84, y: 126 },
+    { x: 42, y: 63 }
+  );
+
+  assert.equal(consumed, true);
+  assert.equal(state.pointer.kind, COMMUNICATION_POINTER_KINDS.ERASER);
+  assert.equal(state.pointer.imageId, "img-hero");
+  assert.equal(state.communication.eraseDraft.imageId, "img-hero");
+  assert.deepEqual(state.communication.eraseDraft.screenPoints, [{ x: 42, y: 63 }]);
+  assert.equal(calls.filter(([name]) => name === "dispatch").length, 0);
+  assert.equal(calls.filter(([name]) => name === "capture").length, 1);
+});
+
 test("marker drag samples include coalesced pointer events when available", () => {
   const communicationCoalescedScreenPoints = instantiateFunction("communicationCoalescedScreenPoints", {
     canvasCssPointFromEvent: (event) => ({

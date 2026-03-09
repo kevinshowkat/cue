@@ -7,11 +7,13 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(here, "..");
 const app = readFileSync(join(desktopRoot, "src", "canvas_app.js"), "utf8");
-const ensureRunChunk = app.slice(app.indexOf("async function ensureRun() {"), app.indexOf("async function createRun() {"));
+const createRunSignature = "async function createRun({ announce = true, source = \"new_run\" } = {}) {";
+const ensureRunChunk = app.slice(app.indexOf("async function ensureRun() {"), app.indexOf(createRunSignature));
 const ensureEngineSpawnedChunk = app.slice(
   app.indexOf("async function ensureEngineSpawned({ reason = \"engine\" } = {}) {"),
   app.indexOf("function allowVisionDescribe() {")
 );
+const bootChunk = app.slice(app.indexOf("async function boot() {"), app.indexOf("bindCommunicationReviewBootstrapBridge();"));
 
 function extractFunctionSource(name) {
   const markers = [`async function ${name}(`, `function ${name}(`];
@@ -85,4 +87,9 @@ test("tab activation is lazy and validates engine binding before reusing a PTY",
   assert.equal(ensureEngineSpawnedChunk.includes("setStatus(\"Engine: connected\");"), true);
   assert.equal(ensureEngineSpawnedChunk.includes("await spawnEngine();"), true);
   assert.equal(ensureEngineSpawnedChunk.includes("if (state.ptySpawned) startEventsPolling();"), true);
+});
+
+test("boot creates the initial run without showing the new-tab toast", () => {
+  assert.equal(bootChunk.includes('await createRun({ announce: false, source: "boot" });'), true);
+  assert.equal(app.includes(createRunSignature), true);
 });

@@ -27,6 +27,7 @@ const REVIEW_APPLY_EVENT = "juggernaut:design-review-apply";
 const REVIEW_UPLOAD_ANALYSIS_EVENT = "juggernaut:upload-analysis-updated";
 const COMMUNICATION_REVIEW_REQUESTED_EVENT = "juggernaut:design-review-requested";
 const COMMUNICATION_PROPOSAL_TRAY_EVENT = "juggernaut:communication-proposal-tray-changed";
+const EDIT_PROPOSALS_LABEL = "Edit Proposals";
 
 function browserStorage() {
   try {
@@ -186,7 +187,7 @@ function createDesignReviewApplyRunner(providerRouter = null) {
       .filter((image) => image.path);
 
     if (!providerRouter || typeof providerRouter.runApply !== "function") {
-      const error = new Error("Design review apply handler is unavailable.");
+      const error = new Error(`${EDIT_PROPOSALS_LABEL} apply handler is unavailable.`);
       error.debugInfo = {
         source: "design_review_bootstrap",
         route: {
@@ -597,7 +598,7 @@ function ensureConsentUi() {
   root.innerHTML = `
     <div class="design-review-consent-title">Cloud Analysis</div>
     <div class="design-review-consent-copy">
-      Allow background upload analysis to improve review ranking and region hints. This stays opportunistic and never blocks Design review.
+      Allow background upload analysis to improve ranking and region hints. This stays opportunistic and never blocks ${EDIT_PROPOSALS_LABEL}.
     </div>
     <div class="design-review-consent-actions">
       <button type="button" class="design-review-consent-allow" data-review-consent="allow">Allow</button>
@@ -1026,7 +1027,7 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
 
   const head = tray.querySelector(".communication-proposal-tray-head");
   const title = tray.querySelector(".communication-proposal-tray-title");
-  if (title) title.textContent = "Design Review";
+  if (title) title.textContent = EDIT_PROPOSALS_LABEL;
   if (head) {
     let headGroup = head.querySelector(".design-review-runtime-head");
     if (!headGroup) {
@@ -1166,6 +1167,7 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
   });
   list.replaceChildren(fragment);
   requestAnimationFrame(() => {
+    if (String(tray.dataset.anchorKind || "").trim().toLowerCase() === "titlebar_button") return;
     clampTrayIntoCanvasWrap(tray);
   });
 }
@@ -1360,7 +1362,7 @@ function clearCommunicationTrayReviewDetails() {
   if (title && headGroup && title.parentElement === headGroup && head) {
     head.prepend(title);
   }
-  if (title) title.textContent = "Design Review";
+  if (title) title.textContent = EDIT_PROPOSALS_LABEL;
   headGroup?.remove();
   headActions?.remove();
   return true;
@@ -1391,7 +1393,7 @@ function syncCommunicationTray(runtimeState, state = {}, onAccept = null) {
 function renderReviewFailure(
   runtimeState,
   request = null,
-  errorMessage = "Design review failed.",
+  errorMessage = `${EDIT_PROPOSALS_LABEL} failed.`,
   onAccept = null,
   debugInfo = null
 ) {
@@ -1670,7 +1672,7 @@ export async function installDesignReviewBootstrap() {
       return renderReviewFailure(
         runtimeState,
         null,
-        "Upload one image before running Design review.",
+        `Upload one image before opening ${EDIT_PROPOSALS_LABEL}.`,
         acceptProposal
       );
     }
@@ -1705,7 +1707,7 @@ export async function installDesignReviewBootstrap() {
       return renderReviewFailure(
         runtimeState,
         request,
-        error?.message || error || "Design review failed to start.",
+        error?.message || error || `${EDIT_PROPOSALS_LABEL} failed to start.`,
         acceptProposal,
         error?.debugInfo || null
       );

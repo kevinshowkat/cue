@@ -154,6 +154,19 @@ test("communication tray can anchor below the Design review button", () => {
     },
     clamp,
     communicationTrayAnchorPlacement,
+    communicationTrayAnchorPinnedToTitlebar: (anchor = null) =>
+      String(anchor?.kind || "").trim().toLowerCase() === "titlebar_button",
+    designReviewButtonTrayAnchor: () => ({
+      kind: "titlebar_button",
+      trayPlacement: "below",
+      canvasOverlayBounds: {
+        x0: 710,
+        y0: -24,
+        w: 140,
+        h: 36,
+      },
+    }),
+    communicationAnchorCanvasCss: () => ({ x: 780, y: -6 }),
   });
   const renderCommunicationProposalTray = instantiateFunction("renderCommunicationProposalTray", {
     els: {

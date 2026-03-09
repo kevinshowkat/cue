@@ -9,7 +9,8 @@ import { createTabbedSessionsStore } from "../src/tabbed_sessions.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
 const app = readFileSync(appPath, "utf8");
-const ensureRunChunk = app.slice(app.indexOf("async function ensureRun() {"), app.indexOf("async function createRun() {"));
+const createRunSignature = "async function createRun({ announce = true, source = \"new_run\" } = {}) {";
+const ensureRunChunk = app.slice(app.indexOf("async function ensureRun() {"), app.indexOf(createRunSignature));
 const importLocalPathsChunk = app.slice(
   app.indexOf("async function importLocalPathsAtCanvasPoint("),
   app.indexOf("async function importPhotos(")

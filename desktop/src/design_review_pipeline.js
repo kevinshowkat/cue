@@ -685,7 +685,7 @@ export function createDesignReviewPipeline({
           referenceImageIds,
           outputPath: null,
           debugInfo,
-          error: readFirstString(error?.message, error) || "Design review apply failed.",
+          error: readFirstString(error?.message, error) || "Applying an edit proposal failed.",
           startedAt,
           completedAt,
         };
@@ -726,7 +726,7 @@ export function createDesignReviewPipeline({
 
       if (!applyRunner) {
         return finishWithFailure(
-          new Error("Design review apply handler is unavailable."),
+          new Error("Edit proposal apply handler is unavailable."),
           "apply_unavailable"
         );
       }
@@ -757,7 +757,7 @@ export function createDesignReviewPipeline({
           ) || outputPath || null;
         if (!resolvedOutputPath) {
           return finishWithFailure(
-            new Error("Design review apply did not produce an output image."),
+            new Error("Edit proposal apply did not produce an output image."),
             "apply_missing_output"
           );
         }

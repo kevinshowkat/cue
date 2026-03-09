@@ -11,9 +11,9 @@ const VALID_PLANNER_PROVIDERS = new Set(["openai", "openrouter"]);
 const VALID_PREVIEW_PROVIDERS = new Set(["google", "openrouter"]);
 const VALID_APPLY_PROVIDERS = new Set(["google", "openrouter"]);
 const DESIGN_REVIEW_PLANNER_PROVIDER_ERROR =
-  "Design review planner requires OPENAI_API_KEY or OPENROUTER_API_KEY.";
+  "Edit proposals requires OPENAI_API_KEY or OPENROUTER_API_KEY.";
 const DESIGN_REVIEW_APPLY_PROVIDER_ERROR =
-  "Design review final apply requires GEMINI_API_KEY or GOOGLE_API_KEY or OPENROUTER_API_KEY.";
+  "Applying an edit proposal requires GEMINI_API_KEY or GOOGLE_API_KEY or OPENROUTER_API_KEY.";
 const DESIGN_REVIEW_PROVIDER_COMMAND = "run_design_review_provider_request";
 
 function readFirstString(...values) {
@@ -179,10 +179,10 @@ function buildProviderDebugInfo(request = {}, { response = null, error = null } 
       null,
     providerRequest,
     providerResponse,
-    failure: error
+        failure: error
       ? {
           name: readFirstString(error?.name) || null,
-          message: readFirstString(error?.message, error) || "Design review provider request failed.",
+          message: readFirstString(error?.message, error) || "Edit proposals request failed.",
         }
       : null,
   };
@@ -191,7 +191,7 @@ function buildProviderDebugInfo(request = {}, { response = null, error = null } 
 function decorateProviderError(error, request = {}) {
   const envelope = parseProviderErrorEnvelope(error);
   const message =
-    readFirstString(envelope?.message, error?.message, error) || "Design review provider request failed.";
+    readFirstString(envelope?.message, error?.message, error) || "Edit proposals request failed.";
   const wrapped = error instanceof Error ? error : new Error(message);
   if (!wrapped.message) wrapped.message = message;
   const baseDebugInfo = buildProviderDebugInfo(request, { error });

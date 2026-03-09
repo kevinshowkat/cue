@@ -3634,7 +3634,7 @@ fn run_design_review_apply_request(
         other => {
             return Err(review_apply_error(
                 &format!(
-                    "Design review final apply only supports provider=google or provider=openrouter (requested provider={other})."
+                    "Edit proposal apply only supports provider=google or provider=openrouter (requested provider={other})."
                 ),
                 other,
                 &requested_model,

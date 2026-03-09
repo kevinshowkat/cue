@@ -28,28 +28,28 @@
       "tool_id": "select_subject",
       "label": "Select subject",
       "semantic_role": "selection",
-      "notes": "Broken lasso orbit around a compact focal seed.",
+      "notes": "Subject bust framed by corner guides so the action reads as subject selection.",
       "asset": "./select_subject.svg"
     },
     {
       "tool_id": "background_swap",
       "label": "Background swap",
       "semantic_role": "scene-replace",
-      "notes": "Landscape tile with a corner-lift exchange move.",
+      "notes": "Landscape tile with a horizontal exchange arrow to make the background replacement action explicit.",
       "asset": "./background_swap.svg"
     },
     {
       "tool_id": "cleanup",
       "label": "Cleanup",
       "semantic_role": "remove-noise",
-      "notes": "Sweep arc and burnished spark to imply removal rather than destruction.",
+      "notes": "Angled eraser with cleanup spark to make targeted removal legible at a glance.",
       "asset": "./cleanup.svg"
     },
     {
       "tool_id": "variations",
       "label": "Variations",
       "semantic_role": "branch",
-      "notes": "Split prism with two resolved outputs on the lower edge.",
+      "notes": "Primary tile branching into two sibling tiles so variant generation reads as branching, not stacking.",
       "asset": "./variations.svg"
     },
     {

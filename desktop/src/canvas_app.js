@@ -109,12 +109,15 @@ const COMMUNICATION_TOOL_IDS = Object.freeze(["marker", "magic_select", "eraser"
 const COMMUNICATION_POINTER_KINDS = Object.freeze({
   MARKER: "communication_marker",
   MAGIC_SELECT: "communication_magic_select",
+  ERASER: "communication_eraser",
 });
 const COMMUNICATION_PROPOSAL_SLOT_COUNT = 3;
 const COMMUNICATION_REGION_CANDIDATE_COUNT = 3;
 const COMMUNICATION_MARK_MIN_DRAG_PX = 6;
 const COMMUNICATION_MARK_MIN_POINT_SPACING_PX = 0.01;
 const COMMUNICATION_MARK_MAX_POINTS = 1024;
+const COMMUNICATION_REVIEW_HISTORY_MAX = 24;
+const COMMUNICATION_IMAGE_ERASE_BRUSH_CSS_PX = 22;
 const COMMUNICATION_STATE_CHANGED_EVENT = "juggernaut:communication-state-changed";
 const COMMUNICATION_REVIEW_REQUESTED_EVENT = "juggernaut:design-review-requested";
 const COMMUNICATION_PROPOSAL_TRAY_EVENT = "juggernaut:communication-proposal-tray-changed";
@@ -124,9 +127,13 @@ const DESIGN_REVIEW_BOOTSTRAP_TRAY_ID = "design-review-tray";
 const DESIGN_REVIEW_APPLY_SOURCE = "design_review_apply";
 const DESIGN_REVIEW_TRAY_DISMISS_MS = 180;
 const DESIGN_REVIEW_APPLY_SHIMMER_LOOP_MS = 1350;
+const EDIT_PROPOSALS_LABEL = "Edit Proposals";
 const COMMUNICATION_MARK_STROKE = "rgba(255, 94, 190, 0.96)";
 const COMMUNICATION_REGION_ACTIVE = "rgba(100, 210, 255, 0.94)";
 const COMMUNICATION_REGION_IDLE = "rgba(100, 210, 255, 0.34)";
+const IMAGE_SELECTION_INACTIVE_STROKE = "rgba(118, 211, 255, 0.56)";
+const DEFAULT_UNTITLED_TAB_TITLE = "Untitled Canvas";
+const SESSION_TAB_TITLE_MAX_LENGTH = 40;
 
 /*
 Compatibility sentinel for source-shape tests.
@@ -138,11 +145,6 @@ Compatibility sentinel for prompt-generate source-shape tests.
 if (key === "prompt_generate") {
   showPromptGeneratePanel();
 }
-*/
-
-/*
-Compatibility sentinel for source-shape tests.
-showToast("Design review coming soon.", "tip", 1800);
 */
 
 const THUMB_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
@@ -1853,9 +1855,11 @@ function createFreshCommunicationState() {
   return {
     tool: null,
     markDraft: null,
+    eraseDraft: null,
     marksByImageId: new Map(),
     canvasMarks: [],
     regionProposalsByImageId: new Map(),
+    reviewHistory: [],
     lastAnchor: null,
     proposalTray: {
       visible: false,
@@ -2669,6 +2673,9 @@ function markActiveTabUiDirty({
 
 function createFreshTabSession({ runDir = null, eventsPath = null } = {}) {
   return {
+    label: null,
+    labelManual: false,
+    reviewFlowState: "",
     runDir,
     eventsPath,
     eventsByteOffset: 0,
@@ -2763,6 +2770,11 @@ promptBenchmarkHydrateState();
 let flushDeferredEnginePtyExit = async () => {};
 let activeEventsPollToken = 0;
 let releaseSessionTabStripSubscription = null;
+let sessionTabRenameState = {
+  tabId: null,
+  draft: "",
+  focusRequested: false,
+};
 const TAB_HYDRATION_IDLE_TIMEOUT_MS = 180;
 const TAB_PREVIEW_CAPTURE_SETTLE_MS = 120;
 const TAB_PREVIEW_MAX_EDGE_PX = 1280;
@@ -2782,7 +2794,7 @@ let ptyStatusCache = {
   fetchedAt: 0,
 };
 
-const DEFAULT_TIP = "Click Studio White to replace the background. Use 4 (Lasso) if you want a manual mask.";
+const DEFAULT_TIP = "Click Studio White to replace the background. Use Lasso if you want a manual mask.";
 const VISUAL_PROMPT_FILENAME = "visual_prompt.json";
 const VISUAL_PROMPT_SCHEMA_VERSION = 1;
 const VISUAL_GRAMMAR_VERSION = "v0";
@@ -21140,30 +21152,37 @@ function communicationTrayAnchorPinnedToTitlebar(anchor = null) {
 
 function positionCommunicationProposalTrayElement(trayEl, anchor = null, anchorCss = null) {
   const wrap = els.canvasWrap;
-  if (!trayEl || !wrap || !anchorCss) return false;
+  let nextAnchor = anchor;
+  let nextAnchorCss = anchorCss;
+  if (communicationTrayAnchorPinnedToTitlebar(nextAnchor)) {
+    nextAnchor = designReviewButtonTrayAnchor() || nextAnchor;
+    nextAnchorCss = communicationAnchorCanvasCss(nextAnchor) || nextAnchorCss;
+  }
+  if (!trayEl || !wrap || !nextAnchorCss) return false;
   const maxX = Math.max(12, (Number(wrap?.clientWidth) || 0) - (trayEl.offsetWidth || 0) - 12);
   const maxY = Math.max(12, (Number(wrap?.clientHeight) || 0) - (trayEl.offsetHeight || 0) - 18);
-  const placement = communicationTrayAnchorPlacement(anchor);
+  const placement = communicationTrayAnchorPlacement(nextAnchor);
   let preferredX = 12;
   let preferredY = 12;
   if (placement === "below") {
-    const bounds = anchor?.canvasOverlayBounds && typeof anchor.canvasOverlayBounds === "object"
-      ? anchor.canvasOverlayBounds
+    const bounds = nextAnchor?.canvasOverlayBounds && typeof nextAnchor.canvasOverlayBounds === "object"
+      ? nextAnchor.canvasOverlayBounds
       : null;
     const anchorRight = bounds
       ? (Number(bounds.x0) || 0) + Math.max(1, Number(bounds.w) || 1)
-      : Number(anchorCss.x) || 0;
+      : Number(nextAnchorCss.x) || 0;
     const anchorBottom = bounds
       ? (Number(bounds.y0) || 0) + Math.max(1, Number(bounds.h) || 1)
-      : Number(anchorCss.y) || 0;
+      : Number(nextAnchorCss.y) || 0;
     preferredX = clamp(anchorRight - (trayEl.offsetWidth || 0), 12, maxX);
     preferredY = clamp(anchorBottom + 12, 12, maxY);
   } else {
-    preferredX = clamp((Number(anchorCss.x) || 0) + 18, 12, maxX);
-    preferredY = clamp((Number(anchorCss.y) || 0) - (trayEl.offsetHeight || 0) - 16, 12, maxY);
+    preferredX = clamp((Number(nextAnchorCss.x) || 0) + 18, 12, maxX);
+    preferredY = clamp((Number(nextAnchorCss.y) || 0) - (trayEl.offsetHeight || 0) - 16, 12, maxY);
   }
   if (trayEl.dataset) {
     trayEl.dataset.anchorPlacement = placement;
+    trayEl.dataset.anchorKind = String(nextAnchor?.kind || "").trim();
   }
   trayEl.style.left = `${preferredX}px`;
   trayEl.style.top = `${preferredY}px`;
@@ -21550,12 +21569,123 @@ function beginCommunicationMagicSelectStroke(event, p, pCss, communicationImageI
   return true;
 }
 
+function beginCommunicationImageEraseStroke(event, p, pCss, communicationImageId = null) {
+  const imageId = String(communicationImageId || "").trim();
+  if (!imageId) return false;
+  bumpInteraction({ semantic: false });
+  els.overlayCanvas.setPointerCapture(event.pointerId);
+  state.pointer.active = true;
+  state.pointer.kind = COMMUNICATION_POINTER_KINDS.ERASER;
+  state.pointer.imageId = imageId;
+  state.pointer.startX = Number(p?.x) || 0;
+  state.pointer.startY = Number(p?.y) || 0;
+  state.pointer.lastX = Number(p?.x) || 0;
+  state.pointer.lastY = Number(p?.y) || 0;
+  state.pointer.startCssX = Number(pCss?.x) || 0;
+  state.pointer.startCssY = Number(pCss?.y) || 0;
+  state.pointer.wheelOnTap = false;
+  state.pointer.moved = false;
+  state.communication.eraseDraft = {
+    imageId,
+    brushCssPx: COMMUNICATION_IMAGE_ERASE_BRUSH_CSS_PX,
+    screenPoints: [
+      {
+        x: Number(pCss?.x) || 0,
+        y: Number(pCss?.y) || 0,
+      },
+    ],
+    createdAt: Date.now(),
+  };
+  requestRender();
+  return true;
+}
+
+function communicationImageEraseBrushRadiusPx(imageId = "", brushCssPx = COMMUNICATION_IMAGE_ERASE_BRUSH_CSS_PX) {
+  const id = String(imageId || "").trim();
+  if (!id) return Math.max(2, Number(brushCssPx) || COMMUNICATION_IMAGE_ERASE_BRUSH_CSS_PX);
+  const item = state.imagesById.get(id) || null;
+  const rectCss = getImageRectCss(id);
+  const imageWidth = Math.max(1, Number(item?.img?.naturalWidth || item?.width) || 1);
+  const imageHeight = Math.max(1, Number(item?.img?.naturalHeight || item?.height) || 1);
+  const rectWidth = Math.max(1, Number(rectCss?.width) || imageWidth);
+  const rectHeight = Math.max(1, Number(rectCss?.height) || imageHeight);
+  const scaleX = imageWidth / rectWidth;
+  const scaleY = imageHeight / rectHeight;
+  return Math.max(2, Math.round((Number(brushCssPx) || COMMUNICATION_IMAGE_ERASE_BRUSH_CSS_PX) * Math.max(scaleX, scaleY) * 0.5));
+}
+
+function communicationImageErasePointsToImage(draft = null) {
+  const imageId = String(draft?.imageId || "").trim();
+  if (!imageId) return [];
+  return communicationDraftPointsToCanvas(draft)
+    .map((point) => canvasToImageForImageId(point, imageId))
+    .filter((point) => Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y)))
+    .map((point) => ({
+      x: Number(point.x) || 0,
+      y: Number(point.y) || 0,
+    }));
+}
+
+async function commitCommunicationImageEraseDraft(draft = null) {
+  const imageId = String(draft?.imageId || "").trim();
+  if (!imageId) return null;
+  const item = state.imagesById.get(imageId) || null;
+  if (!item?.path) return null;
+  await ensureRun();
+  const sourceImg = item.img || await loadImage(item.path);
+  if (!sourceImg) return null;
+  const width = Math.max(1, Number(sourceImg.naturalWidth || item.width) || 1);
+  const height = Math.max(1, Number(sourceImg.naturalHeight || item.height) || 1);
+  const points = communicationImageErasePointsToImage(draft)
+    .map((point) => ({
+      x: clamp(point.x, 0, width),
+      y: clamp(point.y, 0, height),
+    }));
+  if (!points.length) return null;
+  const brushRadiusPx = communicationImageEraseBrushRadiusPx(imageId, draft?.brushCssPx);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(sourceImg, 0, 0, width, height);
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "rgba(0, 0, 0, 1)";
+  ctx.fillStyle = "rgba(0, 0, 0, 1)";
+  ctx.lineWidth = Math.max(2, brushRadiusPx * 2);
+  if (points.length === 1) {
+    ctx.beginPath();
+    ctx.arc(Number(points[0]?.x) || 0, Number(points[0]?.y) || 0, brushRadiusPx, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (traceCommunicationMarkPath(ctx, points)) {
+    ctx.stroke();
+  }
+  ctx.restore();
+  const result = await saveCanvasAsArtifact(canvas, {
+    operation: "erase",
+    label: "Erase",
+    meta: {
+      image_id: imageId,
+      path_point_count: points.length,
+      brush_radius_px: brushRadiusPx,
+    },
+    replaceActive: true,
+    targetId: imageId,
+  });
+  requestRender();
+  return result;
+}
+
 function handleCommunicationCanvasPointerDown(event, p, pCss) {
   const communicationTool = communicationToolId();
   if (event.button !== 0 || !communicationTool) return false;
   if (communicationTool === "eraser") {
     const erased = eraseCommunicationAtCanvasPoint(p);
     if (erased) {
+      invalidateActiveTabPreview("selection_overlay_change");
       dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
         source: "canvas_eraser",
         communication: buildCommunicationBridgeSnapshot(),
@@ -21564,6 +21694,11 @@ function handleCommunicationCanvasPointerDown(event, p, pCss) {
       requestRender();
       return true;
     }
+    const targetImageId = hitTestVisibleCanvasImage(p);
+    if (targetImageId) {
+      return beginCommunicationImageEraseStroke(event, p, pCss, targetImageId);
+    }
+    return false;
   }
   const communicationImageId = hitTestVisibleCanvasImage(p);
   if (communicationTool === "marker") {
@@ -21586,6 +21721,7 @@ function setCommunicationTool(tool = null, { source = "communication_rail" } = {
     state.communication.tool = next;
   }
   state.communication.markDraft = null;
+  state.communication.eraseDraft = null;
   renderCommunicationChrome();
   dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
     source,
@@ -21753,25 +21889,7 @@ function eraseCommunicationAtCanvasPoint(ptCanvas) {
     }
     return { kind: "region", imageId: String(regionHit.imageId || "") };
   }
-  const imageId = hitTestVisibleCanvasImage(ptCanvas);
-  if (!imageId) return null;
-  let cleared = false;
-  if (state.communication.marksByImageId.has(imageId)) {
-    state.communication.marksByImageId.delete(imageId);
-    cleared = true;
-  }
-  if (state.communication.regionProposalsByImageId.has(imageId)) {
-    state.communication.regionProposalsByImageId.delete(imageId);
-    cleared = true;
-  }
-  if (!cleared) return null;
-  if (state.communication.lastAnchor?.imageId === String(imageId || "")) {
-    state.communication.lastAnchor = resolveCommunicationReviewAnchor();
-  }
-  if (state.communication.proposalTray?.anchor?.imageId === String(imageId || "")) {
-    hideCommunicationProposalTray({ preserveAnchor: false, source: "eraser" });
-  }
-  return { kind: "image", imageId: String(imageId || "") };
+  return null;
 }
 
 function buildCommunicationVisibleImagesPayload() {
@@ -21899,6 +22017,76 @@ function buildCommunicationProposalTraySnapshot() {
       ? tray.slots.map((slot, index) => createCommunicationProposalSlot(index, slot))
       : Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) => createCommunicationProposalSlot(index, {})),
   };
+}
+
+function buildCommunicationReviewHistoryEntry({
+  reason = "review_apply_success",
+  detail = null,
+  targetBefore = null,
+  targetAfter = null,
+  receiptPath = null,
+  outputPath = null,
+  timelineNodeId = null,
+} = {}) {
+  const normalizedDetail = detail && typeof detail === "object" ? detail : {};
+  const marks = buildCommunicationMarksPayload();
+  const regionSelections = buildCommunicationRegionsPayload();
+  const proposal = normalizedDetail?.proposal && typeof normalizedDetail.proposal === "object"
+    ? cloneToolRuntimeValue(normalizedDetail.proposal)
+    : null;
+  const request = normalizedDetail?.request && typeof normalizedDetail.request === "object"
+    ? cloneToolRuntimeValue(normalizedDetail.request)
+    : null;
+  if (!marks.length && !regionSelections.length && !proposal && !request) return null;
+  return {
+    archivedAt: new Date().toISOString(),
+    reason: String(reason || "review_apply_success").trim() || "review_apply_success",
+    requestId: readFirstString(normalizedDetail?.requestId, request?.requestId, state.communication?.proposalTray?.requestId) || null,
+    proposalId: readFirstString(normalizedDetail?.proposalId, proposal?.proposalId) || null,
+    anchor: cloneToolRuntimeValue(resolveCommunicationReviewAnchor()),
+    resolvedTarget: cloneToolRuntimeValue(resolveCommunicationReviewTarget()),
+    marks,
+    regionSelections,
+    proposalTray: buildCommunicationProposalTraySnapshot(),
+    request,
+    proposal,
+    apply: {
+      status: readFirstString(normalizedDetail?.status) || "succeeded",
+      source: readFirstString(normalizedDetail?.source, DESIGN_REVIEW_APPLY_SOURCE) || DESIGN_REVIEW_APPLY_SOURCE,
+      targetImageId: readFirstString(normalizedDetail?.targetImageId, targetAfter?.id, targetBefore?.id) || null,
+      referenceImageIds: uniqueStringList(normalizedDetail?.referenceImageIds || []),
+      provider: readFirstString(normalizedDetail?.provider) || null,
+      requestedModel: readFirstString(normalizedDetail?.requestedModel) || null,
+      normalizedModel: readFirstString(normalizedDetail?.normalizedModel) || null,
+      receiptPath: readFirstString(receiptPath) || null,
+      outputPath: readFirstString(outputPath) || null,
+      timelineNodeId: readFirstString(timelineNodeId) || null,
+    },
+    targetBefore: targetBefore ? cloneToolRuntimeValue(targetBefore) : null,
+    targetAfter: targetAfter ? cloneToolRuntimeValue(targetAfter) : null,
+  };
+}
+
+function archiveCommunicationReviewContext(options = {}) {
+  const entry = buildCommunicationReviewHistoryEntry(options);
+  if (!entry) return null;
+  const history = Array.isArray(state.communication?.reviewHistory) ? state.communication.reviewHistory.slice() : [];
+  state.communication.reviewHistory = [entry, ...history].slice(0, COMMUNICATION_REVIEW_HISTORY_MAX);
+  return entry;
+}
+
+function clearVisibleCommunicationReviewState() {
+  if (!state.communication || typeof state.communication !== "object") {
+    state.communication = createFreshCommunicationState();
+    return state.communication;
+  }
+  state.communication.markDraft = null;
+  state.communication.eraseDraft = null;
+  state.communication.marksByImageId = new Map();
+  state.communication.canvasMarks = [];
+  state.communication.regionProposalsByImageId = new Map();
+  state.communication.lastAnchor = null;
+  return state.communication;
 }
 
 function buildCommunicationReviewPayload({ requestId = null, source = "ui" } = {}) {
@@ -22046,6 +22234,7 @@ function setCommunicationProposalTray(
   if (render) {
     renderCommunicationChrome();
   }
+  syncActiveTabReviewFlowState({ publish: true });
   if (dispatch) {
     dispatchJuggernautShellEvent(COMMUNICATION_PROPOSAL_TRAY_EVENT, {
       source,
@@ -22072,6 +22261,7 @@ function hideCommunicationProposalTray({ preserveAnchor = true, source = "ui" } 
   }
   state.communication.proposalTray = tray;
   renderCommunicationChrome();
+  syncActiveTabReviewFlowState({ publish: true });
   dispatchJuggernautShellEvent(COMMUNICATION_PROPOSAL_TRAY_EVENT, {
     source,
     tray: buildCommunicationProposalTraySnapshot(),
@@ -22121,6 +22311,7 @@ function renderCommunicationProposalTray() {
   if (!visible) {
     if (trayEl.dataset) {
       trayEl.dataset.anchorPlacement = "";
+      trayEl.dataset.anchorKind = "";
     }
     return;
   }
@@ -22157,6 +22348,9 @@ function renderCommunicationProposalTray() {
   }
   trayEl.style.left = `${Math.round(Number(anchorCss.x) || 0)}px`;
   trayEl.style.top = `${Math.round(Number(anchorCss.y) || 0)}px`;
+  if (trayEl.dataset) {
+    trayEl.dataset.anchorKind = String(anchor?.kind || "").trim();
+  }
   requestAnimationFrame(() => {
     if (trayEl.classList.contains("hidden")) return;
     positionCommunicationProposalTrayElement(trayEl, anchor, anchorCss);
@@ -22253,8 +22447,8 @@ function startBootstrapDesignReview(request = null, { source = "titlebar" } = {}
   Promise.resolve()
     .then(() => bridge.startReviewFromShell())
     .catch((error) => {
-      console.error("Design review bootstrap failed:", error);
-      const detail = normalizeErrorMessage(error, "Design review failed to start.");
+      console.error(`${EDIT_PROPOSALS_LABEL} bootstrap failed:`, error);
+      const detail = normalizeErrorMessage(error, `${EDIT_PROPOSALS_LABEL} failed to start.`);
       setCommunicationProposalTray(
         {
           visible: true,
@@ -22303,7 +22497,7 @@ function currentDesignReviewApplySessionKey() {
 }
 
 function designReviewApplyActionLabel(detail = {}) {
-  return readFirstString(detail?.proposal?.label, detail?.proposal?.actionType) || "Design Review Apply";
+  return readFirstString(detail?.proposal?.label, detail?.proposal?.actionType) || "Apply Proposal";
 }
 
 function normalizeDesignReviewApplyEventDetail(detail = {}, { fallbackState = null, status = "" } = {}) {
@@ -22482,6 +22676,7 @@ function markDesignReviewApplyRunning(detail = {}) {
   if (!designReviewApplyEventMatchesActiveTab(normalized, previous)) return false;
   normalized.completedAt = 0;
   setDesignReviewApplyState(normalized, { capture: true, publish: true });
+  syncActiveTabReviewFlowState({ publish: true });
   setStatus("Engine: applying accepted review…");
   requestRender();
   return true;
@@ -22579,16 +22774,50 @@ async function applyAcceptedDesignReviewOutput(detail = {}) {
     item.source = DESIGN_REVIEW_APPLY_SOURCE;
     if (nodeId) item.timelineNodeId = nodeId;
   }
+  const targetAfter = item
+    ? {
+        id: String(item.id || targetId),
+        path: String(item.path || outputPath),
+        receiptPath: item.receiptPath ? String(item.receiptPath) : receiptPath,
+        kind: item.kind ? String(item.kind) : "engine",
+        source: item.source ? String(item.source) : DESIGN_REVIEW_APPLY_SOURCE,
+        label: item.label ? String(item.label) : targetSnapshot.label,
+        timelineNodeId: item.timelineNodeId ? String(item.timelineNodeId) : nodeId || null,
+      }
+    : {
+        id: targetId,
+        path: outputPath,
+        receiptPath,
+        kind: "engine",
+        source: DESIGN_REVIEW_APPLY_SOURCE,
+        label: targetSnapshot.label || basename(outputPath),
+        timelineNodeId: nodeId || null,
+      };
   const referenceImageIds = uniqueStringList(
     Array.isArray(normalized.referenceImageIds) ? normalized.referenceImageIds : [],
     { exclude: ["", targetId] }
   );
+  archiveCommunicationReviewContext({
+    reason: "review_apply_success",
+    detail: normalized,
+    targetBefore: targetSnapshot,
+    targetAfter,
+    receiptPath,
+    outputPath,
+    timelineNodeId: nodeId,
+  });
   for (const referenceImageId of referenceImageIds) {
     await removeImageFromCanvas(referenceImageId).catch(() => {});
   }
   if (state.communication?.tool) {
     setCommunicationTool(null, { source: "review_apply_success" });
   }
+  clearVisibleCommunicationReviewState();
+  dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
+    source: "review_apply_success_cleanup",
+    communication: buildCommunicationBridgeSnapshot(),
+    context: buildJuggernautShellContext(),
+  });
   if (state.canvasMode === "multi" && state.tool !== "pan") {
     setTool("pan");
   }
@@ -22600,6 +22829,7 @@ async function applyAcceptedDesignReviewOutput(detail = {}) {
     }).catch(() => {});
   }
   clearDesignReviewApplyState({ capture: true, publish: true });
+  syncActiveTabReviewFlowState({ publish: true });
   dismissCommunicationProposalTrayAfterReviewApply({
     requestId: normalized.requestId,
   });
@@ -22622,6 +22852,7 @@ function handleDesignReviewApplyFailure(detail = {}) {
   const actionLabel = designReviewApplyActionLabel(normalized);
   const message = readFirstString(normalized.error, normalized.debugInfo?.error) || "Review apply failed.";
   clearDesignReviewApplyState({ capture: true, publish: true });
+  syncActiveTabReviewFlowState({ publish: true });
   setStatus(`Engine: ${actionLabel.toLowerCase()} failed (${message})`, true);
   showToast(message, "error", 3200);
   requestRender();
@@ -22656,6 +22887,9 @@ function dropCommunicationStateForImageId(imageId) {
   state.communication?.regionProposalsByImageId?.delete(id);
   if (state.communication?.markDraft?.imageId === id) {
     state.communication.markDraft = null;
+  }
+  if (state.communication?.eraseDraft?.imageId === id) {
+    state.communication.eraseDraft = null;
   }
   if (state.communication?.lastAnchor?.imageId === id) {
     state.communication.lastAnchor = resolveCommunicationReviewAnchor();
@@ -22745,6 +22979,28 @@ function renderCommunicationOverlay(octx) {
   }
   if (state.communication?.markDraft) {
     drawMark(state.communication.markDraft, { draft: true });
+  }
+  if (state.communication?.eraseDraft) {
+    const points = communicationDraftPointsToCanvas(state.communication.eraseDraft);
+    if (points.length) {
+      octx.save();
+      octx.lineCap = "round";
+      octx.lineJoin = "round";
+      octx.lineWidth = Math.max(8, Math.round(COMMUNICATION_IMAGE_ERASE_BRUSH_CSS_PX * dpr));
+      octx.strokeStyle = "rgba(120, 228, 255, 0.72)";
+      octx.fillStyle = "rgba(214, 247, 255, 0.70)";
+      octx.shadowColor = "rgba(120, 228, 255, 0.22)";
+      octx.shadowBlur = Math.round(14 * dpr);
+      if (points.length === 1) {
+        const radius = Math.max(5, Math.round((COMMUNICATION_IMAGE_ERASE_BRUSH_CSS_PX * dpr) * 0.5));
+        octx.beginPath();
+        octx.arc(Number(points[0]?.x) || 0, Number(points[0]?.y) || 0, radius, 0, Math.PI * 2);
+        octx.fill();
+      } else if (traceCommunicationMarkPath(octx, points)) {
+        octx.stroke();
+      }
+      octx.restore();
+    }
   }
 }
 
@@ -28333,7 +28589,7 @@ async function writeDesignReviewApplyReceipt({
 } = {}) {
   if (!state.runDir || !outputPath) return null;
   const receiptPath = `${state.runDir}/receipt-review-apply-${Date.now()}.json`;
-  const actionLabel = readFirstString(proposal?.label, proposal?.actionType) || "Design Review Apply";
+  const actionLabel = readFirstString(proposal?.label, proposal?.actionType) || "Apply Proposal";
   const referencePaths = uniqueStringList(
     referenceImageIds.map((imageId) => resolveDesignReviewApplyRequestImagePath(request, imageId))
   );
@@ -30659,9 +30915,270 @@ function renderPendingTabSwitchPreview() {
   return true;
 }
 
-function tabLabelForRunDir(runDir, fallback = "Run") {
-  const label = basename(String(runDir || "").trim());
-  return label || String(fallback || "Run");
+function normalizeSessionTabTitleInput(value = "", maxLen = SESSION_TAB_TITLE_MAX_LENGTH) {
+  const compact = String(value || "").replace(/\s+/g, " ").trim();
+  if (!compact) return "";
+  if (compact.length <= maxLen) return compact;
+  return compact.slice(0, Math.max(0, maxLen)).trim();
+}
+
+function sessionTabStemFromValue(value = "") {
+  return basename(String(value || "").trim()).replace(/\.[^.]+$/, "");
+}
+
+function sessionTabStemLooksGeneric(stem = "") {
+  const normalized = String(stem || "").trim().toLowerCase();
+  if (!normalized) return true;
+  return (
+    /^run[-_][a-z0-9]{4,}$/i.test(normalized) ||
+    /^tab[-_][a-z0-9]{4,}$/i.test(normalized) ||
+    /^artifact[-_]/i.test(normalized) ||
+    /^tmp[-_]/i.test(normalized) ||
+    /^review[-_](?:preview|apply|visible)/i.test(normalized) ||
+    /^export[-_]/i.test(normalized)
+  );
+}
+
+function humanizeSessionTabStem(value = "") {
+  let stem = sessionTabStemFromValue(value);
+  if (!stem) return "";
+  stem = stem
+    .replace(/\b(?:run|artifact|export|review|preview|apply|image|img|photo|draft|final|copy|output|tmp)\b/gi, " ")
+    .replace(/\b\d{6,}\b/g, " ")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!stem) return "";
+  const words = stem.split(" ").slice(0, 5).map((word) => {
+    const token = String(word || "").trim();
+    if (!token) return "";
+    if (/^[A-Z0-9]{2,}$/.test(token)) return token;
+    if (token.length <= 3) return token.toUpperCase();
+    return `${token.charAt(0).toUpperCase()}${token.slice(1).toLowerCase()}`;
+  }).filter(Boolean);
+  return normalizeSessionTabTitleInput(words.join(" "));
+}
+
+function sessionTabTitleSeedForImage(item = null) {
+  const candidates = [
+    String(item?.label || "").trim(),
+    String(item?.path || "").trim(),
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    const stem = sessionTabStemFromValue(candidate);
+    const title = humanizeSessionTabStem(candidate);
+    if (!title) continue;
+    if (!sessionTabStemLooksGeneric(stem) || candidates.length === 1) {
+      return title;
+    }
+  }
+  return "";
+}
+
+function automaticSessionTabLabel({ images = [], activeId = null, runDir = null, fallback = DEFAULT_UNTITLED_TAB_TITLE } = {}) {
+  const visibleImages = Array.isArray(images) ? images.filter((item) => item && typeof item === "object") : [];
+  if (visibleImages.length) {
+    const ordered = [];
+    const activeKey = String(activeId || "").trim();
+    const active = activeKey ? visibleImages.find((item) => String(item?.id || "").trim() === activeKey) : null;
+    if (active) ordered.push(active);
+    for (const item of visibleImages) {
+      if (!item || (active && item === active)) continue;
+      ordered.push(item);
+    }
+    const seeds = [];
+    for (const item of ordered) {
+      const seed = sessionTabTitleSeedForImage(item);
+      if (!seed || seeds.includes(seed)) continue;
+      seeds.push(seed);
+      if (seeds.length >= 2) break;
+    }
+    if (seeds.length === 1) return seeds[0];
+    if (seeds.length >= 2) {
+      if (visibleImages.length === 2) {
+        return normalizeSessionTabTitleInput(`${seeds[0]} + ${seeds[1]}`);
+      }
+      return normalizeSessionTabTitleInput(`${seeds[0]} + ${Math.max(1, visibleImages.length - 1)} More`);
+    }
+  }
+  const runStem = sessionTabStemFromValue(runDir);
+  if (runStem && !sessionTabStemLooksGeneric(runStem)) {
+    return humanizeSessionTabStem(runStem) || normalizeSessionTabTitleInput(runStem);
+  }
+  return normalizeSessionTabTitleInput(fallback) || DEFAULT_UNTITLED_TAB_TITLE;
+}
+
+function sessionTabAutomaticLabelForRecord(record = null, fallback = DEFAULT_UNTITLED_TAB_TITLE) {
+  if (record && String(record?.tabId || "").trim() === String(state.activeTabId || "").trim()) {
+    return automaticSessionTabLabel({
+      images: state.images,
+      activeId: state.activeId,
+      runDir: state.runDir || record?.runDir,
+      fallback,
+    });
+  }
+  const session = record?.session && typeof record.session === "object" ? record.session : null;
+  return automaticSessionTabLabel({
+    images: session?.images || [],
+    activeId: session?.activeId || null,
+    runDir: record?.runDir || session?.runDir || null,
+    fallback,
+  });
+}
+
+function sessionTabDisplayLabel(record = null, fallback = DEFAULT_UNTITLED_TAB_TITLE) {
+  if (record?.labelManual) {
+    return normalizeSessionTabTitleInput(record?.label, SESSION_TAB_TITLE_MAX_LENGTH) || DEFAULT_UNTITLED_TAB_TITLE;
+  }
+  return sessionTabAutomaticLabelForRecord(record, fallback);
+}
+
+function normalizeSessionTabReviewFlowState(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["planning", "ready", "applying", "failed"].includes(normalized)) return normalized;
+  return "";
+}
+
+function sessionTabReviewFlowStateFromCommunication(communication = null) {
+  const tray = communication?.proposalTray && typeof communication.proposalTray === "object"
+    ? communication.proposalTray
+    : null;
+  if (!tray?.visible) return "";
+  const statuses = Array.isArray(tray?.slots)
+    ? tray.slots.map((slot) => normalizeCommunicationProposalSlotStatus(slot?.status || ""))
+    : [];
+  if (statuses.includes("apply_running")) return "applying";
+  if (statuses.includes("ready") || statuses.includes("apply_succeeded")) return "ready";
+  if (statuses.includes("failed") || statuses.includes("apply_failed")) return "failed";
+  if (statuses.some((status) => ["planning", "preparing", "preview_pending", "preview_running"].includes(status))) {
+    return "planning";
+  }
+  return "";
+}
+
+function currentSessionTabReviewFlowState({ communication = state.communication, designReviewApply = state.designReviewApply } = {}) {
+  const applyStatus = readFirstString(designReviewApply?.status).toLowerCase();
+  if (applyStatus === "running") return "applying";
+  return sessionTabReviewFlowStateFromCommunication(communication);
+}
+
+function sessionTabReviewFlowStateForRecord(record = null, tabId = "") {
+  const normalizedTabId = String(tabId || record?.tabId || "").trim();
+  if (!normalizedTabId) return "";
+  if (normalizedTabId === String(state.activeTabId || "").trim()) {
+    return currentSessionTabReviewFlowState();
+  }
+  const session = record?.session && typeof record.session === "object" ? record.session : null;
+  return normalizeSessionTabReviewFlowState(
+    record?.reviewFlowState ||
+      session?.reviewFlowState ||
+      currentSessionTabReviewFlowState({
+        communication: session?.communication,
+        designReviewApply: session?.designReviewApply,
+      })
+  );
+}
+
+function sessionTabReviewFlowLabel(reviewFlowState = "") {
+  if (reviewFlowState === "planning") return "Planning";
+  if (reviewFlowState === "ready") return "Ready";
+  if (reviewFlowState === "applying") return "Applying";
+  if (reviewFlowState === "failed") return "Retry";
+  return "";
+}
+
+function syncActiveTabReviewFlowState({ publish = true } = {}) {
+  const tabId = String(state.activeTabId || "").trim();
+  if (!tabId) return "";
+  const record = tabbedSessions.getTab(tabId) || null;
+  if (!record) return "";
+  const next = currentSessionTabReviewFlowState();
+  if (record.session && typeof record.session === "object") {
+    record.session.reviewFlowState = next;
+  }
+  if (normalizeSessionTabReviewFlowState(record.reviewFlowState) === next) return next;
+  record.reviewFlowState = next;
+  if (publish) {
+    tabbedSessions.updateTabMetadata(tabId, { updatedAt: Date.now() });
+  }
+  return next;
+}
+
+function resetSessionTabRenameState({ render = false } = {}) {
+  sessionTabRenameState = {
+    tabId: null,
+    draft: "",
+    focusRequested: false,
+  };
+  if (render) renderSessionTabStrip();
+}
+
+function startSessionTabRename(tabId = "") {
+  const normalizedTabId = String(tabId || "").trim();
+  if (!normalizedTabId) return false;
+  const record = tabbedSessions.getTab(normalizedTabId) || null;
+  if (!record) return false;
+  sessionTabRenameState = {
+    tabId: normalizedTabId,
+    draft: sessionTabDisplayLabel(record, DEFAULT_UNTITLED_TAB_TITLE),
+    focusRequested: true,
+  };
+  renderSessionTabStrip();
+  return true;
+}
+
+function commitSessionTabRename(tabId = "", rawTitle = sessionTabRenameState.draft) {
+  const normalizedTabId = String(tabId || sessionTabRenameState.tabId || "").trim();
+  if (!normalizedTabId) return false;
+  const record = tabbedSessions.getTab(normalizedTabId) || null;
+  if (!record) {
+    resetSessionTabRenameState({ render: true });
+    return false;
+  }
+  const nextTitle = normalizeSessionTabTitleInput(rawTitle, SESSION_TAB_TITLE_MAX_LENGTH);
+  if (nextTitle) {
+    record.label = nextTitle;
+    record.labelManual = true;
+    if (record.session && typeof record.session === "object") {
+      record.session.label = nextTitle;
+      record.session.labelManual = true;
+    }
+  } else {
+    record.labelManual = false;
+    record.label = sessionTabAutomaticLabelForRecord(record, DEFAULT_UNTITLED_TAB_TITLE);
+    if (record.session && typeof record.session === "object") {
+      record.session.label = record.label;
+      record.session.labelManual = false;
+    }
+  }
+  resetSessionTabRenameState();
+  tabbedSessions.updateTabMetadata(normalizedTabId, { updatedAt: Date.now() });
+  return true;
+}
+
+function cancelSessionTabRename() {
+  if (!sessionTabRenameState.tabId) return false;
+  resetSessionTabRenameState({ render: true });
+  return true;
+}
+
+function focusSessionTabRenameInput() {
+  if (!sessionTabRenameState.tabId || !sessionTabRenameState.focusRequested || !els.sessionTabList) return;
+  const selector = `.session-tab-item[data-tab-id="${CSS.escape(sessionTabRenameState.tabId)}"] .session-tab-title-input`;
+  const input = els.sessionTabList.querySelector(selector);
+  if (!(input instanceof HTMLInputElement)) return;
+  sessionTabRenameState.focusRequested = false;
+  input.focus();
+  input.select();
+}
+
+function tabLabelForRunDir(runDir, fallback = DEFAULT_UNTITLED_TAB_TITLE) {
+  return automaticSessionTabLabel({
+    images: [],
+    activeId: null,
+    runDir,
+    fallback,
+  });
 }
 
 function currentTabSwitchBlockReason() {
@@ -30685,6 +31202,9 @@ function currentTabSwitchBlockMessage(reason = currentTabSwitchBlockReason()) {
 
 function captureActiveTabSession(session = null) {
   const next = session && typeof session === "object" ? session : createFreshTabSession();
+  next.label = state.activeTabId ? tabbedSessions.getTab(state.activeTabId)?.label || next.label || null : next.label || null;
+  next.labelManual = Boolean(state.activeTabId ? tabbedSessions.getTab(state.activeTabId)?.labelManual : next.labelManual);
+  next.reviewFlowState = currentSessionTabReviewFlowState();
   next.runDir = state.runDir || null;
   next.eventsPath = state.eventsPath || null;
   next.eventsByteOffset = Math.max(0, Number(state.eventsByteOffset) || 0);
@@ -30790,6 +31310,9 @@ function captureActiveTabSession(session = null) {
 
 function bindTabSessionToState(session = null) {
   const current = session && typeof session === "object" ? session : createFreshTabSession();
+  current.label = typeof current.label === "string" ? current.label : null;
+  current.labelManual = Boolean(current.labelManual);
+  current.reviewFlowState = normalizeSessionTabReviewFlowState(current.reviewFlowState);
   state.runDir = current.runDir || null;
   state.eventsPath = current.eventsPath || null;
   state.eventsByteOffset = Math.max(0, Number(current.eventsByteOffset) || 0);
@@ -30913,6 +31436,7 @@ function syncActiveTabRecord({ capture = false, publish = false } = {}) {
   const previousLabel = record.label ? String(record.label) : null;
   const previousBusy = Boolean(record.busy);
   const previousThumbnailPath = record.thumbnailPath ? String(record.thumbnailPath) : null;
+  const previousReviewFlowState = normalizeSessionTabReviewFlowState(record.reviewFlowState);
   if (capture) {
     record.session = captureActiveTabSession(record.session);
   }
@@ -30922,7 +31446,17 @@ function syncActiveTabRecord({ capture = false, publish = false } = {}) {
     record.session.tabUiMeta = { ...uiMeta };
   }
   record.runDir = state.runDir || record.session?.runDir || record.runDir || null;
-  record.label = tabLabelForRunDir(record.runDir, record.label || record.tabId || "Run");
+  record.reviewFlowState = currentSessionTabReviewFlowState();
+  if (!record.labelManual) {
+    record.label = sessionTabAutomaticLabelForRecord(record, DEFAULT_UNTITLED_TAB_TITLE);
+  } else {
+    record.label = normalizeSessionTabTitleInput(record.label, SESSION_TAB_TITLE_MAX_LENGTH) || DEFAULT_UNTITLED_TAB_TITLE;
+  }
+  if (record.session && typeof record.session === "object") {
+    record.session.label = record.label;
+    record.session.labelManual = Boolean(record.labelManual);
+    record.session.reviewFlowState = record.reviewFlowState;
+  }
   record.busy = Boolean(currentTabSwitchBlockReason());
   record.thumbnailPath = uiMeta.thumbnailPath;
   record.updatedAt = Date.now();
@@ -30933,7 +31467,8 @@ function syncActiveTabRecord({ capture = false, publish = false } = {}) {
       previousRunDir !== record.runDir ||
       previousLabel !== record.label ||
       previousBusy !== Boolean(record.busy) ||
-      previousThumbnailPath !== record.thumbnailPath;
+      previousThumbnailPath !== record.thumbnailPath ||
+      previousReviewFlowState !== normalizeSessionTabReviewFlowState(record.reviewFlowState);
     if (changed) {
       tabbedSessions.upsertTab({ ...record }, { activate: false });
     }
@@ -31253,6 +31788,9 @@ async function closeTab(tabId) {
     showToast("Keep one tab open in this build.", "tip", 2200);
     return { ok: false, reason: "last_tab", tabs: snapshot.tabs };
   }
+  if (String(sessionTabRenameState.tabId || "").trim() === normalized) {
+    resetSessionTabRenameState();
+  }
   if (normalized === String(state.activeTabId || "").trim()) {
     const blockReason = currentTabSwitchBlockReason();
     if (blockReason) {
@@ -31276,7 +31814,7 @@ async function closeTab(tabId) {
       publishActiveTabVisibleState({ allowTabSwitchPreview: true, reason: "close_tab" });
       void scheduleTabHydration(closed.nextActiveId, "close_tab", { spawnEngine: false });
     }
-    showToast(`Closed ${tabLabelForRunDir(closed?.closed?.runDir, "tab")}.`, "tip", 1800);
+    showToast(`Closed ${sessionTabDisplayLabel(closed?.closed, "tab")}.`, "tip", 1800);
     const previewEntry = tabPreviewCache.get(normalized) || null;
     if (previewEntry) {
       tabPreviewCache.delete(normalized);
@@ -31285,7 +31823,7 @@ async function closeTab(tabId) {
     return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: getTabsSnapshot().tabs };
   }
   const closed = tabbedSessions.closeTab(normalized, { activateNeighbor: false });
-  showToast(`Closed ${tabLabelForRunDir(closed?.closed?.runDir, "tab")}.`, "tip", 1800);
+  showToast(`Closed ${sessionTabDisplayLabel(closed?.closed, "tab")}.`, "tip", 1800);
   const previewEntry = tabPreviewCache.get(normalized) || null;
   if (previewEntry) {
     tabPreviewCache.delete(normalized);
@@ -31339,7 +31877,7 @@ async function ensureRun() {
   startEventsPolling();
 }
 
-async function createRun() {
+async function createRun({ announce = true, source = "new_run" } = {}) {
   const blockReason = currentTabSwitchBlockReason();
   if (blockReason) {
     showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
@@ -31350,7 +31888,7 @@ async function createRun() {
   state.installTelemetry.runSequence = (Number(state.installTelemetry.runSequence) || 0) + 1;
   emitInstallTelemetryAsync("new_run_created", {
     run_sequence: Number(state.installTelemetry.runSequence) || 1,
-    source: "new_run",
+    source: String(source || "new_run"),
   });
   state.installTelemetry.firstRunLogged = true;
   const tabId = createTabId();
@@ -31373,10 +31911,14 @@ async function createRun() {
   );
   const result = await activateTab(tabId, { spawnEngine: true, reason: "new_run_tab" });
   if (result?.hydration) await result.hydration;
+  const createdRecord = tabbedSessions.getTab(tabId) || null;
+  const createdLabel = sessionTabDisplayLabel(createdRecord, DEFAULT_UNTITLED_TAB_TITLE);
   if (state.ptySpawned) {
-    showToast(`New tab ready: ${tabLabelForRunDir(payload.run_dir)}.`, "tip", 2600);
+    if (announce) {
+      showToast(`New tab ready: ${createdLabel}.`, "tip", 2600);
+    }
   } else {
-    showToast(`Created ${tabLabelForRunDir(payload.run_dir)}, but the engine did not start.`, "error", 3200);
+    showToast(`Created ${createdLabel}, but the engine did not start.`, "error", 3200);
   }
   return result;
 }
@@ -33436,7 +33978,7 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
       octx.save();
       octx.lineJoin = "round";
       octx.shadowBlur = 0;
-      octx.strokeStyle = "rgba(255, 212, 0, 0.62)";
+      octx.strokeStyle = IMAGE_SELECTION_INACTIVE_STROKE;
       octx.lineWidth = Math.max(1, Math.round(2.2 * dpr));
       for (const imageId of multiSelected) {
         const rect = state.multiRects.get(imageId) || null;
@@ -33464,11 +34006,12 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
       octx.save();
       octx.lineJoin = "round";
       const activeMother = isMotherGeneratedImageItem(activeItem);
-      const outerStroke = activeMother ? "rgba(82, 255, 148, 0.20)" : "rgba(255, 212, 0, 0.14)";
-      const mainStroke = activeMother ? "rgba(82, 255, 148, 0.94)" : "rgba(255, 212, 0, 0.96)";
-      const mainShadow = activeMother ? "rgba(82, 255, 148, 0.28)" : "rgba(255, 212, 0, 0.26)";
-      const innerStroke = activeMother ? "rgba(208, 255, 226, 0.60)" : "rgba(255, 247, 210, 0.58)";
-      const handleStroke = activeMother ? "rgba(82, 255, 148, 0.92)" : "rgba(255, 212, 0, 0.92)";
+      const palette = selectionChromePalette({ motherGenerated: activeMother });
+      const outerStroke = palette.outerStroke;
+      const mainStroke = palette.mainStroke;
+      const mainShadow = palette.mainShadow;
+      const innerStroke = palette.innerStroke;
+      const handleStroke = palette.handleStroke;
 
       const ax = activeRect.x * ms + mox;
       const ay = activeRect.y * ms + moy;
@@ -33532,7 +34075,7 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
         octx.shadowColor = "rgba(0, 0, 0, 0.55)";
         octx.shadowBlur = Math.round(8 * dpr);
         for (const c of corners) {
-          octx.fillStyle = "rgba(8, 10, 14, 0.78)";
+          octx.fillStyle = "rgba(244, 250, 255, 0.82)";
           octx.strokeStyle = handleStroke;
           octx.lineWidth = Math.max(1, Math.round(1.25 * dpr));
           _drawRoundedRect(octx, Math.round(c.x - r), Math.round(c.y - r), hs, hs, Math.max(2, Math.round(2 * dpr)));
@@ -33567,7 +34110,7 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
       skewXDeg: activeTransform.skewXDeg,
     });
     const activeMother = isMotherGeneratedImageItem(activeItem);
-    const handleStroke = activeMother ? "rgba(82, 255, 148, 0.92)" : "rgba(255, 212, 0, 0.92)";
+    const handleStroke = selectionChromePalette({ motherGenerated: activeMother }).handleStroke;
     const showHandles = state.tool === "pan" || intentModeActive();
     if (showHandles) {
       const hs = Math.max(8, Math.round(8 * dpr));
@@ -33589,7 +34132,7 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
       octx.shadowColor = "rgba(0, 0, 0, 0.55)";
       octx.shadowBlur = Math.round(8 * dpr);
       for (const c of corners) {
-        octx.fillStyle = "rgba(8, 10, 14, 0.78)";
+        octx.fillStyle = "rgba(244, 250, 255, 0.82)";
         octx.strokeStyle = handleStroke;
         octx.lineWidth = Math.max(1, Math.round(1.25 * dpr));
         _drawRoundedRect(octx, Math.round(c.x - r), Math.round(c.y - r), hs, hs, Math.max(2, Math.round(2 * dpr)));
@@ -33868,9 +34411,28 @@ function ensureFreeformRectForImageId(rawId = "") {
   return rect;
 }
 
+function selectionChromePalette({ motherGenerated = false } = {}) {
+  if (motherGenerated) {
+    return {
+      outerStroke: "rgba(82, 255, 148, 0.20)",
+      mainStroke: "rgba(82, 255, 148, 0.94)",
+      mainShadow: "rgba(82, 255, 148, 0.28)",
+      innerStroke: "rgba(208, 255, 226, 0.60)",
+      handleStroke: "rgba(82, 255, 148, 0.92)",
+    };
+  }
+  return {
+    outerStroke: "rgba(118, 223, 255, 0.22)",
+    mainStroke: "rgba(88, 201, 255, 0.96)",
+    mainShadow: "rgba(88, 201, 255, 0.28)",
+    innerStroke: "rgba(236, 249, 255, 0.84)",
+    handleStroke: "rgba(88, 201, 255, 0.94)",
+  };
+}
+
 function renderActiveImageTransformControls(
   octx,
-  { anchorRect = null, anchorPoints = null, dpr = 1, accent = "rgba(255, 212, 0, 0.92)", targetId = "" } = {}
+  { anchorRect = null, anchorPoints = null, dpr = 1, accent = "rgba(88, 201, 255, 0.94)", targetId = "" } = {}
 ) {
   if (!octx || !anchorRect) return;
   const id = String(targetId || state.activeId || "").trim();
@@ -33983,10 +34545,10 @@ function renderActiveImageTransformControls(
 
   octx.beginPath();
   octx.arc(Math.round(rotateCx), Math.round(rotateCy), rotateRadius, 0, Math.PI * 2);
-  octx.fillStyle = rotateActive ? "rgba(14, 30, 22, 0.9)" : "rgba(8, 10, 14, 0.84)";
+  octx.fillStyle = rotateActive ? "rgba(236, 249, 255, 0.96)" : "rgba(244, 250, 255, 0.82)";
   octx.fill();
   octx.lineWidth = Math.max(1, Math.round(1.3 * dpr));
-  octx.strokeStyle = rotateActive ? "rgba(122, 220, 172, 0.9)" : accent;
+  octx.strokeStyle = accent;
   octx.stroke();
 
   // Photoshop-like skew side handles (left/right edge drag).
@@ -33997,10 +34559,10 @@ function renderActiveImageTransformControls(
     const size = skewRadius * 1.18;
     octx.beginPath();
     octx.rect(-size, -size, size * 2, size * 2);
-    octx.fillStyle = skewActive ? "rgba(14, 30, 22, 0.9)" : "rgba(8, 10, 14, 0.84)";
+    octx.fillStyle = skewActive ? "rgba(236, 249, 255, 0.96)" : "rgba(244, 250, 255, 0.82)";
     octx.fill();
     octx.lineWidth = Math.max(1, Math.round(1.2 * dpr));
-    octx.strokeStyle = skewActive ? "rgba(122, 220, 172, 0.9)" : accent;
+    octx.strokeStyle = accent;
     octx.stroke();
     octx.restore();
     const hitPad = Math.max(4, Math.round(4 * dpr));
@@ -35795,10 +36357,11 @@ function render() {
       // Keep single-view active selection clearly visible, matching multi-view behavior.
       const dpr = getDpr();
       const motherGenerated = isMotherGeneratedImageItem(item);
-      const outerStroke = motherGenerated ? "rgba(82, 255, 148, 0.20)" : "rgba(255, 212, 0, 0.14)";
-      const mainStroke = motherGenerated ? "rgba(82, 255, 148, 0.94)" : "rgba(255, 212, 0, 0.96)";
-      const mainShadow = motherGenerated ? "rgba(82, 255, 148, 0.28)" : "rgba(255, 212, 0, 0.26)";
-      const innerStroke = motherGenerated ? "rgba(208, 255, 226, 0.60)" : "rgba(255, 247, 210, 0.58)";
+      const palette = selectionChromePalette({ motherGenerated });
+      const outerStroke = palette.outerStroke;
+      const mainStroke = palette.mainStroke;
+      const mainShadow = palette.mainShadow;
+      const innerStroke = palette.innerStroke;
       const singleDragPerfMode = isFreeformTransformPointerDragActive() && String(state.pointer?.imageId || "") === String(item?.id || "");
       const singleOuterLineWidth = singleDragPerfMode ? Math.max(1, Math.round(6 * dpr)) : Math.max(1, Math.round(10 * dpr));
       const singleOuterShadowBlur = singleDragPerfMode ? Math.round(20 * dpr) : Math.round(44 * dpr);
@@ -35836,12 +36399,11 @@ function render() {
 	      if (drawPolygonPath(octx, singleBorderPoints)) octx.stroke();
 	      octx.restore();
 	      if (state.tool === "pan" || intentModeActive()) {
-	        const handleStroke = motherGenerated ? "rgba(82, 255, 148, 0.92)" : "rgba(255, 212, 0, 0.92)";
 	        renderActiveImageTransformControls(octx, {
 	          anchorRect: { x: ix, y: iy, w: iw, h: ih },
             anchorPoints: singleBorderPoints,
 	          dpr,
-	          accent: handleStroke,
+	          accent: palette.handleStroke,
 	          targetId: item.id,
 	        });
 	      }
@@ -36666,6 +37228,8 @@ function installCanvasHandlers() {
       setOverlayCursor("grabbing");
     } else if (state.pointer.kind === COMMUNICATION_POINTER_KINDS.MARKER) {
       setOverlayCursor("crosshair");
+    } else if (state.pointer.kind === COMMUNICATION_POINTER_KINDS.ERASER) {
+      setOverlayCursor("cell");
     } else if (state.pointer.kind === COMMUNICATION_POINTER_KINDS.MAGIC_SELECT) {
       setOverlayCursor("crosshair");
     } else if (state.pointer.kind === POINTER_KINDS.FREEFORM_IMPORT || state.pointer.kind === POINTER_KINDS.FREEFORM_WHEEL) {
@@ -36758,6 +37322,18 @@ function installCanvasHandlers() {
     }
     if (state.pointer.kind === COMMUNICATION_POINTER_KINDS.MARKER) {
       const draft = state.communication?.markDraft;
+      if (!draft) return;
+      const distancePx = Math.hypot((Number(pCss.x) || 0) - state.pointer.startCssX, (Number(pCss.y) || 0) - state.pointer.startCssY);
+      if (distancePx > COMMUNICATION_MARK_MIN_DRAG_PX) {
+        state.pointer.moved = true;
+      }
+      const samples = communicationCoalescedScreenPoints(event);
+      draft.screenPoints = communicationAppendDraftScreenPoints(draft.screenPoints, samples);
+      requestRender();
+      return;
+    }
+    if (state.pointer.kind === COMMUNICATION_POINTER_KINDS.ERASER) {
+      const draft = state.communication?.eraseDraft;
       if (!draft) return;
       const distancePx = Math.hypot((Number(pCss.x) || 0) - state.pointer.startCssX, (Number(pCss.y) || 0) - state.pointer.startCssY);
       if (distancePx > COMMUNICATION_MARK_MIN_DRAG_PX) {
@@ -37267,6 +37843,29 @@ function installCanvasHandlers() {
             }
             return;
           }
+          if (kind === COMMUNICATION_POINTER_KINDS.ERASER) {
+            const eraseDraft = state.communication?.eraseDraft
+              ? {
+                  ...state.communication.eraseDraft,
+                  screenPoints: communicationDraftScreenPoints(state.communication.eraseDraft),
+                }
+              : null;
+            state.communication.eraseDraft = null;
+            requestRender();
+            try {
+              els.overlayCanvas.releasePointerCapture(event.pointerId);
+            } catch {
+              // ignore
+            }
+            if (eraseDraft?.imageId) {
+              void commitCommunicationImageEraseDraft(eraseDraft).catch((error) => {
+                console.error("Failed to commit image erase:", error);
+                showToast(error?.message || "Image erase failed.", "error", 2600);
+                requestRender();
+              });
+            }
+            return;
+          }
           if (kind === COMMUNICATION_POINTER_KINDS.MAGIC_SELECT) {
             const targetImageId = String(imageId || "").trim();
             const imagePoint = !moved && targetImageId ? canvasToImageForImageId(canvasPointFromEvent(event), targetImageId) : null;
@@ -37737,8 +38336,9 @@ function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
   const tabId = String(tab?.tabId || "").trim();
   const record = tabId ? tabbedSessions.getTab(tabId) : null;
   const uiMeta = normalizeTabUiMeta(record?.tabUiMeta || record?.session?.tabUiMeta);
-  const title = String(tab?.label || record?.label || tabLabelForRunDir(tab?.runDir, "Run"));
+  const title = sessionTabDisplayLabel(record || tab, DEFAULT_UNTITLED_TAB_TITLE);
   const runDir = record?.runDir ? String(record.runDir) : tab?.runDir ? String(tab.runDir) : "";
+  const reviewFlowState = sessionTabReviewFlowStateForRecord(record, tabId);
   return {
     tabId,
     title,
@@ -37747,6 +38347,9 @@ function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
     isBusy: Boolean(tab?.busy),
     isDirty: Boolean(uiMeta.isDirty),
     canClose: totalTabs > 1,
+    reviewFlowState,
+    reviewFlowLabel: sessionTabReviewFlowLabel(reviewFlowState),
+    isRenaming: String(sessionTabRenameState.tabId || "").trim() === tabId,
   };
 }
 
@@ -37757,6 +38360,8 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
   if (summary.isActive) item.classList.add("is-active");
   if (summary.isBusy) item.classList.add("is-busy");
   if (summary.isDirty) item.classList.add("is-dirty");
+  if (summary.reviewFlowState) item.classList.add(`is-review-${summary.reviewFlowState}`);
+  if (summary.isRenaming) item.classList.add("is-renaming");
   item.dataset.tabId = summary.tabId;
   item.dataset.title = summary.title;
   item.dataset.runDir = summary.runDir;
@@ -37764,42 +38369,95 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
   item.dataset.busy = summary.isBusy ? "true" : "false";
   item.dataset.dirty = summary.isDirty ? "true" : "false";
   item.dataset.canClose = summary.canClose ? "true" : "false";
+  item.dataset.reviewFlowState = summary.reviewFlowState;
 
-  const hit = document.createElement("button");
-  hit.className = "session-tab-hit";
-  hit.type = "button";
-  hit.setAttribute("role", "tab");
-  hit.setAttribute("aria-selected", summary.isActive ? "true" : "false");
-  hit.tabIndex = summary.isActive ? 0 : -1;
-  hit.title = summary.runDir ? `${summary.title}\n${summary.runDir}` : summary.title;
+  if (summary.isRenaming) {
+    const rename = document.createElement("div");
+    rename.className = "session-tab-rename";
 
-  const labels = document.createElement("span");
-  labels.className = "session-tab-labels";
+    const input = document.createElement("input");
+    input.className = "session-tab-title-input";
+    input.type = "text";
+    input.value = String(sessionTabRenameState.draft || summary.title || "");
+    input.maxLength = SESSION_TAB_TITLE_MAX_LENGTH;
+    input.placeholder = DEFAULT_UNTITLED_TAB_TITLE;
+    input.setAttribute("aria-label", "Rename tab");
+    input.spellcheck = false;
+    input.autocomplete = "off";
+    input.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+    input.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    input.addEventListener("input", () => {
+      const next = normalizeSessionTabTitleInput(input.value, SESSION_TAB_TITLE_MAX_LENGTH);
+      sessionTabRenameState.draft = next;
+      if (input.value !== next) input.value = next;
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitSessionTabRename(summary.tabId, input.value);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelSessionTabRename();
+      }
+    });
+    input.addEventListener("blur", () => {
+      if (String(sessionTabRenameState.tabId || "").trim() !== summary.tabId) return;
+      commitSessionTabRename(summary.tabId, input.value);
+    });
 
-  const title = document.createElement("span");
-  title.className = "session-tab-title";
-  title.textContent = summary.title;
-  labels.append(title);
+    rename.append(input);
+    item.append(rename);
+  } else {
+    const hit = document.createElement("button");
+    hit.className = "session-tab-hit";
+    hit.type = "button";
+    hit.setAttribute("role", "tab");
+    hit.setAttribute("aria-selected", summary.isActive ? "true" : "false");
+    hit.tabIndex = summary.isActive ? 0 : -1;
+    hit.title = summary.runDir ? `${summary.title}\n${summary.runDir}` : summary.title;
 
-  const runDir = document.createElement("span");
-  runDir.className = "session-tab-run-dir";
-  runDir.textContent = summary.runDir;
-  labels.append(runDir);
+    const labels = document.createElement("span");
+    labels.className = "session-tab-labels";
 
-  const flags = document.createElement("span");
-  flags.className = "session-tab-flags";
-  flags.setAttribute("aria-hidden", "true");
+    const title = document.createElement("span");
+    title.className = "session-tab-title";
+    title.textContent = summary.title;
+    labels.append(title);
 
-  const busyIndicator = document.createElement("span");
-  busyIndicator.className = "session-tab-busy-indicator";
-  flags.append(busyIndicator);
+    const runDir = document.createElement("span");
+    runDir.className = "session-tab-run-dir";
+    runDir.textContent = summary.runDir;
+    labels.append(runDir);
 
-  const dirtyDot = document.createElement("span");
-  dirtyDot.className = "session-tab-dirty-dot";
-  flags.append(dirtyDot);
+    const flags = document.createElement("span");
+    flags.className = "session-tab-flags";
+    flags.setAttribute("aria-hidden", "true");
 
-  hit.append(labels, flags);
-  item.append(hit);
+    if (summary.reviewFlowLabel) {
+      const reviewState = document.createElement("span");
+      reviewState.className = "session-tab-review-state";
+      reviewState.dataset.reviewFlowState = summary.reviewFlowState;
+      reviewState.textContent = summary.reviewFlowLabel;
+      flags.append(reviewState);
+    }
+
+    const busyIndicator = document.createElement("span");
+    busyIndicator.className = "session-tab-busy-indicator";
+    flags.append(busyIndicator);
+
+    const dirtyDot = document.createElement("span");
+    dirtyDot.className = "session-tab-dirty-dot";
+    flags.append(dirtyDot);
+
+    hit.append(labels, flags);
+    item.append(hit);
+  }
 
   const close = document.createElement("button");
   close.className = "session-tab-close";
@@ -37831,6 +38489,7 @@ function renderSessionTabStrip(snapshot = null) {
     fragment.append(createSessionTabStripItem(tab, tabs.length));
   }
   els.sessionTabList.replaceChildren(fragment);
+  focusSessionTabRenameInput();
 }
 
 function installSessionTabStripUi() {
@@ -37846,6 +38505,17 @@ function installSessionTabStripUi() {
     els.sessionTabList.dataset.bound = "1";
     els.sessionTabList.addEventListener("click", (event) => {
       const target = event?.target;
+      const title = target?.closest ? target.closest(".session-tab-title") : null;
+      if (title && els.sessionTabList.contains(title)) {
+        event.preventDefault();
+        event.stopPropagation();
+        const item = title.closest(".session-tab-item");
+        const tabId = String(item?.dataset?.tabId || "").trim();
+        if (!tabId) return;
+        bumpInteraction({ semantic: false });
+        startSessionTabRename(tabId);
+        return;
+      }
       const closeButton = target?.closest ? target.closest(".session-tab-close") : null;
       if (closeButton && els.sessionTabList.contains(closeButton)) {
         event.preventDefault();
@@ -39370,7 +40040,7 @@ async function boot() {
   });
 
   // Auto-create a run for speed; users can always "Open Run" later.
-  await createRun();
+  await createRun({ announce: false, source: "boot" });
   installJuggernautShellBridge();
   installBuiltInSingleImageRailIntegration();
   applyRuntimeChromeVisibility({ source: "bridge_ready" });
