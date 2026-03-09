@@ -807,32 +807,28 @@ function slotStatusLabel(status = "") {
   return "Loading";
 }
 
+function proposalEffectText(proposal = {}) {
+  return clampText(
+    readFirstString(proposal?.previewBrief, proposal?.applyBrief, proposal?.why) ||
+      "Make a focused visual change.",
+    104
+  );
+}
+
 function slotSummaryText(slot = {}) {
   if (slot?.status === "apply_running") {
-    const targetImageId = readFirstString(slot?.apply?.targetImageId, slot?.proposal?.imageId);
-    return clampText(
-      targetImageId
-        ? `Applying the final edit to ${targetImageId}.`
-        : "Applying the final edit to the target image.",
-      220
-    );
+    return "Applying to the target image.";
   }
   if (slot?.status === "apply_succeeded") {
-    return clampText(
-      "Final apply finished. The accepted edit is ready for in-place replacement.",
-      220
-    );
+    return "Applied to the target image.";
   }
   if (slot?.status === "apply_failed") {
-    return clampText(
-      slot?.apply?.error || slot?.error || "The accepted edit could not be rendered.",
-      220
-    );
+    return clampText(slot?.apply?.error || slot?.error || "The final edit could not be rendered.", 120);
   }
-  return clampText(
-    slot?.error || slot?.proposal?.why || "Waiting for planner and previews.",
-    220
-  );
+  if (slot?.error) {
+    return clampText(slot.error, 120);
+  }
+  return proposalEffectText(slot?.proposal);
 }
 
 function collectReviewDebugPayload(state = {}) {
@@ -952,40 +948,8 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
     if (title && title.parentElement !== headGroup) {
       headGroup.appendChild(title);
     }
-    let meta = head.querySelector(".design-review-runtime-meta");
-    if (!meta) {
-      meta = document.createElement("div");
-      meta.className = "design-review-runtime-meta";
-      headGroup.appendChild(meta);
-    }
-    let headActions = head.querySelector(".design-review-runtime-head-actions");
-    if (!headActions) {
-      headActions = document.createElement("div");
-      headActions.className = "design-review-runtime-head-actions";
-      if (title?.parentElement === headGroup) {
-        head.insertBefore(headActions, head.querySelector(".communication-proposal-tray-close") || null);
-      } else {
-        head.appendChild(headActions);
-      }
-    }
-    headActions.replaceChildren();
-    const reviewDebugPayload = collectReviewDebugPayload(state);
-    if (reviewDebugPayload) {
-      const debug = document.createElement("button");
-      debug.type = "button";
-      debug.className = "design-review-runtime-head-debug";
-      debug.textContent = "Debug Payload";
-      debug.addEventListener("click", () => {
-        openReviewDebugModal(reviewDebugPayload);
-      });
-      headActions.appendChild(debug);
-    } else {
-      headActions.remove();
-    }
-    const imageId = readFirstString(state?.request?.primaryImageId);
-    meta.textContent = imageId
-      ? `${slotStatusLabel(state?.status)} · ${imageId}`
-      : slotStatusLabel(state?.status);
+    head.querySelector(".design-review-runtime-meta")?.remove();
+    head.querySelector(".design-review-runtime-head-actions")?.remove();
   }
 
   const slots = Array.isArray(state?.slots) ? state.slots : [];
@@ -1078,45 +1042,28 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
       copy.appendChild(hint);
     }
 
-    const slotDebugInfo = slot?.apply?.debugInfo || slot?.debugInfo || null;
-    if (
-      slot?.proposal ||
-      (["failed", "apply_failed"].includes(String(slot?.status || "")) && slotDebugInfo)
-    ) {
+    if (slot?.proposal) {
       const actions = document.createElement("div");
       actions.className = "design-review-runtime-actions";
-      if (slot?.proposal) {
-        const accept = document.createElement("button");
-        accept.type = "button";
-        accept.className = "design-review-runtime-action";
-        accept.textContent =
-          slot?.status === "apply_running"
-            ? "Applying…"
-            : slot?.status === "apply_succeeded"
-              ? "Applied"
-              : slot?.status === "apply_failed"
-                ? "Retry Apply"
-                : "Apply via Runtime";
-        accept.disabled =
-          !canAcceptSlot;
-        accept.addEventListener("click", (event) => {
-          event.stopPropagation();
-          if (accept.disabled) return;
-          handleAccept();
-        });
-        actions.appendChild(accept);
-      }
-      if (["failed", "apply_failed"].includes(String(slot?.status || "")) && slotDebugInfo) {
-        const debug = document.createElement("button");
-        debug.type = "button";
-        debug.className = "design-review-runtime-action design-review-runtime-action-secondary";
-        debug.textContent = "Debug Payload";
-        debug.addEventListener("click", (event) => {
-          event.stopPropagation();
-          openReviewDebugModal(slotDebugInfo);
-        });
-        actions.appendChild(debug);
-      }
+      const accept = document.createElement("button");
+      accept.type = "button";
+      accept.className = "design-review-runtime-action";
+      accept.textContent =
+        slot?.status === "apply_running"
+          ? "Applying…"
+          : slot?.status === "apply_succeeded"
+            ? "Applied"
+            : slot?.status === "apply_failed"
+              ? "Retry Apply"
+              : "Apply";
+      accept.disabled =
+        !canAcceptSlot;
+      accept.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (accept.disabled) return;
+        handleAccept();
+      });
+      actions.appendChild(accept);
       copy.appendChild(actions);
     }
 

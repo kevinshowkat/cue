@@ -122,6 +122,8 @@ const DESIGN_REVIEW_BOOTSTRAP_STATE_EVENT = "juggernaut:design-review-state";
 const DESIGN_REVIEW_APPLY_EVENT = "juggernaut:design-review-apply";
 const DESIGN_REVIEW_BOOTSTRAP_TRAY_ID = "design-review-tray";
 const DESIGN_REVIEW_APPLY_SOURCE = "design_review_apply";
+const DESIGN_REVIEW_TRAY_DISMISS_MS = 180;
+const DESIGN_REVIEW_APPLY_SHIMMER_LOOP_MS = 1350;
 const COMMUNICATION_MARK_STROKE = "rgba(255, 94, 190, 0.96)";
 const COMMUNICATION_REGION_ACTIVE = "rgba(100, 210, 255, 0.94)";
 const COMMUNICATION_REGION_IDLE = "rgba(100, 210, 255, 0.34)";
@@ -1662,6 +1664,7 @@ const openrouterOnboardingState = {
 
 let communicationReviewBootstrapBridgeBound = false;
 let designReviewApplyBridgeBound = false;
+let communicationProposalTrayDismissTimer = null;
 
 function normalizeCommunicationProposalSlotStatus(rawStatus = "") {
   const value = String(rawStatus || "").trim().toLowerCase();
@@ -1681,6 +1684,12 @@ function normalizeCommunicationProposalSlotStatus(rawStatus = "") {
     return value || "skeleton";
   }
   return "skeleton";
+}
+
+function clearCommunicationProposalTrayDismissTimer() {
+  if (communicationProposalTrayDismissTimer == null || typeof window === "undefined") return;
+  window.clearTimeout(communicationProposalTrayDismissTimer);
+  communicationProposalTrayDismissTimer = null;
 }
 
 function communicationProposalSlotIsPending(status = "") {
@@ -21899,6 +21908,28 @@ function buildCommunicationReviewPendingSlots({ overallStatus = "preparing" } = 
   );
 }
 
+function communicationProposalCopyFromReviewState(slot = {}, status = "skeleton") {
+  const rawStatus = String(slot?.status || "").trim().toLowerCase();
+  const proposal = slot?.proposal && typeof slot.proposal === "object" ? slot.proposal : null;
+  if (rawStatus === "apply_running") {
+    return "Applying to the target image.";
+  }
+  if (rawStatus === "apply_succeeded") {
+    return "Applied to the target image.";
+  }
+  if (slot?.error || rawStatus === "failed" || rawStatus === "apply_failed") {
+    return clampText(
+      String(slot?.error || "The final edit could not be rendered.").trim(),
+      120
+    );
+  }
+  return clampText(
+    readFirstString(proposal?.previewBrief, proposal?.applyBrief, proposal?.why) ||
+      communicationProposalDefaultCopy(status),
+    104
+  );
+}
+
 function buildCommunicationProposalSlotsFromReviewState(reviewState = {}) {
   const normalizedState = reviewState && typeof reviewState === "object" ? reviewState : {};
   const overallStatus = normalizeCommunicationProposalSlotStatus(normalizedState.status || "preparing");
@@ -21912,7 +21943,7 @@ function buildCommunicationProposalSlotsFromReviewState(reviewState = {}) {
       status,
       label: slot?.rank ? `Proposal ${slot.rank}` : null,
       title: proposal?.label || slot?.label || communicationProposalDefaultTitle(status),
-      copy: slot?.error || proposal?.why || communicationProposalDefaultCopy(status),
+      copy: communicationProposalCopyFromReviewState(slot, status),
       imageId: proposal?.primaryImageId || null,
       actionType: proposal?.actionType || null,
       targetRegionId: proposal?.targetRegionId || null,
@@ -21933,6 +21964,8 @@ function suppressBootstrapDesignReviewTray() {
 }
 
 function setCommunicationProposalTray(next = {}, { source = "review_runtime" } = {}) {
+  clearCommunicationProposalTrayDismissTimer();
+  els.communicationProposalTray?.classList.remove("is-dismissing");
   const tray = state.communication.proposalTray || createFreshCommunicationState().proposalTray;
   const anchor = next?.anchor && typeof next.anchor === "object" ? { ...next.anchor } : resolveCommunicationReviewAnchor();
   tray.visible = next?.visible !== false;
@@ -21954,6 +21987,8 @@ function setCommunicationProposalTray(next = {}, { source = "review_runtime" } =
 }
 
 function hideCommunicationProposalTray({ preserveAnchor = true, source = "ui" } = {}) {
+  clearCommunicationProposalTrayDismissTimer();
+  els.communicationProposalTray?.classList.remove("is-dismissing");
   const tray = state.communication.proposalTray || createFreshCommunicationState().proposalTray;
   tray.visible = false;
   if (!preserveAnchor) {
@@ -21970,6 +22005,35 @@ function hideCommunicationProposalTray({ preserveAnchor = true, source = "ui" } 
     context: buildJuggernautShellContext(),
   });
   requestRender();
+}
+
+function dismissCommunicationProposalTrayAfterReviewApply({
+  requestId = null,
+  preserveAnchor = false,
+  delayMs = DESIGN_REVIEW_TRAY_DISMISS_MS,
+} = {}) {
+  const tray = els.communicationProposalTray;
+  const activeRequestId = readFirstString(
+    requestId,
+    state.communication?.proposalTray?.requestId
+  );
+  if (!tray || !activeRequestId) return false;
+  if (state.communication?.proposalTray?.visible === false) return false;
+  if (readFirstString(state.communication?.proposalTray?.requestId) !== activeRequestId) return false;
+  clearCommunicationProposalTrayDismissTimer();
+  tray.classList.add("is-dismissing");
+  communicationProposalTrayDismissTimer = window.setTimeout(() => {
+    communicationProposalTrayDismissTimer = null;
+    if (readFirstString(state.communication?.proposalTray?.requestId) !== activeRequestId) {
+      tray.classList.remove("is-dismissing");
+      return;
+    }
+    hideCommunicationProposalTray({
+      preserveAnchor,
+      source: "review_apply_success",
+    });
+  }, Math.max(0, Number(delayMs) || 0));
+  return true;
 }
 
 function renderCommunicationProposalTray() {
@@ -22306,6 +22370,7 @@ function markDesignReviewApplyRunning(detail = {}) {
   normalized.completedAt = 0;
   setDesignReviewApplyState(normalized, { capture: true, publish: true });
   setStatus("Engine: applying accepted review…");
+  requestRender();
   return true;
 }
 
@@ -22409,8 +22474,12 @@ async function applyAcceptedDesignReviewOutput(detail = {}) {
     }).catch(() => {});
   }
   clearDesignReviewApplyState({ capture: true, publish: true });
+  dismissCommunicationProposalTrayAfterReviewApply({
+    requestId: normalized.requestId,
+  });
   setStatus("Engine: ready");
   showToast(`${actionLabel} applied.`, "tip", 2200);
+  requestRender();
   processActionQueue().catch(() => {});
   return true;
 }
@@ -22429,6 +22498,7 @@ function handleDesignReviewApplyFailure(detail = {}) {
   clearDesignReviewApplyState({ capture: true, publish: true });
   setStatus(`Engine: ${actionLabel.toLowerCase()} failed (${message})`, true);
   showToast(message, "error", 3200);
+  requestRender();
   processActionQueue().catch(() => {});
   return true;
 }
@@ -23630,6 +23700,146 @@ function shouldAnimateEffectVisuals() {
     return true;
   }
   return false;
+}
+
+function shouldAnimateDesignReviewApplyShimmer() {
+  return String(state.designReviewApply?.status || "").trim().toLowerCase() === "running";
+}
+
+function renderDesignReviewApplyShimmerPath(octx, points = [], { emphasis = "target", elapsedMs = 0 } = {}) {
+  if (!octx || !Array.isArray(points) || points.length < 3) return false;
+  const xs = points.map((point) => Number(point?.x) || 0);
+  const ys = points.map((point) => Number(point?.y) || 0);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const width = Math.max(1, maxX - minX);
+  const height = Math.max(1, maxY - minY);
+  const dpr = getDpr();
+  const shimmerProgress =
+    (Math.max(0, Number(elapsedMs) || 0) % DESIGN_REVIEW_APPLY_SHIMMER_LOOP_MS) /
+    DESIGN_REVIEW_APPLY_SHIMMER_LOOP_MS;
+  const pulse = 0.5 + 0.5 * Math.sin((Math.max(0, Number(elapsedMs) || 0) / 1000) * Math.PI * 2 * 0.72);
+  const sweepCenter = minX + (width + height * 1.4) * shimmerProgress - height * 0.7;
+  const isTarget = emphasis === "target";
+
+  octx.save();
+  octx.globalCompositeOperation = "source-over";
+  if (drawPolygonPath(octx, points)) {
+    octx.fillStyle = isTarget
+      ? `rgba(70, 208, 255, ${(0.08 + pulse * 0.05).toFixed(3)})`
+      : `rgba(214, 244, 255, ${(0.05 + pulse * 0.03).toFixed(3)})`;
+    octx.fill();
+  }
+  octx.restore();
+
+  octx.save();
+  if (drawPolygonPath(octx, points)) {
+    octx.clip();
+    const shimmer = octx.createLinearGradient(
+      sweepCenter - height * 0.85,
+      minY,
+      sweepCenter + height * 0.85,
+      maxY
+    );
+    if (isTarget) {
+      shimmer.addColorStop(0, "rgba(92, 222, 255, 0)");
+      shimmer.addColorStop(0.45, "rgba(164, 244, 255, 0.12)");
+      shimmer.addColorStop(0.5, "rgba(236, 252, 255, 0.44)");
+      shimmer.addColorStop(0.55, "rgba(164, 244, 255, 0.12)");
+      shimmer.addColorStop(1, "rgba(92, 222, 255, 0)");
+    } else {
+      shimmer.addColorStop(0, "rgba(214, 244, 255, 0)");
+      shimmer.addColorStop(0.45, "rgba(232, 250, 255, 0.08)");
+      shimmer.addColorStop(0.5, "rgba(248, 253, 255, 0.24)");
+      shimmer.addColorStop(0.55, "rgba(232, 250, 255, 0.08)");
+      shimmer.addColorStop(1, "rgba(214, 244, 255, 0)");
+    }
+    octx.fillStyle = shimmer;
+    octx.fillRect(
+      Math.round(minX - height),
+      Math.round(minY),
+      Math.round(width + height * 2),
+      Math.round(height)
+    );
+  }
+  octx.restore();
+
+  octx.save();
+  octx.lineJoin = "round";
+  octx.strokeStyle = isTarget
+    ? `rgba(94, 232, 255, ${(0.72 + pulse * 0.16).toFixed(3)})`
+    : `rgba(212, 244, 255, ${(0.46 + pulse * 0.12).toFixed(3)})`;
+  octx.lineWidth = Math.max(1, Math.round((isTarget ? 2.2 : 1.6) * dpr));
+  octx.shadowColor = isTarget
+    ? `rgba(94, 232, 255, ${(0.26 + pulse * 0.12).toFixed(3)})`
+    : `rgba(212, 244, 255, ${(0.14 + pulse * 0.08).toFixed(3)})`;
+  octx.shadowBlur = Math.round((isTarget ? 18 : 10) * dpr);
+  if (!isTarget) {
+    octx.setLineDash([Math.max(2, Math.round(8 * dpr)), Math.max(2, Math.round(6 * dpr))]);
+    octx.lineDashOffset = -Math.round(shimmerProgress * Math.max(10, 36 * dpr));
+  }
+  if (drawPolygonPath(octx, points)) octx.stroke();
+  octx.setLineDash([]);
+  octx.restore();
+  return true;
+}
+
+function renderDesignReviewApplyShimmer(octx) {
+  if (!octx || !shouldAnimateDesignReviewApplyShimmer()) return;
+  const apply = state.designReviewApply || null;
+  const imageIds = uniqueStringList(
+    [
+      readFirstString(apply?.targetImageId),
+      ...(Array.isArray(apply?.referenceImageIds) ? apply.referenceImageIds : []),
+    ],
+    { exclude: [""] }
+  );
+  if (!imageIds.length) return;
+  const startedAt = Number(apply?.startedAt) || Date.now();
+  const elapsedMs = Math.max(0, Date.now() - startedAt);
+
+  if (state.canvasMode === "multi") {
+    const ms = Number(state.multiView?.scale) || 1;
+    const mox = Number(state.multiView?.offsetX) || 0;
+    const moy = Number(state.multiView?.offsetY) || 0;
+    for (const imageId of imageIds) {
+      const rect = state.multiRects.get(imageId) || null;
+      if (!rect) continue;
+      const transform = readFreeformRectTransform(state.freeformRects.get(imageId) || null);
+      const points = transformedRectPolygonPoints({
+        x: rect.x * ms + mox,
+        y: rect.y * ms + moy,
+        w: rect.w * ms,
+        h: rect.h * ms,
+        rotateDeg: transform.rotateDeg,
+        skewXDeg: transform.skewXDeg,
+      });
+      renderDesignReviewApplyShimmerPath(octx, points, {
+        emphasis: imageId === readFirstString(apply?.targetImageId) ? "target" : "reference",
+        elapsedMs,
+      });
+    }
+    return;
+  }
+
+  const active = getActiveImage();
+  const activeId = String(active?.id || "").trim();
+  if (!activeId || !imageIds.includes(activeId) || !active?.img) return;
+  const transform = readFreeformRectTransform(state.freeformRects.get(activeId) || null);
+  const points = transformedRectPolygonPoints({
+    x: state.view.offsetX,
+    y: state.view.offsetY,
+    w: (active.img.naturalWidth || active.width || 1) * state.view.scale,
+    h: (active.img.naturalHeight || active.height || 1) * state.view.scale,
+    rotateDeg: transform.rotateDeg,
+    skewXDeg: transform.skewXDeg,
+  });
+  renderDesignReviewApplyShimmerPath(octx, points, {
+    emphasis: activeId === readFirstString(apply?.targetImageId) ? "target" : "reference",
+    elapsedMs,
+  });
 }
 
 let motherDraftingKeypointSampleCanvas = null;
@@ -35614,6 +35824,7 @@ function render() {
     }
   }
 
+  renderDesignReviewApplyShimmer(octx);
   renderCommunicationOverlay(octx);
   renderIntentOverlay(octx, work.width, work.height);
   renderMotherDraftingPlaceholder(octx, work.width, work.height);
@@ -35624,7 +35835,7 @@ function render() {
     stale: String(state.activeTabId || "").trim() !== String(pendingTabSwitchFullRenderSample?.tabId || "").trim(),
   });
   scheduleActiveTabPreviewCapture("render_complete");
-  if (!effectsRuntime && !document.hidden && shouldAnimateEffectVisuals()) {
+  if (!document.hidden && (shouldAnimateDesignReviewApplyShimmer() || (!effectsRuntime && shouldAnimateEffectVisuals()))) {
     requestRender();
   }
 }

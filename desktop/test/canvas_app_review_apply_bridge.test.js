@@ -174,9 +174,11 @@ function buildReviewApplyHarness({
   const replaceCalls = [];
   const timelineCalls = [];
   const clearCalls = [];
+  const dismissCalls = [];
   const statusCalls = [];
   const toastCalls = [];
   const topMetricCalls = [];
+  let requestRenderCalls = 0;
   let processActionQueueCalls = 0;
 
   const clearDesignReviewApplyState = ({ capture = true, publish = true } = {}) => {
@@ -209,8 +211,15 @@ function buildReviewApplyHarness({
   const setStatus = (message, isError = false) => {
     statusCalls.push({ message, isError });
   };
+  const dismissCommunicationProposalTrayAfterReviewApply = (options = {}) => {
+    dismissCalls.push(options);
+    return true;
+  };
   const showToast = (message, kind, duration) => {
     toastCalls.push({ message, kind, duration });
+  };
+  const requestRender = () => {
+    requestRenderCalls += 1;
   };
   const processActionQueue = async () => {
     processActionQueueCalls += 1;
@@ -228,8 +237,10 @@ function buildReviewApplyHarness({
     updateDesignReviewApplyCostLatency,
     ingestTopMetricsFromReceiptPath,
     clearDesignReviewApplyState,
+    dismissCommunicationProposalTrayAfterReviewApply,
     setStatus,
     showToast,
+    requestRender,
     processActionQueue,
     basename,
     state,
@@ -243,9 +254,13 @@ function buildReviewApplyHarness({
     replaceCalls,
     timelineCalls,
     clearCalls,
+    dismissCalls,
     statusCalls,
     toastCalls,
     topMetricCalls,
+    get requestRenderCalls() {
+      return requestRenderCalls;
+    },
     get processActionQueueCalls() {
       return processActionQueueCalls;
     },
@@ -302,7 +317,9 @@ test("review apply success replaces the target image in place and records a time
   assert.equal(harness.state.lastCostLatency?.provider, "google");
   assert.equal(harness.state.lastCostLatency?.model, "gemini-nano-banana-2");
   assert.equal(harness.clearCalls.length, 1);
+  assert.deepEqual(harness.dismissCalls, [{ requestId: "review-1" }]);
   assert.equal(harness.topMetricCalls.length, 1);
+  assert.equal(harness.requestRenderCalls, 1);
   assert.equal(harness.processActionQueueCalls, 1);
   assert.deepEqual(harness.statusCalls.at(-1), { message: "Engine: ready", isError: false });
   assert.deepEqual(harness.toastCalls.at(-1), {
@@ -332,6 +349,8 @@ test("review apply completion events for another tab are ignored", async () => {
   assert.equal(harness.replaceCalls.length, 0);
   assert.equal(harness.timelineCalls.length, 0);
   assert.equal(harness.clearCalls.length, 0);
+  assert.equal(harness.dismissCalls.length, 0);
+  assert.equal(harness.requestRenderCalls, 0);
   assert.equal(harness.processActionQueueCalls, 0);
   assert.equal(harness.state.imagesById.get("img-1")?.path, "/tmp/source.png");
 });
@@ -343,6 +362,15 @@ test("canvas runtime binds the unified review-apply lifecycle event", () => {
   assert.match(app, /if \(phase === "succeeded"[\s\S]*void applyAcceptedDesignReviewOutput\(detail\);/);
   assert.match(app, /if \(phase === "failed"[\s\S]*handleDesignReviewApplyFailure\(detail\);/);
   assert.match(app, /bindDesignReviewApplyRuntimeBridge\(\);/);
+});
+
+test("review apply success animates the active images and dismisses the tray after replacement", () => {
+  assert.match(app, /function shouldAnimateDesignReviewApplyShimmer\(\) \{/);
+  assert.match(app, /function renderDesignReviewApplyShimmer\(octx\) \{/);
+  assert.match(app, /renderDesignReviewApplyShimmer\(octx\);/);
+  assert.match(app, /dismissCommunicationProposalTrayAfterReviewApply\(\{\s*requestId: normalized\.requestId,/s);
+  assert.match(app, /tray\.classList\.add\("is-dismissing"\);/);
+  assert.match(app, /source: "review_apply_success"/);
 });
 
 test("communication tray host preserves runtime-owned review slots while still positioning the tray", () => {

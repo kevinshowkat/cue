@@ -51,6 +51,14 @@ function clampText(value, maxLen = 220) {
   return `${text.slice(0, Math.max(0, maxLen - 1))}…`;
 }
 
+function normalizeProposalEffectStatement(value, maxLen = 140) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  const compact = clampText(text, maxLen);
+  if (!compact || /[.!?…]$/.test(compact)) return compact;
+  return `${compact}.`;
+}
+
 function uniqueStrings(values = [], { limit = Infinity } = {}) {
   const out = [];
   for (const value of Array.isArray(values) ? values : []) {
@@ -304,6 +312,8 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
     "View the canvas image and visible annotations only.",
     "An action is a concrete visual edit the editor could apply to the image.",
     "Write actions as short edit intents, not advice, critique, or conversation.",
+    "Make previewBrief and applyBrief specific, positive, and verb-first.",
+    "Use concise effect statements, not rationale essays.",
     "Use the whole visible canvas as context, not just the local annotation area.",
     "Treat annotations and the chosen region candidate as focus hints, not crop-only constraints.",
     "Prefer edits that can plausibly route through the normal execution layer later.",
@@ -320,9 +330,9 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
               bounds: { x: 0, y: 0, width: 0, height: 0 },
             },
             actionType: "short edit intent like remove_object, brighten_area, simplify_background",
-            why: "one short reason",
-            previewBrief: "one short sentence describing the visual result",
-            applyBrief: "one short sentence describing the exact edit to apply",
+            why: "short reason if needed",
+            previewBrief: "short verb-first effect statement",
+            applyBrief: "short verb-first sentence describing the exact edit",
             negativeConstraints: ["short thing to preserve"],
           },
         ],
@@ -600,9 +610,15 @@ function normalizeProposal(rawProposal = {}, request = {}, { index = 0 } = {}) {
   if (!targetRegion.regionCandidateId && request.activeRegionCandidateId) {
     targetRegion.regionCandidateId = String(request.activeRegionCandidateId);
   }
-  const why = clampText(readFirstString(raw.why, raw.rationale, raw.reason), 240);
-  const previewBrief = clampText(readFirstString(raw.previewBrief, raw.preview_brief, raw.previewPrompt), 240);
-  const applyBrief = clampText(readFirstString(raw.applyBrief, raw.apply_brief, raw.applyPrompt), 220);
+  const why = clampText(readFirstString(raw.why, raw.rationale, raw.reason), 160);
+  const previewBrief = normalizeProposalEffectStatement(
+    readFirstString(raw.previewBrief, raw.preview_brief, raw.previewPrompt),
+    140
+  );
+  const applyBrief = normalizeProposalEffectStatement(
+    readFirstString(raw.applyBrief, raw.apply_brief, raw.applyPrompt),
+    180
+  );
   const negativeConstraints = normalizeNegativeConstraints(raw.negativeConstraints || raw.negative_constraints || []);
   return {
     schemaVersion: DESIGN_REVIEW_PROPOSAL_SCHEMA,

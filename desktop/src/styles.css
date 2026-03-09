@@ -6794,7 +6794,19 @@ button.ghost:hover {
     0 24px 50px rgba(12, 22, 34, 0.18),
     0 1px 0 rgba(255, 255, 255, 0.84) inset;
   pointer-events: auto;
+  opacity: 1;
+  will-change: transform, opacity;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+  transform: translateY(0) scale(1);
   transform-origin: top left;
+}
+
+.communication-proposal-tray.is-dismissing {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px) scale(0.985);
 }
 
 .communication-proposal-tray::after {

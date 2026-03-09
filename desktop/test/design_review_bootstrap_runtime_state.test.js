@@ -235,3 +235,38 @@ test("review bootstrap debug payload collector preserves apply failure details i
   );
   assert.equal(payload.applyFailure?.status, "apply_failed");
 });
+
+test("review bootstrap slot summaries prioritize compact effect statements for ready proposals", () => {
+  const clampText = instantiateFunction("clampText");
+  const readFirstString = instantiateFunction("readFirstString");
+  const proposalEffectText = instantiateFunction("proposalEffectText", {
+    clampText,
+    readFirstString,
+  });
+  const slotSummaryText = instantiateFunction("slotSummaryText", {
+    clampText,
+    readFirstString,
+    proposalEffectText,
+  });
+
+  const readyCopy = slotSummaryText({
+    status: "ready",
+    proposal: {
+      why: "The backdrop feels too busy and the subject is getting lost in the scene.",
+      previewBrief: "Lift the subject and simplify the backdrop with a clean, brighter wall treatment.",
+      applyBrief: "Replace the background with a clean, brighter wall and keep the subject unchanged.",
+    },
+  });
+  const applyingCopy = slotSummaryText({
+    status: "apply_running",
+    proposal: {
+      previewBrief: "Lift the subject and simplify the backdrop.",
+    },
+  });
+
+  assert.equal(
+    readyCopy,
+    "Lift the subject and simplify the backdrop with a clean, brighter wall treatment."
+  );
+  assert.equal(applyingCopy, "Applying to the target image.");
+});

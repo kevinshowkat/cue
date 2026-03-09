@@ -28,13 +28,12 @@ test("design review bootstrap keeps the integrated communication tray light and 
   assert.doesNotMatch(bootstrap, /design-review-tray/);
 });
 
-test("design review bootstrap exposes a failure debug payload modal from the communication tray", () => {
+test("design review bootstrap keeps tray chrome minimal and removes debug/meta affordances", () => {
   assert.match(bootstrap, /const REVIEW_DEBUG_MODAL_ID = "design-review-debug-modal"/);
-  assert.match(bootstrap, /function openReviewDebugModal\(payload = null\)/);
-  assert.match(bootstrap, /debug\.textContent = "Debug Payload"/);
-  assert.match(bootstrap, /\["failed", "apply_failed"\]\.includes\(String\(slot\?\.status \|\| ""\)\)/);
-  assert.match(bootstrap, /const fragment = document\.createDocumentFragment\(\)/);
-  assert.match(bootstrap, /list\.replaceChildren\(fragment\)/);
+  assert.match(bootstrap, /head\.querySelector\("\.design-review-runtime-meta"\)\?\.remove\(\);/);
+  assert.match(bootstrap, /head\.querySelector\("\.design-review-runtime-head-actions"\)\?\.remove\(\);/);
+  assert.doesNotMatch(bootstrap, /debug\.textContent = "Debug Payload"/);
+  assert.doesNotMatch(bootstrap, /meta\.textContent =/);
 });
 
 test("design review bootstrap dispatches structured apply events and routes tray accepts through the runtime apply path", () => {
@@ -55,6 +54,8 @@ test("design review bootstrap makes proposal cards directly clickable for apply"
   assert.match(bootstrap, /card\.addEventListener\("keydown", \(event\) => \{\s*if \(event\.key !== "Enter" && event\.key !== " "\) return;/s);
   assert.match(bootstrap, /hint\.textContent = "Click anywhere on this proposal to apply\.";/);
   assert.match(bootstrap, /accept\.addEventListener\("click", \(event\) => \{\s*event\.stopPropagation\(\);/s);
+  assert.match(bootstrap, /: "Apply";/);
+  assert.doesNotMatch(bootstrap, /"Apply via Runtime"/);
 });
 
 test("design review bootstrap keeps tab-local review runtime state instead of one shared tray state", () => {
