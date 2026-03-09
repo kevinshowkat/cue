@@ -27,7 +27,7 @@ const REVIEW_APPLY_EVENT = "juggernaut:design-review-apply";
 const REVIEW_UPLOAD_ANALYSIS_EVENT = "juggernaut:upload-analysis-updated";
 const COMMUNICATION_REVIEW_REQUESTED_EVENT = "juggernaut:design-review-requested";
 const COMMUNICATION_PROPOSAL_TRAY_EVENT = "juggernaut:communication-proposal-tray-changed";
-const EDIT_PROPOSALS_LABEL = "Edit Proposals";
+const EDIT_PROPOSALS_LABEL = "Try Edits";
 
 function browserStorage() {
   try {

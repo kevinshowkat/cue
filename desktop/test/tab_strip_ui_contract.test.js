@@ -26,9 +26,12 @@ test("Session tab strip mounts inside the titlebar brand strip with core-owned i
   assert.equal(brandStripChunk.includes('id="session-tab-strip-shell-head-placeholder"'), false);
 });
 
-test("Session tab strip leaves the live titlebar list empty for JS hydration and exposes the Design review action", () => {
+test("Session tab strip leaves the live titlebar list empty for JS hydration and exposes the Try Edits action", () => {
   assert.match(html, /id=\"session-tab-list\"[^>]*role=\"tablist\"[^>]*aria-label=\"Open sessions\"><\/div>/);
-  assert.match(html, /id=\"session-tab-design-review\"[^>]*class=\"session-tab-strip-action session-tab-strip-review\"/);
+  assert.match(
+    html,
+    /id=\"session-tab-design-review\"[^>]*class=\"session-tab-strip-action session-tab-strip-review\"[^>]*aria-label=\"Try edits\"[^>]*title=\"Try Edits\"[\s\S]*<span>Try Edits<\/span>/
+  );
   const brandStripStart = html.indexOf('<div class="brand-strip"');
   const mainStart = html.indexOf("<main", brandStripStart);
   const brandStripChunk = html.slice(brandStripStart, mainStart);

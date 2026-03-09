@@ -11,6 +11,8 @@ const app = readFileSync(join(here, "..", "src", "canvas_app.js"), "utf8");
 
 test("communication rail markup exposes bottom rail tools and proposal tray scaffold", () => {
   assert.match(html, /id="communication-proposal-tray"/);
+  assert.match(html, /id="communication-proposal-tray"[\s\S]*aria-label="Try edits"/);
+  assert.match(html, /class="communication-proposal-tray-title">Try Edits</);
   assert.match(html, /id="communication-proposal-slot-list"/);
   assert.match(html, /id="communication-proposal-tray-close"/);
   assert.match(html, /id="communication-rail"[^>]*aria-label="Communication rail"/);
