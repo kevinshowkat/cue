@@ -1,0 +1,70 @@
+{
+  "schema": "juggernaut.rail_icon_manifest.v1",
+  "generator": "scripts/generate_juggernaut_rail_icons.mjs",
+  "style": {
+    "id": "juggernaut.rail_iconography.v1",
+    "viewBox": "0 0 24 24",
+    "grid": 24,
+    "safeArea": 2.4,
+    "strokeWidth": 1.85,
+    "keywords": [
+      "machined line art",
+      "rounded joins",
+      "single-subject silhouettes",
+      "currentColor-driven tinting",
+      "deterministic local generation"
+    ],
+    "artDirection": "Minimal forged glyphs with a machined silhouette, a restrained fill accent, and no stock icon-pack dependency."
+  },
+  "icons": [
+    {
+      "tool_id": "upload",
+      "label": "Import image",
+      "semantic_role": "ingest",
+      "notes": "Upward intake arrow landing into a weighted tray.",
+      "asset": "./upload.svg"
+    },
+    {
+      "tool_id": "select_subject",
+      "label": "Select subject",
+      "semantic_role": "selection",
+      "notes": "Broken lasso orbit around a compact focal seed.",
+      "asset": "./select_subject.svg"
+    },
+    {
+      "tool_id": "background_swap",
+      "label": "Background swap",
+      "semantic_role": "scene-replace",
+      "notes": "Landscape tile with a corner-lift exchange move.",
+      "asset": "./background_swap.svg"
+    },
+    {
+      "tool_id": "cleanup",
+      "label": "Cleanup",
+      "semantic_role": "remove-noise",
+      "notes": "Sweep arc and burnished spark to imply removal rather than destruction.",
+      "asset": "./cleanup.svg"
+    },
+    {
+      "tool_id": "variations",
+      "label": "Variations",
+      "semantic_role": "branch",
+      "notes": "Split prism with two resolved outputs on the lower edge.",
+      "asset": "./variations.svg"
+    },
+    {
+      "tool_id": "create_tool",
+      "label": "Create Tool",
+      "semantic_role": "forge",
+      "notes": "Centered core with three tabs and a small forge spark.",
+      "asset": "./create_tool.svg"
+    },
+    {
+      "tool_id": "export_psd",
+      "label": "Export PSD",
+      "semantic_role": "deliver",
+      "notes": "Downstream release arrow framed by a lifted shoulder and base rule.",
+      "asset": "./export_psd.svg"
+    }
+  ]
+}

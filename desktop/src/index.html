@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Juggernaut</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="juggernaut-shell">
+    <div id="app">
+      <div id="boot-error" class="boot-error hidden">
+        Juggernaut failed to initialize. Check the terminal for errors.
+      </div>
+      <div class="brand-strip" role="toolbar" aria-label="Juggernaut window toolbar">
+        <div class="juggernaut-brand" aria-label="Juggernaut" data-tauri-drag-region>
+          <div class="juggernaut-brand-mark" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <span class="juggernaut-brand-wordmark">Juggernaut</span>
+        </div>
+        <div class="window-drag-region" aria-hidden="true" data-tauri-drag-region></div>
+        <div class="brand-actions" role="group" aria-label="Window actions">
+          <div class="sr-only">
+            <span
+              id="engine-status"
+              class="engine-status engine-status-dot"
+              data-state="idle"
+              role="status"
+              aria-label="Engine status: idle"
+              title="Engine status dot&#10;Shows current engine activity.&#10;State: idle&#10;Engine: idle"
+            ></span>
+            <span
+              id="mother-intent-source-indicator"
+              class="mother-intent-source-indicator"
+              title="Intent source dot&#10;Shows where Mother intent came from.&#10;Source: idle"
+              aria-hidden="true"
+            ></span>
+          </div>
+          <button
+            id="app-menu-toggle"
+            class="menu-toggle"
+            type="button"
+            aria-label="Menu"
+            aria-haspopup="menu"
+            aria-expanded="false"
+          >
+            <svg class="menu-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M19.4 15a7.8 7.8 0 0 0 .1-1l2-1.2-2-3.4-2.3.5a8 8 0 0 0-.8-.5L14.8 3h-3.6L9.6 7.4a7 7 0 0 0-.8.5l-2.3-.5-2 3.4 2 1.2a7.8 7.8 0 0 0 0 2l-2 1.2 2 3.4 2.3-.5c.3.2.5.3.8.5L11.2 21h3.6l1.6-4.4c.3-.2.5-.3.8-.5l2.3.5 2-3.4-2-1.2z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <div id="app-menu" class="app-menu hidden" role="menu" aria-label="Menu">
+            <div class="app-menu-section">
+              <button id="new-run" type="button" role="menuitem" data-menu-close="1">New Run</button>
+              <button id="open-run" type="button" role="menuitem" data-menu-close="1">Open Run</button>
+              <button id="import" type="button" role="menuitem" data-menu-close="1">Import Photos</button>
+              <button id="export" type="button" role="menuitem" data-menu-close="1">Export</button>
+              <button id="settings-toggle" type="button" role="menuitem" data-menu-close="1">Settings</button>
+            </div>
+            <div class="app-menu-divider" aria-hidden="true"></div>
+            <label class="app-menu-toggle-row" title="Auto-accept Suggested Skill (max 3)">
+              <span class="app-menu-toggle-label" aria-hidden="true">AUTO</span>
+              <input
+                id="auto-accept-suggested-ability-toggle"
+                class="toggle-switch"
+                type="checkbox"
+                aria-label="Auto-accept suggested skill"
+              />
+            </label>
+          </div>
+        </div>
+      </div>
+      <main class="workspace">
+        <section class="stage" aria-label="Canvas">
+          <div class="juggernaut-shell-chrome" aria-label="Juggernaut shell">
+            <div id="action-grid" class="action-grid juggernaut-tool-rail" role="toolbar" aria-label="Juggernaut left rail"></div>
+            <div id="custom-tool-dock" class="custom-tool-dock" role="toolbar" aria-label="Custom tools"></div>
+            <div class="juggernaut-shell-head" role="toolbar" aria-label="Canvas toolbar">
+              <div class="juggernaut-shell-brand" aria-label="Canvas workspace">
+                <div class="juggernaut-shell-wordmark">Canvas</div>
+                <div>
+                  <div id="juggernaut-selection-status" class="sr-only" aria-live="polite">
+                    Drop an image to begin
+                  </div>
+                </div>
+              </div>
+              <div id="top-metrics" class="top-metrics hidden" aria-label="Session metrics ribbon">
+                <span id="top-metric-tokens" class="top-metric-chip" data-heat="nodata">
+                  <span class="top-metric-chip-label">TOK</span>
+                  <span id="top-metric-tokens-value" class="top-metric-chip-value">
+                    <span class="top-metric-token-in">↓ ··········</span>
+                    <span class="top-metric-token-out">↑ ··········</span>
+                  </span>
+                  <span id="top-metric-tokens-spark-in" class="top-metric-chip-spark">--</span>
+                  <span id="top-metric-tokens-spark-out" class="hidden" aria-hidden="true"></span>
+                </span>
+                <span id="top-metric-cost" class="top-metric-chip" data-heat="nodata">
+                  <span class="top-metric-chip-label">COST</span>
+                  <span id="top-metric-cost-value" class="top-metric-chip-value">$0.00</span>
+                </span>
+                <span id="top-metric-api-calls" class="top-metric-chip" data-heat="nodata">
+                  <span class="top-metric-chip-label">API</span>
+                  <span id="top-metric-api-calls-value" class="top-metric-chip-value">0</span>
+                </span>
+                <span id="top-metric-queue" class="top-metric-chip" data-heat="nodata">
+                  <span class="top-metric-chip-label">QUEUE</span>
+                  <span id="top-metric-queue-value" class="top-metric-chip-value">P0 R0</span>
+                  <span id="top-metric-queue-trend" class="top-metric-chip-spark">··········</span>
+                </span>
+                <span id="top-metric-render" class="top-metric-chip" data-heat="nodata">
+                  <span class="top-metric-chip-label">AVG</span>
+                  <span id="top-metric-render-value" class="top-metric-chip-value">--</span>
+                </span>
+              </div>
+              <div class="brand-actions juggernaut-shell-actions" role="group" aria-label="Canvas actions">
+                <button
+                  id="juggernaut-export-psd"
+                  class="juggernaut-shell-action"
+                  type="button"
+                  aria-label="Export PSD"
+                  title="Export PSD"
+                >
+                  <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M12 4v11m0 0-4-4m4 4 4-4M5 18.5h14"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.9"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  <span class="sr-only">Export PSD</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div id="canvas-wrap" class="canvas-wrap">
+            <div
+              id="drop-hint"
+              class="drop-hint"
+              role="button"
+              tabindex="0"
+              aria-label="Drop images or click to upload"
+            >
+              <div class="drop-hint-inner" aria-hidden="true">
+                <div class="drop-hint-plus">+</div>
+                <div class="drop-hint-title">Drop images or click to upload</div>
+                <div class="drop-hint-sub">Start on canvas, then hand the selected image to a tool.</div>
+              </div>
+            </div>
+            <canvas id="work-canvas"></canvas>
+            <canvas id="effects-canvas" aria-hidden="true"></canvas>
+            <div id="image-fx" class="image-fx hidden" aria-hidden="true"></div>
+            <div id="image-fx-2" class="image-fx hidden" aria-hidden="true"></div>
+            <canvas id="overlay-canvas" tabindex="0" aria-label="Canvas"></canvas>
+            <div id="image-menu" class="canvas-menu hidden image-menu" role="menu" aria-label="Image menu">
+              <button type="button" data-action="remove">Remove from canvas</button>
+              <button class="ghost" type="button" data-action="cancel">Cancel</button>
+            </div>
+            <div id="mother-wheel-menu" class="mother-wheel-menu hidden" role="menu" aria-label="Mother wheel menu">
+              <button
+                type="button"
+                class="mother-wheel-action"
+                data-action="add_photo"
+                aria-label="Add photo"
+                title="Add photo"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div id="annotate-panel" class="annotate-panel hidden" role="dialog" aria-label="Annotate">
+              <div class="annotate-header">
+                <div class="annotate-title">Annotate</div>
+                <button id="annotate-close" class="ghost" type="button" aria-label="Close annotate">Close</button>
+              </div>
+              <div class="annotate-body">
+                <div id="annotate-meta" class="annotate-meta muted"></div>
+                <label class="annotate-field">
+                  <div class="annotate-label">Model</div>
+                  <select id="annotate-model"></select>
+                </label>
+                <textarea
+                  id="annotate-text"
+                  class="annotate-text"
+                  rows="4"
+                  placeholder="Custom instruction…"
+                ></textarea>
+                <div class="annotate-actions">
+                  <button id="annotate-cancel" type="button">Cancel</button>
+                  <button id="annotate-send" type="button">Send</button>
+                </div>
+              </div>
+            </div>
+            <div id="mark-panel" class="annotate-panel hidden mark-panel" role="dialog" aria-label="Mark">
+              <div class="annotate-header">
+                <div id="mark-title" class="annotate-title">Mark</div>
+                <button id="mark-close" class="ghost" type="button" aria-label="Close mark panel">Close</button>
+              </div>
+              <div class="annotate-body">
+                <div id="mark-meta" class="annotate-meta muted"></div>
+                <textarea id="mark-text" class="annotate-text" rows="3" placeholder="Label…"></textarea>
+                <div class="annotate-actions">
+                  <button id="mark-delete" type="button">Delete</button>
+                  <button id="mark-save" type="button">Save</button>
+                </div>
+              </div>
+            </div>
+            <div id="prompt-generate-panel" class="annotate-panel hidden prompt-generate-panel" role="dialog" aria-label="Prompt Generate">
+              <div class="annotate-header">
+                <div class="annotate-title">Prompt Generate</div>
+                <button id="prompt-generate-close" class="ghost" type="button" aria-label="Close prompt generate panel">Close</button>
+              </div>
+              <div class="annotate-body">
+                <div id="prompt-generate-meta" class="annotate-meta muted">Create a new image (no source image required).</div>
+                <label class="annotate-field">
+                  <div class="annotate-label">Model</div>
+                  <select id="prompt-generate-model"></select>
+                </label>
+                <textarea
+                  id="prompt-generate-text"
+                  class="annotate-text"
+                  rows="4"
+                  placeholder="Describe the image you want to generate…"
+                ></textarea>
+                <div class="annotate-actions">
+                  <button id="prompt-generate-cancel" type="button">Cancel</button>
+                  <button id="prompt-generate-send" type="button">Generate</button>
+                </div>
+              </div>
+            </div>
+            <div id="create-tool-panel" class="annotate-panel hidden create-tool-panel" role="dialog" aria-label="Create Tool">
+              <div class="annotate-header">
+                <div class="annotate-title">Create Tool</div>
+                <button id="create-tool-close" class="ghost" type="button" aria-label="Close create tool panel">Close</button>
+              </div>
+              <div class="annotate-body">
+                <div id="create-tool-meta" class="annotate-meta muted">
+                  Describe the tool you want. Juggernaut will map it to a deterministic local edit manifest for today's slice.
+                </div>
+                <label class="annotate-field">
+                  <div class="annotate-label">Name</div>
+                  <input
+                    id="create-tool-name"
+                    class="annotate-input"
+                    type="text"
+                    maxlength="40"
+                    placeholder="Optional tool name"
+                  />
+                </label>
+                <label class="annotate-field">
+                  <div class="annotate-label">Description</div>
+                  <textarea
+                    id="create-tool-text"
+                    class="annotate-text"
+                    rows="4"
+                    placeholder="Example: make this brighter and more contrasty"
+                  ></textarea>
+                </label>
+                <label class="annotate-field">
+                  <div class="annotate-label">Manifest Preview</div>
+                  <pre id="create-tool-preview" class="create-tool-preview">Describe a tool to preview the manifest.</pre>
+                </label>
+                <div class="annotate-actions">
+                  <button id="create-tool-cancel" type="button">Cancel</button>
+                  <button id="create-tool-save" type="button">Create</button>
+                </div>
+              </div>
+            </div>
+              <div id="canvas-mood-status" class="canvas-mood-status" aria-label="Mood status">
+                <button
+                  id="mother-mood-toggle"
+                  class="mother-mood-toggle"
+                  type="button"
+                  aria-label="Set mood"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                  data-empty="true"
+                  title="Mood status"
+                >☺</button>
+                <span class="canvas-mood-hint" aria-hidden="true">Set vibe</span>
+                <div id="mother-mood-menu" class="mother-mood-menu hidden" role="menu" aria-label="Mood status">
+                  <button class="mother-mood-option" type="button" role="menuitemradio" data-mood="joyous" aria-checked="false">😄 Joyous</button>
+                  <button class="mother-mood-option" type="button" role="menuitemradio" data-mood="nefarious" aria-checked="false">😈 Nefarious</button>
+                  <button class="mother-mood-option" type="button" role="menuitemradio" data-mood="somber" aria-checked="false">😔 Somber</button>
+                  <button class="mother-mood-option" type="button" role="menuitemradio" data-mood="angry" aria-checked="false">😡 Angry</button>
+                </div>
+              </div>
+              <div id="mother-overlay" class="mother-overlay" aria-label="Mother">
+                <div id="mother-portrait-shell" class="mother-portrait-shell panel" aria-hidden="true">
+                  <div class="mother-portrait">
+                    <div class="portrait-frame mother-portrait-frame">
+                      <div id="mother-avatar" class="portrait-avatar" data-provider="openai" aria-hidden="true">
+                        <video
+                          id="mother-video"
+                          class="portrait-video hidden"
+                          muted
+                          loop
+                          autoplay
+                          playsinline
+                          preload="auto"
+                        ></video>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div id="mother-panel-stack" class="mother-panel-stack" aria-label="Mother controls">
+                  <div id="mother-panel" class="mother-panel" aria-label="Mother dialog">
+                    <div class="mother-state-row">
+                      <span id="mother-state" class="mother-state" aria-live="polite">Watching</span>
+                    </div>
+                    <div class="mother-panel-body">
+                      <div id="mother-role-preview" class="mother-role-preview hidden" aria-label="Mother role preview"></div>
+                      <div id="tips-text" class="panel-body muted panel-readout"></div>
+                    </div>
+                    <div class="mother-panel-controls">
+                      <button id="mother-refine-toggle" class="mother-refine-toggle hidden" type="button" aria-expanded="false">
+                        Refine structure
+                      </button>
+                      <div id="mother-advanced" class="mother-advanced hidden" aria-label="Mother advanced structure">
+                        <label class="mother-advanced-row">
+                          <span class="mother-advanced-label">Transformation mode</span>
+                          <select id="mother-transformation-mode"></select>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mother-actions mother-actions-floating" aria-label="Mother controls">
+                    <div class="mother-action">
+                      <button id="mother-ability-icon" class="mother-ability-icon" type="button" aria-label="Next">→</button>
+                      <span class="mother-action-label">NEXT</span>
+                    </div>
+                    <div class="mother-action">
+                      <button id="mother-confirm" class="mother-confirm" type="button" aria-label="Draft">✓</button>
+                      <span class="mother-action-label">ACCEPT</span>
+                    </div>
+                    <div class="mother-action">
+                      <button id="mother-stop" class="mother-stop hidden" type="button" aria-label="Dismiss">✕</button>
+                      <span class="mother-action-label">REJECT</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div id="control-strip" class="control-strip" aria-label="HUD and Actions">
+                <div class="canvas-bumper canvas-bumper--left" aria-hidden="true"></div>
+                <div id="file-browser-dock" class="file-browser-dock" aria-label="File browser">
+                  <div id="file-browser-header" class="file-browser-header">
+                    <button
+                      id="file-browser-choose"
+                      class="file-browser-btn file-browser-btn-icon"
+                      type="button"
+                      aria-label="Choose folder"
+                      title="Choose folder"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M3.5 7.5a2 2 0 0 1 2-2h4l1.7 2H18.5a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-9z"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linejoin="round"
+                        />
+                        <path d="M12 10.5v5M9.5 13h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                      </svg>
+                    </button>
+                    <button
+                      id="file-browser-up"
+                      class="file-browser-btn file-browser-btn-icon"
+                      type="button"
+                      aria-label="Up"
+                      title="Up"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 17V7M8 11l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    </button>
+                    <button
+                      id="file-browser-refresh"
+                      class="file-browser-btn file-browser-btn-icon"
+                      type="button"
+                      aria-label="Refresh"
+                      title="Refresh"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M19.5 8.5A7.5 7.5 0 1 0 20 12"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                        />
+                        <path d="M20 4.5v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div id="file-browser-path" class="file-browser-path" title="No folder selected">No folder selected</div>
+                  <div id="file-browser-list" class="file-browser-list" role="listbox" aria-label="Local images"></div>
+                </div>
+                <div id="hud" class="hud" aria-label="HUD">
+                  <div class="hud-shell">
+                    <div class="hud-screen" aria-hidden="true">
+                      <div class="hud-readout">
+                        <div id="hud-line-unit" class="hud-line">
+                          <span class="hud-k">UNIT</span>
+                          <span id="hud-unit-desc" class="hud-v hud-desc"></span>
+                        </div>
+                        <div id="hud-line-director" class="hud-line hud-director-line hidden">
+                          <span id="hud-director-k" class="hud-k">DIR</span>
+                          <div id="hud-director-v" class="hud-v hud-director"></div>
+                        </div>
+                        <div id="hud-line-desc" class="hud-line">
+                          <span class="hud-k">DESC</span>
+                          <span id="hud-unit-name" class="hud-v"></span>
+                        </div>
+                        <div id="hud-line-sel" class="hud-line">
+                          <span class="hud-k">SEL</span>
+                          <span id="hud-unit-sel" class="hud-v"></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div id="agents-dock" class="agents-dock" aria-label="Agents">
+                  <div id="portrait-dock" class="portrait-dock">
+                    <div class="agent-portraits">
+                      <div id="agent-slot-primary" class="agent-slot">
+                        <div class="portrait-readout">
+                          <div id="portrait-title" class="portrait-title">Model</div>
+                        </div>
+                        <div class="portrait-frame">
+                          <div id="portrait-avatar" class="portrait-avatar" aria-hidden="true">
+                            <video
+                              id="portrait-video"
+                              class="portrait-video hidden"
+                              muted
+                              loop
+                              autoplay
+                              playsinline
+                              preload="auto"
+                            ></video>
+                          </div>
+                        </div>
+                      </div>
+                      <div id="agent-slot-secondary" class="agent-slot">
+                        <div class="portrait-readout">
+                          <div id="portrait-title-2" class="portrait-title">Model</div>
+                        </div>
+                        <div class="portrait-frame">
+                          <div id="portrait-avatar-2" class="portrait-avatar" aria-hidden="true">
+                            <video
+                              id="portrait-video-2"
+                              class="portrait-video hidden"
+                              muted
+                              loop
+                              autoplay
+                              playsinline
+                              preload="auto"
+                            ></video>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="canvas-bumper canvas-bumper--right" aria-hidden="true"></div>
+              </div>
+            <div id="spawnbar" class="spawnbar hidden" aria-live="polite"></div>
+            <div id="toast" class="toast hidden" aria-live="polite"></div>
+          </div>
+		          <div id="filmstrip" class="filmstrip hidden" aria-label="Filmstrip"></div>
+	        </section>
+      </main>
+      <div id="settings-drawer" class="drawer hidden" aria-label="Settings">
+        <div class="drawer-header">
+          <div class="drawer-title">Settings</div>
+          <button id="settings-close" class="ghost" type="button">Close</button>
+        </div>
+        <div class="drawer-body">
+          <label class="field">
+            <div class="field-label">Memory</div>
+            <input id="memory-toggle" type="checkbox" />
+          </label>
+          <label class="field">
+            <div class="field-label">Always-On Vision</div>
+            <input id="always-on-vision-toggle" type="checkbox" />
+          </label>
+          <label class="field">
+            <div class="field-label">Text Model</div>
+            <select id="text-model">
+              <option value="dryrun-text-1">dryrun-text-1</option>
+              <option value="gpt-4o-mini">gpt-4o-mini</option>
+              <option value="gpt-5.2">gpt-5.2</option>
+              <option value="gpt-5.1-codex-max">gpt-5.1-codex-max</option>
+              <option value="claude-opus-4-5-20251101">claude-opus-4-5-20251101</option>
+              <option value="gemini-3-pro-preview">gemini-3-pro-preview</option>
+            </select>
+          </label>
+          <label class="field">
+            <div class="field-label">Image Model</div>
+            <select id="image-model">
+              <option value="dryrun-image-1">dryrun-image-1</option>
+              <option value="gemini-3-pro-image-preview">gemini-3-pro-image-preview</option>
+              <option value="gemini-2.5-flash-image">gemini-2.5-flash-image</option>
+              <option value="imagen-4.0-ultra">imagen-4.0-ultra</option>
+              <option value="imagen-4">imagen-4</option>
+              <option value="flux-2-max">flux-2-max</option>
+              <option value="flux-2-flex">flux-2-flex</option>
+              <option value="flux-2-pro">flux-2-pro</option>
+              <option value="flux-2">flux-2</option>
+              <option value="sdxl">sdxl</option>
+              <option value="gpt-image-1.5">gpt-image-1.5</option>
+              <option value="gpt-image-1-mini">gpt-image-1-mini</option>
+              <option value="gpt-image-1">gpt-image-1</option>
+            </select>
+          </label>
+          <label class="field">
+            <div class="field-label">Prompt Strategy</div>
+            <select id="prompt-strategy-mode">
+              <option value="auto">Auto (benchmark by model)</option>
+              <option value="tail">Constraint Tail (MUST)</option>
+              <option value="baseline">Baseline (no MUST tail)</option>
+            </select>
+          </label>
+          <label class="field">
+            <div class="field-label">Repeat Full Prompt</div>
+            <input id="prompt-repeat-full-toggle" type="checkbox" />
+          </label>
+          <div class="key-status-card">
+            <div class="key-status-title">Prompt Benchmark</div>
+            <div id="prompt-benchmark-readout" class="key-status-list muted">No benchmark data yet</div>
+            <div class="controls">
+              <button id="prompt-benchmark-reset" class="ghost" type="button">Reset</button>
+            </div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Aesthetic Preference</div>
+            <div id="aesthetic-onboarding-status" class="key-status-list muted">Not set yet</div>
+            <div class="controls">
+              <button id="aesthetic-onboarding-open" type="button">Run quiz</button>
+              <button id="aesthetic-onboarding-clear" class="ghost" type="button">Clear</button>
+            </div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">OpenRouter Onboarding</div>
+            <div id="openrouter-onboarding-status" class="key-status-list muted">Not started</div>
+            <div class="controls">
+              <button id="openrouter-onboarding-open" type="button">Run setup</button>
+              <button id="openrouter-onboarding-reset" class="ghost" type="button">Reset</button>
+            </div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Install Telemetry (Opt-in)</div>
+            <div id="install-telemetry-status" class="key-status-list muted">Off (opt-in required).</div>
+            <div class="controls">
+              <label for="install-telemetry-toggle" class="muted">Enable</label>
+              <input id="install-telemetry-toggle" type="checkbox" />
+            </div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Run Directory</div>
+            <div id="run-info" class="run-info-text muted">No run</div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Portraits Folder</div>
+            <div id="portraits-dir" class="key-status-list muted">Auto (not found)</div>
+            <div class="controls">
+              <button id="portraits-dir-pick" type="button">Choose…</button>
+              <button id="portraits-dir-clear" class="ghost" type="button">Auto</button>
+            </div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">API Keys</div>
+            <div id="key-status" class="key-status-list muted">Detecting local keys…</div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Timeline</div>
+            <div class="timeline-controls">
+              <button id="timeline-toggle" type="button">Open Timeline</button>
+            </div>
+            <div class="muted timeline-footnote">Track edits and jump back to earlier versions.</div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Canvas Context</div>
+            <div id="always-on-vision-readout" class="key-status-list muted">Off</div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Admin</div>
+            <div class="muted timeline-footnote">Internal demo/debug tools.</div>
+            <div class="controls">
+              <button id="reel-admin-toggle" type="button" aria-pressed="false">Enable Reel 9:16</button>
+            </div>
+          </div>
+          <div class="drawer-footnote muted">
+            For image-to-image edits and recreate, prefer a model that accepts image inputs (Gemini).
+          </div>
+        </div>
+      </div>
+      <div
+        id="openrouter-onboarding-modal"
+        class="openrouter-onboarding-modal hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="OpenRouter onboarding"
+      >
+        <div class="openrouter-onboarding-shell">
+          <div class="openrouter-onboarding-layout">
+            <section class="openrouter-onboarding-main">
+              <div id="openrouter-onboarding-header" class="openrouter-onboarding-header">
+                <div>
+                  <div class="openrouter-onboarding-title" id="openrouter-onboarding-title">
+                    OpenRouter onboarding
+                  </div>
+                  <div class="openrouter-onboarding-subtitle" id="openrouter-onboarding-subtitle">
+                    Intro
+                  </div>
+                </div>
+              </div>
+              <div id="openrouter-onboarding-body" class="openrouter-onboarding-body"></div>
+              <div
+                id="openrouter-onboarding-progress"
+                class="openrouter-onboarding-progress"
+                aria-label="OpenRouter onboarding progress"
+              ></div>
+              <div class="openrouter-onboarding-footer">
+                <div class="openrouter-onboarding-footer-left">
+                  <button id="openrouter-onboarding-back" class="ghost" type="button">Back</button>
+                  <a id="openrouter-onboarding-skip" class="openrouter-onboarding-skip-link" href="#" role="button">Skip for now</a>
+                </div>
+                <div class="openrouter-onboarding-footer-actions">
+                  <button id="openrouter-onboarding-next" type="button">Next</button>
+                </div>
+              </div>
+            </section>
+            <div class="openrouter-onboarding-media" aria-label="Mother portrait video">
+              <div class="openrouter-onboarding-media-frame">
+                <div id="openrouter-onboarding-media-slot" class="openrouter-onboarding-media-slot" aria-hidden="true">
+                  <video
+                    id="openrouter-onboarding-media-video"
+                    class="openrouter-onboarding-media-video"
+                    muted
+                    loop
+                    autoplay
+                    playsinline
+                    preload="metadata"
+                  ></video>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div
+        id="aesthetic-onboarding-modal"
+        class="aesthetic-onboarding-modal hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Aesthetic onboarding"
+      >
+        <div class="aesthetic-onboarding-shell">
+          <div class="aesthetic-onboarding-header">
+            <div>
+              <div class="aesthetic-onboarding-title" id="aesthetic-onboarding-title">Find your visual baseline</div>
+              <div class="aesthetic-onboarding-subtitle" id="aesthetic-onboarding-subtitle">
+                We will set your default image model from your picks.
+              </div>
+            </div>
+            <button id="aesthetic-onboarding-close" class="ghost" type="button">Skip</button>
+          </div>
+          <div id="aesthetic-onboarding-progress" class="aesthetic-onboarding-progress"></div>
+          <div id="aesthetic-onboarding-body" class="aesthetic-onboarding-body"></div>
+          <div class="aesthetic-onboarding-footer">
+            <button id="aesthetic-onboarding-back" class="ghost" type="button">Back</button>
+            <div class="aesthetic-onboarding-footer-actions">
+              <button id="aesthetic-onboarding-skip" class="ghost" type="button">Skip</button>
+              <button id="aesthetic-onboarding-next" type="button">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="timeline-overlay" class="timeline-overlay hidden" role="dialog" aria-label="Timeline">
+        <div class="timeline-shell">
+          <div class="timeline-header">
+            <div class="timeline-title">Timeline</div>
+            <button id="timeline-close" class="ghost" type="button" aria-label="Close timeline">Close</button>
+          </div>
+          <div class="timeline-body">
+            <div id="timeline-strip" class="timeline-strip" aria-label="Timeline strip"></div>
+            <div id="timeline-detail" class="timeline-detail muted"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module">
+      window.__brood_booted = false;
+      window.__juggernaut_booted = false;
+      const bootEl = document.getElementById("boot-error");
+      import("./canvas_app.js")
+        .then(() => {
+          window.__brood_booted = true;
+          window.__juggernaut_booted = true;
+          if (bootEl) bootEl.classList.add("hidden");
+        })
+        .catch((err) => {
+          console.error(err);
+          if (bootEl) {
+            bootEl.classList.remove("hidden");
+            bootEl.textContent = `Juggernaut failed to initialize: ${err?.message || err}`;
+          }
+        });
+    </script>
+  </body>
+</html>

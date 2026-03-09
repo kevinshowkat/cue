@@ -1,0 +1,44 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run build && ../scripts/stage_rust_engine_binary.sh",
+    "beforeDevCommand": "npm run dev",
+    "devPath": "http://localhost:5173",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "Juggernaut",
+    "version": "0.2.4"
+  },
+  "tauri": {
+    "macOSPrivateApi": true,
+    "allowlist": {
+      "all": true,
+      "fs": {
+        "all": true,
+        "scope": ["$HOME/**", "$DESKTOP/**"]
+      },
+      "protocol": {
+        "asset": true,
+        "assetScope": ["$HOME/brood_runs/**"]
+      }
+    },
+    "windows": [
+      {
+        "title": "Juggernaut",
+        "width": 1400,
+        "height": 900,
+        "resizable": true,
+        "transparent": true,
+        "titleBarStyle": "Transparent",
+        "hiddenTitle": true
+      }
+    ],
+    "bundle": {
+      "identifier": "com.juggernaut.app",
+      "active": true,
+      "targets": ["dmg"],
+      "resources": ["resources/brood-rs"],
+      "icon": ["icons/icon.icns", "icons/icon.png"]
+    }
+  }
+}

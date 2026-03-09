@@ -1,0 +1,40 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { JUGGERNAUT_RAIL_ICON_REGISTRY } from "../src/juggernaut_shell/generated/rail_icon_registry.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const manifest = JSON.parse(
+  readFileSync(join(here, "..", "src", "assets", "juggernaut-rail-icons", "manifest.json"), "utf8")
+);
+const railSource = readFileSync(join(here, "..", "src", "juggernaut_shell", "rail.js"), "utf8");
+
+test("Juggernaut rail iconography: manifest covers the current left-rail tools", () => {
+  const actualIds = manifest.icons.map((icon) => icon.tool_id).sort();
+  const expectedIds = [
+    "background_swap",
+    "cleanup",
+    "create_tool",
+    "export_psd",
+    "select_subject",
+    "upload",
+    "variations",
+  ].sort();
+  assert.deepEqual(actualIds, expectedIds);
+  assert.equal(manifest.style.id, "juggernaut.rail_iconography.v1");
+});
+
+test("Juggernaut rail iconography: generated registry exports custom SVG glyphs", () => {
+  assert.equal(typeof JUGGERNAUT_RAIL_ICON_REGISTRY.upload, "string");
+  assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.create_tool, /tool-icon-create-tool/);
+  assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.background_swap, /fill-opacity=/);
+});
+
+test("Juggernaut rail iconography: rail rendering consumes generated registry and exposes tool hooks", () => {
+  assert.match(railSource, /getJuggernautRailIconSvg/);
+  assert.match(railSource, /toolEl\.dataset\.toolKey/);
+  assert.match(railSource, /className = "tool juggernaut-tool juggernaut-rail-button"/);
+});

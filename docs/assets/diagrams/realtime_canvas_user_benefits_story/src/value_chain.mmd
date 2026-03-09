@@ -1,0 +1,21 @@
+flowchart LR
+  U((User edits canvas))
+  C((Brood captures context))
+  P((Brood proposes next step))
+  G((Brood generates + logs))
+  B((User gets better first draft))
+
+  U --> C --> P --> G --> B
+
+  EX1["Example: user resizes image smaller"]
+  EX2["Example: user selects 2 images + clicks Bridge"]
+  EX3["Example: output + receipt + cost auto-appear"]
+
+  EX1 -.-> C
+  EX2 -.-> P
+  EX3 -.-> G
+
+  classDef core fill:#1b3f73,stroke:#9fc6ff,color:#ffffff,stroke-width:2px;
+  classDef ex fill:#eef4ff,stroke:#7f99bf,color:#10213a,stroke-width:1px;
+  class U,C,P,G,B core;
+  class EX1,EX2,EX3 ex;

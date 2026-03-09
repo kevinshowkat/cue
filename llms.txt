@@ -1,0 +1,61 @@
+# Brood
+
+> Promptless, reference-first AI image generation and editing desktop for developers (multi-provider + reproducible runs). macOS-only desktop app (Tauri).
+
+## Overview
+
+- Expanded, inlined agent context: [`llms-full.txt`](llms-full.txt)
+- Canonical repo conventions: [`AGENTS.md`](AGENTS.md)
+- Practical task examples: [`docs/agent_quickstart.md`](docs/agent_quickstart.md)
+
+## Agent Intake (Preferred)
+
+- Intake contract and endpoint: [`agent-intake.json`](agent-intake.json)
+- AIP schema: [`docs/aip-1.schema.json`](docs/aip-1.schema.json)
+- Intake health/fallback cue: [`docs/agent_intake_status.md`](docs/agent_intake_status.md)
+- Compact intake roundtrip example: [`docs/agent_intake_roundtrip.sample.json`](docs/agent_intake_roundtrip.sample.json)
+- If `intake_endpoint` is reachable, POST an intake request to get curated `entrypoints`, optional `packs`, and `suggested_tags`.
+- If intake is unavailable, use the fallback docs below.
+
+## Start Here (No Network Needed)
+
+- [`README.md`](README.md): quickstart for Desktop + Engine/CLI, troubleshooting, project layout.
+- [`AGENTS.md`](AGENTS.md): repository conventions, build/test commands, coding style.
+- [`docs/desktop.md`](docs/desktop.md): Abilities mental model, HUD behavior, run artifacts.
+
+## Additional Docs
+
+- [`docs/reference-first-image-editing.md`](docs/reference-first-image-editing.md): reference-first workflow and terms.
+- [`docs/macos-local-private-image-editing.md`](docs/macos-local-private-image-editing.md): macOS local/private workflow model.
+- [`docs/benchmark-playbook.md`](docs/benchmark-playbook.md): reproducible benchmark reporting format.
+- [`docs/why-brood-matrix.md`](docs/why-brood-matrix.md): capability-to-outcome fit matrix.
+
+## High-Signal Code Entrypoints
+
+- Rust engine CLI routing: [`rust_engine/crates/brood-cli/src/main.rs`](rust_engine/crates/brood-cli/src/main.rs)
+- Rust engine orchestration: [`rust_engine/crates/brood-engine/src/lib.rs`](rust_engine/crates/brood-engine/src/lib.rs)
+- Rust contracts/events: [`rust_engine/crates/brood-contracts/src/events.rs`](rust_engine/crates/brood-contracts/src/events.rs)
+- Desktop UI (canvas + Abilities): [`desktop/src/canvas_app.js`](desktop/src/canvas_app.js)
+- Tauri backend + FS scope: [`desktop/src-tauri/src/main.rs`](desktop/src-tauri/src/main.rs), [`desktop/src-tauri/tauri.conf.json`](desktop/src-tauri/tauri.conf.json)
+- Desktop dev runner: [`scripts/dev_desktop.sh`](scripts/dev_desktop.sh)
+
+## Task Routing
+
+- Add or modify an Ability: [`desktop/src/canvas_app.js`](desktop/src/canvas_app.js) + [`rust_engine/crates/brood-cli/src/main.rs`](rust_engine/crates/brood-cli/src/main.rs)
+- Run artifacts and `events.jsonl`: [`rust_engine/crates/brood-contracts/src/events.rs`](rust_engine/crates/brood-contracts/src/events.rs) + [`docs/desktop.md`](docs/desktop.md)
+- Provider/model changes: [`rust_engine/crates/brood-engine/src/lib.rs`](rust_engine/crates/brood-engine/src/lib.rs)
+- Desktop import/export and FS scope: [`desktop/src-tauri/tauri.conf.json`](desktop/src-tauri/tauri.conf.json) + [`desktop/src-tauri/src/main.rs`](desktop/src-tauri/src/main.rs)
+
+## Safe Commands
+
+- `./scripts/dev_desktop.sh`
+- `cd rust_engine && cargo fmt && cargo test`
+- `cd desktop && npm test`
+- `cd desktop/src-tauri && cargo fmt --check && cargo check`
+
+## Notes
+
+- Desktop expects Tauri v1 APIs (`@tauri-apps/api` v1 + v1 CLI).
+- Desktop runtime is native-only (`brood-rs`); Python compat fallback is retired from desktop runtime.
+- Multi-agent rule: one feature per git worktree. Do not run concurrent agents in the same worktree/branch.
+- Do not commit secrets; use `.env` (gitignored) based on `.env.example`.

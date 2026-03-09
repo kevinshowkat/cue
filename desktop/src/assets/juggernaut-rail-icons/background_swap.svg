@@ -1,0 +1,8 @@
+<svg class="tool-icon tool-icon-background-swap" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <rect fill="currentColor" fill-opacity="0.12" x="5.25" y="6.35" width="10.35" height="8.05" rx="2.15" />
+  <rect fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" x="5.25" y="6.35" width="10.35" height="8.05" rx="2.15" />
+  <circle fill="currentColor" fill-opacity="0.2" cx="9.15" cy="8.95" r="0.95" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M7.15 13.6l2.75-3.05 2.15 2.15 1.95-2.45" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M16.55 6.75v4.4h4.35" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M15.35 10.95l5.45-5.45" />
+</svg>
