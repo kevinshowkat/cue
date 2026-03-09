@@ -103,12 +103,17 @@ test("tab activation is lazy and validates engine binding before reusing a PTY",
 });
 
 test("boot creates the initial run without showing the new-tab toast", () => {
+  const createRunSource = extractFunctionSource("createRun");
   assert.equal(bootChunk.includes('await createRun({ announce: false, source: "boot" });'), true);
   assert.equal(app.includes(createRunSignature), true);
-  assert.equal(app.includes('const showStartupToast = announce || String(source || "").trim() !== "boot";'), true);
-  assert.equal(app.includes("engineFailureToast: showStartupToast,"), true);
-  assert.equal(app.includes("if (showStartupToast) {"), true);
-  assert.equal(app.includes("} else if (showStartupToast) {"), true);
+  assert.equal(createRunSource.includes('const normalizedSource = String(source || "new_run").trim() || "new_run";'), true);
+  assert.equal(
+    createRunSource.includes('const showCreateRunToast = announce && normalizedSource !== "new_run" && normalizedSource !== "boot";'),
+    true
+  );
+  assert.equal(createRunSource.includes("engineFailureToast: showCreateRunToast,"), true);
+  assert.equal(createRunSource.includes("New tab ready:"), false);
+  assert.equal(createRunSource.includes("engine did not start"), false);
 });
 
 test("tab rename can only start for the active tab", () => {

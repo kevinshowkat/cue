@@ -2776,6 +2776,7 @@ let sessionTabRenameState = {
   tabId: null,
   draft: "",
   focusRequested: false,
+  lockedWidth: 0,
 };
 const TAB_HYDRATION_IDLE_TIMEOUT_MS = 180;
 const TAB_PREVIEW_CAPTURE_SETTLE_MS = 120;
@@ -31200,6 +31201,7 @@ function resetSessionTabRenameState({ render = false } = {}) {
     tabId: null,
     draft: "",
     focusRequested: false,
+    lockedWidth: 0,
   };
   if (render) renderSessionTabStrip();
 }
@@ -31210,10 +31212,17 @@ function startSessionTabRename(tabId = "") {
   if (normalizedTabId !== String(state.activeTabId || "").trim()) return false;
   const record = tabbedSessions.getTab(normalizedTabId) || null;
   if (!record) return false;
+  let lockedWidth = 0;
+  if (typeof els === "object" && els?.sessionTabList && typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    const item = els.sessionTabList.querySelector(`.session-tab-item[data-tab-id="${CSS.escape(normalizedTabId)}"]`);
+    const measured = Number(item?.getBoundingClientRect?.().width) || 0;
+    if (Number.isFinite(measured) && measured > 0) lockedWidth = Math.ceil(measured);
+  }
   sessionTabRenameState = {
     tabId: normalizedTabId,
     draft: sessionTabDisplayLabel(record, DEFAULT_UNTITLED_TAB_TITLE),
     focusRequested: true,
+    lockedWidth,
   };
   renderSessionTabStrip();
   return true;
@@ -31977,13 +31986,14 @@ async function createRun({ announce = true, source = "new_run" } = {}) {
     showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
     return { ok: false, reason: blockReason };
   }
-  const showStartupToast = announce || String(source || "").trim() !== "boot";
+  const normalizedSource = String(source || "new_run").trim() || "new_run";
+  const showCreateRunToast = announce && normalizedSource !== "new_run" && normalizedSource !== "boot";
   setStatus("Engine: creating run tab…");
   const payload = await invoke("create_run_dir");
   state.installTelemetry.runSequence = (Number(state.installTelemetry.runSequence) || 0) + 1;
   emitInstallTelemetryAsync("new_run_created", {
     run_sequence: Number(state.installTelemetry.runSequence) || 1,
-    source: String(source || "new_run"),
+    source: normalizedSource,
   });
   state.installTelemetry.firstRunLogged = true;
   const tabId = createTabId();
@@ -32006,19 +32016,10 @@ async function createRun({ announce = true, source = "new_run" } = {}) {
   );
   const result = await activateTab(tabId, {
     spawnEngine: true,
-    engineFailureToast: showStartupToast,
+    engineFailureToast: showCreateRunToast,
     reason: "new_run_tab",
   });
   if (result?.hydration) await result.hydration;
-  const createdRecord = tabbedSessions.getTab(tabId) || null;
-  const createdLabel = sessionTabDisplayLabel(createdRecord, DEFAULT_UNTITLED_TAB_TITLE);
-  if (state.ptySpawned) {
-    if (showStartupToast) {
-      showToast(`New tab ready: ${createdLabel}.`, "tip", 2600);
-    }
-  } else if (showStartupToast) {
-    showToast(`Created ${createdLabel}, but the engine did not start.`, "error", 3200);
-  }
   return result;
 }
 
@@ -38452,6 +38453,25 @@ function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
   };
 }
 
+function createSessionTabFlags(summary = {}) {
+  const flags = document.createElement("span");
+  flags.className = "session-tab-flags";
+  flags.setAttribute("aria-hidden", "true");
+
+  if (summary.reviewFlowLabel) {
+    const reviewState = document.createElement("span");
+    reviewState.className = "session-tab-review-state";
+    reviewState.dataset.reviewFlowState = summary.reviewFlowState;
+    reviewState.textContent = summary.reviewFlowLabel;
+    flags.append(reviewState);
+  }
+
+  const busyIndicator = document.createElement("span");
+  busyIndicator.className = "session-tab-busy-indicator";
+  flags.append(busyIndicator);
+  return flags;
+}
+
 function createSessionTabStripItem(tab = null, totalTabs = 0) {
   const summary = buildSessionTabUiSummary(tab, totalTabs);
   const item = document.createElement("div");
@@ -38469,9 +38489,21 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
   item.dataset.dirty = summary.isDirty ? "true" : "false";
   item.dataset.canClose = summary.canClose ? "true" : "false";
   item.dataset.reviewFlowState = summary.reviewFlowState;
+  if (summary.isRenaming && Number.isFinite(sessionTabRenameState.lockedWidth) && sessionTabRenameState.lockedWidth > 0) {
+    const fixedWidth = `${sessionTabRenameState.lockedWidth}px`;
+    item.style.width = fixedWidth;
+    item.style.minWidth = fixedWidth;
+    item.style.maxWidth = fixedWidth;
+  }
 
   if (summary.isRenaming) {
-    const rename = document.createElement("div");
+    const renameShell = document.createElement("div");
+    renameShell.className = "session-tab-rename-shell";
+
+    const labels = document.createElement("span");
+    labels.className = "session-tab-labels";
+
+    const rename = document.createElement("label");
     rename.className = "session-tab-rename";
 
     const input = document.createElement("input");
@@ -38511,7 +38543,9 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
     });
 
     rename.append(input);
-    item.append(rename);
+    labels.append(rename);
+    renameShell.append(labels, createSessionTabFlags(summary));
+    item.append(renameShell);
   } else {
     const hit = document.createElement("button");
     hit.className = "session-tab-hit";
@@ -38534,27 +38568,7 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
     runDir.textContent = summary.runDir;
     labels.append(runDir);
 
-    const flags = document.createElement("span");
-    flags.className = "session-tab-flags";
-    flags.setAttribute("aria-hidden", "true");
-
-    if (summary.reviewFlowLabel) {
-      const reviewState = document.createElement("span");
-      reviewState.className = "session-tab-review-state";
-      reviewState.dataset.reviewFlowState = summary.reviewFlowState;
-      reviewState.textContent = summary.reviewFlowLabel;
-      flags.append(reviewState);
-    }
-
-    const busyIndicator = document.createElement("span");
-    busyIndicator.className = "session-tab-busy-indicator";
-    flags.append(busyIndicator);
-
-    const dirtyDot = document.createElement("span");
-    dirtyDot.className = "session-tab-dirty-dot";
-    flags.append(dirtyDot);
-
-    hit.append(labels, flags);
+    hit.append(labels, createSessionTabFlags(summary));
     item.append(hit);
   }
 

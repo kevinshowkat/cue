@@ -44,9 +44,13 @@ test("Titlebar tab strip routes activate, close, open, new, and design review ac
 test("Titlebar tab strip supports inline rename and review-state badges", () => {
   assert.match(app, /function startSessionTabRename\(tabId = ""\)/);
   assert.match(app, /if \(normalizedTabId !== String\(state\.activeTabId \|\| ""\)\.trim\(\)\) return false;/);
+  assert.match(app, /lockedWidth:\s*0/);
+  assert.match(app, /sessionTabRenameState\.lockedWidth/);
   assert.match(app, /function commitSessionTabRename\(tabId = "", rawTitle = sessionTabRenameState\.draft\)/);
   assert.match(app, /className = "session-tab-review-state"/);
+  assert.match(app, /className = "session-tab-rename-shell"/);
   assert.match(app, /className = "session-tab-title-input"/);
   assert.match(app, /input\.maxLength = SESSION_TAB_TITLE_MAX_LENGTH;/);
   assert.match(app, /focusSessionTabRenameInput\(\);/);
+  assert.equal(app.includes('dirtyDot.className = "session-tab-dirty-dot"'), false);
 });

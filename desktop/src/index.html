@@ -22,7 +22,35 @@
         </div>
         <div class="window-drag-region" aria-hidden="true" data-tauri-drag-region></div>
         <div id="session-tab-strip" class="session-tab-strip" role="group" aria-label="Session strip">
-          <div id="session-tab-list" class="session-tab-list" role="tablist" aria-label="Open sessions"></div>
+          <div class="session-tab-run" role="group" aria-label="Open sessions and new session">
+            <div id="session-tab-list" class="session-tab-list" role="tablist" aria-label="Open sessions"></div>
+            <button
+              id="session-tab-new"
+              class="session-tab-strip-action session-tab-strip-new"
+              type="button"
+              aria-label="New session"
+              title="New session"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M4.75 10.25A2.25 2.25 0 0 1 7 8h4.05l1.55 1.7H17a2.25 2.25 0 0 1 2.25 2.25v5.3A2.25 2.25 0 0 1 17 19.5H7a2.25 2.25 0 0 1-2.25-2.25z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M12 11.2v5.1M9.45 13.75h5.1"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span class="sr-only">New session</span>
+            </button>
+          </div>
           <div class="session-tab-strip-actions" role="group" aria-label="Session actions">
             <button
               id="session-tab-open"
@@ -42,24 +70,6 @@
                 />
               </svg>
               <span class="sr-only">Open session</span>
-            </button>
-            <button
-              id="session-tab-new"
-              class="session-tab-strip-action"
-              type="button"
-              aria-label="New session"
-              title="New session"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M12 5v14M5 12h14"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.9"
-                  stroke-linecap="round"
-                />
-              </svg>
-              <span class="sr-only">New session</span>
             </button>
             <button
               id="session-tab-design-review"
@@ -152,142 +162,167 @@
                 </div>
               </div>
               <div id="session-tab-strip-shell-head-placeholder" class="session-tab-strip" role="presentation" aria-hidden="true">
-                <div id="session-tab-list-shell-head-placeholder" class="session-tab-list" role="presentation" aria-hidden="true">
-                  <div
-                    class="session-tab-item is-active is-dirty"
-                    data-tab-id="tab-hero"
-                    data-title="Hero Composite"
-                    data-run-dir="/runs/hero-composite"
-                    data-thumbnail-path="./assets/logo.jpeg"
-                    data-active="true"
-                    data-busy="false"
-                    data-dirty="true"
-                    data-can-close="true"
-                  >
-                    <button
-                      class="session-tab-hit"
-                      type="button"
-                      role="tab"
-                      aria-selected="true"
-                      tabindex="0"
-                      title="Hero Composite"
+                <div class="session-tab-run" role="presentation" aria-hidden="true">
+                  <div id="session-tab-list-shell-head-placeholder" class="session-tab-list" role="presentation" aria-hidden="true">
+                    <div
+                      class="session-tab-item is-active is-dirty"
+                      data-tab-id="tab-hero"
+                      data-title="Hero Composite"
+                      data-run-dir="/runs/hero-composite"
+                      data-thumbnail-path="./assets/logo.jpeg"
+                      data-active="true"
+                      data-busy="false"
+                      data-dirty="true"
+                      data-can-close="true"
                     >
-                      <span class="session-tab-thumbnail" aria-hidden="true">
-                        <img src="./assets/logo.jpeg" alt="" />
-                      </span>
-                      <span class="session-tab-labels">
-                        <span class="session-tab-title">Hero Composite</span>
-                        <span class="session-tab-run-dir">/runs/hero-composite</span>
-                      </span>
-                      <span class="session-tab-flags" aria-hidden="true">
-                        <span class="session-tab-busy-indicator"></span>
-                        <span class="session-tab-dirty-dot"></span>
-                      </span>
-                    </button>
-                    <button class="session-tab-close" type="button" aria-label="Close Hero Composite" title="Close Hero Composite">
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path
-                          d="M7 7l10 10M17 7 7 17"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="1.8"
-                          stroke-linecap="round"
-                        />
-                      </svg>
-                    </button>
+                      <button
+                        class="session-tab-hit"
+                        type="button"
+                        role="tab"
+                        aria-selected="true"
+                        tabindex="0"
+                        title="Hero Composite"
+                      >
+                        <span class="session-tab-thumbnail" aria-hidden="true">
+                          <img src="./assets/logo.jpeg" alt="" />
+                        </span>
+                        <span class="session-tab-labels">
+                          <span class="session-tab-title">Hero Composite</span>
+                          <span class="session-tab-run-dir">/runs/hero-composite</span>
+                        </span>
+                        <span class="session-tab-flags" aria-hidden="true">
+                          <span class="session-tab-busy-indicator"></span>
+                        </span>
+                      </button>
+                      <button class="session-tab-close" type="button" aria-label="Close Hero Composite" title="Close Hero Composite">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path
+                            d="M7 7l10 10M17 7 7 17"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                    <div
+                      class="session-tab-item is-busy"
+                      data-tab-id="tab-cleanup"
+                      data-title="Cleanup Pass"
+                      data-run-dir="/runs/cleanup-pass"
+                      data-thumbnail-path="./assets/logo.jpeg"
+                      data-active="false"
+                      data-busy="true"
+                      data-dirty="false"
+                      data-can-close="true"
+                    >
+                      <button
+                        class="session-tab-hit"
+                        type="button"
+                        role="tab"
+                        aria-selected="false"
+                        tabindex="-1"
+                        title="Cleanup Pass"
+                      >
+                        <span class="session-tab-thumbnail" aria-hidden="true">
+                          <img src="./assets/logo.jpeg" alt="" />
+                        </span>
+                        <span class="session-tab-labels">
+                          <span class="session-tab-title">Cleanup Pass</span>
+                          <span class="session-tab-run-dir">/runs/cleanup-pass</span>
+                        </span>
+                        <span class="session-tab-flags" aria-hidden="true">
+                          <span class="session-tab-busy-indicator"></span>
+                        </span>
+                      </button>
+                      <button class="session-tab-close" type="button" aria-label="Close Cleanup Pass" title="Close Cleanup Pass">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path
+                            d="M7 7l10 10M17 7 7 17"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                    <div
+                      class="session-tab-item"
+                      data-tab-id="tab-background"
+                      data-title="Background Swap"
+                      data-run-dir="/runs/background-swap"
+                      data-thumbnail-path="./assets/logo.jpeg"
+                      data-active="false"
+                      data-busy="false"
+                      data-dirty="false"
+                      data-can-close="false"
+                    >
+                      <button
+                        class="session-tab-hit"
+                        type="button"
+                        role="tab"
+                        aria-selected="false"
+                        tabindex="-1"
+                        title="Background Swap"
+                      >
+                        <span class="session-tab-thumbnail" aria-hidden="true">
+                          <img src="./assets/logo.jpeg" alt="" />
+                        </span>
+                        <span class="session-tab-labels">
+                          <span class="session-tab-title">Background Swap</span>
+                          <span class="session-tab-run-dir">/runs/background-swap</span>
+                        </span>
+                        <span class="session-tab-flags" aria-hidden="true">
+                          <span class="session-tab-busy-indicator"></span>
+                        </span>
+                      </button>
+                      <button
+                        class="session-tab-close"
+                        type="button"
+                        aria-label="Close Background Swap"
+                        title="Close Background Swap"
+                        hidden
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path
+                            d="M7 7l10 10M17 7 7 17"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                          />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
-                  <div
-                    class="session-tab-item is-busy"
-                    data-tab-id="tab-cleanup"
-                    data-title="Cleanup Pass"
-                    data-run-dir="/runs/cleanup-pass"
-                    data-thumbnail-path="./assets/logo.jpeg"
-                    data-active="false"
-                    data-busy="true"
-                    data-dirty="false"
-                    data-can-close="true"
+                  <button
+                    id="session-tab-new-shell-head-placeholder"
+                    class="session-tab-strip-action session-tab-strip-new"
+                    type="button"
+                    aria-label="New session"
+                    title="New session"
                   >
-                    <button
-                      class="session-tab-hit"
-                      type="button"
-                      role="tab"
-                      aria-selected="false"
-                      tabindex="-1"
-                      title="Cleanup Pass"
-                    >
-                      <span class="session-tab-thumbnail" aria-hidden="true">
-                        <img src="./assets/logo.jpeg" alt="" />
-                      </span>
-                      <span class="session-tab-labels">
-                        <span class="session-tab-title">Cleanup Pass</span>
-                        <span class="session-tab-run-dir">/runs/cleanup-pass</span>
-                      </span>
-                      <span class="session-tab-flags" aria-hidden="true">
-                        <span class="session-tab-busy-indicator"></span>
-                        <span class="session-tab-dirty-dot"></span>
-                      </span>
-                    </button>
-                    <button class="session-tab-close" type="button" aria-label="Close Cleanup Pass" title="Close Cleanup Pass">
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path
-                          d="M7 7l10 10M17 7 7 17"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="1.8"
-                          stroke-linecap="round"
-                        />
-                      </svg>
-                    </button>
-                  </div>
-                  <div
-                    class="session-tab-item"
-                    data-tab-id="tab-background"
-                    data-title="Background Swap"
-                    data-run-dir="/runs/background-swap"
-                    data-thumbnail-path="./assets/logo.jpeg"
-                    data-active="false"
-                    data-busy="false"
-                    data-dirty="false"
-                    data-can-close="false"
-                  >
-                    <button
-                      class="session-tab-hit"
-                      type="button"
-                      role="tab"
-                      aria-selected="false"
-                      tabindex="-1"
-                      title="Background Swap"
-                    >
-                      <span class="session-tab-thumbnail" aria-hidden="true">
-                        <img src="./assets/logo.jpeg" alt="" />
-                      </span>
-                      <span class="session-tab-labels">
-                        <span class="session-tab-title">Background Swap</span>
-                        <span class="session-tab-run-dir">/runs/background-swap</span>
-                      </span>
-                      <span class="session-tab-flags" aria-hidden="true">
-                        <span class="session-tab-busy-indicator"></span>
-                        <span class="session-tab-dirty-dot"></span>
-                      </span>
-                    </button>
-                    <button
-                      class="session-tab-close"
-                      type="button"
-                      aria-label="Close Background Swap"
-                      title="Close Background Swap"
-                      hidden
-                    >
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path
-                          d="M7 7l10 10M17 7 7 17"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="1.8"
-                          stroke-linecap="round"
-                        />
-                      </svg>
-                    </button>
-                  </div>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        d="M4.75 10.25A2.25 2.25 0 0 1 7 8h4.05l1.55 1.7H17a2.25 2.25 0 0 1 2.25 2.25v5.3A2.25 2.25 0 0 1 17 19.5H7a2.25 2.25 0 0 1-2.25-2.25z"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                      <path
+                        d="M12 11.2v5.1M9.45 13.75h5.1"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                    <span class="sr-only">New session</span>
+                  </button>
                 </div>
                 <div class="session-tab-strip-actions" role="group" aria-label="Session actions">
                   <button
@@ -308,24 +343,6 @@
                       />
                     </svg>
                     <span class="sr-only">Open session</span>
-                  </button>
-                  <button
-                    id="session-tab-new-shell-head-placeholder"
-                    class="session-tab-strip-action"
-                    type="button"
-                    aria-label="New session"
-                    title="New session"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path
-                        d="M12 5v14M5 12h14"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.9"
-                        stroke-linecap="round"
-                      />
-                    </svg>
-                    <span class="sr-only">New session</span>
                   </button>
                 </div>
               </div>
@@ -444,7 +461,7 @@
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path
-                    d="M12 4.3 16.15 8.45 13.78 19.25h-3.56L7.85 8.45z"
+                    d="M12 3.8 16.8 8.6 14.95 10.45 15.6 19.1H8.4l.65-8.65L7.2 8.6z"
                     fill="none"
                     stroke="currentColor"
                     stroke-width="1.9"
@@ -452,14 +469,14 @@
                     stroke-linejoin="round"
                   />
                   <path
-                    d="M12 4.3v6.15"
+                    d="M12 3.8v6.65"
                     fill="none"
                     stroke="currentColor"
                     stroke-width="1.9"
                     stroke-linecap="round"
                   />
                   <path
-                    d="M10.2 10.55h3.6"
+                    d="M9.35 10.45h5.3M9.2 19.1h5.6"
                     fill="none"
                     stroke="currentColor"
                     stroke-width="1.9"

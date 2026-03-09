@@ -9067,9 +9067,18 @@ button.ghost:hover {
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.session-tab-list {
+.session-tab-run {
   min-width: 0;
   flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.session-tab-list {
+  min-width: 0;
+  flex: 0 1 auto;
+  max-width: 100%;
   display: flex;
   align-items: stretch;
   gap: 6px;
@@ -9084,6 +9093,7 @@ button.ghost:hover {
 }
 
 .session-tab-item {
+  position: relative;
   flex: 0 0 auto;
   min-width: 0;
   max-width: 240px;
@@ -9124,17 +9134,25 @@ button.ghost:hover {
     inset 0 -14px 22px rgba(0, 0, 0, 0.26);
 }
 
-.session-tab-hit {
+.session-tab-hit,
+.session-tab-rename-shell {
   min-width: 0;
   flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
+}
+
+.session-tab-hit {
   border: 0;
   background: transparent;
   color: inherit;
   cursor: pointer;
+}
+
+.session-tab-rename-shell {
+  cursor: text;
 }
 
 .session-tab-thumbnail {
@@ -9254,8 +9272,7 @@ button.ghost:hover {
   color: rgba(255, 228, 228, 0.96);
 }
 
-.session-tab-busy-indicator,
-.session-tab-dirty-dot {
+.session-tab-busy-indicator {
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -9273,17 +9290,6 @@ button.ghost:hover {
   transform: scale(1);
   box-shadow: 0 0 12px rgba(100, 210, 255, 0.38);
   animation: sessionTabBusyPulse 1.8s ease-in-out infinite;
-}
-
-.session-tab-dirty-dot {
-  background: rgba(255, 212, 0, 0.96);
-  box-shadow: 0 0 0 rgba(255, 212, 0, 0);
-}
-
-.session-tab-item.is-dirty .session-tab-dirty-dot {
-  opacity: 1;
-  transform: scale(1);
-  box-shadow: 0 0 10px rgba(255, 212, 0, 0.32);
 }
 
 .session-tab-close {
@@ -9325,12 +9331,7 @@ button.ghost:hover {
 }
 
 .session-tab-item.is-renaming {
-  border-color: rgba(88, 201, 255, 0.28);
-  box-shadow:
-    0 0 0 1px rgba(88, 201, 255, 0.10),
-    0 16px 28px rgba(0, 0, 0, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.10),
-    inset 0 -14px 22px rgba(0, 0, 0, 0.22);
+  z-index: 1;
 }
 
 .session-tab-rename {
@@ -9338,7 +9339,6 @@ button.ghost:hover {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
-  padding: 6px 8px 6px 10px;
 }
 
 .session-tab-title-input {
@@ -9353,9 +9353,14 @@ button.ghost:hover {
   font-size: 12px;
   font-weight: 600;
   padding: 7px 10px;
+  caret-color: rgba(136, 228, 255, 0.98);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     0 0 0 1px rgba(88, 201, 255, 0.04);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease;
 }
 
 .session-tab-title-input:focus {
@@ -9397,6 +9402,22 @@ button.ghost:hover {
 .session-tab-strip-action svg {
   width: 16px;
   height: 16px;
+}
+
+.session-tab-strip-new {
+  flex: 0 0 auto;
+  margin-left: 2px;
+  border-color: rgba(100, 210, 255, 0.18);
+  background:
+    radial-gradient(26px 26px at 50% 22%, rgba(100, 210, 255, 0.18), transparent 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(14, 22, 32, 0.88);
+  color: rgba(224, 238, 252, 0.96);
+}
+
+.session-tab-strip-new svg {
+  width: 17px;
+  height: 17px;
 }
 
 .session-tab-strip-review {
@@ -9936,6 +9957,10 @@ body.juggernaut-shell .brand-strip .session-tab-strip {
   backdrop-filter: none;
 }
 
+body.juggernaut-shell .brand-strip .session-tab-run {
+  gap: 4px;
+}
+
 body.juggernaut-shell .brand-strip .session-tab-list {
   gap: 0;
   padding: 0;
@@ -9996,7 +10021,8 @@ body.juggernaut-shell .brand-strip .session-tab-item.is-active::after {
   box-shadow: 0 0 12px rgba(84, 140, 235, 0.2);
 }
 
-body.juggernaut-shell .brand-strip .session-tab-hit {
+body.juggernaut-shell .brand-strip .session-tab-hit,
+body.juggernaut-shell .brand-strip .session-tab-rename-shell {
   gap: 0;
   min-height: var(--brand-strip-h);
   padding: 0 14px;
@@ -10058,18 +10084,13 @@ body.juggernaut-shell .brand-strip .session-tab-item.is-review-failed .session-t
   color: rgba(140, 68, 68, 0.9);
 }
 
-body.juggernaut-shell .brand-strip .session-tab-busy-indicator,
-body.juggernaut-shell .brand-strip .session-tab-dirty-dot {
+body.juggernaut-shell .brand-strip .session-tab-busy-indicator {
   width: 7px;
   height: 7px;
 }
 
 body.juggernaut-shell .brand-strip .session-tab-busy-indicator {
   background: rgba(116, 203, 255, 0.98);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-dirty-dot {
-  background: rgba(255, 211, 72, 0.96);
 }
 
 body.juggernaut-shell .brand-strip .session-tab-close {
@@ -10090,7 +10111,7 @@ body.juggernaut-shell .brand-strip .session-tab-close:focus-visible {
 }
 
 body.juggernaut-shell .brand-strip .session-tab-rename {
-  padding: 0 10px 0 12px;
+  width: 100%;
 }
 
 body.juggernaut-shell .brand-strip .session-tab-title-input {
@@ -10139,6 +10160,15 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action {
     0 1px 2px rgba(17, 24, 32, 0.05);
 }
 
+body.juggernaut-shell .brand-strip .session-tab-strip-new {
+  border-color: rgba(88, 128, 184, 0.14);
+  background:
+    radial-gradient(30px 24px at 50% 18%, rgba(93, 157, 255, 0.2), transparent 72%),
+    linear-gradient(180deg, rgba(252, 254, 255, 0.99), rgba(232, 239, 248, 0.99)),
+    rgba(235, 241, 248, 0.98);
+  color: rgba(45, 76, 116, 0.94);
+}
+
 body.juggernaut-shell .brand-strip .session-tab-strip-review {
   width: auto;
   padding: 0 12px;
@@ -10160,6 +10190,16 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action:focus-visible {
     rgba(238, 242, 247, 0.96);
   color: rgba(30, 40, 56, 0.96);
   filter: none;
+}
+
+body.juggernaut-shell .brand-strip .session-tab-strip-new:hover,
+body.juggernaut-shell .brand-strip .session-tab-strip-new:focus-visible {
+  border-color: rgba(82, 126, 185, 0.2);
+  background:
+    radial-gradient(30px 24px at 50% 18%, rgba(93, 157, 255, 0.26), transparent 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(236, 243, 251, 0.99)),
+    rgba(239, 244, 250, 0.98);
+  color: rgba(29, 54, 90, 0.96);
 }
 
 @media (max-width: 980px) {
