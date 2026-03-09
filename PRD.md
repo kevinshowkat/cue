@@ -1,7 +1,7 @@
 # Juggernaut
 
 Status: Draft v0.2  
-Last updated: 2026-03-08  
+Last updated: 2026-03-09  
 Document owner: Product / founding team
 
 ## Purpose
@@ -15,6 +15,10 @@ Juggernaut is a text-free-first, image-first desktop design workstation for non-
 - Main editing workflow: text-free to start.
 - V1 primary wedge: single-image-first. The primary loop is one image in, usable asset out.
 - V1 primary rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots.
+- Product split:
+  - left rail = precomputed action library
+  - bottom rail = communication layer for complex or non-prebaked changes
+- V1 bottom communication rail tools: `Marker`, `Magic Select`, `Eraser`.
 - V1 shell model: single-window, Warp-style session tabs over one shared canvas surface.
 - `Create Tool` remains core product value, but for the single-image-first wedge it moves to a secondary follow-on surface such as `Save Shortcut`.
 - Icon system: custom iconography generated from the same pipeline family used for Oscillo bookend icon generation, with the starting reference at `../oscillo/scripts/generate_bookend_overlays.py`.
@@ -88,7 +92,7 @@ By **5:30 PM America/Los_Angeles on Sunday, March 8, 2026**, produce a launchabl
 This is a same-day launch slice, not the full release bar. Cross-platform parity and native `.ai`/`.fig` remain release requirements unless scope is later renegotiated.
 
 ## V1 Outcome
-Users can open the app, keep multiple isolated runs in one window through session tabs, swap the active run into a shared canvas surface, drop in one image, see intent-aware suggested rail jobs, apply seeded single-image edits, optionally save a reusable shortcut after a successful edit, and export a usable 2D asset with a reproducibility receipt. Multi-image flows are deferred from the primary v1 loop until the single-image wedge is stable.
+Users can open the app, keep multiple isolated runs in one window through session tabs, swap the active run into a shared canvas surface, drop in one image, use the left rail for precomputed actions and the bottom rail for complex communication-driven edits, see intent-aware suggested rail jobs, apply seeded single-image edits, request action-first design review proposals against the visible canvas plus any marks, optionally save a reusable shortcut after a successful edit, and export a usable 2D asset with a reproducibility receipt. Multi-image flows are deferred from the primary v1 loop until the single-image wedge is stable.
 
 ## V1 Primary Wedge
 - One image in.
@@ -96,7 +100,9 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 - One shared window and one shared canvas surface.
 - One active run/session tab attached at a time.
 - No multi-image flows in the primary loop.
-- Left rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots.
+- Left rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots from the precomputed action library.
+- Bottom rail shape: communication-only rail for complex or non-prebaked changes.
+- Bottom communication rail v1 tools: `Marker`, `Magic Select`, `Eraser`.
 - `Create Tool` remains in the product, but enters as a secondary follow-on capability through `Save Shortcut` or a secondary dialog after useful edits.
 
 ## V1 Non-Goals
@@ -111,13 +117,19 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 2. `New Run` creates a new run in a new tab instead of wiping the current one, and `Open Run` opens an existing run in a new tab.
 3. The user switches tabs to swap the selected run/session into the shared canvas surface.
 4. The user drags one image onto the active session canvas.
-5. The system infers intent from image content, current selection, and recent committed actions.
+5. After first-use cloud-analysis consent, the system may opportunistically analyze the uploaded image, cache that analysis by image hash, and use it to improve future suggestions without blocking editing or design review.
 6. The left rail keeps two stable icon-only anchors: `Upload` and `Select`.
-7. The rail fills 3 dynamic suggested job slots from the seeded single-image job set.
-8. The system updates job ranking only at settled interaction boundaries and keeps the visible rail sticky during active edits.
-9. If the active tab is busy, tab switching is blocked or deferred until the session reaches a safe boundary.
-10. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
-11. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
+7. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the precomputed action library.
+8. The bottom rail exposes `Marker`, `Magic Select`, and `Eraser` as the communication layer for complex or non-prebaked changes.
+9. `Marker` lets the user place transient arrows, strokes, or scribbles that mean "look here" or "change this" without requiring prior image selection.
+10. `Magic Select` lets the user click an image and cycle through 2-3 proposed candidate regions for communication and review.
+11. `Eraser` clears communication marks and region proposals only; it does not delete image pixels or committed edits.
+12. The user triggers `Design review` explicitly with the existing `Design review` button.
+13. Review analyzes the whole visible canvas plus the marked region or active region candidate and immediately opens a floating proposal tray near that area with 2-3 preview skeleton slots.
+14. The planner/reviewer uses `GPT-5.4 vision`, preview rendering uses `gemini-3.1-flash-image-preview`, and final apply remains routed through the normal execution layer.
+15. If the active tab is busy, tab switching is blocked or deferred until the session reaches a safe boundary.
+16. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
+17. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
 
 ## V1 Feature Scope
 ### 1. Single-Image Canvas And Editing
@@ -128,6 +140,7 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 - Fast transforms: move, scale, rotate, skew, crop, mask, select region.
 - Layer and region selection based on direct manipulation.
 - Real-time preview pipeline for deterministic local transforms.
+- Communication marks and region proposals are overlays on top of image content, not committed image edits.
 
 ### 1A. Tabbed Session Model
 - V1 uses a single app window with one shared canvas surface and one in-app tab strip.
@@ -182,6 +195,7 @@ UI ids:
 - Preserve user agency: suggestions are optional and reversible.
 - Ranking must remain provider-agnostic and capability-first.
 - Intent ranking outputs ordered candidates using the contract defined below.
+- Account-wide memory may bias suggestion and proposal ranking by accepted action types, style preferences, and repeated use-case patterns, but must not silently apply edits.
 
 ### 3. Primary Rail Shape
 - Stable anchors: `Upload`, `Select`.
@@ -189,6 +203,7 @@ UI ids:
 - Anchors do not rerank or disappear.
 - Dynamic slots draw only from the seeded single-image job set in the primary loop.
 - `Create Tool` and multi-image actions do not appear as primary rail actions in the v1 wedge.
+- The left rail is the precomputed action library and does not host freeform communication tools.
 
 ### 4. Seeded Single-Image Job Set
 V1 seeds 5 single-image jobs and lets intent ranking choose which 3 to show at a time:
@@ -203,14 +218,46 @@ Notes:
 - The seeded set is finite for the v1 wedge. Intent ranking may reorder and enable or disable it, but does not invent new primary rail jobs.
 - `Select` is the deterministic local entry into region-aware variants of jobs that need explicit user scope.
 
-### 5. Secondary Shortcut Creation And Tool Authoring
+### 5. Bottom Communication Rail
+- The bottom rail is the communication layer for complex or non-prebaked changes that do not map cleanly to a single left-rail action.
+- Bottom communication rail v1 contains exactly 3 tools:
+  - `Marker`
+  - `Magic Select`
+  - `Eraser`
+- `Marker` creates transient communication arrows, strokes, or scribbles that mean "look here" or "change this".
+- `Magic Select` proposes 2-3 candidate regions for a clicked image location and lets the user cycle through them before review.
+- `Eraser` removes communication marks and region proposals only.
+- Communication marks belong to the image directly under the mark, not to all selected images.
+- Marks alone are sufficient input for `Design review`; explicit image selection is not required.
+- Communication overlays are session-local, reversible, and excluded from exported image pixels unless intentionally committed through a later action.
+
+### 6. Design Review Flow
+- `Design review` is an explicit user trigger through the existing `Design review` button.
+- Review analyzes the whole visible canvas plus the marked region or current region candidate.
+- Review output is action-first: proposals describe likely edits to perform, not conversational critique.
+- The proposal tray floats near the marked region or active region candidate rather than opening as chat.
+- The tray reserves 2-3 preview slots immediately as skeletons while preview work starts.
+- `GPT-5.4 vision` is the planner/reviewer for design-review reasoning.
+- `gemini-3.1-flash-image-preview` is the preview renderer for proposal thumbnails.
+- Final apply of any accepted proposal remains routed through the normal execution layer and receipt system.
+- Upload-time analysis must never block `Design review`; review can run with cached context, fresh context, or no prior upload analysis.
+
+### 7. Upload-Time Analysis And Memory
+- Upload-time analysis runs only after first-use consent for cloud analysis.
+- Once consent exists, upload-time analysis is opportunistic and cached by image hash.
+- Cached analysis may seed left-rail ranking, `Magic Select` region proposals, and `Design review` proposal ranking.
+- Upload-time analysis is advisory and must never block import, canvas interaction, or `Design review`.
+- Account-wide memory may bias proposal ranking by previously accepted action types, style tendencies, and repeated use-case patterns across the account.
+- Account-wide memory affects ranking only; it does not auto-apply proposals or override explicit marks.
+
+### 8. Secondary Shortcut Creation And Tool Authoring
 - `Create Tool` remains a core product capability, but it moves out of the primary rail for the single-image-first wedge.
 - After a successful edit or repeated action, the app may offer `Save Shortcut` as a follow-on surface that captures the job, capability, and reusable parameters.
 - Full plain-language `Create Tool` can live in a secondary dialog, details sheet, or post-edit flow.
 - Saved shortcuts and generated tools still resolve through the shared tool schema and execution router.
 - Tool creation must include guardrails, previewability, and rollback if generation fails.
 
-### 6. Model-Orchestrated Runtime
+### 9. Model-Orchestrated Runtime
 - Vision LLM calls are first-class runtime events, not a bolted-on assistant feature.
 - The app can sustain multiple concurrent model tasks during one session:
   - intent inference
@@ -230,7 +277,7 @@ Notes:
 - The runtime, not the rail, resolves a capability to a deterministic local transform, a model-backed action, or a hybrid pipeline.
 - Provider and model names must stay out of the main editing loop.
 
-### 7. Suggested Rail Job Contract
+### 10. Suggested Rail Job Contract
 Intent ranking must output an ordered candidate list for the seeded single-image job set. The rail consumes that ranking, applies sticky rules, and renders 3 dynamic slots.
 
 ```text
@@ -275,12 +322,139 @@ Unavailable capability policy:
 - The main loop shows only the generic `disabledReason`; it must not expose provider or model names.
 - Provider resolution details belong in settings, receipts, diagnostics, or deeper follow-on surfaces, not the primary rail.
 
-### 8. 2D And 3D Outputs
+### 11. Communication And Review Contracts
+The bottom communication rail and `Design review` flow share the following contracts.
+
+`communicationMark`:
+
+```text
+{
+  schemaVersion: "communication-mark-v1",
+  markId: "mark_123",
+  sessionId: "session_123",
+  imageId: "asset_123",
+  kind: "stroke" | "arrow" | "scribble",
+  points: [{ x: 120.5, y: 88.0 }],
+  bounds: { x: 100.0, y: 70.0, width: 90.0, height: 42.0 },
+  colorToken: "signal-red",
+  createdAt: "2026-03-09T18:30:00Z",
+  createdByTool: "marker",
+  transient: true
+}
+```
+
+Rules:
+- `imageId` is required and binds the mark to the image under the mark rather than to the global selection.
+- A mark may exist without any explicit selection state.
+- `kind` is limited to communication gestures and does not represent destructive paint.
+- `points` are stored in image-local coordinates so the mark remains attached during canvas transforms.
+- `transient: true` means the mark is communication-only until converted into a later action.
+
+`regionCandidate`:
+
+```text
+{
+  schemaVersion: "region-candidate-v1",
+  candidateId: "region_123",
+  sessionId: "session_123",
+  imageId: "asset_123",
+  source: "magic_select",
+  clickPoint: { x: 220.0, y: 144.0 },
+  maskRef: "masks/region_123.png",
+  bounds: { x: 180.0, y: 96.0, width: 120.0, height: 110.0 },
+  confidence: 0.82,
+  rank: 1,
+  cycleGroupId: "cycle_456",
+  isActive: true
+}
+```
+
+Rules:
+- `Magic Select` returns 2-3 candidates with a shared `cycleGroupId`.
+- Cycling changes `isActive` within the group but does not rerun `Design review` until explicitly triggered.
+- `source` is `magic_select` in v1.
+- Candidates are communication-scoped region proposals, not committed selections.
+
+`designReviewRequest`:
+
+```text
+{
+  schemaVersion: "design-review-request-v1",
+  requestId: "review_123",
+  sessionId: "session_123",
+  visibleCanvasRef: "renders/canvas_visible.png",
+  imageIdsInView: ["asset_123"],
+  primaryImageId: "asset_123",
+  markIds: ["mark_123"],
+  activeRegionCandidateId: "region_123" | null,
+  selectionState: "none" | "subject" | "region",
+  trigger: "design_review_button",
+  uploadAnalysisRef: "analysis/hash_abc.json" | null,
+  accountMemoryRef: "memory/account_bias_v1.json" | null
+}
+```
+
+Rules:
+- `trigger` is always `design_review_button` in v1.
+- The request must include the whole visible canvas context, not just the cropped marked area.
+- At least one of `markIds` or `activeRegionCandidateId` must be present.
+- `markIds` may be sufficient input even when `selectionState` is `none`.
+- `uploadAnalysisRef` is optional and must not gate request execution.
+
+`proposal`:
+
+```text
+{
+  schemaVersion: "design-review-proposal-v1",
+  proposalId: "proposal_123",
+  requestId: "review_123",
+  imageId: "asset_123",
+  title: "Separate subject from background",
+  capability: "subject_isolation",
+  actionIntent: "cut_out_subject",
+  rationaleCodes: ["mark_on_subject_edge", "background_separable"],
+  targetRef: {
+    markIds: ["mark_123"],
+    regionCandidateId: "region_123" | null
+  },
+  previewJobId: "preview_123",
+  rank: 1,
+  status: "preview_pending"
+}
+```
+
+Rules:
+- Proposals are action-first and must resolve to an executable action intent or capability, not freeform critique alone.
+- `rationaleCodes` may explain ranking internally without exposing provider details in the main workflow.
+- `status` starts as `preview_pending`, then advances independently of final apply.
+
+`previewJob`:
+
+```text
+{
+  schemaVersion: "proposal-preview-job-v1",
+  previewJobId: "preview_123",
+  proposalId: "proposal_123",
+  renderer: "gemini-3.1-flash-image-preview",
+  planner: "gpt-5.4-vision",
+  inputImageId: "asset_123",
+  status: "queued" | "running" | "succeeded" | "failed",
+  outputPreviewRef: "previews/proposal_123.png" | null,
+  failureReason: null
+}
+```
+
+Rules:
+- The UI should instantiate 2-3 preview slots immediately as skeletons before any `previewJob` succeeds.
+- `planner` and `renderer` are explicit in the contract even though the visible main workflow stays provider-agnostic.
+- A completed `previewJob` never applies the edit by itself; acceptance routes through the normal execution layer.
+
+### 12. 2D And 3D Outputs
 - 2D outputs: layered raster export plus native design-tool outputs.
 - 3D outputs: relief or mesh export for supported toolchains and printable targets.
 - Unsupported cases must fail clearly and preserve intermediate artifacts rather than silently flattening everything.
 
-### 9. Export And Receipts
+### 13. Export And Receipts
 - Every export includes a reproducibility receipt.
 - Receipts must contain:
   - source asset references
@@ -292,7 +466,7 @@ Unavailable capability policy:
 - Receipts are readable by both humans and machines.
 - The app can analyze prior receipts and suggest cheaper or faster routes for similar workflows.
 
-### 10. Local-Only Mode
+### 14. Local-Only Mode
 - The app supports a local-only mode with no required internet access.
 - In local-only mode, cloud-only tools are visibly disabled or swapped for local equivalents.
 - Local-only mode still supports a meaningful subset of the core workflow:
@@ -302,12 +476,12 @@ Unavailable capability policy:
   - receipt generation
   - local export
 
-### 11. Platformization
+### 15. Platformization
 - The editing and tool runtime is not app-only.
 - The same tool graph and receipt system must be callable through a local or remote API for future services and agents.
 - Headless execution is a first-class design concern even if the first release is GUI-first.
 
-### 12. Improvement Data Pipeline
+### 16. Improvement Data Pipeline
 - Connected or non-local mode defaults to improvement data enabled with opt-out controls.
 - Local-only mode defaults to no upload, with explicit opt-in if the user wants to send anonymized bundles later.
 - Upload packaging must be explicit, reviewable, and consent-aware.
@@ -316,10 +490,12 @@ Unavailable capability policy:
 ## UX Requirements
 - Primary workspace is visually driven and text-free in normal operation.
 - Left rail is vertical, icon-only, and always visible.
+- Left rail represents precomputed actions; bottom rail represents communication input for complex or non-prebaked changes.
 - Custom iconography should be generated or derived from the Oscillo bookend icon pipeline rather than assembled from stock icon packs.
 - The app uses a glassy layered material system on macOS, with platform-appropriate equivalents on Windows and Linux.
 - Suggested edits appear as previews or icon cards, not chat bubbles.
 - The editing surface must feel closer to Photoshop or Figma than to a chatbot.
+- `Design review` proposals appear in a floating tray near the marked region, with 2-3 preview skeletons visible immediately.
 
 ## Technical Direction
 ### Baseline Architecture
@@ -340,6 +516,7 @@ Unavailable capability policy:
 - Very low-latency transform loop for move, scale, color, and skew operations.
 - Non-blocking concurrency for multiple in-flight LLM or image-model operations.
 - Unified action schema for deterministic local edits and model-backed edits.
+- Design-review planning and preview rendering must not block the main transform loop or canvas interaction.
 
 ### Platform Requirements
 - Release bar is parity across macOS, Windows, and Linux for core workflow support.
@@ -358,6 +535,9 @@ Unavailable capability policy:
   - Seedream
   - other high-signal Chinese model families
 - Local routing must remain compatible with no-network mode.
+- V1 design-review defaults:
+  - planner/reviewer: `GPT-5.4 vision`
+  - preview renderer: `gemini-3.1-flash-image-preview`
 
 ## Export Targets
 ### Required Release Targets
@@ -378,19 +558,32 @@ Unavailable capability policy:
 
 ### Core UX
 - The main workspace includes a left vertical icon-only rail.
+- The main workspace includes a bottom communication rail.
 - The main workspace includes an in-app session tab strip using a single shared canvas surface.
-- The left rail keeps stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots.
+- The left rail keeps stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots from the precomputed action library.
+- The bottom communication rail contains `Marker`, `Magic Select`, and `Eraser` in v1.
 - The main editing workflow requires no text labels to operate.
 - The primary wedge is one image in and one usable asset out.
 - No multi-image action is required in the primary loop.
 - The UI uses a glass-material visual system on macOS and equivalent platform-native material styling elsewhere.
 - The default workflow is image-led, not chat-led.
 - The primary rail suggestions come only from the seeded 5-job single-image set.
+- Communication marks alone are sufficient input for `Design review`; explicit image selection is not required.
+- Communication marks attach to the image under the mark rather than to all selected images.
 
 ### Suggested Rail Jobs
 - Intent ranking emits ordered seeded-job candidates using the `single-image-rail-v1` contract.
 - The rail reranks only at settled boundaries and remains sticky during active edits.
 - Unavailable capabilities remain visible as disabled jobs with generic disabled reasons.
+
+### Communication Rail And Review
+- `Marker` is a transient communication stroke, arrow, or scribble meaning "look here" or "change this".
+- `Magic Select` proposes 2-3 candidate regions per click and lets the user cycle among them.
+- `Eraser` clears communication marks and region proposals only.
+- `Design review` is triggered explicitly from the existing button rather than automatically on mark creation.
+- Review analyzes the visible canvas plus the marked region or active region candidate.
+- The proposal tray floats near the marked region and shows 2-3 preview slots immediately as skeletons.
+- Accepted proposals still execute through the normal execution layer.
 
 ### Create Tool
 - The primary left rail does not include `Create Tool`.
@@ -411,6 +604,9 @@ Unavailable capability policy:
 - The app supports remote and local model routing through one unified contract.
 - The app includes a local-only mode that works without internet access.
 - The runtime can maintain multiple simultaneous model tasks without freezing the UI.
+- Upload-time cloud analysis requires first-use consent, is opportunistic, and is cached by image hash.
+- Upload-time analysis never blocks `Design review`.
+- Account-wide memory may bias proposal ranking by accepted action types, style patterns, and use-case history.
 
 ### Reproducibility
 - Export generates a receipt with enough information to reproduce the result.
@@ -429,6 +625,7 @@ Unavailable capability policy:
 - Fork or adapt `../brood` into a Juggernaut desktop shell.
 - Achieve launchable single-image upload-to-canvas loop.
 - Land the primary rail contract with stable anchors and 3 dynamic job slots.
+- Land the bottom communication rail contract for `Marker`, `Magic Select`, `Eraser`, and explicit `Design review`.
 - Wire at least one working single-image edit path.
 - Expose a follow-on `Save Shortcut` / `Create Tool` surface after a useful edit.
 - Export to PSD.
@@ -440,6 +637,7 @@ Unavailable capability policy:
 
 ### Milestone 2: Guided Intent Loop
 - Add live single-image intent inference, visual suggestions, and non-blocking proposal pipeline.
+- Add communication-driven design review with floating proposal trays and preview jobs.
 - Stabilize concurrent provider calls and queue behavior.
 
 ### Milestone 3: Tool Runtime
