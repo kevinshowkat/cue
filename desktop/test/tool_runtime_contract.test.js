@@ -10,6 +10,7 @@ import {
   TOOL_INVOCATION_SCHEMA,
   TOOL_MANIFEST_SCHEMA,
   TOOL_RUNTIME_BRIDGE_KEY,
+  buildSingleImageDirectAffordanceInvocation,
   buildSingleImageRailInvocation,
   buildSingleImageRailJobEntries,
   buildToolInvocation,
@@ -134,4 +135,42 @@ test("single-image rail invocation uses the approved capability contract without
   assert.equal(invocation.rail.stickyKey, "single-image-rail:cut_out");
   assert.equal(invocation.availability.enabled, true);
   assert.doesNotMatch(JSON.stringify(invocation), /openai|gemini|flux|imagen/i);
+});
+
+test("single-image direct affordance invocation resolves local-first and model-backed routes without rail wiring", () => {
+  const polish = buildSingleImageDirectAffordanceInvocation("polish", {
+    activeImageId: "img-8",
+    selectedImageIds: ["img-8"],
+    requestId: "direct-8",
+    mode: "single",
+    params: {
+      intensity: 0.62,
+    },
+  });
+
+  assert.equal(polish.contract, SINGLE_IMAGE_RAIL_CONTRACT);
+  assert.equal(polish.jobId, "polish");
+  assert.equal(polish.execution.kind, "local_edit");
+  assert.equal(polish.execution.operation, "polish");
+  assert.equal(polish.execution.executionType, "local_first");
+  assert.equal(polish.route.profile, "polish_local_first");
+  assert.equal(polish.availability.enabled, true);
+
+  const relight = buildSingleImageDirectAffordanceInvocation("relight", {
+    activeImageId: "img-9",
+    selectedImageIds: ["img-9"],
+    requestId: "direct-9",
+    params: {
+      lightDirection: "left",
+    },
+    capabilityAvailability: {
+      image_relight: { available: true },
+    },
+    capabilityExecutorAvailable: true,
+  });
+
+  assert.equal(relight.execution.kind, "model_capability");
+  assert.equal(relight.route.executionKind, "model_capability");
+  assert.equal(relight.execution.routeProfile, "relight_local_first");
+  assert.equal(relight.capability, "image_relight");
 });

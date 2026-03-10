@@ -8,6 +8,38 @@ export const SINGLE_IMAGE_DISABLED_REASONS = Object.freeze([
   "capability_unavailable",
 ]);
 
+export const SINGLE_IMAGE_EXECUTION_TYPES = Object.freeze({
+  MODEL_BACKED: "model_backed",
+  LOCAL_FIRST: "local_first",
+});
+
+export const SINGLE_IMAGE_ROUTE_PROFILES = Object.freeze({
+  MODEL_CAPABILITY_ONLY: Object.freeze({
+    id: "model_capability_only",
+    defaultExecutionKind: "model_capability",
+    localOperation: null,
+    fallbackExecutionKind: null,
+  }),
+  REMOVE_PEOPLE_MODEL: Object.freeze({
+    id: "remove_people_model",
+    defaultExecutionKind: "model_capability",
+    localOperation: null,
+    fallbackExecutionKind: null,
+  }),
+  POLISH_LOCAL_FIRST: Object.freeze({
+    id: "polish_local_first",
+    defaultExecutionKind: "local_edit",
+    localOperation: "polish",
+    fallbackExecutionKind: "model_capability",
+  }),
+  RELIGHT_LOCAL_FIRST: Object.freeze({
+    id: "relight_local_first",
+    defaultExecutionKind: "local_edit",
+    localOperation: "relight",
+    fallbackExecutionKind: "model_capability",
+  }),
+});
+
 const RAW_SINGLE_IMAGE_CAPABILITY_SPECS = Object.freeze([
   Object.freeze({
     jobId: "cut_out",
@@ -15,6 +47,9 @@ const RAW_SINGLE_IMAGE_CAPABILITY_SPECS = Object.freeze([
     capability: "subject_isolation",
     requiresSelection: true,
     stickyKey: "single-image-rail:cut_out",
+    surface: "rail",
+    executionType: SINGLE_IMAGE_EXECUTION_TYPES.MODEL_BACKED,
+    routeProfile: SINGLE_IMAGE_ROUTE_PROFILES.MODEL_CAPABILITY_ONLY.id,
     executionKind: "model_capability",
     aliases: Object.freeze(["cut_out", "select_subject"]),
   }),
@@ -24,6 +59,9 @@ const RAW_SINGLE_IMAGE_CAPABILITY_SPECS = Object.freeze([
     capability: "targeted_remove",
     requiresSelection: true,
     stickyKey: "single-image-rail:remove",
+    surface: "rail",
+    executionType: SINGLE_IMAGE_EXECUTION_TYPES.MODEL_BACKED,
+    routeProfile: SINGLE_IMAGE_ROUTE_PROFILES.MODEL_CAPABILITY_ONLY.id,
     executionKind: "model_capability",
     aliases: Object.freeze(["remove", "cleanup"]),
   }),
@@ -33,6 +71,9 @@ const RAW_SINGLE_IMAGE_CAPABILITY_SPECS = Object.freeze([
     capability: "background_replace",
     requiresSelection: true,
     stickyKey: "single-image-rail:new_background",
+    surface: "rail",
+    executionType: SINGLE_IMAGE_EXECUTION_TYPES.MODEL_BACKED,
+    routeProfile: SINGLE_IMAGE_ROUTE_PROFILES.MODEL_CAPABILITY_ONLY.id,
     executionKind: "model_capability",
     aliases: Object.freeze(["new_background", "background_swap"]),
   }),
@@ -42,6 +83,9 @@ const RAW_SINGLE_IMAGE_CAPABILITY_SPECS = Object.freeze([
     capability: "crop_or_outpaint",
     requiresSelection: true,
     stickyKey: "single-image-rail:reframe",
+    surface: "rail",
+    executionType: SINGLE_IMAGE_EXECUTION_TYPES.MODEL_BACKED,
+    routeProfile: SINGLE_IMAGE_ROUTE_PROFILES.MODEL_CAPABILITY_ONLY.id,
     executionKind: "model_capability",
     aliases: Object.freeze(["reframe"]),
   }),
@@ -51,37 +95,112 @@ const RAW_SINGLE_IMAGE_CAPABILITY_SPECS = Object.freeze([
     capability: "identity_preserving_variation",
     requiresSelection: true,
     stickyKey: "single-image-rail:variants",
+    surface: "rail",
+    executionType: SINGLE_IMAGE_EXECUTION_TYPES.MODEL_BACKED,
+    routeProfile: SINGLE_IMAGE_ROUTE_PROFILES.MODEL_CAPABILITY_ONLY.id,
     executionKind: "model_capability",
     aliases: Object.freeze(["variants", "variations"]),
   }),
 ]);
 
+const RAW_SINGLE_IMAGE_DIRECT_AFFORDANCE_SPECS = Object.freeze([
+  Object.freeze({
+    jobId: "remove_people",
+    label: "Remove People",
+    capability: "people_removal",
+    requiresSelection: false,
+    stickyKey: "single-image-direct:remove_people",
+    surface: "direct",
+    executionType: SINGLE_IMAGE_EXECUTION_TYPES.MODEL_BACKED,
+    routeProfile: SINGLE_IMAGE_ROUTE_PROFILES.REMOVE_PEOPLE_MODEL.id,
+    executionKind: "model_capability",
+    aliases: Object.freeze(["remove_people", "remove people", "no_people", "erase_people"]),
+  }),
+  Object.freeze({
+    jobId: "polish",
+    label: "Polish",
+    capability: "image_polish",
+    requiresSelection: false,
+    stickyKey: "single-image-direct:polish",
+    surface: "direct",
+    executionType: SINGLE_IMAGE_EXECUTION_TYPES.LOCAL_FIRST,
+    routeProfile: SINGLE_IMAGE_ROUTE_PROFILES.POLISH_LOCAL_FIRST.id,
+    executionKind: "local_edit",
+    aliases: Object.freeze(["polish", "enhance", "clean_up", "cleanup_finish"]),
+  }),
+  Object.freeze({
+    jobId: "relight",
+    label: "Relight",
+    capability: "image_relight",
+    requiresSelection: false,
+    stickyKey: "single-image-direct:relight",
+    surface: "direct",
+    executionType: SINGLE_IMAGE_EXECUTION_TYPES.LOCAL_FIRST,
+    routeProfile: SINGLE_IMAGE_ROUTE_PROFILES.RELIGHT_LOCAL_FIRST.id,
+    executionKind: "local_edit",
+    aliases: Object.freeze(["relight", "re_light", "lighting", "exposure_fix"]),
+  }),
+]);
+
+const ROUTE_PROFILES_BY_ID = new Map(
+  Object.values(SINGLE_IMAGE_ROUTE_PROFILES).map((profile) => [profile.id, profile])
+);
+
+function resolveRouteProfile(routeProfile) {
+  const key = normalizeText(routeProfile);
+  return ROUTE_PROFILES_BY_ID.get(key) || SINGLE_IMAGE_ROUTE_PROFILES.MODEL_CAPABILITY_ONLY;
+}
+
+function buildPublicSpec(spec) {
+  const routeProfile = resolveRouteProfile(spec.routeProfile);
+  return Object.freeze({
+    jobId: spec.jobId,
+    label: spec.label,
+    capability: spec.capability,
+    requiresSelection: spec.requiresSelection,
+    stickyKey: spec.stickyKey,
+    surface: spec.surface || "rail",
+    executionType: spec.executionType || SINGLE_IMAGE_EXECUTION_TYPES.MODEL_BACKED,
+    routeProfile: routeProfile.id,
+    executionKind: routeProfile.defaultExecutionKind,
+    localOperation: routeProfile.localOperation || null,
+    fallbackExecutionKind: routeProfile.fallbackExecutionKind || null,
+  });
+}
+
 export const SINGLE_IMAGE_CAPABILITY_MAP = Object.freeze(
   Object.fromEntries(
     RAW_SINGLE_IMAGE_CAPABILITY_SPECS.map((spec) => [
       spec.jobId,
-      Object.freeze({
-        jobId: spec.jobId,
-        label: spec.label,
-        capability: spec.capability,
-        requiresSelection: spec.requiresSelection,
-        stickyKey: spec.stickyKey,
-        executionKind: spec.executionKind,
-      }),
+      buildPublicSpec(spec),
     ])
   )
 );
 
+export const SINGLE_IMAGE_DIRECT_AFFORDANCE_MAP = Object.freeze(
+  Object.fromEntries(
+    RAW_SINGLE_IMAGE_DIRECT_AFFORDANCE_SPECS.map((spec) => [
+      spec.jobId,
+      buildPublicSpec(spec),
+    ])
+  )
+);
+
+export const SINGLE_IMAGE_AFFORDANCE_MAP = Object.freeze({
+  ...SINGLE_IMAGE_CAPABILITY_MAP,
+  ...SINGLE_IMAGE_DIRECT_AFFORDANCE_MAP,
+});
+
 const CAPABILITY_SPECS_BY_JOB = new Map(
-  Object.values(SINGLE_IMAGE_CAPABILITY_MAP).map((spec) => [spec.jobId, spec])
+  Object.values(SINGLE_IMAGE_AFFORDANCE_MAP).map((spec) => [spec.jobId, spec])
 );
 
 const CAPABILITY_SPECS_BY_CAPABILITY = new Map(
-  Object.values(SINGLE_IMAGE_CAPABILITY_MAP).map((spec) => [spec.capability, spec])
+  Object.values(SINGLE_IMAGE_AFFORDANCE_MAP).map((spec) => [spec.capability, spec])
 );
 
 const CAPABILITY_SPECS_BY_ALIAS = new Map();
-for (const spec of RAW_SINGLE_IMAGE_CAPABILITY_SPECS) {
+for (const spec of [...RAW_SINGLE_IMAGE_CAPABILITY_SPECS, ...RAW_SINGLE_IMAGE_DIRECT_AFFORDANCE_SPECS]) {
   for (const alias of spec.aliases) {
     CAPABILITY_SPECS_BY_ALIAS.set(normalizeKey(alias), CAPABILITY_SPECS_BY_JOB.get(spec.jobId));
   }
@@ -158,6 +277,51 @@ function normalizeMode(value = "") {
   if (!mode) return "";
   if (["local", "local_only", "offline", "no_network", "airgapped"].includes(mode)) return "local_only";
   return mode;
+}
+
+function requestTargetsSubRegion(params = {}) {
+  const scope = normalizeKey(readFirstString(params.scope, params.targetScope, params.regionScope, params.applyTo));
+  if (!scope) return false;
+  return !["global", "full_image", "entire_image", "image", "frame", "whole_image", "auto"].includes(scope);
+}
+
+function requestHasPrompt(params = {}) {
+  return Boolean(readFirstString(params.prompt, params.editPrompt, params.selectionPrompt, params.rewritePrompt));
+}
+
+function requestNeedsDirectionalRelight(params = {}) {
+  const direction = normalizeKey(readFirstString(params.lightDirection, params.direction, params.lightSource, params.shadowDirection));
+  if (direction && !["ambient", "global", "auto", "soft"].includes(direction)) return true;
+  return Number.isFinite(Number(params.lightAngle));
+}
+
+function requestNeedsModelFallback(spec, params = {}, context = {}) {
+  if (coerceBoolean(context.forceModel ?? params.forceModel, false)) return true;
+  if (spec.executionType !== SINGLE_IMAGE_EXECUTION_TYPES.LOCAL_FIRST) return false;
+  if (requestTargetsSubRegion(params)) return true;
+  if (spec.jobId === "polish") {
+    return coerceBoolean(params.reconstruct, false) || coerceBoolean(params.heal, false) || requestHasPrompt(params);
+  }
+  if (spec.jobId === "relight") {
+    return requestNeedsDirectionalRelight(params) || requestHasPrompt(params);
+  }
+  return false;
+}
+
+function resolvedExecutionKindForSpec(spec, params = {}, context = {}) {
+  const routeProfile = resolveRouteProfile(spec.routeProfile);
+  const explicitExecutionKind = readFirstString(context.executionKind, context.execution?.kind);
+
+  if (explicitExecutionKind === "model_capability") return "model_capability";
+  if (explicitExecutionKind === "local_edit" && routeProfile.localOperation) return "local_edit";
+  if (
+    spec.executionType === SINGLE_IMAGE_EXECUTION_TYPES.LOCAL_FIRST &&
+    routeProfile.fallbackExecutionKind &&
+    requestNeedsModelFallback(spec, params, context)
+  ) {
+    return routeProfile.fallbackExecutionKind;
+  }
+  return routeProfile.defaultExecutionKind;
 }
 
 function resolveSelectionCount(context = {}) {
@@ -294,6 +458,10 @@ export function listSingleImageCapabilityJobs() {
   return Object.values(SINGLE_IMAGE_CAPABILITY_MAP).map((spec) => ({ ...spec }));
 }
 
+export function listSingleImageDirectAffordances() {
+  return Object.values(SINGLE_IMAGE_DIRECT_AFFORDANCE_MAP).map((spec) => ({ ...spec }));
+}
+
 export function resolveSingleImageCapabilityJob(value = {}) {
   if (typeof value === "string") {
     const key = normalizeKey(value);
@@ -314,40 +482,77 @@ export function resolveSingleImageCapabilityJob(value = {}) {
   );
 }
 
+export function resolveSingleImageAffordanceRoute(value = {}, context = {}) {
+  const raw = asRecord(value) || {};
+  const execution = asRecord(raw.execution);
+  const spec = resolveSingleImageCapabilityJob(value);
+  if (!spec) return null;
+
+  const params = cloneJson(asRecord(execution?.params) || asRecord(raw.params) || {});
+  const executionKind = resolvedExecutionKindForSpec(spec, params, {
+    ...context,
+    execution,
+    executionKind: readFirstString(execution?.kind, raw.executionKind, raw.kind),
+    mode: context.mode || raw.mode || raw.runtimeMode || raw.executionMode,
+  });
+  const routeProfile = resolveRouteProfile(spec.routeProfile);
+
+  return {
+    ...spec,
+    executionKind,
+    routeProfile: routeProfile.id,
+    localOperation: routeProfile.localOperation || null,
+    fallbackExecutionKind: routeProfile.fallbackExecutionKind || null,
+    params,
+    confidence: clamp01(raw.confidence ?? asRecord(raw.rail)?.confidence, 0),
+    reasonCodes: normalizeReasonCodes(raw.reasonCodes || asRecord(raw.rail)?.reasonCodes || []),
+  };
+}
+
 export function resolveSingleImageCapabilityAvailability(jobOrEntry, context = {}) {
-  const job = resolveSingleImageCapabilityJob(jobOrEntry);
-  if (!job) return null;
+  const route = resolveSingleImageAffordanceRoute(jobOrEntry, context);
+  if (!route) return null;
 
   const selectionCount = resolveSelectionCount(context);
   const mode = normalizeMode(context.mode || context.runtimeMode || context.executionMode);
-  const capabilityState = resolveCapabilityState(job.capability, context);
+  const capabilityState = resolveCapabilityState(route.capability, context);
   const reasonCodes = normalizeReasonCodes(context.reasonCodes || []);
+  const usesLocalExecution = route.executionKind === "local_edit";
 
   let disabledReason = null;
-  if (job.requiresSelection && selectionCount <= 0) {
+  if (route.requiresSelection && selectionCount <= 0) {
     disabledReason = "selection_required";
   } else if (coerceBoolean(context.busy, false)) {
     disabledReason = "busy";
-  } else if (imageBlocksCapability(job.capability, context) || capabilityState.imageUnsupported) {
+  } else if (imageBlocksCapability(route.capability, context) || capabilityState.imageUnsupported) {
     disabledReason = "unsupported_image";
-  } else if (mode === "local_only" || capabilityState.modeUnavailable) {
+  } else if (!usesLocalExecution && (mode === "local_only" || capabilityState.modeUnavailable)) {
     disabledReason = "unavailable_in_current_mode";
-  } else if (capabilityState.disabledReason) {
+  } else if (!usesLocalExecution && capabilityState.disabledReason) {
     disabledReason = capabilityState.disabledReason;
-  } else if (capabilityState.available === false || capabilityState.available == null) {
+  } else if (usesLocalExecution && coerceBoolean(context.localExecutorAvailable, true) === false) {
+    disabledReason = "capability_unavailable";
+  } else if (!usesLocalExecution && (capabilityState.available === false || capabilityState.available == null)) {
     disabledReason = "capability_unavailable";
   }
 
-  return {
-    jobId: job.jobId,
-    label: job.label,
-    capability: job.capability,
-    requiresSelection: job.requiresSelection,
+  const availability = {
+    jobId: route.jobId,
+    label: route.label,
+    capability: route.capability,
+    requiresSelection: route.requiresSelection,
     enabled: !disabledReason,
     disabledReason,
     reasonCodes: disabledReason ? mergeReasonCodes(reasonCodes, [disabledReason]) : reasonCodes,
-    stickyKey: job.stickyKey,
+    stickyKey: route.stickyKey,
   };
+  if (route.surface === "direct") {
+    availability.executionType = route.executionType;
+    availability.executionKind = route.executionKind;
+    availability.routeProfile = route.routeProfile;
+    availability.localOperation = route.localOperation || null;
+  }
+  return availability;
 }
 
 export function buildSingleImageRailJobEntries(rankedJobs = [], context = {}) {
@@ -387,6 +592,7 @@ export function normalizeSingleImageCapabilityRequest(request = {}) {
   const rail = asRecord(raw.rail);
   const contract = readFirstString(raw.contract, raw.contractName, rail?.contract);
   const executionKind = readFirstString(execution?.kind, tool?.executionKind, raw.executionKind);
+  const operation = readFirstString(execution?.operation, tool?.operation, raw.operation);
   const explicitCapability = readFirstString(
     raw.capability,
     raw.capability_id,
@@ -405,13 +611,18 @@ export function normalizeSingleImageCapabilityRequest(request = {}) {
     tool?.toolId,
     raw.label
   );
-  const job = resolveSingleImageCapabilityJob({
+  const route = resolveSingleImageAffordanceRoute({
     jobId: explicitJobId,
     capability: explicitCapability,
     label: raw.label || tool?.label || tool?.name,
+    execution,
+    executionKind,
+    params: asRecord(execution?.params) || asRecord(raw.params) || {},
     stickyKey: rail?.stickyKey,
-  });
-  if (!job) return null;
+    confidence: raw.confidence ?? rail?.confidence,
+    reasonCodes: raw.reasonCodes || rail?.reasonCodes || [],
+  }, raw);
+  if (!route) return null;
 
   const matchesContract = contract === SINGLE_IMAGE_RAIL_CONTRACT;
   const matchesExecutionKind = executionKind === "model_capability";
@@ -419,21 +630,23 @@ export function normalizeSingleImageCapabilityRequest(request = {}) {
   if (!matchesContract && !matchesExecutionKind && !hasExplicitCapability) {
     return null;
   }
+  if (executionKind === "local_edit" && operation) {
+    return null;
+  }
+  if (route.executionKind !== "model_capability") {
+    return null;
+  }
 
   return {
-    ...job,
+    ...route,
     contract: SINGLE_IMAGE_RAIL_CONTRACT,
-    executionKind: "model_capability",
-    params: cloneJson(asRecord(execution?.params) || asRecord(raw.params) || {}),
-    confidence: clamp01(raw.confidence ?? rail?.confidence, 0),
-    reasonCodes: normalizeReasonCodes(raw.reasonCodes || rail?.reasonCodes || []),
   };
 }
 
 export function buildSingleImageCapabilityReceiptStep(jobOrRequest, { outputPath = null, receiptPath = null } = {}) {
-  const route = normalizeSingleImageCapabilityRequest(jobOrRequest) || resolveSingleImageCapabilityJob(jobOrRequest);
+  const route = normalizeSingleImageCapabilityRequest(jobOrRequest) || resolveSingleImageAffordanceRoute(jobOrRequest);
   if (!route) return null;
-  return {
+  const step = {
     kind: "model_capability_edit",
     source: "tool_runtime",
     jobId: route.jobId,
@@ -443,10 +656,15 @@ export function buildSingleImageCapabilityReceiptStep(jobOrRequest, { outputPath
     outputPath: outputPath ? String(outputPath) : null,
     receiptPath: receiptPath ? String(receiptPath) : null,
   };
+  if (route.surface === "direct") {
+    step.executionType = route.executionType;
+    step.routeProfile = route.routeProfile;
+  }
+  return step;
 }
 
 export function buildSingleImageCapabilityDisabledMessage(jobOrRequest, availability = null) {
-  const route = normalizeSingleImageCapabilityRequest(jobOrRequest) || resolveSingleImageCapabilityJob(jobOrRequest);
+  const route = normalizeSingleImageCapabilityRequest(jobOrRequest) || resolveSingleImageAffordanceRoute(jobOrRequest);
   const disabledReason = normalizeDisabledReason(availability?.disabledReason) || "capability_unavailable";
   const label = route?.label || "This action";
   if (disabledReason === "selection_required") {

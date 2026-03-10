@@ -31,6 +31,10 @@ test("local tool edits: normalizes the launch-slice tool shape", () => {
     source: "user",
     kind: "filter",
     operation: "grayscale",
+    capability: null,
+    executionType: null,
+    routeProfile: null,
+    surface: null,
     params: {
       intensity: 0.6,
     },
@@ -40,7 +44,7 @@ test("local tool edits: normalizes the launch-slice tool shape", () => {
 test("local tool edits: supported operations are restricted to the launch slice", () => {
   assert.deepEqual(
     listSupportedLocalToolOperations().map((item) => item.id),
-    ["grayscale", "invert", "sepia", "brighten", "contrast"]
+    ["grayscale", "invert", "sepia", "brighten", "contrast", "polish", "relight"]
   );
   assert.equal(
     buildLocalToolEditPlan({
@@ -103,6 +107,80 @@ test("local tool edits: deterministic contrast changes pixel values", () => {
   );
 
   assert.deepEqual(Array.from(next.data), [99, 115, 131, 255]);
+});
+
+test("local tool edits: invocation payloads can carry direct-affordance routing metadata", () => {
+  const resolved = normalizeLocalToolApplyRequest({
+    contract: "single-image-rail-v1",
+    jobId: "polish",
+    label: "Polish",
+    capability: "image_polish",
+    executionType: "local_first",
+    routeProfile: "polish_local_first",
+    execution: {
+      kind: "local_edit",
+      operation: "polish",
+      capability: "image_polish",
+      executionType: "local_first",
+      routeProfile: "polish_local_first",
+      params: {
+        intensity: 0.7,
+      },
+    },
+  });
+
+  assert.deepEqual(resolved, {
+    id: "polish",
+    name: "Polish",
+    source: "local",
+    kind: "local_edit",
+    operation: "polish",
+    capability: "image_polish",
+    executionType: "local_first",
+    routeProfile: "polish_local_first",
+    surface: null,
+    params: {
+      intensity: 0.7,
+    },
+  });
+});
+
+test("local tool edits: deterministic polish nudges global finish without touching alpha", () => {
+  const next = applyDeterministicRasterEdit(
+    {
+      width: 1,
+      height: 1,
+      data: new Uint8ClampedArray([96, 118, 144, 200]),
+    },
+    "polish",
+    {
+      intensity: 1,
+    }
+  );
+
+  assert.equal(next.data[3], 200);
+  assert.notDeepEqual(Array.from(next.data.slice(0, 3)), [96, 118, 144]);
+  assert.ok(next.data[0] >= 96);
+  assert.ok(next.data[1] >= 118);
+});
+
+test("local tool edits: deterministic relight lifts shadows and warms the image globally", () => {
+  const next = applyDeterministicRasterEdit(
+    {
+      width: 1,
+      height: 1,
+      data: new Uint8ClampedArray([48, 56, 68, 255]),
+    },
+    "relight",
+    {
+      intensity: 1,
+    }
+  );
+
+  assert.ok(next.data[0] > 48);
+  assert.ok(next.data[1] > 56);
+  assert.ok(next.data[2] > 68);
+  assert.ok(next.data[0] >= next.data[2]);
 });
 
 test("local tool edits: render path uses raster mutation instead of canvas filters", () => {
@@ -178,5 +256,42 @@ test("local tool edits: receipt step captures deterministic edit metadata", () =
     },
     outputPath: "/tmp/out.png",
     receiptPath: "/tmp/receipt.json",
+  });
+});
+
+test("local tool edits: receipt step carries routing metadata for direct affordances", () => {
+  const plan = buildLocalToolEditPlan({
+    contract: "single-image-rail-v1",
+    jobId: "relight",
+    label: "Relight",
+    capability: "image_relight",
+    executionType: "local_first",
+    routeProfile: "relight_local_first",
+    execution: {
+      kind: "local_edit",
+      operation: "relight",
+      capability: "image_relight",
+      executionType: "local_first",
+      routeProfile: "relight_local_first",
+      params: {
+        intensity: 0.85,
+      },
+    },
+  });
+
+  assert.deepEqual(buildLocalToolReceiptStep(plan, { outputPath: "/tmp/relight.png", receiptPath: "/tmp/relight.json" }), {
+    kind: "local_raster_edit",
+    source: "tool_runtime",
+    toolId: "relight",
+    toolName: "Relight",
+    operation: "relight",
+    params: {
+      intensity: 0.85,
+    },
+    outputPath: "/tmp/relight.png",
+    receiptPath: "/tmp/relight.json",
+    capability: "image_relight",
+    executionType: "local_first",
+    routeProfile: "relight_local_first",
   });
 });

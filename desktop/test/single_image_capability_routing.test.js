@@ -2,12 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  SINGLE_IMAGE_DIRECT_AFFORDANCE_MAP,
+  SINGLE_IMAGE_EXECUTION_TYPES,
   SINGLE_IMAGE_CAPABILITY_MAP,
   SINGLE_IMAGE_RAIL_CONTRACT,
   buildSingleImageCapabilityDisabledMessage,
   buildSingleImageCapabilityReceiptStep,
   buildSingleImageRailJobEntries,
+  listSingleImageDirectAffordances,
   normalizeSingleImageCapabilityRequest,
+  resolveSingleImageAffordanceRoute,
   resolveSingleImageCapabilityAvailability,
 } from "../src/single_image_capability_routing.js";
 
@@ -24,6 +28,43 @@ test("single-image capability map seeds the approved five jobs", () => {
       variants: "identity_preserving_variation",
     }
   );
+});
+
+test("single-image direct affordance map adds remove people, polish, and relight with explicit routing strategy", () => {
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(SINGLE_IMAGE_DIRECT_AFFORDANCE_MAP).map(([jobId, spec]) => [
+        jobId,
+        {
+          capability: spec.capability,
+          executionType: spec.executionType,
+          routeProfile: spec.routeProfile,
+          localOperation: spec.localOperation,
+        },
+      ])
+    ),
+    {
+      remove_people: {
+        capability: "people_removal",
+        executionType: SINGLE_IMAGE_EXECUTION_TYPES.MODEL_BACKED,
+        routeProfile: "remove_people_model",
+        localOperation: null,
+      },
+      polish: {
+        capability: "image_polish",
+        executionType: SINGLE_IMAGE_EXECUTION_TYPES.LOCAL_FIRST,
+        routeProfile: "polish_local_first",
+        localOperation: "polish",
+      },
+      relight: {
+        capability: "image_relight",
+        executionType: SINGLE_IMAGE_EXECUTION_TYPES.LOCAL_FIRST,
+        routeProfile: "relight_local_first",
+        localOperation: "relight",
+      },
+    }
+  );
+  assert.equal(listSingleImageDirectAffordances().length, 3);
 });
 
 test("single-image rail job entries use generic availability reasons and stable output shape", () => {
@@ -114,12 +155,81 @@ test("single-image capability request normalization accepts the approved rail co
     capability: "targeted_remove",
     requiresSelection: true,
     stickyKey: "single-image-rail:remove",
+    surface: "rail",
+    executionType: "model_backed",
+    routeProfile: "model_capability_only",
     executionKind: "model_capability",
+    localOperation: null,
+    fallbackExecutionKind: null,
     contract: SINGLE_IMAGE_RAIL_CONTRACT,
     params: {},
     confidence: 0.61,
     reasonCodes: ["object_mask_present"],
   });
+});
+
+test("single-image direct affordance routing keeps polish local-first and escalates relight to model when directionality is requested", () => {
+  const polish = resolveSingleImageAffordanceRoute({
+    jobId: "polish",
+    params: {
+      intensity: 0.72,
+    },
+  });
+  assert.deepEqual(
+    {
+      jobId: polish.jobId,
+      executionType: polish.executionType,
+      executionKind: polish.executionKind,
+      routeProfile: polish.routeProfile,
+      localOperation: polish.localOperation,
+    },
+    {
+      jobId: "polish",
+      executionType: "local_first",
+      executionKind: "local_edit",
+      routeProfile: "polish_local_first",
+      localOperation: "polish",
+    }
+  );
+
+  const relight = resolveSingleImageAffordanceRoute({
+    jobId: "relight",
+    params: {
+      lightDirection: "left",
+    },
+  });
+  assert.equal(relight.executionKind, "model_capability");
+
+  const relightModeBlocked = resolveSingleImageCapabilityAvailability(
+    {
+      jobId: "relight",
+      params: {
+        lightDirection: "left",
+      },
+    },
+    {
+      activeImageId: "img-5",
+      selectedImageIds: ["img-5"],
+      mode: "local_only",
+    }
+  );
+  assert.equal(relightModeBlocked.disabledReason, "unavailable_in_current_mode");
+
+  const availability = resolveSingleImageCapabilityAvailability(
+    {
+      jobId: "polish",
+      params: {
+        intensity: 0.5,
+      },
+    },
+    {
+      activeImageId: "img-4",
+      selectedImageIds: ["img-4"],
+      mode: "local_only",
+    }
+  );
+  assert.equal(availability.enabled, true);
+  assert.equal(availability.executionKind, "local_edit");
 });
 
 test("single-image capability receipt and disabled message stay generic", () => {
@@ -143,4 +253,23 @@ test("single-image capability receipt and disabled message stay generic", () => 
   });
   assert.equal(message, "Variants is unavailable while another image action is running.");
   assert.doesNotMatch(message, /openai|gemini|flux|imagen/i);
+});
+
+test("single-image direct affordance receipt carries route metadata for model-backed actions", () => {
+  const receiptStep = buildSingleImageCapabilityReceiptStep("remove_people", {
+    outputPath: "/tmp/remove-people.png",
+    receiptPath: "/tmp/remove-people-receipt.json",
+  });
+  assert.deepEqual(receiptStep, {
+    kind: "model_capability_edit",
+    source: "tool_runtime",
+    jobId: "remove_people",
+    toolId: "remove_people",
+    toolName: "Remove People",
+    capability: "people_removal",
+    outputPath: "/tmp/remove-people.png",
+    receiptPath: "/tmp/remove-people-receipt.json",
+    executionType: "model_backed",
+    routeProfile: "remove_people_model",
+  });
 });

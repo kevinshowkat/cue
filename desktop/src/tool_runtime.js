@@ -1,5 +1,7 @@
 import {
+  SINGLE_IMAGE_EXECUTION_TYPES,
   SINGLE_IMAGE_RAIL_CONTRACT,
+  resolveSingleImageAffordanceRoute,
   resolveSingleImageCapabilityAvailability,
   resolveSingleImageCapabilityJob,
 } from "./single_image_capability_routing.js";
@@ -10,12 +12,18 @@ export const TOOL_INVOCATION_EVENT = "juggernaut:tool-invoked";
 export const TOOL_RUNTIME_BRIDGE_KEY = "__JUGGERNAUT_TOOL_RUNTIME__";
 
 export {
+  SINGLE_IMAGE_AFFORDANCE_MAP,
   SINGLE_IMAGE_CAPABILITY_MAP,
+  SINGLE_IMAGE_DIRECT_AFFORDANCE_MAP,
   SINGLE_IMAGE_DISABLED_REASONS,
+  SINGLE_IMAGE_EXECUTION_TYPES,
   SINGLE_IMAGE_RAIL_CONTRACT,
+  SINGLE_IMAGE_ROUTE_PROFILES,
   buildSingleImageRailJobEntries,
   listSingleImageCapabilityJobs,
+  listSingleImageDirectAffordances,
   normalizeSingleImageCapabilityRequest,
+  resolveSingleImageAffordanceRoute,
   resolveSingleImageCapabilityAvailability,
 } from "./single_image_capability_routing.js";
 
@@ -419,6 +427,43 @@ export function createInSessionToolRegistry(initialTools = []) {
   };
 }
 
+function buildSingleImageAffordanceToolDescriptor(route) {
+  return {
+    toolId: route.jobId,
+    jobId: route.jobId,
+    label: route.label,
+    version: 1,
+    executionKind: route.executionKind,
+    executionType: route.executionType,
+    capability: route.capability,
+    routeProfile: route.routeProfile,
+    requiresSelection: route.requiresSelection,
+    surface: route.surface || "direct",
+  };
+}
+
+function buildSingleImageAffordanceExecutionDescriptor(route) {
+  if (route.executionKind === "local_edit") {
+    return {
+      kind: "local_edit",
+      operation: route.localOperation,
+      capability: route.capability,
+      jobId: route.jobId,
+      executionType: route.executionType,
+      routeProfile: route.routeProfile,
+      params: cloneJson(route.params || {}),
+    };
+  }
+  return {
+    kind: "model_capability",
+    capability: route.capability,
+    jobId: route.jobId,
+    executionType: route.executionType,
+    routeProfile: route.routeProfile,
+    params: cloneJson(route.params || {}),
+  };
+}
+
 export function buildSingleImageRailInvocation(
   jobOrId,
   {
@@ -508,6 +553,113 @@ export function buildSingleImageRailInvocation(
       confidence: Math.max(0, Math.min(1, Number(confidence) || 0)),
       reasonCodes: availability?.reasonCodes || [],
       stickyKey: job.stickyKey,
+    },
+  };
+}
+
+export function buildSingleImageDirectAffordanceInvocation(
+  affordanceOrId,
+  {
+    activeImageId = null,
+    selectedImageIds = [],
+    source = "single_image_direct_affordance",
+    trigger = "click",
+    requestId = "",
+    params = {},
+    reasonCodes = [],
+    busy = false,
+    mode = "",
+    image = null,
+    capabilityAvailability = null,
+    capabilityExecutorAvailable = false,
+    localExecutorAvailable = true,
+  } = {}
+) {
+  const route = resolveSingleImageAffordanceRoute(
+    {
+      jobId: affordanceOrId,
+      params,
+      reasonCodes,
+    },
+    {
+      mode,
+      forceModel: params?.forceModel,
+    }
+  );
+  if (!route || route.surface !== "direct") {
+    throw new Error(`Unknown single-image direct affordance: ${String(affordanceOrId || "").trim() || "(empty)"}`);
+  }
+
+  const { activeId, selection } = normalizeSelectionTarget({ activeImageId, selectedImageIds });
+  const availability = resolveSingleImageCapabilityAvailability(
+    {
+      ...route,
+      params: cloneJson(params),
+    },
+    {
+      activeImageId: activeId,
+      selectedImageIds: selection,
+      busy,
+      mode,
+      image,
+      capabilityAvailability,
+      capabilityExecutorAvailable,
+      localExecutorAvailable,
+      reasonCodes,
+      forceModel: params?.forceModel,
+    }
+  );
+
+  return {
+    contract: SINGLE_IMAGE_RAIL_CONTRACT,
+    schema: TOOL_INVOCATION_SCHEMA,
+    requestId: normalizeText(requestId) || `tool-${Date.now()}`,
+    issuedAt: new Date().toISOString(),
+    source: normalizeText(source) || "single_image_direct_affordance",
+    trigger: normalizeText(trigger) || "click",
+    jobId: route.jobId,
+    label: route.label,
+    capability: route.capability,
+    surface: route.surface,
+    executionType: route.executionType,
+    routeProfile: route.routeProfile,
+    stickyKey: route.stickyKey,
+    tool: buildSingleImageAffordanceToolDescriptor(route),
+    target: {
+      activeImageId: activeId || null,
+      selectedImageIds: selection,
+    },
+    selection: {
+      activeId: activeId || null,
+      selectedImageIds: selection,
+    },
+    execution: buildSingleImageAffordanceExecutionDescriptor({
+      ...route,
+      params: cloneJson(params),
+    }),
+    inputContract: {
+      requiresActiveImage: true,
+      minImages: 1,
+      maxImages: 1,
+      acceptedTarget: "active_image",
+    },
+    receipt: {
+      manifestSchema: SINGLE_IMAGE_RAIL_CONTRACT,
+      reproducible: true,
+      include: ["capability", "selection", "execution", "route_profile"],
+    },
+    failureBehavior: {
+      kind: "toast",
+      message: `${route.label} could not be applied.`,
+    },
+    availability,
+    route: {
+      executionType: route.executionType,
+      profile: route.routeProfile,
+      executionKind: route.executionKind,
+      localOperation: route.localOperation || null,
+      fallbackExecutionKind:
+        route.executionType === SINGLE_IMAGE_EXECUTION_TYPES.LOCAL_FIRST ? "model_capability" : null,
     },
   };
 }

@@ -26,6 +26,16 @@ const RAW_LOCAL_TOOL_OPERATION_SPECS = Object.freeze([
     label: "Contrast",
     aliases: ["contrast", "clarity", "pop"],
   },
+  {
+    id: "polish",
+    label: "Polish",
+    aliases: ["polish", "enhance", "refine", "finish"],
+  },
+  {
+    id: "relight",
+    label: "Relight",
+    aliases: ["relight", "re light", "lighting", "relit", "exposure balance"],
+  },
 ]);
 
 const LOCAL_TOOL_OPERATION_SPECS = Object.freeze(
@@ -92,9 +102,10 @@ function looksLikeToolRecord(value) {
 
 function resolveRequestTool(request = {}) {
   const raw = asRecord(request) || {};
+  const execution = asRecord(raw.execution);
   const nestedTool = asRecord(raw.tool);
   const tool = nestedTool || (looksLikeToolRecord(raw) ? raw : null);
-  return { raw, tool };
+  return { raw, tool, execution };
 }
 
 function resolveOperation(value) {
@@ -110,9 +121,9 @@ function resolveOperation(value) {
   return "";
 }
 
-function collectParams(raw, tool) {
+function collectParams(raw, tool, execution) {
   const merged = {};
-  for (const candidate of [tool?.params, raw?.params]) {
+  for (const candidate of [tool?.params, execution?.params, raw?.params]) {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
     Object.assign(merged, candidate);
   }
@@ -168,18 +179,23 @@ export function listSupportedLocalToolOperations() {
 }
 
 export function normalizeLocalToolApplyRequest(request = {}) {
-  const { raw, tool } = resolveRequestTool(request);
-  if (!tool) return null;
-  const operation = resolveOperation(readFirstString(tool.operation, raw.operation, tool.name, raw.name));
+  const { raw, tool, execution } = resolveRequestTool(request);
+  const operation = resolveOperation(
+    readFirstString(execution?.operation, tool?.operation, raw.operation, tool?.name, raw.name)
+  );
   if (!operation) return null;
   const spec = LOCAL_TOOL_OPERATION_SPECS[operation];
-  const params = collectParams(raw, tool);
+  const params = collectParams(raw, tool, execution);
   return {
-    id: readFirstString(tool.id, raw.toolId, raw.tool_id) || null,
-    name: readFirstString(tool.name, raw.toolName, raw.tool_name, spec.label) || spec.label,
-    source: readFirstString(tool.source, raw.source, "local") || "local",
-    kind: readFirstString(tool.kind, raw.kind, "raster") || "raster",
+    id: readFirstString(tool?.id, raw.toolId, raw.tool_id, raw.jobId, raw.job_id) || null,
+    name: readFirstString(tool?.name, raw.toolName, raw.tool_name, raw.label, spec.label) || spec.label,
+    source: readFirstString(tool?.source, raw.source, "local") || "local",
+    kind: readFirstString(execution?.kind, tool?.kind, raw.kind, "raster") || "raster",
     operation,
+    capability: readFirstString(raw.capability, execution?.capability, tool?.capability) || null,
+    executionType: readFirstString(raw.executionType, execution?.executionType, tool?.executionType) || null,
+    routeProfile: readFirstString(raw.routeProfile, execution?.routeProfile, tool?.routeProfile) || null,
+    surface: readFirstString(raw.surface, tool?.surface) || null,
     params: {
       intensity: normalizeIntensity(params),
     },
@@ -198,6 +214,10 @@ export function buildLocalToolEditPlan(request = {}) {
     label: spec.label,
     source: tool.source || "local",
     kind: tool.kind || "raster",
+    capability: tool.capability || null,
+    executionType: tool.executionType || null,
+    routeProfile: tool.routeProfile || null,
+    surface: tool.surface || null,
     params: {
       intensity: clamp01(tool.params?.intensity, DEFAULT_INTENSITY),
     },
@@ -207,7 +227,7 @@ export function buildLocalToolEditPlan(request = {}) {
 export function buildLocalToolReceiptStep(plan, { outputPath = null, receiptPath = null } = {}) {
   const resolvedPlan = resolvePlan(plan);
   if (!resolvedPlan) return null;
-  return {
+  const step = {
     kind: "local_raster_edit",
     source: "tool_runtime",
     toolId: resolvedPlan.toolId || null,
@@ -219,6 +239,53 @@ export function buildLocalToolReceiptStep(plan, { outputPath = null, receiptPath
     outputPath: outputPath ? String(outputPath) : null,
     receiptPath: receiptPath ? String(receiptPath) : null,
   };
+  if (resolvedPlan.capability) step.capability = resolvedPlan.capability;
+  if (resolvedPlan.executionType) step.executionType = resolvedPlan.executionType;
+  if (resolvedPlan.routeProfile) step.routeProfile = resolvedPlan.routeProfile;
+  return step;
+}
+
+function luminance(red, green, blue) {
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function applyPolishPixel(red, green, blue, intensity) {
+  const contrastFactor = 1 + 0.18 * intensity;
+  let nextRed = 128 + (red - 128) * contrastFactor;
+  let nextGreen = 128 + (green - 128) * contrastFactor;
+  let nextBlue = 128 + (blue - 128) * contrastFactor;
+
+  const liftedLuma = luminance(nextRed, nextGreen, nextBlue);
+  const midtoneLift = (1 - liftedLuma / 255) * (8 + 10 * intensity);
+  nextRed += midtoneLift;
+  nextGreen += midtoneLift;
+  nextBlue += midtoneLift;
+
+  const polishedLuma = luminance(nextRed, nextGreen, nextBlue);
+  const saturationFactor = 1 + 0.14 * intensity;
+  nextRed = polishedLuma + (nextRed - polishedLuma) * saturationFactor;
+  nextGreen = polishedLuma + (nextGreen - polishedLuma) * saturationFactor;
+  nextBlue = polishedLuma + (nextBlue - polishedLuma) * saturationFactor;
+
+  return [nextRed, nextGreen, nextBlue];
+}
+
+function applyRelightPixel(red, green, blue, intensity) {
+  const lightness = luminance(red, green, blue) / 255;
+  const shadowLift = (1 - lightness) * (14 + 26 * intensity);
+  const highlightRecovery = Math.max(0, lightness - 0.55) * (10 + 16 * intensity);
+  const warmth = 5 + 7 * intensity;
+
+  let nextRed = red + shadowLift - highlightRecovery * 0.4 + warmth;
+  let nextGreen = green + shadowLift - highlightRecovery * 0.35 + warmth * 0.15;
+  let nextBlue = blue + shadowLift * 0.88 - highlightRecovery * 0.7 - warmth * 0.75;
+
+  const contrastFactor = 1 + 0.1 * intensity;
+  nextRed = 128 + (nextRed - 128) * contrastFactor;
+  nextGreen = 128 + (nextGreen - 128) * contrastFactor;
+  nextBlue = 128 + (nextBlue - 128) * contrastFactor;
+
+  return [nextRed, nextGreen, nextBlue];
 }
 
 export function applyDeterministicRasterEdit(imageDataLike, planOrOperation, params = null) {
@@ -265,6 +332,10 @@ export function applyDeterministicRasterEdit(imageDataLike, planOrOperation, par
       red = 128 + (red - 128) * factor;
       green = 128 + (green - 128) * factor;
       blue = 128 + (blue - 128) * factor;
+    } else if (plan.operation === "polish") {
+      [red, green, blue] = applyPolishPixel(red, green, blue, intensity);
+    } else if (plan.operation === "relight") {
+      [red, green, blue] = applyRelightPixel(red, green, blue, intensity);
     }
 
     nextData[index] = clamp255(red);

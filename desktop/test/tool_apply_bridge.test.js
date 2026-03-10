@@ -12,6 +12,7 @@ import {
   installToolApplyBridge,
 } from "../src/tool_apply_runtime.js";
 import { SINGLE_IMAGE_RAIL_CONTRACT } from "../src/single_image_capability_routing.js";
+import { buildSingleImageDirectAffordanceInvocation } from "../src/tool_runtime.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
@@ -151,7 +152,7 @@ test("tool apply runtime: unsupported operations return a shaped failure payload
     toolId: "tool-crop",
     outputPath: null,
     receiptStep: null,
-    error: "Unsupported tool operation. Supported operations: grayscale, invert, sepia, brighten, contrast.",
+    error: "Unsupported tool operation. Supported operations: grayscale, invert, sepia, brighten, contrast, polish, relight.",
   });
 });
 
@@ -291,6 +292,70 @@ test("tool apply runtime: routes approved single-image capability requests throu
   assert.deepEqual(calls[0].selection, {
     activeImageId: "img-2",
     selectedImageIds: ["img-2"],
+  });
+});
+
+test("tool apply runtime: direct local-first affordances can execute through the existing local raster path", async () => {
+  const invocation = buildSingleImageDirectAffordanceInvocation("polish", {
+    activeImageId: "img-3",
+    selectedImageIds: ["img-3"],
+    requestId: "direct-local-3",
+    params: {
+      intensity: 0.8,
+    },
+  });
+
+  const result = await applyToolRuntimeRequest(invocation, {
+    getActiveImageId: () => "img-3",
+    hasImageId: (imageId) => imageId === "img-3",
+    getImageById: () => ({
+      id: "img-3",
+      path: "/tmp/source.png",
+      img: {
+        naturalWidth: 1,
+        naturalHeight: 1,
+      },
+    }),
+    createCanvas: () => ({
+      width: 0,
+      height: 0,
+      getContext: () => ({
+        drawImage: () => {},
+        getImageData: () => ({
+          width: 1,
+          height: 1,
+          data: new Uint8ClampedArray([92, 110, 136, 255]),
+        }),
+        putImageData: () => {},
+      }),
+    }),
+    saveCanvasArtifact: async () => ({
+      imageId: "img-3",
+      outputPath: "/tmp/polish.png",
+      receiptPath: "/tmp/polish.json",
+    }),
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    imageId: "img-3",
+    toolId: "polish",
+    outputPath: "/tmp/polish.png",
+    receiptStep: {
+      kind: "local_raster_edit",
+      source: "tool_runtime",
+      toolId: "polish",
+      toolName: "Polish",
+      operation: "polish",
+      params: {
+        intensity: 0.8,
+      },
+      outputPath: "/tmp/polish.png",
+      receiptPath: "/tmp/polish.json",
+      capability: "image_polish",
+      executionType: "local_first",
+      routeProfile: "polish_local_first",
+    },
   });
 });
 
