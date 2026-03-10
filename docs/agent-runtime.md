@@ -1,0 +1,199 @@
+# Juggernaut Agent Runtime Guide
+
+Status: Draft v0.1  
+Last updated: 2026-03-10
+
+## Purpose
+This document explains how an LLM or agent should use Juggernaut as a constrained visual runtime. It is a companion to [agent-workflow-prd.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-workflow-prd.md) and [agent-affordances.json](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-affordances.json).
+
+## Core Model
+Juggernaut should be treated as 3 cooperating surfaces:
+- `observe`: inspect current state without changing it
+- `mutate`: change a tab, image, overlay, or export state
+- `review`: generate and apply structured edit proposals through design review
+
+An agent should prefer the loop:
+1. observe
+2. choose focus
+3. decide direct execution vs review
+4. mutate
+5. observe again
+6. evaluate progress
+7. branch, revert, or export
+
+## Working Rules
+- Prefer `observe` before every expensive or destructive mutation.
+- Treat `Marker` and `Magic Select` as focus-setting tools, not final edits.
+- Use direct affordances when the desired edit class is already obvious.
+- Use `Design review` when the goal is ambiguous, aesthetic, or multi-step.
+- Use isolated tabs for speculative work when comparing options matters.
+- Preserve reversible boundaries before high-cost actions.
+- Do not rely on raw provider or model names as the main abstraction.
+
+## Current Surfaces
+
+### 1. Direct Execution
+Current direct execution affordances correspond to the seeded single-image jobs:
+- `Cut Out`
+- `Remove`
+- `New Background`
+- `Reframe`
+- `Variants`
+
+These are agent-facing affordances. Internally they resolve to stable `executionType` values such as:
+- `subject_isolation`
+- `targeted_remove`
+- `background_replace`
+- `crop_or_outpaint`
+- `identity_preserving_variation`
+
+Agents should reason from what the affordance does, not from the internal type name.
+
+### 2. Focus And Scoping
+Current focus affordances correspond to the bottom communication rail:
+- `Marker`
+- `Magic Select`
+- `Eraser`
+
+These are non-destructive communication operations.
+
+Use them when:
+- the target area is unclear
+- design review needs spatial guidance
+- a direct affordance requires tighter scope
+
+Do not treat them as committed image edits. They alter overlay state, not exported pixels.
+
+### 3. Design Review
+`Design review` is the agent’s planning surface.
+
+It should be used when the agent needs:
+- candidate next actions
+- ranked alternatives
+- preview-backed proposals
+- a path from ambiguous user goal to executable edit
+
+`Design review` is not chat. It consumes visible canvas state plus focus hints and returns structured proposals that can be accepted into the normal execution layer.
+
+## Direct Execution Vs Review
+
+### Prefer Direct Execution When
+- the user’s goal cleanly matches a known affordance
+- scope is already clear
+- speed and cost matter more than exploration
+- the agent wants a deterministic next step
+
+Examples:
+- remove a small object
+- isolate a subject
+- generate variants after a finished cutout
+
+### Prefer Design Review When
+- the user’s goal is aesthetic or underspecified
+- multiple edits might plausibly help
+- the target area needs interpretation
+- the agent wants ranked options before committing
+
+Examples:
+- make this hero image feel premium
+- improve the composition without changing the subject
+- figure out the best cleanup strategy around this marked area
+
+## Focus Guidance Today
+Current review guidance is mostly spatial.
+
+The strongest current guidance signals are:
+- communication marks
+- active region candidates from `Magic Select`
+- active or selected image context
+- visible canvas composition
+- cached upload analysis and account memory bias
+
+Current review guidance is weak on:
+- semantic goal steering
+- explicit constraints
+- acceptance criteria
+- budget-aware planning
+
+Agent workflow should add those through goal packets and focus specs without replacing the existing spatial signals.
+
+## Execution Types And Route Profiles
+Use this split:
+
+- `executionType`: stable semantic operation
+- `routeProfile`: implementation policy
+- `receipt`: exact realized execution
+
+Example:
+- affordance: `Remove`
+- execution type: `targeted_remove`
+- route profile: `targeted_remove_default_v1`
+- receipt: provider, model, params, cost, latency, artifacts
+
+Do not make model names the primary identity of an edit. Model choice can change without changing what the affordance is for.
+
+## Route Profile Guidance
+Route profiles may encode:
+- speed vs quality preference
+- local-only vs connected requirements
+- expected latency and cost class
+- fallback strategy
+- prompt-builder family
+
+Exact provider/model/params should be captured in receipts after execution.
+
+## Workflow Priors
+Agents should be able to ask for prior successful workflows, not just current tool descriptions.
+
+This should work like receipt retrieval over historically successful paths:
+- similar goals
+- similar image or canvas conditions
+- similar export target
+- similar constraints and budget
+
+The result should be advisory guidance such as:
+- likely-good step sequences
+- example receipt refs
+- expected success rate
+- expected cost and latency
+- known caveats
+
+Good examples:
+- `Protect -> Design Review -> Accept Proposal -> Export PSD`
+- `Remove People -> Polish -> Export PSD`
+- `Make Space -> Relight -> Export PSD`
+
+These priors should help an agent choose a starting path faster, but they should not eliminate exploration when the current task differs materially from historical winners.
+
+## Minimal Agent Strategy
+For a new task:
+1. inspect tab state and visible assets
+2. read the goal packet
+3. retrieve workflow priors for similar successful exports when available
+4. decide whether focus hints are needed
+5. if the edit class is obvious, use a direct affordance
+6. if the edit class is not obvious, request design review
+7. after any edit, evaluate progress
+8. if quality is uncertain, branch before trying another approach
+9. export only from the winning tab
+
+## Safe Defaults
+- default to one tab unless comparing alternatives matters
+- create a reversible boundary before any high-cost action
+- prefer one edit at a time over long uncontrolled chains
+- avoid using design review repeatedly without incorporating new focus or new evidence
+- use workflow priors as guidance, not as a mandatory script
+- stop and export when the goal is met rather than continuing to optimize blindly
+
+## What Agents Should Learn
+Agents should learn:
+- which affordance changes pixels
+- which affordance only communicates focus
+- when review is better than direct execution
+- how to compare branch results against a goal
+- how cost, latency, and privacy mode affect route choice
+
+Agents should not need to learn:
+- hardcoded provider names to use the app correctly
+- UI click paths as the primary control surface
+- hidden planner reasoning

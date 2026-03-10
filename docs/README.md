@@ -11,6 +11,7 @@ This tree now mixes current Juggernaut product docs with historical Brood refere
 
 ## Product And Architecture
 
+- [agent-workflow-prd.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-workflow-prd.md): separate PRD for agent-operated Juggernaut workflows
 - [macos-local-private-image-editing.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/macos-local-private-image-editing.md)
 - [benchmark-playbook.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/benchmark-playbook.md)
 - [visual_prompting_v0.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/visual_prompting_v0.md)
@@ -18,6 +19,8 @@ This tree now mixes current Juggernaut product docs with historical Brood refere
 
 ## Agent And Intake Notes
 
+- [agent-runtime.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-runtime.md): human-readable guide for agents using Juggernaut as a runtime
+- [agent-affordances.json](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-affordances.json): machine-readable affordance, execution-type, and route-profile catalog
 - [agent_intake_status.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent_intake_status.md)
 - [agent_intake_roundtrip.sample.json](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent_intake_roundtrip.sample.json)
 - [aip-1.schema.json](/Users/mainframe/Desktop/projects/Juggernaut/docs/aip-1.schema.json)

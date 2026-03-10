@@ -1,0 +1,487 @@
+{
+  "schemaVersion": "juggernaut-agent-affordances-v1",
+  "lastUpdated": "2026-03-10",
+  "notes": [
+    "This manifest is a first-pass machine-readable catalog for agent-operated Juggernaut workflows.",
+    "Affordances are agent-facing descriptions of what operations do; execution types remain internal stable runtime identifiers.",
+    "Provider and model details belong primarily to route profiles and receipts, not to the semantic identity of an affordance."
+  ],
+  "executionTypes": [
+    {
+      "id": "subject_isolation",
+      "kind": "pixel_edit",
+      "description": "Separate a main subject from surrounding background content.",
+      "mutatesPixels": true,
+      "reversible": true,
+      "defaultRouteProfileId": "subject_isolation_default_v1",
+      "currentEntryPoints": [
+        "cut_out",
+        "design_review_proposal"
+      ]
+    },
+    {
+      "id": "targeted_remove",
+      "kind": "pixel_edit",
+      "description": "Remove targeted content and plausibly fill or repair the affected area.",
+      "mutatesPixels": true,
+      "reversible": true,
+      "defaultRouteProfileId": "targeted_remove_default_v1",
+      "currentEntryPoints": [
+        "remove",
+        "design_review_proposal"
+      ]
+    },
+    {
+      "id": "background_replace",
+      "kind": "pixel_edit",
+      "description": "Replace or reinterpret background content while preserving the main subject.",
+      "mutatesPixels": true,
+      "reversible": true,
+      "defaultRouteProfileId": "background_replace_default_v1",
+      "currentEntryPoints": [
+        "new_background",
+        "design_review_proposal"
+      ]
+    },
+    {
+      "id": "crop_or_outpaint",
+      "kind": "pixel_edit",
+      "description": "Reframe composition by cropping or extending beyond current image edges.",
+      "mutatesPixels": true,
+      "reversible": true,
+      "defaultRouteProfileId": "crop_or_outpaint_default_v1",
+      "currentEntryPoints": [
+        "reframe",
+        "design_review_proposal"
+      ]
+    },
+    {
+      "id": "identity_preserving_variation",
+      "kind": "pixel_edit",
+      "description": "Generate image variants that preserve core subject identity and intent.",
+      "mutatesPixels": true,
+      "reversible": true,
+      "defaultRouteProfileId": "identity_preserving_variation_default_v1",
+      "currentEntryPoints": [
+        "variants",
+        "design_review_proposal"
+      ]
+    },
+    {
+      "id": "communication_mark",
+      "kind": "focus_overlay",
+      "description": "Add a temporary spatial focus hint without changing image pixels.",
+      "mutatesPixels": false,
+      "reversible": true,
+      "defaultRouteProfileId": null,
+      "currentEntryPoints": [
+        "marker"
+      ]
+    },
+    {
+      "id": "region_candidate_select",
+      "kind": "focus_overlay",
+      "description": "Generate or cycle candidate target regions near a clicked location.",
+      "mutatesPixels": false,
+      "reversible": true,
+      "defaultRouteProfileId": null,
+      "currentEntryPoints": [
+        "magic_select"
+      ]
+    },
+    {
+      "id": "communication_clear",
+      "kind": "focus_overlay",
+      "description": "Clear communication marks and region proposals without changing image pixels.",
+      "mutatesPixels": false,
+      "reversible": true,
+      "defaultRouteProfileId": null,
+      "currentEntryPoints": [
+        "eraser"
+      ]
+    },
+    {
+      "id": "design_review_request",
+      "kind": "review_planning",
+      "description": "Generate ranked action-first proposals from visible canvas state and focus hints.",
+      "mutatesPixels": false,
+      "reversible": true,
+      "defaultRouteProfileId": "design_review_planner_v1",
+      "currentEntryPoints": [
+        "design_review"
+      ]
+    },
+    {
+      "id": "design_review_apply",
+      "kind": "review_execution",
+      "description": "Apply an accepted design-review proposal through the normal execution layer.",
+      "mutatesPixels": true,
+      "reversible": true,
+      "defaultRouteProfileId": "design_review_apply_default_v1",
+      "currentEntryPoints": [
+        "accept_review_proposal"
+      ]
+    },
+    {
+      "id": "export_psd",
+      "kind": "export",
+      "description": "Export the current tab as PSD plus a reproducibility receipt.",
+      "mutatesPixels": false,
+      "reversible": false,
+      "defaultRouteProfileId": "export_psd_native_v1",
+      "currentEntryPoints": [
+        "export_psd"
+      ]
+    }
+  ],
+  "routeProfiles": [
+    {
+      "id": "subject_isolation_default_v1",
+      "kind": "runtime_selected_image_edit",
+      "speedTier": "balanced",
+      "qualityTier": "balanced",
+      "privacyModes": [
+        "connected",
+        "local_only_if_supported"
+      ],
+      "recordsExactExecutionInReceipt": true
+    },
+    {
+      "id": "targeted_remove_default_v1",
+      "kind": "runtime_selected_image_edit",
+      "speedTier": "balanced",
+      "qualityTier": "balanced",
+      "privacyModes": [
+        "connected",
+        "local_only_if_supported"
+      ],
+      "recordsExactExecutionInReceipt": true
+    },
+    {
+      "id": "background_replace_default_v1",
+      "kind": "runtime_selected_image_edit",
+      "speedTier": "balanced",
+      "qualityTier": "balanced",
+      "privacyModes": [
+        "connected",
+        "local_only_if_supported"
+      ],
+      "recordsExactExecutionInReceipt": true
+    },
+    {
+      "id": "crop_or_outpaint_default_v1",
+      "kind": "runtime_selected_image_edit",
+      "speedTier": "balanced",
+      "qualityTier": "balanced",
+      "privacyModes": [
+        "connected",
+        "local_only_if_supported"
+      ],
+      "recordsExactExecutionInReceipt": true
+    },
+    {
+      "id": "identity_preserving_variation_default_v1",
+      "kind": "runtime_selected_image_edit",
+      "speedTier": "balanced",
+      "qualityTier": "balanced",
+      "privacyModes": [
+        "connected",
+        "local_only_if_supported"
+      ],
+      "recordsExactExecutionInReceipt": true
+    },
+    {
+      "id": "design_review_planner_v1",
+      "kind": "review_planner",
+      "defaultProviderPolicy": "runtime_selected",
+      "defaultModelClass": "vision_planner",
+      "recordsExactExecutionInReceipt": true
+    },
+    {
+      "id": "design_review_apply_default_v1",
+      "kind": "review_apply",
+      "defaultProviderPolicy": "runtime_selected",
+      "defaultModelClass": "image_edit_apply",
+      "recordsExactExecutionInReceipt": true
+    },
+    {
+      "id": "export_psd_native_v1",
+      "kind": "native_export",
+      "defaultProviderPolicy": "none",
+      "defaultModelClass": "none",
+      "recordsExactExecutionInReceipt": true,
+      "limitations": [
+        "Current PSD export is flattened to a single bitmap composition with alpha.",
+        "Editable per-source PSD layers are not included in the current slice."
+      ]
+    }
+  ],
+  "affordances": [
+    {
+      "id": "cut_out",
+      "label": "Cut Out",
+      "surface": "direct_execution",
+      "source": "left_rail",
+      "whatItDoes": "Separates a main subject from surrounding background content.",
+      "whenToUse": [
+        "subject extraction",
+        "background removal",
+        "isolating a product or person"
+      ],
+      "whenNotToUse": [
+        "removing a small object inside a scene",
+        "restyling the whole image"
+      ],
+      "requiresImage": true,
+      "requiresFocus": true,
+      "mutatesPixels": true,
+      "reversible": true,
+      "executionType": "subject_isolation",
+      "routeProfileId": "subject_isolation_default_v1",
+      "costClass": "medium",
+      "latencyClass": "medium"
+    },
+    {
+      "id": "remove",
+      "label": "Remove",
+      "surface": "direct_execution",
+      "source": "left_rail",
+      "whatItDoes": "Removes targeted content and plausibly fills the gap.",
+      "whenToUse": [
+        "unwanted object",
+        "small distraction",
+        "localized cleanup"
+      ],
+      "whenNotToUse": [
+        "whole-image style change",
+        "major reframing"
+      ],
+      "requiresImage": true,
+      "requiresFocus": true,
+      "mutatesPixels": true,
+      "reversible": true,
+      "executionType": "targeted_remove",
+      "routeProfileId": "targeted_remove_default_v1",
+      "costClass": "medium",
+      "latencyClass": "medium"
+    },
+    {
+      "id": "new_background",
+      "label": "New Background",
+      "surface": "direct_execution",
+      "source": "left_rail",
+      "whatItDoes": "Replaces or reinterprets background content while preserving the main subject.",
+      "whenToUse": [
+        "scene simplification",
+        "hero-image cleanup",
+        "putting a subject into a new setting"
+      ],
+      "whenNotToUse": [
+        "isolating the subject only",
+        "small object cleanup"
+      ],
+      "requiresImage": true,
+      "requiresFocus": true,
+      "mutatesPixels": true,
+      "reversible": true,
+      "executionType": "background_replace",
+      "routeProfileId": "background_replace_default_v1",
+      "costClass": "medium",
+      "latencyClass": "medium"
+    },
+    {
+      "id": "reframe",
+      "label": "Reframe",
+      "surface": "direct_execution",
+      "source": "left_rail",
+      "whatItDoes": "Changes composition by cropping or extending beyond current image boundaries.",
+      "whenToUse": [
+        "composition improvement",
+        "changing emphasis",
+        "making room for layout"
+      ],
+      "whenNotToUse": [
+        "isolating a subject only",
+        "small-object cleanup"
+      ],
+      "requiresImage": true,
+      "requiresFocus": true,
+      "mutatesPixels": true,
+      "reversible": true,
+      "executionType": "crop_or_outpaint",
+      "routeProfileId": "crop_or_outpaint_default_v1",
+      "costClass": "medium",
+      "latencyClass": "medium"
+    },
+    {
+      "id": "variants",
+      "label": "Variants",
+      "surface": "direct_execution",
+      "source": "left_rail",
+      "whatItDoes": "Generates alternate versions while trying to preserve subject identity and core intent.",
+      "whenToUse": [
+        "style exploration",
+        "trying alternatives",
+        "finding a better final candidate"
+      ],
+      "whenNotToUse": [
+        "precise localized cleanup",
+        "strictly deterministic editing"
+      ],
+      "requiresImage": true,
+      "requiresFocus": true,
+      "mutatesPixels": true,
+      "reversible": true,
+      "executionType": "identity_preserving_variation",
+      "routeProfileId": "identity_preserving_variation_default_v1",
+      "costClass": "medium",
+      "latencyClass": "medium"
+    },
+    {
+      "id": "marker",
+      "label": "Marker",
+      "surface": "focus",
+      "source": "bottom_rail",
+      "whatItDoes": "Adds a temporary highlight mark that says look here or change this.",
+      "whenToUse": [
+        "guide design review",
+        "call out a local problem area",
+        "show an edit target without mutating pixels"
+      ],
+      "whenNotToUse": [
+        "final image editing",
+        "export-ready annotation"
+      ],
+      "requiresImage": false,
+      "requiresFocus": false,
+      "mutatesPixels": false,
+      "reversible": true,
+      "executionType": "communication_mark",
+      "routeProfileId": null,
+      "costClass": "none",
+      "latencyClass": "instant"
+    },
+    {
+      "id": "magic_select",
+      "label": "Magic Select",
+      "surface": "focus",
+      "source": "bottom_rail",
+      "whatItDoes": "Proposes 2-3 candidate target regions near a clicked area.",
+      "whenToUse": [
+        "narrowing edit scope",
+        "helping review infer the intended region",
+        "preparing a localized edit"
+      ],
+      "whenNotToUse": [
+        "whole-image restyling",
+        "final image editing by itself"
+      ],
+      "requiresImage": true,
+      "requiresFocus": false,
+      "mutatesPixels": false,
+      "reversible": true,
+      "executionType": "region_candidate_select",
+      "routeProfileId": null,
+      "costClass": "low",
+      "latencyClass": "fast"
+    },
+    {
+      "id": "eraser",
+      "label": "Eraser",
+      "surface": "focus",
+      "source": "bottom_rail",
+      "whatItDoes": "Clears communication marks and region proposals.",
+      "whenToUse": [
+        "resetting review guidance",
+        "clearing stale focus hints"
+      ],
+      "whenNotToUse": [
+        "deleting committed image edits",
+        "content-aware cleanup"
+      ],
+      "requiresImage": false,
+      "requiresFocus": false,
+      "mutatesPixels": false,
+      "reversible": true,
+      "executionType": "communication_clear",
+      "routeProfileId": null,
+      "costClass": "none",
+      "latencyClass": "instant"
+    },
+    {
+      "id": "design_review",
+      "label": "Design Review",
+      "surface": "review",
+      "source": "review_button",
+      "whatItDoes": "Generates ranked action-first edit proposals from visible canvas state plus current focus hints.",
+      "whenToUse": [
+        "ambiguous user goals",
+        "aesthetic improvement tasks",
+        "when multiple edit strategies may work"
+      ],
+      "whenNotToUse": [
+        "obvious direct single-step edits",
+        "blind repeated retries without new focus"
+      ],
+      "requiresImage": false,
+      "requiresFocus": true,
+      "mutatesPixels": false,
+      "reversible": true,
+      "executionType": "design_review_request",
+      "routeProfileId": "design_review_planner_v1",
+      "costClass": "low_to_medium",
+      "latencyClass": "medium",
+      "returns": {
+        "proposalCountMin": 2,
+        "proposalCountMax": 3,
+        "includesPreviewJobs": true
+      }
+    },
+    {
+      "id": "accept_review_proposal",
+      "label": "Accept Review Proposal",
+      "surface": "review_execution",
+      "source": "proposal_tray",
+      "whatItDoes": "Applies one accepted design-review proposal through the normal execution layer.",
+      "whenToUse": [
+        "after review returns a clearly preferred proposal",
+        "when the proposal matches the current goal"
+      ],
+      "whenNotToUse": [
+        "before comparing obviously divergent alternatives when branching is cheap",
+        "when the proposal violates current constraints"
+      ],
+      "requiresImage": true,
+      "requiresFocus": false,
+      "mutatesPixels": true,
+      "reversible": true,
+      "executionType": "design_review_apply",
+      "routeProfileId": "design_review_apply_default_v1",
+      "costClass": "medium",
+      "latencyClass": "medium"
+    },
+    {
+      "id": "export_psd",
+      "label": "Export PSD",
+      "surface": "export",
+      "source": "export_control",
+      "whatItDoes": "Exports the current tab as PSD and writes a reproducibility receipt.",
+      "whenToUse": [
+        "final artifact delivery",
+        "handoff to PSD-compatible tools"
+      ],
+      "whenNotToUse": [
+        "mid-edit branching",
+        "when editable PSD layers are required in the current slice"
+      ],
+      "requiresImage": true,
+      "requiresFocus": false,
+      "mutatesPixels": false,
+      "reversible": false,
+      "executionType": "export_psd",
+      "routeProfileId": "export_psd_native_v1",
+      "costClass": "low",
+      "latencyClass": "fast"
+    }
+  ]
+}
