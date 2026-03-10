@@ -60,6 +60,41 @@
       "asset": "./variations.svg"
     },
     {
+      "tool_id": "protect",
+      "label": "Protect",
+      "semantic_role": "protect-region",
+      "notes": "Protected region tile paired with a compact shield so no-edit protection reads immediately.",
+      "asset": "./protect.svg"
+    },
+    {
+      "tool_id": "make_space",
+      "label": "Make Space",
+      "semantic_role": "reserve-room",
+      "notes": "Centered room box with arrows pushing outward so reserve-or-create-space intent reads directly.",
+      "asset": "./make_space.svg"
+    },
+    {
+      "tool_id": "remove_people",
+      "label": "Remove People",
+      "semantic_role": "remove-people",
+      "notes": "Human silhouette with a clean strike so people removal stays distinct from general cleanup.",
+      "asset": "./remove_people.svg"
+    },
+    {
+      "tool_id": "polish",
+      "label": "Polish",
+      "semantic_role": "finish",
+      "notes": "Primary sparkle with smaller accents so finish/polish reads as a clean global refinement.",
+      "asset": "./polish.svg"
+    },
+    {
+      "tool_id": "relight",
+      "label": "Relight",
+      "semantic_role": "light-balance",
+      "notes": "Half-lit disc with restrained rays so relighting reads as a lighting pass, not exposure only.",
+      "asset": "./relight.svg"
+    },
+    {
       "tool_id": "create_tool",
       "label": "Create Tool",
       "semantic_role": "forge",

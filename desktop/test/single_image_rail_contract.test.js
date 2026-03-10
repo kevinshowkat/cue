@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   buildSingleImageRailButtons,
+  getSingleImageRailItem,
   getSingleImageRailMockRankedJobs,
   SINGLE_IMAGE_RAIL_CONTRACT,
   SINGLE_IMAGE_RAIL_DYNAMIC_SLOT_COUNT,
@@ -28,7 +29,19 @@ test("single-image rail: contract renders 3 anchors plus 3 dynamic slots", () =>
   assert.equal(rail.contractName, SINGLE_IMAGE_RAIL_CONTRACT);
   assert.deepEqual(
     rail.buttons.map((button) => button.toolId),
-    ["move", "upload", "select", "cut_out", "new_background", "variants"]
+    [
+      "move",
+      "upload",
+      "select",
+      "cut_out",
+      "new_background",
+      "variants",
+      "protect",
+      "make_space",
+      "remove_people",
+      "polish",
+      "relight",
+    ]
   );
   assert.equal(rail.visibleDynamicJobs.length, SINGLE_IMAGE_RAIL_DYNAMIC_SLOT_COUNT);
   assert.equal(rail.buttons[0].label, "Move");
@@ -37,6 +50,11 @@ test("single-image rail: contract renders 3 anchors plus 3 dynamic slots", () =>
   assert.equal(rail.buttons[3].label, "Cut Out");
   assert.equal(rail.buttons[4].label, "New Background");
   assert.equal(rail.buttons[5].label, "Variants");
+  assert.equal(rail.buttons[6].label, "Protect");
+  assert.equal(rail.buttons[7].label, "Make Space");
+  assert.equal(rail.buttons[8].label, "Remove People");
+  assert.equal(rail.buttons[9].label, "Polish");
+  assert.equal(rail.buttons[10].label, "Relight");
   assert.equal(rail.buttons[0].hotkey, "");
   assert.equal(rail.buttons[1].hotkey, "1");
   assert.equal(rail.buttons[2].hotkey, "2");
@@ -198,6 +216,7 @@ test("single-image rail: worsening enabled state drops the old sticky item", () 
 test("single-image rail: source keeps keyed slot rendering instead of clearing the full rail", () => {
   assert.match(railSource, /data-slot-key/);
   assert.match(railSource, /root\.dataset\.railContract = SINGLE_IMAGE_RAIL_CONTRACT/);
+  assert.match(railSource, /--jg-primary-rail-button-count/);
   assert.doesNotMatch(railSource, /root\.innerHTML = "";/);
 });
 
@@ -219,4 +238,135 @@ test("single-image rail: canvas app keeps the mock adapter as fallback only", ()
 test("single-image rail: capability success history is retained for ranking context", () => {
   assert.match(appSource, /recentSuccessfulJobs:\s*singleImageRailRecentSuccessfulJobs\(\)/);
   assert.match(appSource, /rememberSingleImageRailSuccess\(result\)/);
+});
+
+test("single-image rail: canonical affordance labels keep Remove People standardized", () => {
+  assert.equal(getSingleImageRailItem("remove_people")?.label, "Remove People");
+  assert.equal(getSingleImageRailItem("protect")?.label, "Protect");
+  assert.equal(getSingleImageRailItem("make_space")?.label, "Make Space");
+});
+
+test("single-image rail: affordances use shell bridge state for enablement and selection", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    __JUGGERNAUT_SHELL__: {
+      getCanvasSnapshot() {
+        return {
+          activeImageId: "img-1",
+          selectedImageIds: ["img-1"],
+          canvasMode: "single",
+          images: [
+            {
+              id: "img-1",
+              path: "/tmp/hero.png",
+              width: 1024,
+              height: 1024,
+              active: true,
+              selected: true,
+            },
+          ],
+        };
+      },
+      communicationReview: {
+        state: {
+          tool: "marker",
+        },
+        getState() {
+          return this.state;
+        },
+        setTool(tool) {
+          this.state.tool = tool;
+          return tool;
+        },
+      },
+    },
+    juggernautApplyTool: async () => ({ ok: true }),
+  };
+
+  try {
+    const rail = buildSingleImageRailButtons({
+      hasImage: true,
+      hasRegionSelection: false,
+      busy: false,
+      toolHookReady: true,
+    });
+    const buttons = Object.fromEntries(rail.buttons.map((button) => [button.toolId, button]));
+    assert.equal(buttons.protect.disabled, false);
+    assert.equal(buttons.protect.selected, true);
+    assert.equal(buttons.make_space.disabled, false);
+    assert.equal(buttons.remove_people.disabled, false);
+    assert.equal(buttons.remove_people.label, "Remove People");
+    assert.equal(buttons.polish.disabled, false);
+    assert.equal(buttons.relight.disabled, false);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("single-image rail: affordances disable cleanly when no image or busy state blocks them", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    __JUGGERNAUT_SHELL__: {
+      getCanvasSnapshot() {
+        return {
+          activeImageId: "img-2",
+          selectedImageIds: ["img-2"],
+          canvasMode: "single",
+          images: [
+            {
+              id: "img-2",
+              path: "/tmp/hero-2.png",
+              width: 1200,
+              height: 900,
+              active: true,
+              selected: true,
+            },
+          ],
+        };
+      },
+      communicationReview: {
+        state: {
+          tool: "",
+        },
+        getState() {
+          return this.state;
+        },
+        setTool(tool) {
+          this.state.tool = tool;
+          return tool;
+        },
+      },
+    },
+    juggernautApplyTool: async () => ({ ok: true }),
+  };
+
+  try {
+    const noImage = buildSingleImageRailButtons({
+      hasImage: false,
+      hasRegionSelection: false,
+      busy: false,
+      toolHookReady: true,
+    });
+    const noImageButtons = Object.fromEntries(noImage.buttons.map((button) => [button.toolId, button]));
+    assert.equal(noImageButtons.protect.disabledReason, "unavailable_in_current_mode");
+    assert.equal(noImageButtons.make_space.disabledReason, "unavailable_in_current_mode");
+    assert.equal(noImageButtons.remove_people.disabledReason, "unavailable_in_current_mode");
+    assert.equal(noImageButtons.polish.disabledReason, "unavailable_in_current_mode");
+    assert.equal(noImageButtons.relight.disabledReason, "unavailable_in_current_mode");
+
+    const busyRail = buildSingleImageRailButtons({
+      hasImage: true,
+      hasRegionSelection: false,
+      busy: true,
+      toolHookReady: true,
+    });
+    const busyButtons = Object.fromEntries(busyRail.buttons.map((button) => [button.toolId, button]));
+    assert.equal(busyButtons.protect.disabledReason, "busy");
+    assert.equal(busyButtons.make_space.disabledReason, "busy");
+    assert.equal(busyButtons.remove_people.disabledReason, "busy");
+    assert.equal(busyButtons.polish.disabledReason, "busy");
+    assert.equal(busyButtons.relight.disabledReason, "busy");
+  } finally {
+    globalThis.window = originalWindow;
+  }
 });

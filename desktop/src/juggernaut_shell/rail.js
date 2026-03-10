@@ -1,4 +1,5 @@
 import { getJuggernautRailIconSvg } from "./generated/rail_icon_registry.js";
+import { buildSingleImageDirectAffordanceInvocation, buildSingleImageRailInvocation } from "../tool_runtime.js";
 
 export const SINGLE_IMAGE_RAIL_CONTRACT = "single-image-rail-v1";
 export const SINGLE_IMAGE_RAIL_DYNAMIC_SLOT_COUNT = 3;
@@ -23,6 +24,9 @@ const DEFAULT_DYNAMIC_ORDER = Object.freeze([
   "reframe",
   "variants",
 ]);
+const SHELL_FOCUS_ORDER = Object.freeze(["protect", "make_space"]);
+const SHELL_DIRECT_AFFORDANCE_ORDER = Object.freeze(["remove_people", "polish", "relight"]);
+const COMMUNICATION_TOOL_EVENT = "juggernaut:communication-state-changed";
 
 const RAIL_LABELS = Object.freeze({
   move: "Move",
@@ -33,6 +37,11 @@ const RAIL_LABELS = Object.freeze({
   new_background: "New Background",
   reframe: "Reframe",
   variants: "Variants",
+  protect: "Protect",
+  make_space: "Make Space",
+  remove_people: "Remove People",
+  polish: "Polish",
+  relight: "Relight",
 });
 
 const SEEDED_JOB_LIBRARY = Object.freeze({
@@ -77,6 +86,52 @@ const SEEDED_JOB_LIBRARY = Object.freeze({
     iconId: "variations",
   }),
 });
+const SHELL_AFFORDANCE_LIBRARY = Object.freeze({
+  protect: Object.freeze({
+    jobId: "protect",
+    label: "Protect",
+    requiresSelection: false,
+    iconId: "protect",
+    communicationTool: "marker",
+    localUtility: true,
+  }),
+  make_space: Object.freeze({
+    jobId: "make_space",
+    label: "Make Space",
+    requiresSelection: false,
+    iconId: "make_space",
+    communicationTool: "magic_select",
+    localUtility: true,
+  }),
+  remove_people: Object.freeze({
+    jobId: "remove_people",
+    label: "Remove People",
+    capability: "people_removal",
+    requiresSelection: false,
+    iconId: "remove_people",
+    runtimeJobId: "remove",
+    stickyKey: "single-image-direct:remove_people",
+    localUtility: false,
+  }),
+  polish: Object.freeze({
+    jobId: "polish",
+    label: "Polish",
+    capability: "image_polish",
+    requiresSelection: false,
+    iconId: "polish",
+    stickyKey: "single-image-direct:polish",
+    localUtility: true,
+  }),
+  relight: Object.freeze({
+    jobId: "relight",
+    label: "Relight",
+    capability: "image_relight",
+    requiresSelection: false,
+    iconId: "relight",
+    stickyKey: "single-image-direct:relight",
+    localUtility: true,
+  }),
+});
 
 export const SINGLE_IMAGE_RAIL_INVENTORY = Object.freeze([
   Object.freeze({ key: "move", label: "Move", kind: "anchor", requiresSelection: false }),
@@ -90,6 +145,16 @@ export const SINGLE_IMAGE_RAIL_INVENTORY = Object.freeze([
       capability: job.capability,
       requiresSelection: job.requiresSelection,
       stickyKey: job.stickyKey,
+    })
+  ),
+  ...Object.values(SHELL_AFFORDANCE_LIBRARY).map((tool) =>
+    Object.freeze({
+      key: tool.jobId,
+      label: tool.label,
+      kind: "affordance",
+      capability: tool.capability,
+      requiresSelection: tool.requiresSelection,
+      stickyKey: tool.stickyKey || tool.jobId,
     })
   ),
 ]);
@@ -119,7 +184,7 @@ function railLabel(toolId = "") {
 export function getSingleImageRailItem(toolId = "") {
   const key = String(toolId || "").trim();
   if (!key) return null;
-  return SINGLE_IMAGE_RAIL_INVENTORY.find((item) => item.key === key) || SEEDED_JOB_LIBRARY[key] || null;
+  return SINGLE_IMAGE_RAIL_INVENTORY.find((item) => item.key === key) || SEEDED_JOB_LIBRARY[key] || SHELL_AFFORDANCE_LIBRARY[key] || null;
 }
 
 function normalizeConfidence(value, fallback = 0) {
@@ -200,6 +265,11 @@ function buttonMetaTitle(button) {
   if (button.toolId === "move") return "Move and arrange images";
   if (button.toolId === "upload") return "Upload an image";
   if (button.toolId === "select") return "Select a region on the active image";
+  if (button.toolId === "protect") return "Protect an area from edits";
+  if (button.toolId === "make_space") return "Reserve or create room in an area";
+  if (button.toolId === "remove_people") return "Remove people from the active image";
+  if (button.toolId === "polish") return "Polish the active image";
+  if (button.toolId === "relight") return "Relight the active image";
   return button.label || button.toolId || "Tool";
 }
 
@@ -208,6 +278,9 @@ function buttonMetaAriaLabel(button) {
   if (button.toolId === "move") return "Move image";
   if (button.toolId === "upload") return "Upload image";
   if (button.toolId === "select") return "Select region";
+  if (button.toolId === "protect") return "Protect region";
+  if (button.toolId === "make_space") return "Make space";
+  if (button.toolId === "remove_people") return "Remove people";
   return button.label || button.toolId || "Tool";
 }
 
@@ -230,6 +303,7 @@ function buildAnchorButtons({
       disabled: false,
       disabledReason: "",
       selected: String(activeToolId || "").trim() === "move",
+      toggleable: true,
       running: false,
       iconSvg: railIconSvg("move"),
       title: "Move and arrange images",
@@ -245,6 +319,7 @@ function buildAnchorButtons({
       disabled: false,
       disabledReason: "",
       selected: false,
+      toggleable: false,
       running: false,
       iconSvg: railIconSvg("upload"),
       title: "Upload an image",
@@ -260,6 +335,7 @@ function buildAnchorButtons({
       disabled: !hasImage,
       disabledReason: hasImage ? "" : "unavailable_in_current_mode",
       selected: String(activeToolId || "").trim() === "select",
+      toggleable: true,
       running: false,
       iconSvg: railIconSvg("select_subject"),
       title: hasImage ? "Select a region on the active image" : "Upload an image before selecting",
@@ -329,6 +405,7 @@ function buildDynamicButtons(dynamicJobs = [], { runningToolId = "" } = {}) {
       disabled: !job.enabled,
       disabledReason: job.enabled ? "" : normalizeDisabledReason(job.disabledReason),
       selected: false,
+      toggleable: false,
       running: String(runningToolId || "").trim() === job.jobId,
       iconSvg: railIconSvg(job.iconId || job.jobId),
       title: "",
@@ -344,6 +421,252 @@ function buildDynamicButtons(dynamicJobs = [], { runningToolId = "" } = {}) {
     button.ariaLabel = buttonMetaAriaLabel(button);
     return button;
   });
+}
+
+function browserWindow() {
+  return typeof window !== "undefined" && window ? window : null;
+}
+
+function currentShellBridge() {
+  const win = browserWindow();
+  const bridge = win?.__JUGGERNAUT_SHELL__;
+  return bridge && typeof bridge === "object" ? bridge : null;
+}
+
+function currentShellState() {
+  const win = browserWindow();
+  const state = win?.__juggernautShellState;
+  return state && typeof state === "object" ? state : null;
+}
+
+function currentShellSnapshot() {
+  const bridge = currentShellBridge();
+  if (typeof bridge?.getCanvasSnapshot === "function") {
+    try {
+      const snapshot = bridge.getCanvasSnapshot();
+      if (snapshot && typeof snapshot === "object") return snapshot;
+    } catch {
+      // ignore
+    }
+  }
+
+  const state = currentShellState();
+  if (!state) return null;
+  const selectedImage = state.selectedImage
+    ? {
+        id: state.selectedImage.id || state.selectedImageId || null,
+        path: state.selectedImage.path || null,
+        width: state.selectedImage.width || null,
+        height: state.selectedImage.height || null,
+        active: true,
+        selected: true,
+      }
+    : null;
+  return {
+    activeImageId: state.selectedImageId || null,
+    selectedImageIds: Array.isArray(state.selectedImageIds) ? state.selectedImageIds.slice(0, 3) : [],
+    canvasMode: "single",
+    images: selectedImage ? [selectedImage] : [],
+  };
+}
+
+function currentCommunicationState() {
+  const bridge = currentShellBridge();
+  if (typeof bridge?.communicationReview?.getState === "function") {
+    try {
+      const state = bridge.communicationReview.getState();
+      if (state && typeof state === "object") return state;
+    } catch {
+      // ignore
+    }
+  }
+  const state = bridge?.communicationReview?.state;
+  return state && typeof state === "object" ? state : null;
+}
+
+function currentCommunicationToolId() {
+  return String(currentCommunicationState()?.tool || "").trim();
+}
+
+function normalizeSelectedImageIds(snapshot = {}) {
+  const ids = [];
+  for (const value of Array.isArray(snapshot?.selectedImageIds) ? snapshot.selectedImageIds : []) {
+    const id = String(value || "").trim();
+    if (!id || ids.includes(id)) continue;
+    ids.push(id);
+  }
+  const activeId = String(snapshot?.activeImageId || "").trim();
+  if (activeId && !ids.includes(activeId)) ids.push(activeId);
+  return ids.slice(0, 3);
+}
+
+function activeImageFromSnapshot(snapshot = {}) {
+  const activeId = String(snapshot?.activeImageId || "").trim();
+  const image = (Array.isArray(snapshot?.images) ? snapshot.images : []).find(
+    (entry) => String(entry?.id || "").trim() === activeId
+  );
+  if (!image) return null;
+  return {
+    id: activeId,
+    path: String(image?.path || "").trim() || null,
+    width: Number(image?.width) || null,
+    height: Number(image?.height) || null,
+    supported: true,
+  };
+}
+
+function directCapabilityAvailability(toolId = "") {
+  if (toolId === "remove_people") {
+    return {
+      people_removal: { available: true },
+    };
+  }
+  if (toolId === "polish") {
+    return {
+      image_polish: { available: true },
+    };
+  }
+  if (toolId === "relight") {
+    return {
+      image_relight: { available: true },
+    };
+  }
+  return {};
+}
+
+function buildShellAffordanceRuntimeContext({ hasImage = false, busy = false } = {}) {
+  const snapshot = currentShellSnapshot() || {};
+  const activeImage = activeImageFromSnapshot(snapshot);
+  return {
+    activeImageId: String(snapshot?.activeImageId || "").trim() || null,
+    selectedImageIds: normalizeSelectedImageIds(snapshot),
+    mode: String(snapshot?.canvasMode || "").trim() || "single",
+    image: activeImage,
+    hasImage: Boolean(hasImage && activeImage?.id),
+    busy: Boolean(busy),
+    applyRuntimeReady: typeof browserWindow()?.juggernautApplyTool === "function",
+  };
+}
+
+function focusAffordanceButton(seed, index, { hasImage = false, busy = false } = {}) {
+  const bridge = currentShellBridge();
+  const communicationReady = typeof bridge?.communicationReview?.setTool === "function";
+  const disabledReason = !hasImage
+    ? "unavailable_in_current_mode"
+    : busy
+      ? "busy"
+      : communicationReady
+        ? ""
+        : "capability_unavailable";
+  const selected = currentCommunicationToolId() === seed.communicationTool;
+  const button = {
+    slotKey: `focus-${index}`,
+    slotKind: "focus",
+    groupStart: index === 0,
+    toolId: seed.jobId,
+    actionKey: seed.jobId,
+    label: seed.label,
+    hotkey: "",
+    disabled: Boolean(disabledReason),
+    disabledReason,
+    selected,
+    toggleable: true,
+    running: false,
+    iconSvg: railIconSvg(seed.iconId),
+    title: "",
+    ariaLabel: "",
+    localUtility: Boolean(seed.localUtility),
+    invoke: () => bridge?.communicationReview?.setTool?.(seed.communicationTool),
+  };
+  button.title = buttonMetaTitle(button);
+  button.ariaLabel = buttonMetaAriaLabel(button);
+  return button;
+}
+
+function legacyRemovePeopleInvocation(runtimeContext = {}) {
+  return buildSingleImageRailInvocation("remove", {
+    activeImageId: runtimeContext.activeImageId,
+    selectedImageIds: runtimeContext.selectedImageIds,
+    source: "juggernaut_shell_affordance",
+    trigger: "click",
+    requestId: `juggernaut-shell-remove-people-${Date.now()}`,
+    confidence: 1,
+    reasonCodes: ["shell_affordance", "canonical_remove_people"],
+    busy: runtimeContext.busy,
+    mode: runtimeContext.mode,
+    image: runtimeContext.image,
+    capabilityAvailability: {
+      targeted_remove: { available: true },
+    },
+    capabilityExecutorAvailable: true,
+  });
+}
+
+function directInvocationForTool(toolId, runtimeContext = {}) {
+  if (toolId === "remove_people") {
+    return legacyRemovePeopleInvocation(runtimeContext);
+  }
+  return buildSingleImageDirectAffordanceInvocation(toolId, {
+    activeImageId: runtimeContext.activeImageId,
+    selectedImageIds: runtimeContext.selectedImageIds,
+    source: "juggernaut_shell_affordance",
+    trigger: "click",
+    requestId: `juggernaut-shell-${toolId}-${Date.now()}`,
+    params: {},
+    busy: runtimeContext.busy,
+    mode: runtimeContext.mode,
+    image: runtimeContext.image,
+    capabilityAvailability: directCapabilityAvailability(toolId),
+    capabilityExecutorAvailable: true,
+    localExecutorAvailable: true,
+  });
+}
+
+function directAffordanceButton(seed, index, { hasImage = false, busy = false } = {}) {
+  const runtimeContext = buildShellAffordanceRuntimeContext({ hasImage, busy });
+  const disabledReason = !runtimeContext.hasImage
+    ? "unavailable_in_current_mode"
+    : !runtimeContext.applyRuntimeReady
+      ? "capability_unavailable"
+      : normalizeDisabledReason(directInvocationForTool(seed.jobId, runtimeContext)?.availability?.disabledReason);
+  const button = {
+    slotKey: `direct-${index}`,
+    slotKind: "direct",
+    groupStart: index === 0,
+    toolId: seed.jobId,
+    actionKey: seed.jobId,
+    label: seed.label,
+    hotkey: "",
+    disabled: Boolean(disabledReason),
+    disabledReason: disabledReason || "",
+    selected: false,
+    toggleable: false,
+    running: false,
+    iconSvg: railIconSvg(seed.iconId),
+    title: "",
+    ariaLabel: "",
+    capability: seed.capability,
+    stickyKey: seed.stickyKey,
+    localUtility: Boolean(seed.localUtility),
+    invoke: async () => {
+      const apply = browserWindow()?.juggernautApplyTool;
+      if (typeof apply !== "function") return false;
+      return apply(directInvocationForTool(seed.jobId, buildShellAffordanceRuntimeContext({ hasImage: true, busy: false })));
+    },
+  };
+  button.title = buttonMetaTitle(button);
+  button.ariaLabel = buttonMetaAriaLabel(button);
+  return button;
+}
+
+function buildAffordanceButtons({ hasImage = false, busy = false } = {}) {
+  const focusButtons = SHELL_FOCUS_ORDER.map((toolId, index) =>
+    focusAffordanceButton(SHELL_AFFORDANCE_LIBRARY[toolId], index, { hasImage, busy })
+  );
+  const directButtons = SHELL_DIRECT_AFFORDANCE_ORDER.map((toolId, index) =>
+    directAffordanceButton(SHELL_AFFORDANCE_LIBRARY[toolId], index, { hasImage, busy })
+  );
+  return focusButtons.concat(directButtons);
 }
 
 export function getSingleImageRailMockRankedJobs({
@@ -430,13 +753,14 @@ export function buildSingleImageRailButtons({
       })
     : fillDynamicSlots(previousVisibleJobs.length ? previousVisibleJobs : baseJobs);
   const dynamicButtons = buildDynamicButtons(visibleDynamicJobs, { runningToolId });
+  const affordanceButtons = buildAffordanceButtons({ hasImage, busy });
 
   return {
     contractName: SINGLE_IMAGE_RAIL_CONTRACT,
     adapter,
     rankedJobs: baseJobs,
     visibleDynamicJobs,
-    buttons: anchors.concat(dynamicButtons),
+    buttons: anchors.concat(dynamicButtons, affordanceButtons),
   };
 }
 
@@ -457,10 +781,11 @@ function setButtonData(toolEl, button) {
 function syncButtonClasses(toolEl, button) {
   toolEl.className = "tool juggernaut-tool juggernaut-rail-button";
   toolEl.classList.toggle("juggernaut-rail-anchor", button.slotKind === "anchor");
-  toolEl.classList.toggle("juggernaut-rail-suggestion", button.slotKind === "dynamic");
+  toolEl.classList.toggle("juggernaut-rail-suggestion", button.slotKind !== "anchor");
   toolEl.classList.toggle("is-group-start", Boolean(button.groupStart));
   toolEl.classList.toggle("selected", Boolean(button.selected));
   toolEl.classList.toggle("depressed", Boolean(button.running));
+  toolEl.classList.toggle("is-local-utility", Boolean(button.localUtility));
 }
 
 function syncButtonContent(toolEl, button) {
@@ -479,6 +804,12 @@ function ensureRailButton(root, slotKey) {
   toolEl.className = "tool juggernaut-tool juggernaut-rail-button";
   toolEl.addEventListener("click", (event) => {
     const button = toolEl.__juggernautRailButton;
+    if (button && !button.disabled && typeof button.invoke === "function") {
+      Promise.resolve(button.invoke({ button, event, root })).catch((error) => {
+        console.error("Juggernaut shell affordance failed:", error);
+      });
+      return;
+    }
     const onPress = root.__juggernautRailOnPress;
     if (typeof onPress === "function" && button && !button.disabled) {
       onPress(button, event);
@@ -487,10 +818,40 @@ function ensureRailButton(root, slotKey) {
   return toolEl;
 }
 
+function syncExternalRailState(root) {
+  if (!root) return;
+  const communicationTool = currentCommunicationToolId();
+  for (const button of Array.from(root.querySelectorAll("button[data-tool-id]"))) {
+    const toolId = String(button?.dataset?.toolId || "").trim();
+    const isSelected =
+      (toolId === "protect" && communicationTool === "marker") ||
+      (toolId === "make_space" && communicationTool === "magic_select");
+    if (toolId === "protect" || toolId === "make_space") {
+      button.classList.toggle("selected", isSelected);
+      button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    }
+  }
+}
+
+function bindExternalRailState(root) {
+  if (!root || root.__juggernautRailExternalStateBound) return;
+  root.__juggernautRailExternalStateBound = true;
+  const win = browserWindow();
+  if (!win || typeof win.addEventListener !== "function") return;
+  const sync = () => syncExternalRailState(root);
+  root.__juggernautRailExternalStateSync = sync;
+  win.addEventListener(COMMUNICATION_TOOL_EVENT, sync);
+}
+
 export function renderJuggernautRail(root, { buttons = [], onPress } = {}) {
   if (!root) return;
   root.__juggernautRailOnPress = typeof onPress === "function" ? onPress : null;
   root.dataset.railContract = SINGLE_IMAGE_RAIL_CONTRACT;
+  const chromeRoot = root.closest?.(".juggernaut-shell-chrome");
+  if (chromeRoot?.style?.setProperty) {
+    chromeRoot.style.setProperty("--jg-primary-rail-button-count", String((Array.isArray(buttons) ? buttons.length : 0) || 0));
+  }
+  bindExternalRailState(root);
 
   const nextSlotKeys = new Set();
   let cursor = root.firstElementChild;
@@ -506,6 +867,11 @@ export function renderJuggernautRail(root, { buttons = [], onPress } = {}) {
     syncButtonContent(toolEl, button);
     toolEl.title = String(button.title || button.label || button.toolId || "").trim();
     toolEl.setAttribute("aria-label", String(button.ariaLabel || button.label || button.toolId || "").trim());
+    if (button.toggleable) {
+      toolEl.setAttribute("aria-pressed", button.selected ? "true" : "false");
+    } else {
+      toolEl.removeAttribute("aria-pressed");
+    }
     toolEl.disabled = Boolean(button.disabled);
 
     if (cursor !== toolEl) {
@@ -521,6 +887,7 @@ export function renderJuggernautRail(root, { buttons = [], onPress } = {}) {
     if (!slotKey || nextSlotKeys.has(slotKey)) continue;
     child.remove();
   }
+  syncExternalRailState(root);
 }
 
 export function getSingleImageRailLabel(toolId = "") {

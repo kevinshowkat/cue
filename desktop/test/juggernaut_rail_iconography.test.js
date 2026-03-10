@@ -19,7 +19,12 @@ test("Juggernaut rail iconography: manifest covers the shared generated glyph se
     "cleanup",
     "create_tool",
     "export_psd",
+    "make_space",
     "move",
+    "polish",
+    "protect",
+    "relight",
+    "remove_people",
     "select_subject",
     "upload",
     "variations",
@@ -32,6 +37,11 @@ test("Juggernaut rail iconography: generated registry exports custom SVG glyphs"
   assert.equal(typeof JUGGERNAUT_RAIL_ICON_REGISTRY.upload, "string");
   assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.select_subject, /tool-icon-select-subject/);
   assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.background_swap, /fill-opacity=/);
+  assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.protect, /tool-icon-protect/);
+  assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.make_space, /tool-icon-make-space/);
+  assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.remove_people, /tool-icon-remove-people/);
+  assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.polish, /tool-icon-polish/);
+  assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.relight, /tool-icon-relight/);
 });
 
 test("Juggernaut rail iconography: rail rendering consumes generated registry and uses keyed slots", () => {
