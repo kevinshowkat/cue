@@ -696,6 +696,7 @@ function normalizeCommunicationMarks(reviewPayload = {}) {
   const marks = Array.isArray(reviewPayload?.communication?.marks)
     ? reviewPayload.communication.marks
     : [];
+  const communicationTool = readFirstString(reviewPayload?.communication?.tool) || "marker";
   return marks
     .map((mark) => {
       const id = readFirstString(mark?.id);
@@ -707,7 +708,7 @@ function normalizeCommunicationMarks(reviewPayload = {}) {
         coordinateSpace: readFirstString(mark?.coordinateSpace) || "canvas_overlay",
         colorToken: readFirstString(mark?.colorToken, mark?.color) || "signal-red",
         createdAt: numericTimeToIso(mark?.createdAt),
-        createdByTool: "marker",
+        createdByTool: communicationTool,
         transient: true,
         points: Array.isArray(mark?.points)
           ? mark.points.map((point) => ({
@@ -767,6 +768,7 @@ export function buildDesignReviewRequestFromCommunication({
   cachedImageAnalyses = [],
   accountMemorySummary = null,
 } = {}) {
+  const communicationReview = asRecord(reviewPayload?.communication) || null;
   const visibleImages = normalizeVisibleImages(shellContext, reviewPayload);
   const selectedImageIds = Array.isArray(reviewPayload?.canvas?.selectedImageIds)
     ? reviewPayload.canvas.selectedImageIds.map((value) => String(value || "").trim()).filter(Boolean)
@@ -802,6 +804,15 @@ export function buildDesignReviewRequestFromCommunication({
     regionCandidates,
     activeRegionCandidateId,
     selectedImageIds,
+    focusInputs: communicationReview?.focusInputs || communicationReview?.focus_inputs || [],
+    protectedRegions: communicationReview?.protectedRegions || communicationReview?.protected_regions || [],
+    reservedSpaceIntent:
+      communicationReview?.reservedSpaceIntent ||
+      communicationReview?.reserved_space_intent ||
+      communicationReview?.reservedSpaces ||
+      communicationReview?.reserved_spaces ||
+      null,
+    reviewTool: readFirstString(communicationReview?.tool) || null,
     cachedImageAnalyses,
     accountMemorySummary,
     requestId: readFirstString(reviewPayload?.requestId) || null,
@@ -814,14 +825,24 @@ export function buildDesignReviewRequestFromCommunication({
     marks,
     regionCandidates,
     activeRegionCandidateId,
-    communicationReview: asRecord(reviewPayload?.communication)
+    communicationReview: communicationReview
       ? {
-          ...reviewPayload.communication,
-          latestAnchor: asRecord(reviewPayload.communication.latestAnchor)
-            ? { ...reviewPayload.communication.latestAnchor }
+          ...communicationReview,
+          tool: readFirstString(communicationReview.tool) || null,
+          focusInputs: Array.isArray(request.focusInputs)
+            ? JSON.parse(JSON.stringify(request.focusInputs))
+            : [],
+          protectedRegions: Array.isArray(request.protectedRegions)
+            ? JSON.parse(JSON.stringify(request.protectedRegions))
+            : [],
+          reservedSpaceIntent: request.reservedSpaceIntent
+            ? JSON.parse(JSON.stringify(request.reservedSpaceIntent))
             : null,
-          resolvedTarget: asRecord(reviewPayload.communication.resolvedTarget)
-            ? { ...reviewPayload.communication.resolvedTarget }
+          latestAnchor: asRecord(communicationReview.latestAnchor)
+            ? { ...communicationReview.latestAnchor }
+            : null,
+          resolvedTarget: asRecord(communicationReview.resolvedTarget)
+            ? { ...communicationReview.resolvedTarget }
             : null,
         }
       : null,
@@ -979,10 +1000,32 @@ function clampTrayIntoCanvasWrap(tray = null) {
 
 export function mapDesignReviewStateToCommunicationTray(state = {}) {
   const slots = Array.isArray(state?.slots) ? state.slots : [];
+  const focusInputs = Array.isArray(state?.request?.focusInputs) ? state.request.focusInputs : [];
+  const protectedRegions = Array.isArray(state?.request?.protectedRegions) ? state.request.protectedRegions : [];
+  const reservedSpaceAreas = Array.isArray(state?.request?.reservedSpaceIntent?.areas)
+    ? state.request.reservedSpaceIntent.areas
+    : [];
   return {
     requestId: readFirstString(state?.request?.requestId) || null,
     status: readFirstString(state?.status) || "idle",
+    reviewTool: readFirstString(state?.request?.reviewTool) || null,
+    focusInputCount: focusInputs.length,
+    protectedRegionCount: protectedRegions.length,
+    reservedSpaceAreaCount: reservedSpaceAreas.length,
     slots: slots.map((slot, index) => ({
+      focusInputCount: Array.isArray(slot?.proposal?.focusInputs) ? slot.proposal.focusInputs.length : 0,
+      protectedRegionCount: Array.isArray(slot?.proposal?.protectedRegions)
+        ? slot.proposal.protectedRegions.length
+        : 0,
+      reservedSpaceAreaCount: Array.isArray(slot?.proposal?.reservedSpaceIntent?.areas)
+        ? slot.proposal.reservedSpaceIntent.areas.length
+        : 0,
+      preserveProtectedRegions:
+        slot?.proposal?.preserveProtectedRegions === true ||
+        Boolean(slot?.proposal?.protectedRegions?.length),
+      preserveReservedSpace:
+        slot?.proposal?.preserveReservedSpace === true ||
+        Boolean(slot?.proposal?.reservedSpaceIntent?.areas?.length),
       slotId: readFirstString(slot?.slotId) || `design-review-slot-${index + 1}`,
       status: communicationTraySlotStatus(slot?.status),
       label: `Proposal ${Number(slot?.rank) || index + 1}`,

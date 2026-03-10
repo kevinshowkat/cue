@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { buildDesignReviewRequest } from "../src/design_review_contract.js";
+
 const here = dirname(fileURLToPath(import.meta.url));
 const bootstrapPath = join(here, "..", "src", "design_review_bootstrap.js");
 const bootstrap = readFileSync(bootstrapPath, "utf8");
@@ -546,4 +548,186 @@ test("review bootstrap seeds a pending runtime tray before async review work sta
     bootstrap,
     /syncRuntimeReviewState\(\s*runtimeState,\s*createPendingRuntimeReviewState\(runtimeState\.activeRequestId\)\s*\)/
   );
+});
+
+test("review bootstrap builds structured Protect and Make Space focus contracts from communication payloads", () => {
+  const asRecord = instantiateFunction("asRecord");
+  const readFirstString = instantiateFunction("readFirstString");
+  const normalizeBounds = instantiateFunction("normalizeBounds", {
+    asRecord,
+  });
+  const numericTimeToIso = instantiateFunction("numericTimeToIso");
+  const normalizeVisibleImages = instantiateFunction("normalizeVisibleImages", {
+    readFirstString,
+    asRecord,
+  });
+  const normalizeCommunicationMarks = instantiateFunction("normalizeCommunicationMarks", {
+    readFirstString,
+    numericTimeToIso,
+    normalizeBounds,
+  });
+  const normalizeCommunicationRegionCandidates = instantiateFunction(
+    "normalizeCommunicationRegionCandidates",
+    {
+      readFirstString,
+      asRecord,
+      normalizeBounds,
+    }
+  );
+  const buildDesignReviewRequestFromCommunication = instantiateFunction(
+    "buildDesignReviewRequestFromCommunication",
+    {
+      normalizeVisibleImages,
+      normalizeCommunicationMarks,
+      normalizeCommunicationRegionCandidates,
+      readFirstString,
+      asRecord,
+      buildDesignReviewRequest,
+    }
+  );
+
+  const request = buildDesignReviewRequestFromCommunication({
+    shellContext: {
+      activeImageId: "img-1",
+      images: [{ id: "img-1", path: "/tmp/source.png", label: "Hero" }],
+    },
+    reviewPayload: {
+      requestId: "review-focus-1",
+      tabId: "tab-a",
+      runDir: "/tmp/run-focus",
+      canvas: {
+        mode: "single",
+        activeImageId: "img-1",
+        visibleImages: [{ id: "img-1", path: "/tmp/source.png", label: "Hero" }],
+        selectedImageIds: ["img-1"],
+      },
+      communication: {
+        tool: "protect",
+        marks: [
+          {
+            id: "mark-protect",
+            imageId: "img-1",
+            bounds: { x: 12, y: 20, width: 64, height: 88 },
+          },
+        ],
+        regionSelections: [
+          {
+            imageId: "img-1",
+            chosenCandidateId: "region-protect",
+            candidates: [
+              {
+                id: "region-protect",
+                bounds: { x: 10, y: 18, w: 70, h: 92 },
+                active: true,
+              },
+            ],
+          },
+        ],
+        focusInputs: [
+          {
+            focusInputId: "focus-protect-explicit",
+            kind: "protect",
+            imageId: "img-1",
+            bounds: { x: 12, y: 20, width: 64, height: 88 },
+          },
+          {
+            focusInputId: "focus-space-explicit",
+            kind: "make_space",
+            imageId: "img-1",
+            bounds: { x: 180, y: 22, width: 110, height: 96 },
+          },
+        ],
+        protectedRegions: [
+          {
+            protectedRegionId: "protected-explicit",
+            imageId: "img-1",
+            bounds: { x: 12, y: 20, width: 64, height: 88 },
+          },
+        ],
+        reservedSpaceIntent: {
+          reservedSpaceIntentId: "space-intent-explicit",
+          areas: [
+            {
+              reservedSpaceId: "space-explicit",
+              imageId: "img-1",
+              bounds: { x: 180, y: 22, width: 110, height: 96 },
+            },
+          ],
+        },
+      },
+    },
+  });
+
+  assert.equal(request.reviewTool, "protect");
+  assert.deepEqual(request.focusInputIds, ["focus-protect-explicit", "focus-space-explicit"]);
+  assert.deepEqual(request.protectedRegionIds, ["protected-explicit"]);
+  assert.deepEqual(request.reservedSpaceAreaIds, ["space-explicit"]);
+  assert.equal(request.communicationReview?.tool, "protect");
+  assert.equal(request.communicationReview?.focusInputs?.length, 2);
+  assert.equal(request.communicationReview?.reservedSpaceIntent?.areas?.length, 1);
+});
+
+test("review bootstrap tray payload exposes Protect and Make Space runtime counts", () => {
+  const readFirstString = instantiateFunction("readFirstString");
+  const clampText = instantiateFunction("clampText");
+  const proposalEffectText = instantiateFunction("proposalEffectText", {
+    clampText,
+    readFirstString,
+  });
+  const slotSummaryText = instantiateFunction("slotSummaryText", {
+    clampText,
+    readFirstString,
+    proposalEffectText,
+  });
+  const communicationTraySlotStatus = instantiateFunction("communicationTraySlotStatus");
+  const mapDesignReviewStateToCommunicationTray = instantiateFunction(
+    "mapDesignReviewStateToCommunicationTray",
+    {
+      readFirstString,
+      clampText,
+      slotSummaryText,
+      communicationTraySlotStatus,
+    }
+  );
+
+  const tray = mapDesignReviewStateToCommunicationTray({
+    request: {
+      requestId: "review-focus-tray",
+      reviewTool: "make_space",
+      focusInputs: [{ focusInputId: "focus-1" }, { focusInputId: "focus-2" }],
+      protectedRegions: [{ protectedRegionId: "protected-1" }],
+      reservedSpaceIntent: {
+        areas: [{ reservedSpaceId: "space-1" }],
+      },
+    },
+    status: "ready",
+    slots: [
+      {
+        rank: 1,
+        status: "ready",
+        proposal: {
+          proposalId: "proposal-1",
+          label: "Open space",
+          previewBrief: "Create room on the right.",
+          focusInputs: [{ focusInputId: "focus-1" }, { focusInputId: "focus-2" }],
+          protectedRegions: [{ protectedRegionId: "protected-1" }],
+          reservedSpaceIntent: {
+            areas: [{ reservedSpaceId: "space-1" }],
+          },
+          preserveProtectedRegions: true,
+          preserveReservedSpace: true,
+        },
+      },
+    ],
+  });
+
+  assert.equal(tray.reviewTool, "make_space");
+  assert.equal(tray.focusInputCount, 2);
+  assert.equal(tray.protectedRegionCount, 1);
+  assert.equal(tray.reservedSpaceAreaCount, 1);
+  assert.equal(tray.slots[0].focusInputCount, 2);
+  assert.equal(tray.slots[0].protectedRegionCount, 1);
+  assert.equal(tray.slots[0].reservedSpaceAreaCount, 1);
+  assert.equal(tray.slots[0].preserveProtectedRegions, true);
+  assert.equal(tray.slots[0].preserveReservedSpace, true);
 });

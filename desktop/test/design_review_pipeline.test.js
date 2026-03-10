@@ -315,6 +315,113 @@ test("design review pipeline applies an accepted proposal and emits structured a
   assert.ok(String(applyEvents[1].outputPath || "").includes("review-apply"));
 });
 
+test("design review pipeline preserves Protect and Make Space semantics in apply state and events", async () => {
+  const applyEvents = [];
+  const applyCalls = [];
+  const pipeline = createDesignReviewPipeline({
+    providerRouter: {
+      async runPlanner() {
+        return {
+          text: JSON.stringify({
+            proposals: [
+              {
+                label: "Open copy room",
+                imageId: "img-hero",
+                actionType: "crop_or_outpaint",
+                why: "Create space for copy while protecting the hero subject.",
+                previewBrief: "Preview wider room on the right side.",
+                applyBrief: "Expand the scene to the right and keep the hero untouched.",
+              },
+            ],
+          }),
+        };
+      },
+      async runPreview({ proposal, outputPath }) {
+        return {
+          outputPath: outputPath || `/tmp/${proposal.proposalId}.png`,
+        };
+      },
+    },
+    runApply: async (payload) => {
+      applyCalls.push(payload);
+      return {
+        outputPath: payload.outputPath || "/tmp/review-apply-focus-output.png",
+      };
+    },
+    onApplyEvent: (event) => {
+      applyEvents.push(event);
+    },
+  });
+
+  const review = await pipeline.startReview({
+    request: {
+      requestId: "review-apply-focus",
+      sessionId: "tab:tab-focus",
+      primaryImageId: "img-hero",
+      reviewTool: "make_space",
+      visibleCanvasRef: "/tmp/review-focus-visible.png",
+      focusInputs: [
+        {
+          focusInputId: "focus-protect-hero",
+          kind: "protect",
+          imageId: "img-hero",
+          bounds: { x: 20, y: 24, width: 94, height: 128 },
+        },
+        {
+          focusInputId: "focus-space-right",
+          kind: "make_space",
+          imageId: "img-hero",
+          bounds: { x: 180, y: 18, width: 140, height: 112 },
+        },
+      ],
+      protectedRegions: [
+        {
+          protectedRegionId: "protected-hero",
+          imageId: "img-hero",
+          bounds: { x: 20, y: 24, width: 94, height: 128 },
+        },
+      ],
+      reservedSpaceIntent: {
+        reservedSpaceIntentId: "space-intent-right",
+        areas: [
+          {
+            reservedSpaceId: "space-right",
+            imageId: "img-hero",
+            bounds: { x: 180, y: 18, width: 140, height: 112 },
+          },
+        ],
+      },
+      visibleCanvasContext: {
+        runDir: "/tmp/review-focus-run",
+        activeTabId: "tab-focus",
+        images: [
+          {
+            id: "img-hero",
+            path: "/tmp/hero-focus.png",
+          },
+        ],
+      },
+    },
+  });
+
+  const applyResult = await pipeline.applyProposal(review.proposals[0].proposalId, {
+    sessionKey: "tab:tab-focus",
+  });
+  const finalState = pipeline.getState();
+
+  assert.equal(applyResult.ok, true);
+  assert.equal(applyCalls.length, 1);
+  assert.deepEqual(applyCalls[0].proposal.focusInputIds, ["focus-protect-hero", "focus-space-right"]);
+  assert.deepEqual(applyCalls[0].proposal.protectedRegionIds, ["protected-hero"]);
+  assert.deepEqual(applyCalls[0].proposal.reservedSpaceAreaIds, ["space-right"]);
+  assert.equal(finalState.lastApplyEvent?.protectedRegionIds?.[0], "protected-hero");
+  assert.equal(finalState.lastApplyEvent?.reservedSpaceAreaIds?.[0], "space-right");
+  assert.deepEqual(applyEvents.map((event) => event.phase), ["started", "succeeded"]);
+  assert.deepEqual(applyEvents[0].focusInputIds, ["focus-protect-hero", "focus-space-right"]);
+  assert.deepEqual(applyEvents[0].protectedRegionIds, ["protected-hero"]);
+  assert.deepEqual(applyEvents[0].reservedSpaceAreaIds, ["space-right"]);
+});
+
 test("design review pipeline resolves apply target from visible image context when proposal and request omit primary image", async () => {
   const applyCalls = [];
   const pipeline = createDesignReviewPipeline({
@@ -690,4 +797,89 @@ test("design review pipeline preserves apply debug payloads on failed proposal s
     finalState.slots[0].apply?.debugInfo?.providerRequest?.model,
     "gemini-nano-banana-2"
   );
+});
+
+test("design review pipeline local apply debug info carries Protect and Make Space contracts when apply is unavailable", async () => {
+  const pipeline = createDesignReviewPipeline({
+    providerRouter: {
+      async runPlanner() {
+        return {
+          text: JSON.stringify({
+            proposals: [
+              {
+                label: "Open room",
+                imageId: "img-1",
+                actionType: "crop_or_outpaint",
+                why: "Create room without touching the hero.",
+                previewBrief: "Preview wider space on the right.",
+                applyBrief: "Expand the scene on the right and keep the hero unchanged.",
+              },
+            ],
+          }),
+        };
+      },
+      async runPreview({ proposal, outputPath }) {
+        return {
+          outputPath: outputPath || `/tmp/${proposal.proposalId}.png`,
+        };
+      },
+    },
+  });
+
+  const review = await pipeline.startReview({
+    request: {
+      requestId: "review-apply-unavailable-focus",
+      primaryImageId: "img-1",
+      visibleCanvasRef: "/tmp/review-visible-focus.png",
+      focusInputs: [
+        {
+          focusInputId: "focus-protect-debug",
+          kind: "protect",
+          imageId: "img-1",
+          bounds: { x: 14, y: 20, width: 60, height: 82 },
+        },
+        {
+          focusInputId: "focus-space-debug",
+          kind: "make_space",
+          imageId: "img-1",
+          bounds: { x: 172, y: 24, width: 118, height: 90 },
+        },
+      ],
+      protectedRegions: [
+        {
+          protectedRegionId: "protected-debug",
+          imageId: "img-1",
+          bounds: { x: 14, y: 20, width: 60, height: 82 },
+        },
+      ],
+      reservedSpaceIntent: {
+        reservedSpaceIntentId: "space-intent-debug",
+        areas: [
+          {
+            reservedSpaceId: "space-debug",
+            imageId: "img-1",
+            bounds: { x: 172, y: 24, width: 118, height: 90 },
+          },
+        ],
+      },
+      visibleCanvasContext: {
+        runDir: "/tmp/review-run-focus",
+        images: [
+          {
+            id: "img-1",
+            path: "/tmp/primary-focus-debug.png",
+          },
+        ],
+      },
+    },
+  });
+
+  const applyResult = await pipeline.applyProposal(review.proposals[0].proposalId);
+
+  assert.equal(applyResult.ok, false);
+  assert.equal(applyResult.reason, "apply_unavailable");
+  assert.deepEqual(applyResult.debugInfo?.focusInputIds, ["focus-protect-debug", "focus-space-debug"]);
+  assert.deepEqual(applyResult.debugInfo?.protectedRegionIds, ["protected-debug"]);
+  assert.deepEqual(applyResult.debugInfo?.reservedSpaceAreaIds, ["space-debug"]);
+  assert.equal(applyResult.debugInfo?.reservedSpaceIntent?.areas?.length, 1);
 });

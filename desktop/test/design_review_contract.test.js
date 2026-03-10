@@ -68,6 +68,84 @@ test("design review request builder carries visible canvas context, marks, selec
   ]);
 });
 
+test("design review request builder derives Protect and Make Space focus contracts from tool-scoped marks and regions", () => {
+  const protectRequest = buildDesignReviewRequest({
+    shellContext: {
+      runDir: "/tmp/protect-run",
+      activeImageId: "img-1",
+      images: [{ id: "img-1", path: "/tmp/protect.png" }],
+    },
+    visualPrompt: {
+      canvas: { mode: "single", active_image_id: "img-1" },
+      marks: [
+        {
+          id: "mark-protect",
+          type: "freehand_marker",
+          imageId: "img-1",
+          bounds: { x: 10, y: 20, width: 120, height: 90 },
+        },
+      ],
+    },
+    regionCandidates: [
+      {
+        id: "region-protect",
+        imageId: "img-1",
+        bounds: { x: 16, y: 28, width: 64, height: 72 },
+      },
+    ],
+    activeRegionCandidateId: "region-protect",
+    reviewTool: "Protect",
+  });
+
+  assert.equal(protectRequest.reviewTool, "protect");
+  assert.deepEqual(
+    protectRequest.focusInputs.map((entry) => entry.kind),
+    ["protect", "protect"]
+  );
+  assert.equal(protectRequest.protectedRegions.length, 2);
+  assert.equal(protectRequest.focusInputIds.length, 2);
+  assert.equal(protectRequest.protectedRegionIds.length, 2);
+  assert.equal(protectRequest.reservedSpaceIntent, null);
+
+  const makeSpaceRequest = buildDesignReviewRequest({
+    shellContext: {
+      runDir: "/tmp/make-space-run",
+      activeImageId: "img-2",
+      images: [{ id: "img-2", path: "/tmp/make-space.png" }],
+    },
+    visualPrompt: {
+      canvas: { mode: "single", active_image_id: "img-2" },
+      marks: [
+        {
+          id: "mark-space",
+          type: "freehand_marker",
+          imageId: "img-2",
+          bounds: { x: 48, y: 30, width: 150, height: 100 },
+        },
+      ],
+    },
+    regionCandidates: [
+      {
+        id: "region-space",
+        imageId: "img-2",
+        bounds: { x: 44, y: 26, width: 180, height: 120 },
+        isActive: true,
+      },
+    ],
+    reviewTool: "Make Space",
+  });
+
+  assert.equal(makeSpaceRequest.reviewTool, "make_space");
+  assert.deepEqual(
+    makeSpaceRequest.focusInputs.map((entry) => entry.kind),
+    ["make_space", "make_space"]
+  );
+  assert.equal(makeSpaceRequest.protectedRegions.length, 0);
+  assert.equal(makeSpaceRequest.reservedSpaceIntent?.mode, "reserve_or_create_room");
+  assert.equal(makeSpaceRequest.reservedSpaceIntent?.areas.length, 2);
+  assert.equal(makeSpaceRequest.reservedSpaceAreaIds.length, 2);
+});
+
 test("design review planner response parser accepts fenced JSON and normalizes proposal fields", () => {
   const response = parseDesignReviewPlannerResponse(
     [
@@ -137,6 +215,37 @@ test("design review planner prompt stays compact, restores canvas-scope constrai
         subjectTags: ["Michael Jordan", "basketball"],
       },
     ],
+    focusInputs: [
+      {
+        focusInputId: "focus-protect",
+        kind: "protect",
+        imageId: "img-ref-2",
+        bounds: { x: 12, y: 18, width: 84, height: 64 },
+      },
+      {
+        focusInputId: "focus-space",
+        kind: "make_space",
+        imageId: "img-ref-2",
+        bounds: { x: 110, y: 22, width: 140, height: 80 },
+      },
+    ],
+    protectedRegions: [
+      {
+        protectedRegionId: "protected-1",
+        imageId: "img-ref-2",
+        bounds: { x: 12, y: 18, width: 84, height: 64 },
+      },
+    ],
+    reservedSpaceIntent: {
+      reservedSpaceIntentId: "space-intent-1",
+      areas: [
+        {
+          reservedSpaceId: "space-1",
+          imageId: "img-ref-2",
+          bounds: { x: 110, y: 22, width: 140, height: 80 },
+        },
+      ],
+    },
   });
 
   assert.match(prompt, /View the canvas image and visible annotations only\./);
@@ -146,10 +255,15 @@ test("design review planner prompt stays compact, restores canvas-scope constrai
   assert.match(prompt, /Use concise effect statements, not rationale essays\./);
   assert.match(prompt, /Use the whole visible canvas as context, not just the local annotation area\./);
   assert.match(prompt, /Treat annotations and the chosen region candidate as focus hints, not crop-only constraints\./);
+  assert.match(prompt, /Protect focus inputs mean do not change that region\./);
+  assert.match(prompt, /Make Space focus inputs mean reserve or create room there\./);
   assert.match(prompt, /Use image identity hints when they exist so subjects are named concretely/);
   assert.match(prompt, /Prefer edits that can plausibly route through the normal execution layer later\./);
   assert.match(prompt, /Return 3 ranked proposals as JSON only\./);
   assert.match(prompt, /"imageIdentityHints": \[/);
+  assert.match(prompt, /"reviewFocus": \{/);
+  assert.match(prompt, /"protectedRegions": \[/);
+  assert.match(prompt, /"reservedSpaceIntent": \{/);
   assert.match(prompt, /"subject": "Michael Jordan"/);
   assert.match(prompt, /"markIds": \[\s*"optional annotation ids"\s*\]/);
   assert.match(prompt, /"actionType": "short edit intent like remove_object, brighten_area, simplify_background"/);
@@ -186,6 +300,23 @@ test("design review apply prompt explicitly constrains edits to targetImage and 
         bounds: { x: 10, y: 12, width: 220, height: 260 },
       },
       negativeConstraints: ["Do not alter the subject pose", "Do not change clothing colors"],
+      protectedRegions: [
+        {
+          protectedRegionId: "protected-apply-1",
+          imageId: "img-target",
+          bounds: { x: 18, y: 32, width: 80, height: 90 },
+        },
+      ],
+      reservedSpaceIntent: {
+        reservedSpaceIntentId: "space-intent-apply-1",
+        areas: [
+          {
+            reservedSpaceId: "space-apply-1",
+            imageId: "img-target",
+            bounds: { x: 200, y: 24, width: 120, height: 96 },
+          },
+        ],
+      },
     },
   });
 
@@ -196,6 +327,15 @@ test("design review apply prompt explicitly constrains edits to targetImage and 
   assert.match(prompt, /"requestSnapshot"/);
   assert.match(prompt, /"label": "Tighten background"/);
   assert.match(prompt, /"negativeConstraints": \[/);
+  assert.match(prompt, /Treat protectedRegions as no-edit zones\./);
+  assert.match(
+    prompt,
+    /When reservedSpaceIntent is present, preserve or create open room in those areas without altering protectedRegions\./
+  );
+  assert.match(prompt, /"protectedRegions": \[/);
+  assert.match(prompt, /"reservedSpaceIntent": \{/);
+  assert.match(prompt, /"preserveProtectedRegions": true/);
+  assert.match(prompt, /"preserveReservedSpace": true/);
 });
 
 test("design review apply request keeps one target image and de-duplicates references", () => {
@@ -242,6 +382,68 @@ test("design review apply request keeps one target image and de-duplicates refer
   ]);
   assert.equal(applyRequest.outputPath, "/tmp/output.png");
   assert.match(applyRequest.prompt, /Edit only targetImage\./);
+});
+
+test("design review apply request preserves Protect and Make Space focus semantics", () => {
+  const applyRequest = buildDesignReviewApplyRequest({
+    request: {
+      requestId: "review-apply-focus",
+      sessionId: "session-focus",
+      primaryImageId: "img-target",
+      reviewTool: "make_space",
+      focusInputs: [
+        {
+          focusInputId: "focus-protect-1",
+          kind: "protect",
+          imageId: "img-target",
+          bounds: { x: 18, y: 16, width: 72, height: 88 },
+        },
+        {
+          focusInputId: "focus-space-1",
+          kind: "make_space",
+          imageId: "img-target",
+          bounds: { x: 180, y: 20, width: 132, height: 90 },
+        },
+      ],
+      protectedRegions: [
+        {
+          protectedRegionId: "protected-focus-1",
+          imageId: "img-target",
+          bounds: { x: 18, y: 16, width: 72, height: 88 },
+        },
+      ],
+      reservedSpaceIntent: {
+        reservedSpaceIntentId: "space-intent-focus-1",
+        areas: [
+          {
+            reservedSpaceId: "space-focus-1",
+            imageId: "img-target",
+            bounds: { x: 180, y: 20, width: 132, height: 90 },
+          },
+        ],
+      },
+    },
+    proposal: {
+      proposalId: "proposal-focus",
+      imageId: "img-target",
+      label: "Open room on the right",
+      actionType: "crop_or_outpaint",
+      applyBrief: "Expand the scene to the right and keep the subject untouched.",
+    },
+    targetImage: {
+      imageId: "img-target",
+      path: "/tmp/target-focus.png",
+    },
+  });
+
+  assert.equal(applyRequest.reviewTool, "make_space");
+  assert.deepEqual(applyRequest.focusInputIds, ["focus-protect-1", "focus-space-1"]);
+  assert.deepEqual(applyRequest.protectedRegionIds, ["protected-focus-1"]);
+  assert.deepEqual(applyRequest.reservedSpaceAreaIds, ["space-focus-1"]);
+  assert.equal(applyRequest.preserveProtectedRegions, true);
+  assert.equal(applyRequest.preserveReservedSpace, true);
+  assert.equal(applyRequest.protectedRegions.length, 1);
+  assert.equal(applyRequest.reservedSpaceIntent?.areas.length, 1);
 });
 
 test("design review apply request resolves target and fallback references from the existing request snapshot", () => {

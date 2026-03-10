@@ -233,6 +233,18 @@ function buildLocalApplyDebugInfo({
   error = null,
   reason = "",
 } = {}) {
+  const focusInputs = Array.isArray(proposal?.focusInputs)
+    ? proposal.focusInputs
+    : Array.isArray(request?.focusInputs)
+      ? request.focusInputs
+      : [];
+  const protectedRegions = Array.isArray(proposal?.protectedRegions)
+    ? proposal.protectedRegions
+    : Array.isArray(request?.protectedRegions)
+      ? request.protectedRegions
+      : [];
+  const reservedSpaceIntent =
+    asRecord(proposal?.reservedSpaceIntent) || asRecord(request?.reservedSpaceIntent) || null;
   return {
     source: "design_review_pipeline",
     route: {
@@ -243,6 +255,23 @@ function buildLocalApplyDebugInfo({
     proposal: cloneJson(proposal),
     request: cloneJson(request),
     reason: readFirstString(reason) || null,
+    focusInputs: cloneJson(focusInputs),
+    focusInputIds: uniqueStrings(
+      focusInputs.map((entry) => readFirstString(entry?.focusInputId)),
+      { limit: 12 }
+    ),
+    protectedRegions: cloneJson(protectedRegions),
+    protectedRegionIds: uniqueStrings(
+      protectedRegions.map((entry) => readFirstString(entry?.protectedRegionId)),
+      { limit: 12 }
+    ),
+    reservedSpaceIntent: cloneJson(reservedSpaceIntent),
+    reservedSpaceAreaIds: uniqueStrings(
+      (Array.isArray(reservedSpaceIntent?.areas) ? reservedSpaceIntent.areas : []).map((entry) =>
+        readFirstString(entry?.reservedSpaceId)
+      ),
+      { limit: 12 }
+    ),
     targetImageId: readFirstString(targetImageId) || null,
     targetImagePath: readFirstString(targetImage?.path, targetImage?.imagePath) || null,
     referenceImageIds: uniqueStrings(referenceImageIds, { limit: 12 }),
@@ -254,6 +283,40 @@ function buildLocalApplyDebugInfo({
     ),
     outputPath: readFirstString(outputPath) || null,
     message: readFirstString(error?.message, error) || null,
+  };
+}
+
+function resolveApplyFocusSemantics(request = {}, proposal = {}) {
+  const focusInputs = Array.isArray(proposal?.focusInputs)
+    ? proposal.focusInputs
+    : Array.isArray(request?.focusInputs)
+      ? request.focusInputs
+      : [];
+  const protectedRegions = Array.isArray(proposal?.protectedRegions)
+    ? proposal.protectedRegions
+    : Array.isArray(request?.protectedRegions)
+      ? request.protectedRegions
+      : [];
+  const reservedSpaceIntent =
+    asRecord(proposal?.reservedSpaceIntent) || asRecord(request?.reservedSpaceIntent) || null;
+  return {
+    focusInputs: cloneJson(focusInputs),
+    protectedRegions: cloneJson(protectedRegions),
+    reservedSpaceIntent: cloneJson(reservedSpaceIntent),
+    focusInputIds: uniqueStrings(
+      focusInputs.map((entry) => readFirstString(entry?.focusInputId)),
+      { limit: 12 }
+    ),
+    protectedRegionIds: uniqueStrings(
+      protectedRegions.map((entry) => readFirstString(entry?.protectedRegionId)),
+      { limit: 12 }
+    ),
+    reservedSpaceAreaIds: uniqueStrings(
+      (Array.isArray(reservedSpaceIntent?.areas) ? reservedSpaceIntent.areas : []).map((entry) =>
+        readFirstString(entry?.reservedSpaceId)
+      ),
+      { limit: 12 }
+    ),
   };
 }
 
@@ -598,6 +661,7 @@ export function createDesignReviewPipeline({
         request?.visibleCanvasContext?.runDir,
         proposal.proposalId
       );
+      const focusSemantics = resolveApplyFocusSemantics(request, proposal);
       const startedAt = new Date().toISOString();
       const startedEvent = {
         phase: "started",
@@ -611,6 +675,12 @@ export function createDesignReviewPipeline({
         request,
         targetImageId,
         referenceImageIds,
+        focusInputs: focusSemantics.focusInputs,
+        focusInputIds: focusSemantics.focusInputIds,
+        protectedRegions: focusSemantics.protectedRegions,
+        protectedRegionIds: focusSemantics.protectedRegionIds,
+        reservedSpaceIntent: focusSemantics.reservedSpaceIntent,
+        reservedSpaceAreaIds: focusSemantics.reservedSpaceAreaIds,
         outputPath: null,
         debugInfo: null,
         error: null,
@@ -627,6 +697,9 @@ export function createDesignReviewPipeline({
           sessionKey: resolvedSessionKey || null,
           targetImageId,
           referenceImageIds,
+          focusInputIds: focusSemantics.focusInputIds,
+          protectedRegionIds: focusSemantics.protectedRegionIds,
+          reservedSpaceAreaIds: focusSemantics.reservedSpaceAreaIds,
           status: "running",
           startedAt,
           completedAt: null,
@@ -644,6 +717,9 @@ export function createDesignReviewPipeline({
             sessionKey: resolvedSessionKey || null,
             targetImageId,
             referenceImageIds,
+            focusInputIds: focusSemantics.focusInputIds,
+            protectedRegionIds: focusSemantics.protectedRegionIds,
+            reservedSpaceAreaIds: focusSemantics.reservedSpaceAreaIds,
             outputPath: null,
             startedAt,
             completedAt: null,
@@ -683,6 +759,12 @@ export function createDesignReviewPipeline({
           request,
           targetImageId,
           referenceImageIds,
+          focusInputs: focusSemantics.focusInputs,
+          focusInputIds: focusSemantics.focusInputIds,
+          protectedRegions: focusSemantics.protectedRegions,
+          protectedRegionIds: focusSemantics.protectedRegionIds,
+          reservedSpaceIntent: focusSemantics.reservedSpaceIntent,
+          reservedSpaceAreaIds: focusSemantics.reservedSpaceAreaIds,
           outputPath: null,
           debugInfo,
           error: readFirstString(error?.message, error) || "Applying an edit proposal failed.",
@@ -706,6 +788,9 @@ export function createDesignReviewPipeline({
               sessionKey: resolvedSessionKey || null,
               targetImageId,
               referenceImageIds,
+              focusInputIds: focusSemantics.focusInputIds,
+              protectedRegionIds: focusSemantics.protectedRegionIds,
+              reservedSpaceAreaIds: focusSemantics.reservedSpaceAreaIds,
               outputPath: null,
               startedAt,
               completedAt,
@@ -773,6 +858,12 @@ export function createDesignReviewPipeline({
           request,
           targetImageId,
           referenceImageIds,
+          focusInputs: focusSemantics.focusInputs,
+          focusInputIds: focusSemantics.focusInputIds,
+          protectedRegions: focusSemantics.protectedRegions,
+          protectedRegionIds: focusSemantics.protectedRegionIds,
+          reservedSpaceIntent: focusSemantics.reservedSpaceIntent,
+          reservedSpaceAreaIds: focusSemantics.reservedSpaceAreaIds,
           outputPath: resolvedOutputPath,
           debugInfo: cloneJson(applyResult?.debugInfo || null),
           error: null,
@@ -796,6 +887,9 @@ export function createDesignReviewPipeline({
               sessionKey: resolvedSessionKey || null,
               targetImageId,
               referenceImageIds,
+              focusInputIds: focusSemantics.focusInputIds,
+              protectedRegionIds: focusSemantics.protectedRegionIds,
+              reservedSpaceAreaIds: focusSemantics.reservedSpaceAreaIds,
               outputPath: resolvedOutputPath,
               startedAt,
               completedAt,

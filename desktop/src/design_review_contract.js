@@ -166,6 +166,820 @@ function normalizeTargetRegion(raw = {}) {
   };
 }
 
+function normalizeReviewTool(raw = "") {
+  const normalized = readFirstString(raw)
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  if (!normalized) return null;
+  if (
+    [
+      "protect",
+      "protected",
+      "protect_region",
+      "protected_region",
+      "preserve_region",
+    ].includes(normalized)
+  ) {
+    return "protect";
+  }
+  if (
+    [
+      "make_space",
+      "make_space_here",
+      "reserve_space",
+      "reserved_space",
+      "space",
+      "open_space",
+    ].includes(normalized)
+  ) {
+    return "make_space";
+  }
+  return normalized;
+}
+
+function normalizeFocusKind(rawKind = "", fallbackKind = "") {
+  const normalized = normalizeReviewTool(rawKind) || normalizeReviewTool(fallbackKind);
+  if (normalized === "protect" || normalized === "make_space") return normalized;
+  return "";
+}
+
+function normalizedIdPart(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._:-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function focusBoundsSignature(bounds = null) {
+  if (!bounds) return "";
+  return [
+    Math.round(Number(bounds.x) || 0),
+    Math.round(Number(bounds.y) || 0),
+    Math.round(Number(bounds.width) || 0),
+    Math.round(Number(bounds.height) || 0),
+  ].join("_");
+}
+
+function normalizeFocusArea(
+  raw = {},
+  {
+    fallbackImageId = null,
+    fallbackMarkIds = [],
+    fallbackRegionCandidateId = null,
+    fallbackBounds = null,
+  } = {}
+) {
+  const record = asRecord(raw) || {};
+  return {
+    imageId:
+      readFirstString(
+        record.imageId,
+        record.image_id,
+        record.sourceImageId,
+        record.source_image_id,
+        record.targetRegion?.imageId,
+        record.targetRegion?.image_id,
+        fallbackImageId
+      ) || null,
+    markIds: uniqueStrings(
+      [
+        ...(Array.isArray(record.markIds) ? record.markIds : []),
+        ...(Array.isArray(record.mark_ids) ? record.mark_ids : []),
+        ...(Array.isArray(record.targetRegion?.markIds) ? record.targetRegion.markIds : []),
+        ...(Array.isArray(record.targetRegion?.mark_ids) ? record.targetRegion.mark_ids : []),
+        ...fallbackMarkIds,
+      ],
+      { limit: 6 }
+    ),
+    regionCandidateId:
+      readFirstString(
+        record.regionCandidateId,
+        record.region_candidate_id,
+        record.targetRegion?.regionCandidateId,
+        record.targetRegion?.region_candidate_id,
+        fallbackRegionCandidateId
+      ) || null,
+    bounds:
+      normalizeBounds(
+        record.bounds ||
+          record.area ||
+          record.region ||
+          record.targetRegion?.bounds ||
+          record.target_region?.bounds ||
+          fallbackBounds
+      ) || null,
+  };
+}
+
+function hasFocusArea(area = {}) {
+  return Boolean(
+    readFirstString(area?.imageId) ||
+      readFirstString(area?.regionCandidateId) ||
+      (Array.isArray(area?.markIds) && area.markIds.length) ||
+      area?.bounds
+  );
+}
+
+function buildFocusContractId(prefix = "focus", kind = "", area = {}, index = 0) {
+  const parts = [
+    normalizedIdPart(kind),
+    normalizedIdPart(area?.markIds?.[0]),
+    normalizedIdPart(area?.regionCandidateId),
+    normalizedIdPart(area?.imageId),
+    normalizedIdPart(focusBoundsSignature(area?.bounds)),
+  ].filter(Boolean);
+  const suffix = parts.length ? parts.join(":") : String(Math.max(1, Number(index) + 1));
+  return `${prefix}:${suffix}`;
+}
+
+function focusInstructionForKind(kind = "") {
+  return kind === "protect" ? "Do not change this region." : "Reserve or create room here.";
+}
+
+function normalizeFocusInput(
+  rawFocusInput = {},
+  {
+    reviewTool = "",
+    fallbackImageId = null,
+    fallbackMarkIds = [],
+    fallbackRegionCandidateId = null,
+    fallbackBounds = null,
+    index = 0,
+  } = {}
+) {
+  const record = asRecord(rawFocusInput) || {};
+  const kind = normalizeFocusKind(
+    readFirstString(record.kind, record.type, record.semantic, record.intent, record.tool),
+    reviewTool
+  );
+  if (!kind) return null;
+  const area = normalizeFocusArea(record, {
+    fallbackImageId,
+    fallbackMarkIds,
+    fallbackRegionCandidateId,
+    fallbackBounds,
+  });
+  if (!hasFocusArea(area)) return null;
+  return {
+    focusInputId:
+      readFirstString(record.focusInputId, record.focus_input_id, record.id) ||
+      buildFocusContractId("focus", kind, area, index),
+    kind,
+    semantic: kind === "protect" ? "protected_region" : "reserved_space",
+    imageId: area.imageId,
+    markIds: area.markIds,
+    regionCandidateId: area.regionCandidateId,
+    bounds: area.bounds,
+    instruction: clampText(
+      readFirstString(record.instruction, record.description) || focusInstructionForKind(kind),
+      120
+    ),
+    sourceTool:
+      normalizeReviewTool(readFirstString(record.sourceTool, record.source_tool, record.tool, reviewTool)) ||
+      kind,
+    strength: kind === "protect" ? "hard" : "prefer",
+  };
+}
+
+function normalizeProtectedRegion(
+  rawRegion = {},
+  {
+    fallbackImageId = null,
+    fallbackMarkIds = [],
+    fallbackRegionCandidateId = null,
+    fallbackBounds = null,
+    fallbackSourceTool = "protect",
+    index = 0,
+  } = {}
+) {
+  const record = asRecord(rawRegion) || {};
+  const area = normalizeFocusArea(record, {
+    fallbackImageId,
+    fallbackMarkIds,
+    fallbackRegionCandidateId,
+    fallbackBounds,
+  });
+  if (!hasFocusArea(area)) return null;
+  return {
+    protectedRegionId:
+      readFirstString(record.protectedRegionId, record.protected_region_id, record.id) ||
+      buildFocusContractId("protected", "protect", area, index),
+    focusInputId: readFirstString(record.focusInputId, record.focus_input_id) || null,
+    imageId: area.imageId,
+    markIds: area.markIds,
+    regionCandidateId: area.regionCandidateId,
+    bounds: area.bounds,
+    instruction: clampText(
+      readFirstString(record.instruction, record.description) || focusInstructionForKind("protect"),
+      120
+    ),
+    sourceTool:
+      normalizeReviewTool(
+        readFirstString(record.sourceTool, record.source_tool, record.tool, fallbackSourceTool)
+      ) || "protect",
+  };
+}
+
+function normalizeReservedSpaceArea(
+  rawArea = {},
+  {
+    fallbackImageId = null,
+    fallbackMarkIds = [],
+    fallbackRegionCandidateId = null,
+    fallbackBounds = null,
+    fallbackSourceTool = "make_space",
+    index = 0,
+  } = {}
+) {
+  const record = asRecord(rawArea) || {};
+  const area = normalizeFocusArea(record, {
+    fallbackImageId,
+    fallbackMarkIds,
+    fallbackRegionCandidateId,
+    fallbackBounds,
+  });
+  if (!hasFocusArea(area)) return null;
+  return {
+    reservedSpaceId:
+      readFirstString(record.reservedSpaceId, record.reserved_space_id, record.id) ||
+      buildFocusContractId("reserved-space", "make_space", area, index),
+    focusInputId: readFirstString(record.focusInputId, record.focus_input_id) || null,
+    imageId: area.imageId,
+    markIds: area.markIds,
+    regionCandidateId: area.regionCandidateId,
+    bounds: area.bounds,
+    instruction: clampText(
+      readFirstString(record.instruction, record.description) || focusInstructionForKind("make_space"),
+      120
+    ),
+    sourceTool:
+      normalizeReviewTool(
+        readFirstString(record.sourceTool, record.source_tool, record.tool, fallbackSourceTool)
+      ) || "make_space",
+  };
+}
+
+function normalizeReservedSpaceIntent(
+  rawIntent = null,
+  {
+    fallbackImageId = null,
+    fallbackMarkIds = [],
+    fallbackRegionCandidateId = null,
+    fallbackBounds = null,
+    fallbackSourceTool = "make_space",
+  } = {}
+) {
+  const record = Array.isArray(rawIntent) ? { areas: rawIntent } : asRecord(rawIntent);
+  if (!record) return null;
+  const rawAreas = Array.isArray(record.areas)
+    ? record.areas
+    : Array.isArray(record.regions)
+      ? record.regions
+      : Array.isArray(record.reservedSpaces)
+        ? record.reservedSpaces
+        : Array.isArray(record.reserved_spaces)
+          ? record.reserved_spaces
+          : [
+              record.area ||
+              record.region ||
+              record.bounds ||
+              record.regionCandidateId ||
+              record.region_candidate_id ||
+              record.markIds ||
+              record.mark_ids
+                ? record
+                : null,
+            ].filter(Boolean);
+  const areas = rawAreas
+    .map((area, index) =>
+      normalizeReservedSpaceArea(area, {
+        fallbackImageId,
+        fallbackMarkIds,
+        fallbackRegionCandidateId,
+        fallbackBounds,
+        fallbackSourceTool,
+        index,
+      })
+    )
+    .filter(Boolean);
+  if (!areas.length) return null;
+  return {
+    reservedSpaceIntentId:
+      readFirstString(
+        record.reservedSpaceIntentId,
+        record.reserved_space_intent_id,
+        record.id
+      ) ||
+      buildFocusContractId(
+        "reserved-space-intent",
+        "make_space",
+        areas[0],
+        0
+      ),
+    mode: "reserve_or_create_room",
+    instruction: clampText(
+      readFirstString(record.instruction, record.description) || focusInstructionForKind("make_space"),
+      140
+    ),
+    primaryAreaId:
+      readFirstString(record.primaryAreaId, record.primary_area_id, areas[0]?.reservedSpaceId) || null,
+    areas,
+  };
+}
+
+function uniqueBy(values = [], keyFor = () => "") {
+  const out = [];
+  const seen = new Set();
+  for (const value of Array.isArray(values) ? values : []) {
+    if (!value || typeof value !== "object") continue;
+    const key = String(keyFor(value) || "").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
+function focusInputKey(entry = {}) {
+  if (hasFocusArea(entry)) {
+    return [
+      normalizeFocusKind(entry?.kind),
+      readFirstString(entry?.imageId),
+      uniqueStrings(entry?.markIds || [], { limit: 6 }).join(","),
+      readFirstString(entry?.regionCandidateId),
+      focusBoundsSignature(entry?.bounds),
+    ].join("|");
+  }
+  return readFirstString(entry?.focusInputId);
+}
+
+function protectedRegionKey(entry = {}) {
+  if (hasFocusArea(entry)) {
+    return [
+      readFirstString(entry?.imageId),
+      uniqueStrings(entry?.markIds || [], { limit: 6 }).join(","),
+      readFirstString(entry?.regionCandidateId),
+      focusBoundsSignature(entry?.bounds),
+    ].join("|");
+  }
+  return readFirstString(entry?.protectedRegionId);
+}
+
+function reservedSpaceAreaKey(entry = {}) {
+  if (hasFocusArea(entry)) {
+    return [
+      readFirstString(entry?.imageId),
+      uniqueStrings(entry?.markIds || [], { limit: 6 }).join(","),
+      readFirstString(entry?.regionCandidateId),
+      focusBoundsSignature(entry?.bounds),
+    ].join("|");
+  }
+  return readFirstString(entry?.reservedSpaceId);
+}
+
+function mergeFocusInputs(...lists) {
+  return uniqueBy(lists.flat(), focusInputKey);
+}
+
+function mergeProtectedRegions(...lists) {
+  return uniqueBy(lists.flat(), protectedRegionKey);
+}
+
+function mergeReservedSpaceIntent(base = null, extra = null) {
+  const baseAreas = Array.isArray(base?.areas) ? base.areas : [];
+  const extraAreas = Array.isArray(extra?.areas) ? extra.areas : [];
+  const areas = uniqueBy([...extraAreas, ...baseAreas], reservedSpaceAreaKey);
+  if (!areas.length) return null;
+  return {
+    reservedSpaceIntentId:
+      readFirstString(
+        extra?.reservedSpaceIntentId,
+        extra?.reserved_space_intent_id,
+        base?.reservedSpaceIntentId,
+        base?.reserved_space_intent_id
+      ) ||
+      buildFocusContractId("reserved-space-intent", "make_space", areas[0], 0),
+    mode: "reserve_or_create_room",
+    instruction: clampText(
+      readFirstString(extra?.instruction, base?.instruction) || focusInstructionForKind("make_space"),
+      140
+    ),
+    primaryAreaId:
+      readFirstString(extra?.primaryAreaId, base?.primaryAreaId, areas[0]?.reservedSpaceId) || null,
+    areas,
+  };
+}
+
+function createFocusInputFromProtectedRegion(region = {}) {
+  const normalized = normalizeProtectedRegion(region);
+  if (!normalized) return null;
+  return {
+    focusInputId: normalized.focusInputId || `focus:${normalized.protectedRegionId}`,
+    kind: "protect",
+    semantic: "protected_region",
+    imageId: normalized.imageId,
+    markIds: normalized.markIds,
+    regionCandidateId: normalized.regionCandidateId,
+    bounds: normalized.bounds,
+    instruction: normalized.instruction,
+    sourceTool: normalized.sourceTool || "protect",
+    strength: "hard",
+  };
+}
+
+function createFocusInputFromReservedSpaceArea(area = {}) {
+  const normalized = normalizeReservedSpaceArea(area);
+  if (!normalized) return null;
+  return {
+    focusInputId: normalized.focusInputId || `focus:${normalized.reservedSpaceId}`,
+    kind: "make_space",
+    semantic: "reserved_space",
+    imageId: normalized.imageId,
+    markIds: normalized.markIds,
+    regionCandidateId: normalized.regionCandidateId,
+    bounds: normalized.bounds,
+    instruction: normalized.instruction,
+    sourceTool: normalized.sourceTool || "make_space",
+    strength: "prefer",
+  };
+}
+
+function deriveProtectedRegionsFromFocusInputs(focusInputs = []) {
+  return mergeProtectedRegions(
+    (Array.isArray(focusInputs) ? focusInputs : [])
+      .filter((entry) => normalizeFocusKind(entry?.kind) === "protect")
+      .map((entry, index) =>
+        normalizeProtectedRegion(entry, {
+          fallbackImageId: entry?.imageId || null,
+          fallbackMarkIds: entry?.markIds || [],
+          fallbackRegionCandidateId: entry?.regionCandidateId || null,
+          fallbackBounds: entry?.bounds || null,
+          fallbackSourceTool: entry?.sourceTool || "protect",
+          index,
+        })
+      )
+      .filter(Boolean)
+  );
+}
+
+function deriveReservedSpaceIntentFromFocusInputs(focusInputs = []) {
+  const areas = (Array.isArray(focusInputs) ? focusInputs : [])
+    .filter((entry) => normalizeFocusKind(entry?.kind) === "make_space")
+    .map((entry, index) =>
+      normalizeReservedSpaceArea(entry, {
+        fallbackImageId: entry?.imageId || null,
+        fallbackMarkIds: entry?.markIds || [],
+        fallbackRegionCandidateId: entry?.regionCandidateId || null,
+        fallbackBounds: entry?.bounds || null,
+        fallbackSourceTool: entry?.sourceTool || "make_space",
+        index,
+      })
+    )
+    .filter(Boolean);
+  if (!areas.length) return null;
+  return {
+    reservedSpaceIntentId: buildFocusContractId("reserved-space-intent", "make_space", areas[0], 0),
+    mode: "reserve_or_create_room",
+    instruction: focusInstructionForKind("make_space"),
+    primaryAreaId: areas[0]?.reservedSpaceId || null,
+    areas: uniqueBy(areas, reservedSpaceAreaKey),
+  };
+}
+
+function deriveFocusInputsFromReviewToolFallback({
+  reviewTool = "",
+  marks = [],
+  regionCandidates = [],
+  activeRegionCandidateId = null,
+  primaryImageId = null,
+} = {}) {
+  const kind = normalizeFocusKind(reviewTool);
+  if (!kind) return [];
+  const inputs = [];
+  const normalizedMarks = Array.isArray(marks) ? marks : [];
+  normalizedMarks.forEach((mark, index) => {
+    const markId = readFirstString(mark?.id);
+    const input = normalizeFocusInput(
+      {
+        kind,
+        tool: kind,
+        imageId: readFirstString(mark?.imageId, mark?.sourceImageId, primaryImageId) || null,
+        markIds: markId ? [markId] : [],
+        bounds: normalizeBounds(mark?.bounds),
+      },
+      {
+        reviewTool: kind,
+        fallbackImageId: readFirstString(mark?.imageId, mark?.sourceImageId, primaryImageId) || null,
+        fallbackMarkIds: markId ? [markId] : [],
+        fallbackBounds: normalizeBounds(mark?.bounds),
+        index,
+      }
+    );
+    if (input) inputs.push(input);
+  });
+  const normalizedCandidates = (Array.isArray(regionCandidates) ? regionCandidates : []).filter(
+    (candidate) => candidate && typeof candidate === "object"
+  );
+  const activeCandidates = normalizedCandidates.filter((candidate) => {
+    const candidateId = readFirstString(
+      candidate?.id,
+      candidate?.regionCandidateId,
+      candidate?.region_candidate_id
+    );
+    if (
+      activeRegionCandidateId &&
+      candidateId &&
+      candidateId === readFirstString(activeRegionCandidateId)
+    ) {
+      return true;
+    }
+    return Boolean(candidate?.isActive ?? candidate?.is_active);
+  });
+  const regionFocusCandidates =
+    activeCandidates.length > 0
+      ? activeCandidates
+      : normalizedCandidates.length === 1
+        ? normalizedCandidates
+        : [];
+  regionFocusCandidates.forEach((candidate, index) => {
+    const candidateId =
+      readFirstString(candidate?.id, candidate?.regionCandidateId, candidate?.region_candidate_id) ||
+      null;
+    const input = normalizeFocusInput(
+      {
+        kind,
+        tool: kind,
+        imageId: readFirstString(candidate?.imageId, candidate?.image_id, primaryImageId) || null,
+        regionCandidateId: candidateId,
+        bounds: normalizeBounds(candidate?.bounds),
+      },
+      {
+        reviewTool: kind,
+        fallbackImageId: readFirstString(candidate?.imageId, candidate?.image_id, primaryImageId) || null,
+        fallbackRegionCandidateId: candidateId,
+        fallbackBounds: normalizeBounds(candidate?.bounds),
+        index: normalizedMarks.length + index,
+      }
+    );
+    if (input) inputs.push(input);
+  });
+  return mergeFocusInputs(inputs);
+}
+
+function normalizeDesignReviewFocusContract({
+  focusInputs = [],
+  protectedRegions = [],
+  reservedSpaceIntent = null,
+  reviewTool = "",
+  marks = [],
+  regionCandidates = [],
+  activeRegionCandidateId = null,
+  primaryImageId = null,
+} = {}) {
+  const normalizedReviewTool = normalizeReviewTool(reviewTool) || null;
+  const normalizedFocusInputs = (Array.isArray(focusInputs) ? focusInputs : [])
+    .map((entry, index) =>
+      normalizeFocusInput(entry, {
+        reviewTool: normalizedReviewTool,
+        fallbackImageId: primaryImageId,
+        index,
+      })
+    )
+    .filter(Boolean);
+  const normalizedProtectedRegions = (Array.isArray(protectedRegions) ? protectedRegions : [])
+    .map((entry, index) =>
+      normalizeProtectedRegion(entry, {
+        fallbackImageId: primaryImageId,
+        fallbackSourceTool: normalizedReviewTool || "protect",
+        index,
+      })
+    )
+    .filter(Boolean);
+  const normalizedReservedSpaceIntent = normalizeReservedSpaceIntent(reservedSpaceIntent, {
+    fallbackImageId: primaryImageId,
+    fallbackSourceTool: normalizedReviewTool || "make_space",
+  });
+  let mergedFocusInputs = mergeFocusInputs(
+    normalizedFocusInputs,
+    normalizedProtectedRegions.map(createFocusInputFromProtectedRegion).filter(Boolean),
+    (normalizedReservedSpaceIntent?.areas || []).map(createFocusInputFromReservedSpaceArea).filter(Boolean)
+  );
+  if (
+    !mergedFocusInputs.length &&
+    !normalizedProtectedRegions.length &&
+    !(normalizedReservedSpaceIntent?.areas || []).length
+  ) {
+    mergedFocusInputs = deriveFocusInputsFromReviewToolFallback({
+      reviewTool: normalizedReviewTool,
+      marks,
+      regionCandidates,
+      activeRegionCandidateId,
+      primaryImageId,
+    });
+  }
+  return {
+    reviewTool: normalizedReviewTool,
+    focusInputs: mergedFocusInputs,
+    protectedRegions: mergeProtectedRegions(
+      normalizedProtectedRegions,
+      deriveProtectedRegionsFromFocusInputs(mergedFocusInputs)
+    ),
+    reservedSpaceIntent: mergeReservedSpaceIntent(
+      deriveReservedSpaceIntentFromFocusInputs(mergedFocusInputs),
+      normalizedReservedSpaceIntent
+    ),
+  };
+}
+
+function focusEntryMatchesImage(entry = {}, imageId = null) {
+  const normalizedImageId = readFirstString(imageId);
+  if (!normalizedImageId) return true;
+  const entryImageId = readFirstString(entry?.imageId);
+  return !entryImageId || entryImageId === normalizedImageId;
+}
+
+function filterFocusContractForImage(
+  {
+    focusInputs = [],
+    protectedRegions = [],
+    reservedSpaceIntent = null,
+  } = {},
+  imageId = null
+) {
+  const filteredFocusInputs = mergeFocusInputs(
+    (Array.isArray(focusInputs) ? focusInputs : []).filter((entry) =>
+      focusEntryMatchesImage(entry, imageId)
+    )
+  );
+  const filteredProtectedRegions = mergeProtectedRegions(
+    (Array.isArray(protectedRegions) ? protectedRegions : []).filter((entry) =>
+      focusEntryMatchesImage(entry, imageId)
+    )
+  );
+  const filteredReservedSpaceAreas = (Array.isArray(reservedSpaceIntent?.areas)
+    ? reservedSpaceIntent.areas
+    : []
+  ).filter((entry) => focusEntryMatchesImage(entry, imageId));
+  return {
+    focusInputs: filteredFocusInputs,
+    protectedRegions: filteredProtectedRegions,
+    reservedSpaceIntent: filteredReservedSpaceAreas.length
+      ? {
+          reservedSpaceIntentId:
+            readFirstString(
+              reservedSpaceIntent?.reservedSpaceIntentId,
+              reservedSpaceIntent?.reserved_space_intent_id
+            ) || null,
+          mode: "reserve_or_create_room",
+          instruction:
+            clampText(
+              readFirstString(reservedSpaceIntent?.instruction) ||
+                focusInstructionForKind("make_space"),
+              140
+            ) || focusInstructionForKind("make_space"),
+          primaryAreaId:
+            readFirstString(
+              reservedSpaceIntent?.primaryAreaId,
+              filteredReservedSpaceAreas[0]?.reservedSpaceId
+            ) || null,
+          areas: uniqueBy(filteredReservedSpaceAreas, reservedSpaceAreaKey),
+        }
+      : null,
+  };
+}
+
+function resolveProposalFocusContract({ request = {}, proposal = {} } = {}) {
+  const proposalImageId =
+    readFirstString(proposal?.imageId, proposal?.image_id, request?.primaryImageId) || null;
+  const scopedRequestContract = filterFocusContractForImage(
+    {
+      focusInputs: request?.focusInputs || [],
+      protectedRegions: request?.protectedRegions || [],
+      reservedSpaceIntent: request?.reservedSpaceIntent || null,
+    },
+    proposalImageId
+  );
+  const explicitProposalContract = normalizeDesignReviewFocusContract({
+    focusInputs: proposal?.focusInputs || proposal?.focus_inputs || [],
+    protectedRegions: proposal?.protectedRegions || proposal?.protected_regions || [],
+    reservedSpaceIntent:
+      proposal?.reservedSpaceIntent ||
+      proposal?.reserved_space_intent ||
+      proposal?.reservedSpaces ||
+      proposal?.reserved_spaces ||
+      null,
+    reviewTool: request?.reviewTool || null,
+    primaryImageId: proposalImageId,
+  });
+  return {
+    reviewTool: explicitProposalContract.reviewTool || request?.reviewTool || null,
+    focusInputs: mergeFocusInputs(
+      scopedRequestContract.focusInputs,
+      explicitProposalContract.focusInputs
+    ),
+    protectedRegions: mergeProtectedRegions(
+      scopedRequestContract.protectedRegions,
+      explicitProposalContract.protectedRegions
+    ),
+    reservedSpaceIntent: mergeReservedSpaceIntent(
+      scopedRequestContract.reservedSpaceIntent,
+      explicitProposalContract.reservedSpaceIntent
+    ),
+  };
+}
+
+function focusInputIdsFromList(focusInputs = []) {
+  return uniqueStrings(
+    (Array.isArray(focusInputs) ? focusInputs : []).map((entry) =>
+      readFirstString(entry?.focusInputId)
+    ),
+    { limit: 12 }
+  );
+}
+
+function protectedRegionIdsFromList(protectedRegions = []) {
+  return uniqueStrings(
+    (Array.isArray(protectedRegions) ? protectedRegions : []).map((entry) =>
+      readFirstString(entry?.protectedRegionId)
+    ),
+    { limit: 12 }
+  );
+}
+
+function reservedSpaceAreaIdsFromIntent(reservedSpaceIntent = null) {
+  return uniqueStrings(
+    (Array.isArray(reservedSpaceIntent?.areas) ? reservedSpaceIntent.areas : []).map((entry) =>
+      readFirstString(entry?.reservedSpaceId)
+    ),
+    { limit: 12 }
+  );
+}
+
+function buildDesignReviewFocusPromptPayload({
+  focusInputs = [],
+  protectedRegions = [],
+  reservedSpaceIntent = null,
+} = {}) {
+  const payload = {};
+  const normalizedFocusInputs = (Array.isArray(focusInputs) ? focusInputs : [])
+    .slice(0, 6)
+    .map((entry) => ({
+      focusInputId: readFirstString(entry?.focusInputId) || null,
+      kind: normalizeFocusKind(entry?.kind) || null,
+      imageId: readFirstString(entry?.imageId) || null,
+      markIds: uniqueStrings(entry?.markIds || [], { limit: 4 }),
+      regionCandidateId: readFirstString(entry?.regionCandidateId) || null,
+      bounds: normalizeBounds(entry?.bounds),
+      instruction: clampText(entry?.instruction, 120) || null,
+    }))
+    .filter((entry) => entry.kind);
+  const normalizedProtectedRegions = (Array.isArray(protectedRegions) ? protectedRegions : [])
+    .slice(0, 4)
+    .map((entry) => ({
+      protectedRegionId: readFirstString(entry?.protectedRegionId) || null,
+      imageId: readFirstString(entry?.imageId) || null,
+      markIds: uniqueStrings(entry?.markIds || [], { limit: 4 }),
+      regionCandidateId: readFirstString(entry?.regionCandidateId) || null,
+      bounds: normalizeBounds(entry?.bounds),
+      instruction: clampText(entry?.instruction, 120) || null,
+    }))
+    .filter((entry) => entry.protectedRegionId || entry.regionCandidateId || entry.markIds.length || entry.bounds);
+  const normalizedReservedSpaceAreas = (Array.isArray(reservedSpaceIntent?.areas)
+    ? reservedSpaceIntent.areas
+    : []
+  )
+    .slice(0, 4)
+    .map((entry) => ({
+      reservedSpaceId: readFirstString(entry?.reservedSpaceId) || null,
+      imageId: readFirstString(entry?.imageId) || null,
+      markIds: uniqueStrings(entry?.markIds || [], { limit: 4 }),
+      regionCandidateId: readFirstString(entry?.regionCandidateId) || null,
+      bounds: normalizeBounds(entry?.bounds),
+      instruction: clampText(entry?.instruction, 120) || null,
+    }))
+    .filter((entry) => entry.reservedSpaceId || entry.regionCandidateId || entry.markIds.length || entry.bounds);
+  if (normalizedFocusInputs.length) payload.focusInputs = normalizedFocusInputs;
+  if (normalizedProtectedRegions.length) payload.protectedRegions = normalizedProtectedRegions;
+  if (normalizedReservedSpaceAreas.length) {
+    payload.reservedSpaceIntent = {
+      reservedSpaceIntentId:
+        readFirstString(
+          reservedSpaceIntent?.reservedSpaceIntentId,
+          reservedSpaceIntent?.reserved_space_intent_id
+        ) || null,
+      mode: "reserve_or_create_room",
+      instruction:
+        clampText(
+          readFirstString(reservedSpaceIntent?.instruction) || focusInstructionForKind("make_space"),
+          140
+        ) || focusInstructionForKind("make_space"),
+      areas: normalizedReservedSpaceAreas,
+    };
+  }
+  return Object.keys(payload).length ? payload : null;
+}
+
 function normalizeVisibleCanvasApplyImages(request = {}) {
   const visibleCanvasContext = asRecord(request.visibleCanvasContext) || {};
   const images = Array.isArray(visibleCanvasContext.images) ? visibleCanvasContext.images : [];
@@ -264,6 +1078,10 @@ export function buildDesignReviewRequest({
   regionCandidates = [],
   activeRegionCandidateId = null,
   selectedImageIds = null,
+  focusInputs = undefined,
+  protectedRegions = undefined,
+  reservedSpaceIntent = undefined,
+  reviewTool = null,
   cachedImageAnalyses = [],
   accountMemorySummary = null,
   requestId = null,
@@ -290,6 +1108,25 @@ export function buildDesignReviewRequest({
   const chosenRegionCandidate = (Array.isArray(regionCandidates) ? regionCandidates : []).find(
     (candidate) => readFirstString(candidate?.id, candidate?.regionCandidateId, candidate?.region_candidate_id) === String(activeRegionCandidateId || "").trim()
   );
+  const normalizedRegionCandidates = (Array.isArray(regionCandidates) ? regionCandidates : [])
+    .filter((item) => item && typeof item === "object")
+    .map((item, index) => ({
+      id:
+        readFirstString(item.id, item.regionCandidateId, item.region_candidate_id) ||
+        `region_${index + 1}`,
+      imageId: readFirstString(item.imageId, item.image_id, primaryImageId) || null,
+      source: readFirstString(item.source) || "magic_select",
+      clickPoint: asRecord(item.clickPoint || item.click_point) ? { ...(item.clickPoint || item.click_point) } : null,
+      maskRef: readFirstString(item.maskRef, item.mask_ref) || null,
+      bounds: normalizeBounds(item.bounds),
+      confidence: clamp(item.confidence, 0, 1),
+      rank: Math.max(1, Number(item.rank) || index + 1),
+      cycleGroupId: readFirstString(item.cycleGroupId, item.cycle_group_id) || null,
+      isActive:
+        String(activeRegionCandidateId || "").trim() !== ""
+          ? readFirstString(item.id, item.regionCandidateId, item.region_candidate_id) === String(activeRegionCandidateId || "").trim()
+          : Boolean(item.isActive ?? item.is_active),
+    }));
   const selectionState = selectionStateFromInputs({
     activeRegionCandidateId,
     regionSelectionActive: Boolean(shell.regionSelectionActive),
@@ -309,6 +1146,49 @@ export function buildDesignReviewRequest({
   const normalizedRequestId = readFirstString(requestId) || nowId("review");
   const normalizedSessionId =
     readFirstString(sessionId, shell.activeTabId, shell.runDir ? `session:${shell.runDir}` : "") || normalizedRequestId;
+  const reviewFocus = normalizeDesignReviewFocusContract({
+    focusInputs:
+      Array.isArray(focusInputs)
+        ? focusInputs
+        : Array.isArray(visual.focusInputs)
+          ? visual.focusInputs
+          : Array.isArray(visual.focus_inputs)
+            ? visual.focus_inputs
+            : Array.isArray(shell.focusInputs)
+              ? shell.focusInputs
+              : Array.isArray(shell.focus_inputs)
+                ? shell.focus_inputs
+                : [],
+    protectedRegions:
+      Array.isArray(protectedRegions)
+        ? protectedRegions
+        : Array.isArray(visual.protectedRegions)
+          ? visual.protectedRegions
+          : Array.isArray(visual.protected_regions)
+            ? visual.protected_regions
+            : Array.isArray(shell.protectedRegions)
+              ? shell.protectedRegions
+              : Array.isArray(shell.protected_regions)
+                ? shell.protected_regions
+                : [],
+    reservedSpaceIntent:
+      reservedSpaceIntent ??
+      visual.reservedSpaceIntent ??
+      visual.reserved_space_intent ??
+      shell.reservedSpaceIntent ??
+      shell.reserved_space_intent ??
+      null,
+    reviewTool:
+      readFirstString(reviewTool, visual.reviewTool, visual.review_tool, shell.reviewTool, shell.review_tool) ||
+      null,
+    marks,
+    regionCandidates: normalizedRegionCandidates,
+    activeRegionCandidateId,
+    primaryImageId,
+  });
+  const focusInputIds = focusInputIdsFromList(reviewFocus.focusInputs);
+  const protectedRegionIds = protectedRegionIdsFromList(reviewFocus.protectedRegions);
+  const reservedSpaceAreaIds = reservedSpaceAreaIdsFromIntent(reviewFocus.reservedSpaceIntent);
 
   return {
     schemaVersion: DESIGN_REVIEW_REQUEST_SCHEMA,
@@ -321,6 +1201,13 @@ export function buildDesignReviewRequest({
     activeRegionCandidateId: readFirstString(activeRegionCandidateId) || null,
     selectionState,
     trigger: readFirstString(trigger) || DESIGN_REVIEW_TRIGGER,
+    reviewTool: reviewFocus.reviewTool,
+    focusInputs: reviewFocus.focusInputs,
+    focusInputIds,
+    protectedRegions: reviewFocus.protectedRegions,
+    protectedRegionIds,
+    reservedSpaceIntent: reviewFocus.reservedSpaceIntent,
+    reservedSpaceAreaIds,
     uploadAnalysisRef: firstAnalysisRef,
     accountMemoryRef: readFirstString(accountMemorySummary?.memoryRef, accountMemorySummary?.memory_ref) || null,
     slotCount: clamp(slotCount, 2, 3),
@@ -337,25 +1224,7 @@ export function buildDesignReviewRequest({
     },
     imageIdentityHints,
     marks: marks.map((item) => ({ ...item })),
-    regionCandidates: (Array.isArray(regionCandidates) ? regionCandidates : [])
-      .filter((item) => item && typeof item === "object")
-      .map((item, index) => ({
-        id:
-          readFirstString(item.id, item.regionCandidateId, item.region_candidate_id) ||
-          `region_${index + 1}`,
-        imageId: readFirstString(item.imageId, item.image_id, primaryImageId) || null,
-        source: readFirstString(item.source) || "magic_select",
-        clickPoint: asRecord(item.clickPoint || item.click_point) ? { ...(item.clickPoint || item.click_point) } : null,
-        maskRef: readFirstString(item.maskRef, item.mask_ref) || null,
-        bounds: normalizeBounds(item.bounds),
-        confidence: clamp(item.confidence, 0, 1),
-        rank: Math.max(1, Number(item.rank) || index + 1),
-        cycleGroupId: readFirstString(item.cycleGroupId, item.cycle_group_id) || null,
-        isActive:
-          String(activeRegionCandidateId || "").trim() !== ""
-            ? readFirstString(item.id, item.regionCandidateId, item.region_candidate_id) === String(activeRegionCandidateId || "").trim()
-            : Boolean(item.isActive ?? item.is_active),
-      })),
+    regionCandidates: normalizedRegionCandidates,
     selectedImageIds: selected,
     cachedImageAnalyses: analyses,
     chosenRegionCandidate: chosenRegionCandidate ? { ...chosenRegionCandidate } : null,
@@ -378,6 +1247,11 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
           subjectTags: uniqueStrings(entry?.subjectTags || [], { limit: 3 }),
         }))
     : [];
+  const focusPayload = buildDesignReviewFocusPromptPayload({
+    focusInputs: normalized.focusInputs || [],
+    protectedRegions: normalized.protectedRegions || [],
+    reservedSpaceIntent: normalized.reservedSpaceIntent || null,
+  });
   const promptSections = [
     "View the canvas image and visible annotations only.",
     "An action is a concrete visual edit the editor could apply to the image.",
@@ -390,11 +1264,28 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
     "Prefer edits that can plausibly route through the normal execution layer later.",
     `Return ${slotCount} ranked proposals as JSON only.`,
   ];
+  if (focusPayload?.protectedRegions?.length) {
+    promptSections.push("Protect focus inputs mean do not change that region.");
+  }
+  if (focusPayload?.reservedSpaceIntent?.areas?.length) {
+    promptSections.push("Make Space focus inputs mean reserve or create room there.");
+  }
   if (identityHints.length) {
     promptSections.push(
       JSON.stringify(
         {
           imageIdentityHints: identityHints,
+        },
+        null,
+        2
+      )
+    );
+  }
+  if (focusPayload) {
+    promptSections.push(
+      JSON.stringify(
+        {
+          reviewFocus: focusPayload,
         },
         null,
         2
@@ -462,6 +1353,10 @@ export function buildUploadAnalysisPrompt({
 export function buildDesignReviewPreviewPrompt({ request = {}, proposal = {} } = {}) {
   const normalizedRequest = asRecord(request) || {};
   const normalizedProposal = asRecord(proposal) || {};
+  const focusContract = resolveProposalFocusContract({
+    request: normalizedRequest,
+    proposal: normalizedProposal,
+  });
   const negativeConstraints = uniqueStrings(
     normalizedProposal.negativeConstraints || normalizedProposal.negative_constraints || [],
     { limit: 8 }
@@ -475,19 +1370,32 @@ export function buildDesignReviewPreviewPrompt({ request = {}, proposal = {} } =
     previewBrief: clampText(normalizedProposal.previewBrief, 240),
     applyBrief: clampText(normalizedProposal.applyBrief, 220),
     negativeConstraints,
+    protectedRegions: focusContract.protectedRegions,
+    reservedSpaceIntent: focusContract.reservedSpaceIntent,
   };
   return [
     "Render a low-resolution visual preview for this Juggernaut proposal.",
     "Preserve composition unless the proposal explicitly reframes it.",
     "Treat negativeConstraints as hard limits.",
+    focusContract.protectedRegions.length ? "Treat protectedRegions as no-edit zones." : null,
+    focusContract.reservedSpaceIntent?.areas?.length
+      ? "When reservedSpaceIntent exists, preserve or create room in those areas without overwriting protected content."
+      : null,
     JSON.stringify(payload, null, 2),
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function buildDesignReviewApplyRequestSnapshot(request = {}) {
   const normalized = asRecord(request) || {};
   const visibleCanvasContext = asRecord(normalized.visibleCanvasContext) || {};
   const chosenRegionCandidate = asRecord(normalized.chosenRegionCandidate) || null;
+  const focusPayload = buildDesignReviewFocusPromptPayload({
+    focusInputs: normalized.focusInputs || [],
+    protectedRegions: normalized.protectedRegions || [],
+    reservedSpaceIntent: normalized.reservedSpaceIntent || null,
+  });
   return {
     requestId: readFirstString(normalized.requestId) || null,
     sessionId: readFirstString(normalized.sessionId) || null,
@@ -497,6 +1405,10 @@ function buildDesignReviewApplyRequestSnapshot(request = {}) {
     markIds: uniqueStrings(normalized.markIds || [], { limit: 8 }),
     activeRegionCandidateId: readFirstString(normalized.activeRegionCandidateId) || null,
     selectionState: readFirstString(normalized.selectionState) || "none",
+    reviewTool: normalizeReviewTool(normalized.reviewTool) || null,
+    focusInputIds: focusInputIdsFromList(normalized.focusInputs || []),
+    protectedRegionIds: protectedRegionIdsFromList(normalized.protectedRegions || []),
+    reservedSpaceAreaIds: reservedSpaceAreaIdsFromIntent(normalized.reservedSpaceIntent || null),
     visibleCanvasContext: {
       runDir: readFirstString(visibleCanvasContext.runDir) || null,
       canvasMode: readFirstString(visibleCanvasContext.canvasMode) || null,
@@ -517,11 +1429,16 @@ function buildDesignReviewApplyRequestSnapshot(request = {}) {
           bounds: normalizeBounds(chosenRegionCandidate.bounds),
         }
       : null,
+    reviewFocus: focusPayload,
   };
 }
 
 export function buildDesignReviewApplyPrompt({ request = {}, proposal = {} } = {}) {
   const normalizedProposal = asRecord(proposal) || {};
+  const focusContract = resolveProposalFocusContract({
+    request,
+    proposal: normalizedProposal,
+  });
   const negativeConstraints = uniqueStrings(
     normalizedProposal.negativeConstraints || normalizedProposal.negative_constraints || [],
     { limit: 8 }
@@ -534,6 +1451,11 @@ export function buildDesignReviewApplyPrompt({ request = {}, proposal = {} } = {
       applyBrief: clampText(normalizedProposal.applyBrief, 320),
       targetRegion: normalizeTargetRegion(normalizedProposal.targetRegion || normalizedProposal.target_region || {}),
       negativeConstraints,
+      focusInputs: focusContract.focusInputs,
+      protectedRegions: focusContract.protectedRegions,
+      reservedSpaceIntent: focusContract.reservedSpaceIntent,
+      preserveProtectedRegions: focusContract.protectedRegions.length > 0,
+      preserveReservedSpace: Boolean(focusContract.reservedSpaceIntent?.areas?.length),
     },
   };
   return [
@@ -543,8 +1465,14 @@ export function buildDesignReviewApplyPrompt({ request = {}, proposal = {} } = {
     "Use referenceImages[] as guidance only and do not modify or return separate outputs for them.",
     "Return exactly one final rendered image for targetImage.",
     "Treat negativeConstraints as hard requirements.",
+    focusContract.protectedRegions.length ? "Treat protectedRegions as no-edit zones." : null,
+    focusContract.reservedSpaceIntent?.areas?.length
+      ? "When reservedSpaceIntent is present, preserve or create open room in those areas without altering protectedRegions."
+      : null,
     JSON.stringify(payload, null, 2),
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function buildDesignReviewApplyRequest({
@@ -558,6 +1486,10 @@ export function buildDesignReviewApplyRequest({
 } = {}) {
   const normalizedRequest = asRecord(request) || {};
   const normalizedProposal = asRecord(proposal) || {};
+  const focusContract = resolveProposalFocusContract({
+    request: normalizedRequest,
+    proposal: normalizedProposal,
+  });
   const requestedModel = readFirstString(model) || DESIGN_REVIEW_FINAL_APPLY_MODEL;
   const normalizedModel = normalizeDesignReviewApplyModel(requestedModel);
   const { ordered: visibleImages, byId: visibleImagesById } = normalizeVisibleCanvasApplyImages(normalizedRequest);
@@ -585,6 +1517,15 @@ export function buildDesignReviewApplyRequest({
       request: normalizedRequest,
       proposal: normalizedProposal,
     }),
+    reviewTool: normalizeReviewTool(normalizedRequest.reviewTool) || null,
+    focusInputs: focusContract.focusInputs,
+    focusInputIds: focusInputIdsFromList(focusContract.focusInputs),
+    protectedRegions: focusContract.protectedRegions,
+    protectedRegionIds: protectedRegionIdsFromList(focusContract.protectedRegions),
+    reservedSpaceIntent: focusContract.reservedSpaceIntent,
+    reservedSpaceAreaIds: reservedSpaceAreaIdsFromIntent(focusContract.reservedSpaceIntent),
+    preserveProtectedRegions: focusContract.protectedRegions.length > 0,
+    preserveReservedSpace: Boolean(focusContract.reservedSpaceIntent?.areas?.length),
     targetImage: target,
     referenceImages: referenceImageList,
     outputPath: readFirstString(outputPath) || null,
@@ -684,6 +1625,16 @@ function normalizeProposal(rawProposal = {}, request = {}, { index = 0 } = {}) {
   const raw = asRecord(rawProposal) || {};
   const imageId =
     readFirstString(raw.imageId, raw.image_id, request.primaryImageId, request.selectedImageIds?.[0]) || null;
+  const focusContract = resolveProposalFocusContract({
+    request,
+    proposal: {
+      ...raw,
+      imageId,
+    },
+  });
+  const focusInputIds = focusInputIdsFromList(focusContract.focusInputs);
+  const protectedRegionIds = protectedRegionIdsFromList(focusContract.protectedRegions);
+  const reservedSpaceAreaIds = reservedSpaceAreaIdsFromIntent(focusContract.reservedSpaceIntent);
   const label = clampText(readFirstString(raw.label, raw.title, raw.name) || `Proposal ${index + 1}`, 80);
   const actionType = normalizeActionType(
     readFirstString(raw.actionType, raw.action_type, raw.actionIntent, raw.action_intent, raw.capability)
@@ -723,6 +1674,15 @@ function normalizeProposal(rawProposal = {}, request = {}, { index = 0 } = {}) {
     previewBrief,
     applyBrief,
     negativeConstraints,
+    reviewTool: focusContract.reviewTool || normalizeReviewTool(request.reviewTool) || null,
+    focusInputs: focusContract.focusInputs,
+    focusInputIds,
+    protectedRegions: focusContract.protectedRegions,
+    protectedRegionIds,
+    reservedSpaceIntent: focusContract.reservedSpaceIntent,
+    reservedSpaceAreaIds,
+    preserveProtectedRegions: protectedRegionIds.length > 0,
+    preserveReservedSpace: reservedSpaceAreaIds.length > 0,
     rank: Math.max(1, Number(raw.rank) || index + 1),
     status: "preview_pending",
   };
@@ -767,6 +1727,11 @@ export function createDesignReviewPreviewJob({
     inputImageId: readFirstString(proposal.imageId, request.primaryImageId) || null,
     rank: Math.max(1, Number(rank) || 1),
     status: readFirstString(status) || "queued",
+    focusInputIds: focusInputIdsFromList(proposal.focusInputs || request.focusInputs || []),
+    protectedRegionIds: protectedRegionIdsFromList(proposal.protectedRegions || request.protectedRegions || []),
+    reservedSpaceAreaIds: reservedSpaceAreaIdsFromIntent(
+      proposal.reservedSpaceIntent || request.reservedSpaceIntent || null
+    ),
     outputPreviewRef: readFirstString(outputPreviewRef) || null,
     failureReason: readFirstString(failureReason) || null,
   };
