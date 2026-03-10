@@ -56,6 +56,11 @@ import {
 import { DESKTOP_EVENT_TYPES, PTY_COMMANDS, quoteForPtyArg as quoteForPtyArgUtil } from "./canvas_protocol.js";
 import { appendJsonlWithFallback, appendTextWithFallback } from "./jsonl_io.js";
 import {
+  createAgentObservableDriver,
+  installAgentObservableDriverBridge,
+} from "./agent_observable_driver.js";
+import { createAgentTraceLog } from "./agent_trace_log.js";
+import {
   classifyIntentIconsRouting as classifyIntentIconsRoutingUtil,
   intentIconsPayloadChecksum as intentIconsPayloadChecksumUtil,
   intentIconsPayloadSafeSnippet as intentIconsPayloadSafeSnippetUtil,
@@ -2923,6 +2928,7 @@ let openaiRealtimePortraitHotUntil = 0;
 let openaiRealtimePortraitBoostActive = false;
 let openaiRealtimePortraitCooldownTimer = null;
 let effectsRuntime = null;
+let agentObservableDriverRuntime = null;
 
 function _intentTracePath() {
   if (!state.runDir) return null;
@@ -21581,12 +21587,22 @@ function hitTestCommunicationRegionCandidate(ptCanvas) {
   return null;
 }
 
+function trySetOverlayPointerCapture(pointerId) {
+  try {
+    if (els.overlayCanvas && typeof els.overlayCanvas.setPointerCapture === "function") {
+      els.overlayCanvas.setPointerCapture(pointerId);
+    }
+  } catch {
+    // Observable driver calls can use synthetic pointer ids with no browser capture backing them.
+  }
+}
+
 function beginCommunicationMarkerStroke(event, p, pCss, communicationImageId = null) {
   const imageId = communicationImageId ? String(communicationImageId || "") : null;
   if (typeof event?.preventDefault === "function") event.preventDefault();
   if (typeof event?.stopPropagation === "function") event.stopPropagation();
   bumpInteraction({ semantic: false });
-  els.overlayCanvas.setPointerCapture(event.pointerId);
+  trySetOverlayPointerCapture(event.pointerId);
   state.pointer.active = true;
   state.pointer.kind = COMMUNICATION_POINTER_KINDS.MARKER;
   state.pointer.imageId = imageId;
@@ -21616,7 +21632,7 @@ function beginCommunicationMagicSelectStroke(event, p, pCss, communicationImageI
   const imageId = String(communicationImageId || "").trim();
   if (!imageId) return false;
   bumpInteraction({ semantic: false });
-  els.overlayCanvas.setPointerCapture(event.pointerId);
+  trySetOverlayPointerCapture(event.pointerId);
   state.pointer.active = true;
   state.pointer.kind = COMMUNICATION_POINTER_KINDS.MAGIC_SELECT;
   state.pointer.imageId = imageId;
@@ -21636,7 +21652,7 @@ function beginCommunicationImageEraseStroke(event, p, pCss, communicationImageId
   const imageId = String(communicationImageId || "").trim();
   if (!imageId) return false;
   bumpInteraction({ semantic: false });
-  els.overlayCanvas.setPointerCapture(event.pointerId);
+  trySetOverlayPointerCapture(event.pointerId);
   state.pointer.active = true;
   state.pointer.kind = COMMUNICATION_POINTER_KINDS.ERASER;
   state.pointer.imageId = imageId;
@@ -21775,10 +21791,10 @@ function handleCommunicationCanvasPointerDown(event, p, pCss) {
   return false;
 }
 
-function setCommunicationTool(tool = null, { source = "communication_rail" } = {}) {
+function applyCommunicationToolSelection(tool = null, { source = "communication_rail", toggle = true } = {}) {
   const normalized = String(tool || "").trim().toLowerCase();
   const next = COMMUNICATION_TOOL_IDS.includes(normalized) ? normalized : null;
-  if (state.communication.tool === next) {
+  if (toggle && state.communication.tool === next) {
     state.communication.tool = null;
   } else {
     state.communication.tool = next;
@@ -21793,6 +21809,14 @@ function setCommunicationTool(tool = null, { source = "communication_rail" } = {
   });
   requestRender();
   return state.communication.tool;
+}
+
+function setCommunicationTool(tool = null, { source = "communication_rail" } = {}) {
+  return applyCommunicationToolSelection(tool, { source, toggle: true });
+}
+
+function ensureCommunicationToolActive(tool = null, { source = "agent_observable_driver" } = {}) {
+  return applyCommunicationToolSelection(tool, { source, toggle: false });
 }
 
 function renderCommunicationRail() {
@@ -22199,6 +22223,388 @@ function buildCommunicationBridgeSnapshot() {
     latestAnchor: resolveCommunicationReviewAnchor(),
     proposalTray: buildCommunicationProposalTraySnapshot(),
   };
+}
+
+let observableCommunicationPointerSeq = 0;
+
+function nextObservableCommunicationPointerId() {
+  observableCommunicationPointerSeq += 1;
+  return 900_000_000 + observableCommunicationPointerSeq;
+}
+
+function buildObservableCommunicationPointerEvent(pointCss = null, { pointerId = null, button = 0 } = {}) {
+  const clamped = clampCanvasCssPoint(pointCss);
+  return {
+    button,
+    pointerId: Number.isFinite(Number(pointerId)) ? Number(pointerId) : nextObservableCommunicationPointerId(),
+    offsetX: Number(clamped.x) || 0,
+    offsetY: Number(clamped.y) || 0,
+    preventDefault() {},
+    stopPropagation() {},
+  };
+}
+
+function assertObservableCommunicationReady(tool = "") {
+  if (state.pointer?.active) {
+    const label = String(tool || "communication tool").trim() || "communication tool";
+    throw new Error(`Observable ${label} action requires the canvas pointer state to be idle.`);
+  }
+}
+
+function clearObservableCommunicationPointerState() {
+  state.pointer.active = false;
+  state.pointer.kind = null;
+  state.pointer.imageId = null;
+  state.pointer.role = null;
+  state.pointer.corner = null;
+  state.pointer.startRectCss = null;
+  state.pointer.transformHandleEdge = null;
+  state.pointer.transformPivotX = 0;
+  state.pointer.transformPivotY = 0;
+  state.pointer.transformAnchorWidthPx = 0;
+  state.pointer.transformStartAngleRad = 0;
+  state.pointer.transformStartRotateDeg = 0;
+  state.pointer.transformStartSkewXDeg = 0;
+  state.pointer.startX = 0;
+  state.pointer.startY = 0;
+  state.pointer.lastX = 0;
+  state.pointer.lastY = 0;
+  state.pointer.startCssX = 0;
+  state.pointer.startCssY = 0;
+  state.pointer.startOffsetX = 0;
+  state.pointer.startOffsetY = 0;
+  state.pointer.importPointCss = null;
+  state.pointer.wheelOnTap = false;
+  state.pointer.moved = false;
+  state.pointer.semanticInteractionEmitted = false;
+}
+
+function resolveObservableCommunicationImageId(pointCanvas = null, requestedImageId = null) {
+  const explicitImageId = String(requestedImageId || "").trim();
+  if (explicitImageId) {
+    return state.imagesById.has(explicitImageId) ? explicitImageId : null;
+  }
+  return pointCanvas ? hitTestVisibleCanvasImage(pointCanvas) : null;
+}
+
+function appendObservableCommunicationStrokeSamples(kind, samplesCss = []) {
+  const draft = kind === COMMUNICATION_POINTER_KINDS.MARKER
+    ? state.communication?.markDraft
+    : kind === COMMUNICATION_POINTER_KINDS.ERASER
+      ? state.communication?.eraseDraft
+      : null;
+  if (!draft) return [];
+  const samples = Array.isArray(samplesCss)
+    ? samplesCss.map((point) => clampCanvasCssPoint(point))
+    : [];
+  if (!samples.length) return communicationDraftScreenPoints(draft);
+  const latest = samples[samples.length - 1] || null;
+  if (latest) {
+    const distancePx = Math.hypot(
+      (Number(latest.x) || 0) - (Number(state.pointer.startCssX) || 0),
+      (Number(latest.y) || 0) - (Number(state.pointer.startCssY) || 0)
+    );
+    if (distancePx > COMMUNICATION_MARK_MIN_DRAG_PX) {
+      state.pointer.moved = true;
+    }
+    const latestCanvas = communicationScreenCssPointToCanvas(latest);
+    state.pointer.lastX = Number(latestCanvas.x) || 0;
+    state.pointer.lastY = Number(latestCanvas.y) || 0;
+  }
+  draft.screenPoints = communicationAppendDraftScreenPoints(draft.screenPoints, samples);
+  requestRender();
+  return communicationDraftScreenPoints(draft);
+}
+
+async function waitObservableCommunicationStep(stepDelayMs = 0) {
+  const delay = Math.max(0, Math.min(5000, Math.round(Number(stepDelayMs) || 0)));
+  await new Promise((resolve) => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => {
+        if (delay > 0 && typeof window.setTimeout === "function") {
+          window.setTimeout(resolve, delay);
+        } else {
+          resolve();
+        }
+      });
+      return;
+    }
+    if (delay > 0) {
+      setTimeout(resolve, delay);
+      return;
+    }
+    resolve();
+  });
+}
+
+async function appendObservableCommunicationStrokeSamplesWithPacing(
+  kind,
+  samplesCss = [],
+  { stepDelayMs = 0 } = {}
+) {
+  const points = Array.isArray(samplesCss)
+    ? samplesCss.map((point) => clampCanvasCssPoint(point))
+    : [];
+  if (!points.length) return [];
+  if (!(Number(stepDelayMs) > 0)) {
+    return appendObservableCommunicationStrokeSamples(kind, points);
+  }
+  for (const point of points) {
+    appendObservableCommunicationStrokeSamples(kind, [point]);
+    await waitObservableCommunicationStep(stepDelayMs);
+  }
+  const draft = kind === COMMUNICATION_POINTER_KINDS.MARKER
+    ? state.communication?.markDraft
+    : kind === COMMUNICATION_POINTER_KINDS.ERASER
+      ? state.communication?.eraseDraft
+      : null;
+  return communicationDraftScreenPoints(draft);
+}
+
+function buildObservableCommunicationTraceSnapshot(request = null) {
+  return buildCommunicationReviewPayload({
+    requestId: readFirstString(request?.request_id, request?.requestId) || null,
+    source: readFirstString(request?.source, "agent_observable_driver") || "agent_observable_driver",
+  });
+}
+
+function finishObservableCommunicationMarkerStroke(
+  pointerEvent = null,
+  { source = "agent_observable_marker" } = {}
+) {
+  const mark = commitCommunicationMarkDraft();
+  clearObservableCommunicationPointerState();
+  if (mark) {
+    if (
+      state.communication?.proposalTray?.visible &&
+      !communicationTrayAnchorPinnedToTitlebar(state.communication?.proposalTray?.anchor)
+    ) {
+      state.communication.proposalTray.anchor = state.communication.lastAnchor;
+    }
+    invalidateActiveTabPreview("selection_overlay_change");
+    dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
+      source,
+      communication: buildCommunicationBridgeSnapshot(),
+      context: buildJuggernautShellContext(),
+    });
+  }
+  requestRender();
+  try {
+    els.overlayCanvas.releasePointerCapture(pointerEvent?.pointerId);
+  } catch {
+    // ignore
+  }
+  return {
+    ok: Boolean(mark),
+    tool: "marker",
+    mark_id: mark?.id ? String(mark.id) : null,
+    image_id: mark?.imageId ? String(mark.imageId) : null,
+    source_image_id: mark?.sourceImageId ? String(mark.sourceImageId) : null,
+    coordinate_space: mark?.coordinateSpace ? String(mark.coordinateSpace) : null,
+    point_count: Array.isArray(mark?.points) ? mark.points.length : 0,
+    communication: buildCommunicationBridgeSnapshot(),
+  };
+}
+
+function finishObservableCommunicationMagicSelectClick(
+  pointerEvent = null,
+  { source = "agent_observable_magic_select" } = {}
+) {
+  const targetImageId = String(state.pointer.imageId || "").trim();
+  const moved = Boolean(state.pointer.moved);
+  const imagePoint = !moved && targetImageId ? canvasToImageForImageId(canvasPointFromEvent(pointerEvent), targetImageId) : null;
+  let group = null;
+  if (targetImageId && imagePoint) {
+    group = applyCommunicationMagicSelectAtPoint(targetImageId, imagePoint);
+    if (
+      group &&
+      state.communication?.proposalTray?.visible &&
+      !communicationTrayAnchorPinnedToTitlebar(state.communication?.proposalTray?.anchor)
+    ) {
+      state.communication.proposalTray.anchor = state.communication.lastAnchor;
+    }
+    if (group) {
+      invalidateActiveTabPreview("selection_overlay_change");
+      dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
+        source,
+        communication: buildCommunicationBridgeSnapshot(),
+        context: buildJuggernautShellContext(),
+      });
+    }
+  }
+  clearObservableCommunicationPointerState();
+  requestRender();
+  try {
+    els.overlayCanvas.releasePointerCapture(pointerEvent?.pointerId);
+  } catch {
+    // ignore
+  }
+  return {
+    ok: Boolean(group),
+    tool: "magic_select",
+    image_id: targetImageId || null,
+    active_candidate_id: group?.chosenCandidateId ? String(group.chosenCandidateId) : null,
+    candidate_count: Array.isArray(group?.candidates) ? group.candidates.length : 0,
+    communication: buildCommunicationBridgeSnapshot(),
+  };
+}
+
+async function finishObservableCommunicationEraserStroke(
+  pointerEvent = null,
+  { source = "agent_observable_eraser" } = {}
+) {
+  const eraseDraft = state.communication?.eraseDraft
+    ? {
+        ...state.communication.eraseDraft,
+        screenPoints: communicationDraftScreenPoints(state.communication.eraseDraft),
+      }
+    : null;
+  state.communication.eraseDraft = null;
+  clearObservableCommunicationPointerState();
+  requestRender();
+  try {
+    els.overlayCanvas.releasePointerCapture(pointerEvent?.pointerId);
+  } catch {
+    // ignore
+  }
+  let artifact = null;
+  if (eraseDraft?.imageId) {
+    artifact = await commitCommunicationImageEraseDraft(eraseDraft);
+  }
+  return {
+    ok: Boolean(artifact),
+    tool: "eraser",
+    operation: artifact ? "image_erase" : "image_erase_noop",
+    image_id: eraseDraft?.imageId ? String(eraseDraft.imageId) : null,
+    point_count: Array.isArray(eraseDraft?.screenPoints) ? eraseDraft.screenPoints.length : 0,
+    output_path: artifact?.outputPath || artifact?.path || null,
+    receipt_path: artifact?.receiptPath || null,
+    source,
+    communication: buildCommunicationBridgeSnapshot(),
+  };
+}
+
+function performObservableCommunicationAnnotationErase(
+  pointCss = null,
+  { source = "agent_observable_eraser" } = {}
+) {
+  const pointCanvas = communicationScreenCssPointToCanvas(pointCss);
+  const erased = eraseCommunicationAtCanvasPoint(pointCanvas);
+  if (!erased) {
+    return {
+      ok: false,
+      tool: "eraser",
+      operation: "annotation_erase_noop",
+      image_id: null,
+      communication: buildCommunicationBridgeSnapshot(),
+    };
+  }
+  invalidateActiveTabPreview("selection_overlay_change");
+  dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
+    source,
+    communication: buildCommunicationBridgeSnapshot(),
+    context: buildJuggernautShellContext(),
+  });
+  requestRender();
+  return {
+    ok: true,
+    tool: "eraser",
+    operation: "annotation_erase",
+    erased_kind: erased.kind ? String(erased.kind) : null,
+    image_id: erased.imageId ? String(erased.imageId) : null,
+    communication: buildCommunicationBridgeSnapshot(),
+  };
+}
+
+async function performObservableCommunicationMarkerStroke(request = {}) {
+  assertObservableCommunicationReady("marker");
+  ensureCommunicationToolActive("marker", { source: readFirstString(request?.source, "agent_observable_driver") });
+  const pointsCss = Array.isArray(request?.points) ? request.points.map((point) => clampCanvasCssPoint(point)) : [];
+  const startCss = pointsCss[0] || { x: 0, y: 0 };
+  const startCanvas = communicationScreenCssPointToCanvas(startCss);
+  const targetImageId = resolveObservableCommunicationImageId(startCanvas, request?.image_id);
+  const pointerEvent = buildObservableCommunicationPointerEvent(startCss);
+  beginCommunicationMarkerStroke(pointerEvent, startCanvas, startCss, targetImageId);
+  await appendObservableCommunicationStrokeSamplesWithPacing(
+    COMMUNICATION_POINTER_KINDS.MARKER,
+    pointsCss.slice(1),
+    { stepDelayMs: request?.step_delay_ms }
+  );
+  return finishObservableCommunicationMarkerStroke(pointerEvent);
+}
+
+async function performObservableCommunicationMagicSelectClick(request = {}) {
+  assertObservableCommunicationReady("magic select");
+  ensureCommunicationToolActive("magic_select", { source: readFirstString(request?.source, "agent_observable_driver") });
+  const pointCss = clampCanvasCssPoint(request?.point || request?.points?.[0]);
+  const pointCanvas = communicationScreenCssPointToCanvas(pointCss);
+  const targetImageId = resolveObservableCommunicationImageId(pointCanvas, request?.image_id);
+  if (!targetImageId) {
+    throw new Error("Magic Select requires a visible target image.");
+  }
+  const pointerEvent = buildObservableCommunicationPointerEvent(pointCss);
+  const began = beginCommunicationMagicSelectStroke(pointerEvent, pointCanvas, pointCss, targetImageId);
+  if (!began) {
+    throw new Error("Magic Select could not begin on the requested target image.");
+  }
+  await waitObservableCommunicationStep(request?.step_delay_ms);
+  return finishObservableCommunicationMagicSelectClick(pointerEvent);
+}
+
+async function performObservableCommunicationEraserStroke(request = {}) {
+  assertObservableCommunicationReady("eraser");
+  ensureCommunicationToolActive("eraser", { source: readFirstString(request?.source, "agent_observable_driver") });
+  const pointsCss = Array.isArray(request?.points) ? request.points.map((point) => clampCanvasCssPoint(point)) : [];
+  const startCss = pointsCss[0] || { x: 0, y: 0 };
+  if (!String(request?.image_id || "").trim() && pointsCss.length === 1) {
+    const annotationErase = performObservableCommunicationAnnotationErase(startCss);
+    if (annotationErase.ok) {
+      return annotationErase;
+    }
+  }
+  const startCanvas = communicationScreenCssPointToCanvas(startCss);
+  const targetImageId = resolveObservableCommunicationImageId(startCanvas, request?.image_id);
+  if (!targetImageId) {
+    throw new Error("Eraser stroke requires a visible target image.");
+  }
+  const pointerEvent = buildObservableCommunicationPointerEvent(startCss);
+  const began = beginCommunicationImageEraseStroke(pointerEvent, startCanvas, startCss, targetImageId);
+  if (!began) {
+    throw new Error("Eraser stroke could not begin on the requested target image.");
+  }
+  await appendObservableCommunicationStrokeSamplesWithPacing(
+    COMMUNICATION_POINTER_KINDS.ERASER,
+    pointsCss.slice(1),
+    { stepDelayMs: request?.step_delay_ms }
+  );
+  return await finishObservableCommunicationEraserStroke(pointerEvent);
+}
+
+function installAgentObservableDriverRuntime() {
+  if (typeof window === "undefined") return null;
+  const traceLog = createAgentTraceLog({
+    appendJsonl: appendJsonlWithFallback,
+    resolveRunDir: () => state.runDir,
+  });
+  const driver = createAgentObservableDriver({
+    performMarkerStroke: performObservableCommunicationMarkerStroke,
+    performMagicSelectClick: performObservableCommunicationMagicSelectClick,
+    performEraserStroke: performObservableCommunicationEraserStroke,
+    getContextSnapshot: ({ request }) => buildObservableCommunicationTraceSnapshot(request),
+    traceLog,
+  });
+  const runtime = installAgentObservableDriverBridge({
+    windowObj: window,
+    CustomEventCtor: typeof CustomEvent === "function" ? CustomEvent : null,
+    driver,
+  });
+  agentObservableDriverRuntime = {
+    driver,
+    traceLog,
+    bridge: runtime?.bridge || null,
+    handler: runtime?.handler || null,
+  };
+  return agentObservableDriverRuntime;
 }
 
 function buildCommunicationReviewPendingSlots({ overallStatus = "preparing" } = {}) {
@@ -39990,6 +40396,7 @@ async function boot() {
       CustomEventCtor: typeof CustomEvent === "function" ? CustomEvent : null,
       applyToolRuntimeEdit,
     });
+    installAgentObservableDriverRuntime();
   }
   renderSessionApiCallsReadout();
   clearInterval(topMetricsTickTimer);

@@ -50,6 +50,7 @@ test("marker pointer down consumes blank-canvas drags and seeds a screen-space d
     bumpInteraction,
     els,
     state,
+    trySetOverlayPointerCapture: (pointerId) => els.overlayCanvas.setPointerCapture(pointerId),
     COMMUNICATION_POINTER_KINDS,
     requestRender,
   });
@@ -120,6 +121,7 @@ test("eraser pointer down on an image starts a real image-erase stroke instead o
     bumpInteraction,
     els,
     state,
+    trySetOverlayPointerCapture: (pointerId) => els.overlayCanvas.setPointerCapture(pointerId),
     COMMUNICATION_POINTER_KINDS,
     COMMUNICATION_IMAGE_ERASE_BRUSH_CSS_PX: 22,
     requestRender,
