@@ -15,6 +15,8 @@ test("Titlebar tab strip binds live DOM ids and renders from the tab snapshot", 
   assert.match(app, /sessionTabNew:\s*document\.getElementById\("session-tab-new"\)/);
   assert.match(app, /sessionTabDesignReview:\s*document\.getElementById\("session-tab-design-review"\)/);
   assert.match(app, /function renderSessionTabStrip\(/);
+  assert.match(app, /function createSessionTabStripPlaceholderItem\(/);
+  assert.match(app, /if \(!tabs\.length\) \{[\s\S]*createSessionTabStripPlaceholderItem\(\)/s);
   assert.match(app, /els\.sessionTabList\.replaceChildren\(fragment\)/);
   assert.match(app, /releaseSessionTabStripSubscription\s*=\s*subscribeTabs\(\(snapshot\)\s*=>\s*{\s*renderSessionTabStrip\(snapshot\);/);
   assert.match(app, /const uiMeta = normalizeTabUiMeta\(record\?\.tabUiMeta \|\| record\?\.session\?\.tabUiMeta\);/);

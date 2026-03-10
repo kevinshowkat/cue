@@ -52,7 +52,14 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-strip\s*\{[\s\S]*flex:\s*1 1 auto/);
   assert.match(css, /\.session-tab-run\s*\{/);
   assert.match(css, /\.session-tab-list\s*\{[\s\S]*flex:\s*0 1 auto[\s\S]*overflow-x:\s*auto/);
+  assert.match(
+    css,
+    /body\.juggernaut-shell \.brand-strip \.session-tab-list\s*\{[\s\S]*flex:\s*1 1 auto[\s\S]*border-radius:\s*14px[\s\S]*box-shadow:/s
+  );
   assert.match(css, /\.session-tab-item\.is-active\s*\{/);
+  assert.match(css, /\.session-tab-item\.is-placeholder\s*\{/);
+  assert.match(css, /\.session-tab-placeholder-shell\s*\{/);
+  assert.match(css, /\.session-tab-placeholder-label::before\s*\{/);
   assert.match(css, /\.session-tab-item\.is-busy\s+\.session-tab-busy-indicator\s*\{/);
   assert.doesNotMatch(html, /session-tab-dirty-dot/);
   assert.doesNotMatch(css, /\.session-tab-dirty-dot\s*\{/);

@@ -10062,13 +10062,23 @@ body.juggernaut-shell .brand-strip .session-tab-strip {
 }
 
 body.juggernaut-shell .brand-strip .session-tab-run {
-  gap: 4px;
+  min-width: 0;
+  gap: 8px;
 }
 
 body.juggernaut-shell .brand-strip .session-tab-list {
-  gap: 0;
-  padding: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 6px;
+  padding: 4px;
   align-items: stretch;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(243, 246, 250, 0.44)),
+    rgba(240, 244, 249, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.76),
+    inset 0 0 0 1px rgba(39, 49, 63, 0.08);
 }
 
 body.juggernaut-shell .brand-strip .session-tab-item {
@@ -10077,11 +10087,14 @@ body.juggernaut-shell .brand-strip .session-tab-item {
   max-width: 240px;
   padding-right: 0;
   gap: 0;
-  border: 1px solid transparent;
-  border-right-color: rgba(23, 30, 40, 0.05);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.22);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(39, 49, 63, 0.10);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(242, 246, 250, 0.82)),
+    rgba(243, 247, 251, 0.76);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 1px rgba(18, 24, 32, 0.04);
   transition:
     background 140ms ease,
     color 140ms ease,
@@ -10089,28 +10102,27 @@ body.juggernaut-shell .brand-strip .session-tab-item {
     box-shadow 140ms ease;
 }
 
-body.juggernaut-shell .brand-strip .session-tab-item:first-child {
-  border-left-color: rgba(23, 30, 40, 0.05);
-}
-
 body.juggernaut-shell .brand-strip .session-tab-item:hover {
   transform: none;
-  background: rgba(255, 255, 255, 0.42);
-  border-color: rgba(33, 43, 56, 0.10);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(244, 248, 252, 0.88)),
+    rgba(247, 250, 253, 0.82);
+  border-color: rgba(33, 43, 56, 0.16);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.68),
-    0 1px 0 rgba(255, 255, 255, 0.24);
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 2px 6px rgba(18, 24, 32, 0.06);
 }
 
 body.juggernaut-shell .brand-strip .session-tab-item.is-active {
   background:
-    linear-gradient(180deg, rgba(252, 254, 255, 0.99), rgba(239, 243, 248, 0.99)),
-    rgba(242, 246, 250, 0.99);
-  border-color: rgba(84, 118, 170, 0.34);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(242, 246, 251, 0.99)),
+    rgba(246, 249, 252, 0.99);
+  border-color: rgba(84, 118, 170, 0.42);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.96),
     inset 0 -1px 0 rgba(33, 43, 56, 0.08),
-    0 0 0 1px rgba(255, 255, 255, 0.5);
+    0 0 0 1px rgba(255, 255, 255, 0.62),
+    0 4px 12px rgba(58, 84, 120, 0.08);
 }
 
 body.juggernaut-shell .brand-strip .session-tab-item.is-active::after {
@@ -10132,6 +10144,46 @@ body.juggernaut-shell .brand-strip .session-tab-rename-shell {
   padding: 0 14px;
 }
 
+body.juggernaut-shell .brand-strip .session-tab-item.is-placeholder {
+  border-style: dashed;
+  border-color: rgba(98, 112, 132, 0.18);
+  background:
+    linear-gradient(180deg, rgba(252, 253, 254, 0.66), rgba(243, 246, 249, 0.54)),
+    rgba(244, 247, 251, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-placeholder-shell {
+  min-width: 0;
+  min-height: var(--brand-strip-h);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+}
+
+body.juggernaut-shell .brand-strip .session-tab-placeholder-label {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(92, 102, 118, 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.juggernaut-shell .brand-strip .session-tab-placeholder-label::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(93, 157, 255, 0.86);
+  box-shadow: 0 0 0 4px rgba(93, 157, 255, 0.10);
+}
+
 body.juggernaut-shell .brand-strip .session-tab-thumbnail,
 body.juggernaut-shell .brand-strip .session-tab-run-dir {
   display: none;
@@ -10146,7 +10198,7 @@ body.juggernaut-shell .brand-strip .session-tab-title {
   max-width: 156px;
   font-size: 13px;
   font-weight: 500;
-  color: rgba(76, 84, 98, 0.9);
+  color: rgba(53, 63, 79, 0.94);
 }
 
 body.juggernaut-shell .brand-strip .session-tab-item.is-active .session-tab-title {

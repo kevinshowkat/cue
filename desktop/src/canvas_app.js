@@ -39931,12 +39931,38 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
   return item;
 }
 
+function createSessionTabStripPlaceholderItem() {
+  const item = document.createElement("div");
+  item.className = "session-tab-item is-placeholder";
+  item.dataset.placeholder = "true";
+  item.setAttribute("aria-hidden", "true");
+
+  const shell = document.createElement("div");
+  shell.className = "session-tab-placeholder-shell";
+
+  const labels = document.createElement("span");
+  labels.className = "session-tab-labels";
+
+  const title = document.createElement("span");
+  title.className = "session-tab-placeholder-label";
+  title.textContent = state.ptySpawning ? "Starting session..." : "No session yet";
+  labels.append(title);
+
+  shell.append(labels);
+  item.append(shell);
+  return item;
+}
+
 function renderSessionTabStrip(snapshot = null) {
   if (!els.sessionTabList) return;
   const tabs = Array.isArray(snapshot?.tabs) ? snapshot.tabs : listTabs();
   const fragment = document.createDocumentFragment();
-  for (const tab of tabs) {
-    fragment.append(createSessionTabStripItem(tab, tabs.length));
+  if (!tabs.length) {
+    fragment.append(createSessionTabStripPlaceholderItem());
+  } else {
+    for (const tab of tabs) {
+      fragment.append(createSessionTabStripItem(tab, tabs.length));
+    }
   }
   els.sessionTabList.replaceChildren(fragment);
   focusSessionTabRenameInput();
