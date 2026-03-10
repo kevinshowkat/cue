@@ -61,6 +61,13 @@ import {
 } from "./agent_observable_driver.js";
 import { createAgentTraceLog } from "./agent_trace_log.js";
 import {
+  AGENT_RUNNER_DEFAULT_MAX_STEPS,
+  AGENT_RUNNER_MAX_STEPS_LIMIT,
+  buildAgentRunnerContextSummary,
+  createAgentRunnerPlanner,
+  summarizeAgentRunnerAction,
+} from "./agent_runner_runtime.js";
+import {
   classifyIntentIconsRouting as classifyIntentIconsRoutingUtil,
   intentIconsPayloadChecksum as intentIconsPayloadChecksumUtil,
   intentIconsPayloadSafeSnippet as intentIconsPayloadSafeSnippetUtil,
@@ -74,6 +81,7 @@ import {
   TOOL_INVOCATION_SCHEMA,
   TOOL_RUNTIME_BRIDGE_KEY,
   buildCreateToolInvocation,
+  buildSingleImageDirectAffordanceInvocation,
   buildSingleImageRailInvocation,
   buildSingleImageRailJobEntries,
   buildToolInvocation,
@@ -141,6 +149,12 @@ const COMMUNICATION_REGION_IDLE = "rgba(100, 210, 255, 0.34)";
 const IMAGE_SELECTION_INACTIVE_STROKE = "rgba(118, 211, 255, 0.56)";
 const DEFAULT_UNTITLED_TAB_TITLE = "Untitled Canvas";
 const SESSION_TAB_TITLE_MAX_LENGTH = 40;
+const AGENT_RUNNER_BRIDGE_KEY = "__JUGGERNAUT_AGENT_RUNNER__";
+const AGENT_RUNNER_STATE_EVENT = "juggernaut:agent-runner-state";
+const AGENT_RUNNER_LOG_EVENT = "juggernaut:agent-runner-log";
+const AGENT_RUNNER_LOG_LIMIT = 48;
+const AGENT_RUNNER_REVIEW_TIMEOUT_MS = 90_000;
+const AGENT_RUNNER_APPLY_TIMEOUT_MS = 90_000;
 
 /*
 Compatibility sentinel for source-shape tests.
@@ -610,6 +624,7 @@ const els = {
   export: document.getElementById("export"),
   juggernautToolRail: document.getElementById("juggernaut-tool-rail"),
   juggernautSelectionStatus: document.getElementById("juggernaut-selection-status"),
+  juggernautAgentRunnerOpen: document.getElementById("juggernaut-agent-runner-open"),
   juggernautExportPsd: document.getElementById("juggernaut-export-psd"),
   reelAdminToggle: document.getElementById("reel-admin-toggle"),
   settingsToggle: document.getElementById("settings-toggle"),
@@ -735,6 +750,18 @@ const els = {
   createToolPreview: document.getElementById("create-tool-preview"),
   createToolCancel: document.getElementById("create-tool-cancel"),
   createToolSave: document.getElementById("create-tool-save"),
+  agentRunnerPanel: document.getElementById("agent-runner-panel"),
+  agentRunnerClose: document.getElementById("agent-runner-close"),
+  agentRunnerMeta: document.getElementById("agent-runner-meta"),
+  agentRunnerPlanner: document.getElementById("agent-runner-planner"),
+  agentRunnerMaxSteps: document.getElementById("agent-runner-max-steps"),
+  agentRunnerGoal: document.getElementById("agent-runner-goal"),
+  agentRunnerPlan: document.getElementById("agent-runner-plan"),
+  agentRunnerLog: document.getElementById("agent-runner-log"),
+  agentRunnerClear: document.getElementById("agent-runner-clear"),
+  agentRunnerStep: document.getElementById("agent-runner-step"),
+  agentRunnerAuto: document.getElementById("agent-runner-auto"),
+  agentRunnerStop: document.getElementById("agent-runner-stop"),
   imageMenu: document.getElementById("image-menu"),
   motherWheelMenu: document.getElementById("mother-wheel-menu"),
   quickActions: document.getElementById("quick-actions"),
@@ -770,6 +797,25 @@ localStorage.setItem("brood.rsNative.default.v2", "1");
 localStorage.removeItem("brood.emergencyCompatFallback");
 
 let sessionToolRegistry = createInSessionToolRegistry();
+const agentRunnerPlanner = createAgentRunnerPlanner({
+  getKeyStatus: () => invoke("get_key_status"),
+});
+
+function createFreshAgentRunnerState() {
+  return {
+    goal: "",
+    plannerMode: "auto",
+    maxSteps: AGENT_RUNNER_DEFAULT_MAX_STEPS,
+    log: [],
+    lastPlan: null,
+    lastPlanRawText: "",
+    lastContextSummary: null,
+    stepCount: 0,
+    running: false,
+    autoRunning: false,
+    stopRequested: false,
+  };
+}
 
 function normalizePromptStrategyMode(raw) {
   const value = String(raw || "").trim().toLowerCase();
@@ -2088,6 +2134,7 @@ const state = {
   promptGenerateDraft: { prompt: "", model: "" },
   promptGenerateDraftAnchor: null, // { anchorCss: {x,y}, anchorWorldCss: {x,y} } | null
   customToolDraft: { name: "", description: "" },
+  agentRunner: createFreshAgentRunnerState(),
   sessionTools: [],
   activeCustomToolId: null,
   lastToolInvocation: null,
@@ -9741,6 +9788,19 @@ function renderJuggernautShellChrome() {
 
   const toolHookReady = typeof state.juggernautShell.toolInvoker === "function";
   const exportHookReady = typeof state.juggernautShell.psdExportHandler === "function" || typeof invoke === "function";
+  const agentRunnerVisible = Boolean(els.agentRunnerPanel && !els.agentRunnerPanel.classList.contains("hidden"));
+  if (els.juggernautAgentRunnerOpen) {
+    const runner = state.agentRunner || createFreshAgentRunnerState();
+    const agentTitle = runner.autoRunning
+      ? "Agent Run is executing"
+      : runner.running
+        ? "Agent Run is stepping"
+        : "Open Agent Run";
+    els.juggernautAgentRunnerOpen.title = agentTitle;
+    els.juggernautAgentRunnerOpen.setAttribute("aria-label", agentTitle);
+    els.juggernautAgentRunnerOpen.classList.toggle("is-ready", state.images.length > 0);
+    els.juggernautAgentRunnerOpen.classList.toggle("is-active-request", agentRunnerVisible || runner.running || runner.autoRunning);
+  }
   if (els.juggernautExportPsd) {
     const exportTitle = !state.images.length
       ? "Upload an image before exporting PSD"
@@ -9903,6 +9963,16 @@ function installJuggernautShellBridge() {
     },
     getCommunicationReviewPayload(meta = {}) {
       return buildCommunicationReviewPayload(meta);
+    },
+    agentRunnerBridgeKey: AGENT_RUNNER_BRIDGE_KEY,
+    openAgentRunner() {
+      return showAgentRunnerPanel();
+    },
+    closeAgentRunner() {
+      return hideAgentRunnerPanel();
+    },
+    getAgentRunnerState() {
+      return buildAgentRunnerBridgeSnapshot();
     },
     requestDesignReview(meta = {}) {
       return requestCommunicationDesignReview(meta);
@@ -26409,6 +26479,812 @@ async function runCreateToolFromPanel() {
   return manifest;
 }
 
+function buildAgentRunnerBridgeSnapshot() {
+  const runner = asRecord(state.agentRunner) || createFreshAgentRunnerState();
+  return {
+    goal: String(runner.goal || ""),
+    plannerMode: String(runner.plannerMode || "auto"),
+    maxSteps: Math.max(1, Math.min(AGENT_RUNNER_MAX_STEPS_LIMIT, Number(runner.maxSteps) || AGENT_RUNNER_DEFAULT_MAX_STEPS)),
+    stepCount: Math.max(0, Number(runner.stepCount) || 0),
+    running: Boolean(runner.running),
+    autoRunning: Boolean(runner.autoRunning),
+    stopRequested: Boolean(runner.stopRequested),
+    lastPlan: cloneToolRuntimeValue(runner.lastPlan),
+    lastPlanRawText: String(runner.lastPlanRawText || ""),
+    lastContextSummary: cloneToolRuntimeValue(runner.lastContextSummary),
+    log: cloneToolRuntimeValue(runner.log || []),
+  };
+}
+
+function publishAgentRunnerStateEvent() {
+  if (typeof window === "undefined") return null;
+  const detail = buildAgentRunnerBridgeSnapshot();
+  window.dispatchEvent(new CustomEvent(AGENT_RUNNER_STATE_EVENT, { detail }));
+  return detail;
+}
+
+function publishAgentRunnerLogEvent(entry = null) {
+  if (typeof window === "undefined" || !entry) return null;
+  const detail = cloneToolRuntimeValue(entry);
+  window.dispatchEvent(new CustomEvent(AGENT_RUNNER_LOG_EVENT, { detail }));
+  return detail;
+}
+
+function renderAgentRunnerPlannerOptions() {
+  if (!els.agentRunnerPlanner) return;
+  if (els.agentRunnerPlanner.dataset.bound === "1") return;
+  const frag = document.createDocumentFragment();
+  for (const option of agentRunnerPlanner.plannerOptions || []) {
+    const el = document.createElement("option");
+    el.value = String(option?.id || "");
+    el.textContent = String(option?.label || option?.id || "");
+    frag.appendChild(el);
+  }
+  els.agentRunnerPlanner.innerHTML = "";
+  els.agentRunnerPlanner.appendChild(frag);
+  els.agentRunnerPlanner.dataset.bound = "1";
+}
+
+function normalizeAgentRunnerMaxSteps(value) {
+  return Math.max(1, Math.min(AGENT_RUNNER_MAX_STEPS_LIMIT, Number(value) || AGENT_RUNNER_DEFAULT_MAX_STEPS));
+}
+
+function captureAgentRunnerDraftFromUi() {
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  runner.goal = String(els.agentRunnerGoal?.value || runner.goal || "").trim();
+  runner.plannerMode = readFirstString(els.agentRunnerPlanner?.value, runner.plannerMode, "auto") || "auto";
+  runner.maxSteps = normalizeAgentRunnerMaxSteps(els.agentRunnerMaxSteps?.value ?? runner.maxSteps);
+  return runner;
+}
+
+function formatAgentRunnerLogDetail(detail = null) {
+  if (detail == null) return "";
+  if (typeof detail === "string") return detail;
+  try {
+    return JSON.stringify(detail, null, 2);
+  } catch {
+    return String(detail);
+  }
+}
+
+function appendAgentRunnerLog(kind = "info", message = "", detail = null, extras = {}) {
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  const entry = {
+    id: `agent-runner-log-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+    at: new Date().toISOString(),
+    kind: String(kind || "info"),
+    message: String(message || "").trim() || "Agent runner update.",
+    detail: formatAgentRunnerLogDetail(detail),
+    actionType: readFirstString(extras?.actionType) || null,
+    ok: extras?.ok == null ? null : Boolean(extras.ok),
+  };
+  runner.log = [...(Array.isArray(runner.log) ? runner.log : []), entry].slice(-AGENT_RUNNER_LOG_LIMIT);
+  renderAgentRunnerPanel();
+  publishAgentRunnerLogEvent(entry);
+  return entry;
+}
+
+function clearAgentRunnerLog() {
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  runner.log = [];
+  runner.lastPlan = null;
+  runner.lastPlanRawText = "";
+  runner.lastContextSummary = null;
+  runner.stepCount = 0;
+  renderAgentRunnerPanel();
+  publishAgentRunnerStateEvent();
+  return buildAgentRunnerBridgeSnapshot();
+}
+
+function renderAgentRunnerLog() {
+  if (!els.agentRunnerLog) return;
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  els.agentRunnerLog.innerHTML = "";
+  const log = Array.isArray(runner.log) ? runner.log : [];
+  if (!log.length) {
+    const empty = document.createElement("div");
+    empty.className = "agent-runner-log-entry";
+    empty.dataset.kind = "info";
+    empty.innerHTML = [
+      '<div class="agent-runner-log-head">',
+      '<span class="agent-runner-log-kind">Ready</span>',
+      '<span class="agent-runner-log-time">Now</span>',
+      "</div>",
+      '<div class="agent-runner-log-message">No agent steps yet.</div>',
+      '<div class="agent-runner-log-detail">Enter a goal, then click Step or Auto.</div>',
+    ].join("");
+    els.agentRunnerLog.appendChild(empty);
+    return;
+  }
+  for (const entry of log.slice().reverse()) {
+    const root = document.createElement("div");
+    root.className = "agent-runner-log-entry";
+    root.dataset.kind = String(entry?.kind || "info");
+
+    const head = document.createElement("div");
+    head.className = "agent-runner-log-head";
+
+    const kind = document.createElement("span");
+    kind.className = "agent-runner-log-kind";
+    kind.textContent = String(entry?.kind || "info");
+    head.appendChild(kind);
+
+    const time = document.createElement("span");
+    time.className = "agent-runner-log-time";
+    const stamp = new Date(entry?.at || Date.now());
+    time.textContent = Number.isNaN(stamp.getTime())
+      ? "Now"
+      : stamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    head.appendChild(time);
+
+    const message = document.createElement("div");
+    message.className = "agent-runner-log-message";
+    message.textContent = String(entry?.message || "");
+
+    root.appendChild(head);
+    root.appendChild(message);
+
+    const detailText = String(entry?.detail || "").trim();
+    if (detailText) {
+      const detail = document.createElement("div");
+      detail.className = "agent-runner-log-detail";
+      detail.textContent = detailText;
+      root.appendChild(detail);
+    }
+    els.agentRunnerLog.appendChild(root);
+  }
+}
+
+function renderAgentRunnerPanel() {
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  renderAgentRunnerPlannerOptions();
+  if (els.agentRunnerGoal && document.activeElement !== els.agentRunnerGoal) {
+    els.agentRunnerGoal.value = String(runner.goal || "");
+  }
+  if (els.agentRunnerPlanner && document.activeElement !== els.agentRunnerPlanner) {
+    els.agentRunnerPlanner.value = readFirstString(runner.plannerMode, "auto") || "auto";
+  }
+  if (els.agentRunnerMaxSteps && document.activeElement !== els.agentRunnerMaxSteps) {
+    els.agentRunnerMaxSteps.value = String(normalizeAgentRunnerMaxSteps(runner.maxSteps));
+  }
+  if (els.agentRunnerMeta) {
+    const imageCount = Array.isArray(state.images) ? state.images.length : 0;
+    const selectedCount = getSelectedIds().length;
+    let text = "Give the agent a goal, then step it or let it run.";
+    if (!String(runner.goal || "").trim()) {
+      text = "Describe the goal first. The runner will use the visible canvas, design review, and current tool runtime.";
+    } else if (runner.stopRequested) {
+      text = "Stopping after the current step finishes.";
+    } else if (runner.autoRunning) {
+      text = `Auto running step ${Math.max(0, Number(runner.stepCount) || 0)} / ${normalizeAgentRunnerMaxSteps(runner.maxSteps)} on ${imageCount} image${imageCount === 1 ? "" : "s"}.`;
+    } else if (runner.running) {
+      text = `Executing step ${Math.max(0, Number(runner.stepCount) || 0)} with ${selectedCount} selected image${selectedCount === 1 ? "" : "s"}.`;
+    } else if (!imageCount) {
+      text = "Goal ready. Import an image or let the agent use Create Tool / export paths on an empty canvas.";
+    } else {
+      text = `${imageCount} image${imageCount === 1 ? "" : "s"} on canvas · ${selectedCount || 1} active focus target${selectedCount === 1 ? "" : "s"}.`;
+    }
+    els.agentRunnerMeta.textContent = text;
+  }
+  if (els.agentRunnerPlan) {
+    els.agentRunnerPlan.textContent = runner.lastPlan
+      ? JSON.stringify(runner.lastPlan, null, 2)
+      : "No step yet.";
+  }
+  if (els.agentRunnerClear) els.agentRunnerClear.disabled = Boolean(runner.running || runner.autoRunning);
+  if (els.agentRunnerStep) els.agentRunnerStep.disabled = Boolean(runner.running || runner.autoRunning);
+  if (els.agentRunnerAuto) els.agentRunnerAuto.disabled = Boolean(runner.running || runner.autoRunning);
+  if (els.agentRunnerStop) els.agentRunnerStop.disabled = !(runner.running || runner.autoRunning);
+  renderAgentRunnerLog();
+  publishAgentRunnerStateEvent();
+}
+
+function hideAgentRunnerPanel({ force = false } = {}) {
+  if (!els.agentRunnerPanel) return false;
+  const runner = captureAgentRunnerDraftFromUi();
+  if (!force && (runner.running || runner.autoRunning)) {
+    runner.stopRequested = true;
+    renderAgentRunnerPanel();
+    showToast("Agent Run: stopping after the current step.", "tip", 2200);
+    return false;
+  }
+  els.agentRunnerPanel.classList.add("hidden");
+  renderQuickActions();
+  renderAgentRunnerPanel();
+  return true;
+}
+
+function showAgentRunnerPanel() {
+  if (!els.agentRunnerPanel) return false;
+  renderAgentRunnerPlannerOptions();
+  els.agentRunnerPanel.style.left = "50%";
+  els.agentRunnerPanel.style.top = "50%";
+  els.agentRunnerPanel.style.transform = "translate(-50%, -50%)";
+  els.agentRunnerPanel.classList.remove("hidden");
+  renderQuickActions();
+  renderAgentRunnerPanel();
+  setTimeout(() => {
+    try {
+      if (els.agentRunnerGoal) els.agentRunnerGoal.focus();
+    } catch {
+      // ignore
+    }
+  }, 0);
+  return true;
+}
+
+function agentRunnerVisibleImages(shellSnapshot = null) {
+  const visible =
+    shellSnapshot?.communicationReview?.canvas?.visibleImages ||
+    shellSnapshot?.communicationReview?.canvas?.visible_images ||
+    [];
+  return Array.isArray(visible) ? visible.filter((item) => item && typeof item === "object") : [];
+}
+
+function resolveAgentRunnerVisibleImage(shellSnapshot = null, imageId = "") {
+  const normalizedImageId = readFirstString(imageId);
+  const visibleImages = agentRunnerVisibleImages(shellSnapshot);
+  if (normalizedImageId) {
+    const match = visibleImages.find((item) => readFirstString(item?.id) === normalizedImageId);
+    if (match) return match;
+  }
+  return (
+    visibleImages.find((item) => item?.active) ||
+    visibleImages.find((item) => item?.selected) ||
+    visibleImages[0] ||
+    null
+  );
+}
+
+function resolveAgentRunnerCanvasPoint(shellSnapshot = null, action = {}, point = null, pointPct = null, label = "point") {
+  if (point && typeof point === "object") {
+    return {
+      imageId: readFirstString(action?.imageId) || readFirstString(resolveAgentRunnerVisibleImage(shellSnapshot, action?.imageId)?.id) || null,
+      point: {
+        x: Number(point.x) || 0,
+        y: Number(point.y) || 0,
+      },
+    };
+  }
+  const visibleImage = resolveAgentRunnerVisibleImage(shellSnapshot, action?.imageId);
+  const rect = asRecord(visibleImage?.rectCss);
+  if (!visibleImage?.id || !rect) {
+    throw new Error(`${label} requires an image with visible bounds`);
+  }
+  return {
+    imageId: readFirstString(visibleImage.id) || null,
+    point: {
+      x: (Number(rect.left) || 0) + (Number(rect.width) || 0) * (Number(pointPct?.x) || 0),
+      y: (Number(rect.top) || 0) + (Number(rect.height) || 0) * (Number(pointPct?.y) || 0),
+    },
+  };
+}
+
+function resolveAgentRunnerStrokePoints(shellSnapshot = null, action = {}, { minPoints = 1, label = "points" } = {}) {
+  const points = Array.isArray(action?.points) ? action.points : null;
+  if (points?.length) {
+    if (points.length < minPoints) {
+      throw new Error(`${label} requires at least ${minPoints} point${minPoints === 1 ? "" : "s"}`);
+    }
+    return {
+      imageId: readFirstString(action?.imageId) || readFirstString(resolveAgentRunnerVisibleImage(shellSnapshot, action?.imageId)?.id) || null,
+      points: points.map((point) => ({
+        x: Number(point?.x) || 0,
+        y: Number(point?.y) || 0,
+      })),
+    };
+  }
+  const pctPoints = Array.isArray(action?.pointsPct) ? action.pointsPct : null;
+  if (!pctPoints?.length || pctPoints.length < minPoints) {
+    throw new Error(`${label} requires at least ${minPoints} point${minPoints === 1 ? "" : "s"}`);
+  }
+  const mapped = pctPoints.map((pointPct, index) =>
+    resolveAgentRunnerCanvasPoint(shellSnapshot, action, null, pointPct, `${label}[${index}]`)
+  );
+  return {
+    imageId: readFirstString(mapped[0]?.imageId) || null,
+    points: mapped.map((entry) => entry.point),
+  };
+}
+
+async function waitForAgentRunnerReviewState({
+  requestId = "",
+  terminalStatuses = [],
+  timeoutMs = AGENT_RUNNER_REVIEW_TIMEOUT_MS,
+} = {}) {
+  const bridge = typeof window !== "undefined" ? window.__JUGGERNAUT_REVIEW__ : null;
+  const statuses = new Set((Array.isArray(terminalStatuses) ? terminalStatuses : []).map((value) => String(value || "").trim().toLowerCase()));
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const reviewState = bridge?.getState?.() || null;
+    const currentRequestId = readFirstString(reviewState?.request?.requestId, reviewState?.requestId);
+    const status = readFirstString(reviewState?.status).toLowerCase();
+    if ((!requestId || !currentRequestId || currentRequestId === requestId) && statuses.has(status)) {
+      return reviewState;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+  throw new Error("Agent Run: design review timed out.");
+}
+
+async function executeAgentRunnerAction(action = null, { goal = "", plannerSummary = "", shellSnapshot = null } = {}) {
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  const requestId = `agent-runner-${Date.now()}-${Math.max(1, Number(runner.stepCount) || 0)}`;
+  const actionLabel = summarizeAgentRunnerAction(action);
+  const observable = typeof window !== "undefined" ? window.__JUGGERNAUT_AGENT_OBSERVABLE__ : null;
+  const reviewBridge = typeof window !== "undefined" ? window.__JUGGERNAUT_REVIEW__ : null;
+  const toolRuntime = typeof window !== "undefined" ? window[TOOL_RUNTIME_BRIDGE_KEY] : null;
+  const activeImage = getActiveImage();
+  const activeImageId = readFirstString(activeImage?.id, state.activeId);
+  const selectedImageIds = getSelectedIds();
+
+  if (!action || typeof action !== "object") {
+    throw new Error("Agent Run action is missing.");
+  }
+
+  if (action.type === "marker_stroke") {
+    if (!observable?.markerStroke) throw new Error("Observable marker driver is unavailable.");
+    const resolved = resolveAgentRunnerStrokePoints(shellSnapshot, action, {
+      minPoints: 2,
+      label: "marker points",
+    });
+    const result = await observable.markerStroke({
+      request_id: requestId,
+      source: "agent_runner",
+      image_id: resolved.imageId,
+      points: resolved.points,
+      step_delay_ms: Number(action?.stepDelayMs) || 0,
+      meta: {
+        goal,
+        planner_summary: plannerSummary || null,
+      },
+    });
+    if (!result?.ok) throw new Error(readFirstString(result?.error) || "Marker stroke failed.");
+    return {
+      ok: true,
+      message: `${actionLabel} complete.`,
+      detail: result,
+    };
+  }
+
+  if (action.type === "magic_select_click") {
+    if (!observable?.magicSelectClick) throw new Error("Observable Magic Select driver is unavailable.");
+    const resolved = resolveAgentRunnerCanvasPoint(shellSnapshot, action, action?.point, action?.pointPct, "magic_select_click.point");
+    const result = await observable.magicSelectClick({
+      request_id: requestId,
+      source: "agent_runner",
+      image_id: resolved.imageId,
+      point: resolved.point,
+      meta: {
+        goal,
+        planner_summary: plannerSummary || null,
+      },
+    });
+    if (!result?.ok) throw new Error(readFirstString(result?.error) || "Magic Select failed.");
+    return {
+      ok: true,
+      message: `${actionLabel} complete.`,
+      detail: result,
+    };
+  }
+
+  if (action.type === "eraser_stroke") {
+    if (!observable?.eraserStroke) throw new Error("Observable eraser driver is unavailable.");
+    const resolved = resolveAgentRunnerStrokePoints(shellSnapshot, action, {
+      minPoints: 1,
+      label: "eraser points",
+    });
+    const result = await observable.eraserStroke({
+      request_id: requestId,
+      source: "agent_runner",
+      image_id: resolved.imageId,
+      points: resolved.points,
+      step_delay_ms: Number(action?.stepDelayMs) || 0,
+      meta: {
+        goal,
+        planner_summary: plannerSummary || null,
+      },
+    });
+    if (!result?.ok) throw new Error(readFirstString(result?.error) || "Eraser stroke failed.");
+    return {
+      ok: true,
+      message: `${actionLabel} complete.`,
+      detail: result,
+    };
+  }
+
+  if (action.type === "request_design_review") {
+    if (!reviewBridge?.startReviewFromShell) throw new Error("Design review bridge is unavailable.");
+    const start = await reviewBridge.startReviewFromShell({ source: "agent_runner" });
+    if (start?.ok === false) {
+      if (start?.reason === "missing_anchor") {
+        throw new Error("Design review needs a visible mark or Magic Select region first.");
+      }
+      throw new Error("Design review did not start.");
+    }
+    const reviewState = await waitForAgentRunnerReviewState({
+      requestId: readFirstString(start?.requestId),
+      terminalStatuses: ["ready", "failed"],
+      timeoutMs: AGENT_RUNNER_REVIEW_TIMEOUT_MS,
+    });
+    if (readFirstString(reviewState?.status).toLowerCase() === "failed") {
+      throw new Error(readFirstString(reviewState?.errors?.[0], reviewState?.slots?.[0]?.error, "Design review failed."));
+    }
+    return {
+      ok: true,
+      message: `Design review ready with ${Array.isArray(reviewState?.proposals) ? reviewState.proposals.length : 0} proposal${Array.isArray(reviewState?.proposals) && reviewState.proposals.length === 1 ? "" : "s"}.`,
+      detail: reviewState,
+    };
+  }
+
+  if (action.type === "accept_review_proposal") {
+    if (!reviewBridge?.acceptProposal) throw new Error("Design review accept bridge is unavailable.");
+    const accepted = await reviewBridge.acceptProposal({
+      proposalId: action?.proposalId,
+      proposalRank: action?.proposalRank,
+    });
+    if (!accepted?.ok) {
+      throw new Error("Review proposal could not be resolved.");
+    }
+    const reviewState = await waitForAgentRunnerReviewState({
+      requestId: readFirstString(accepted?.requestId),
+      terminalStatuses: ["apply_succeeded", "apply_failed"],
+      timeoutMs: AGENT_RUNNER_APPLY_TIMEOUT_MS,
+    });
+    if (readFirstString(reviewState?.status).toLowerCase() !== "apply_succeeded") {
+      throw new Error(readFirstString(reviewState?.lastApplyEvent?.error, reviewState?.errors?.[0], "Review apply failed."));
+    }
+    return {
+      ok: true,
+      message: `${actionLabel} complete.`,
+      detail: reviewState?.lastApplyEvent || reviewState,
+    };
+  }
+
+  if (action.type === "invoke_seeded_tool") {
+    const ok = await applyJuggernautTool(action.toolId);
+    if (!ok) throw new Error(`${action.toolId} could not be applied.`);
+    return {
+      ok: true,
+      message: `${action.toolId} applied.`,
+      detail: {
+        toolId: action.toolId,
+      },
+    };
+  }
+
+  if (action.type === "invoke_direct_affordance") {
+    if (typeof window === "undefined" || typeof window.juggernautApplyTool !== "function") {
+      throw new Error("Tool apply bridge is unavailable.");
+    }
+    const invocation = buildSingleImageDirectAffordanceInvocation(action.toolId, {
+      activeImageId: activeImageId || null,
+      selectedImageIds,
+      source: "agent_runner",
+      trigger: "agent_run",
+      requestId,
+      params: asRecord(action.params) || {},
+      mode: state.canvasMode,
+      image: activeImage,
+      capabilityExecutorAvailable: true,
+      localExecutorAvailable: true,
+    });
+    const result = await window.juggernautApplyTool(invocation);
+    if (!result?.ok) throw new Error(readFirstString(result?.error) || `${action.toolId} failed.`);
+    return {
+      ok: true,
+      message: `${action.toolId} applied.`,
+      detail: result,
+    };
+  }
+
+  if (action.type === "preview_create_tool") {
+    if (!toolRuntime?.previewCreateTool) throw new Error("Create Tool runtime bridge is unavailable.");
+    const name = readFirstString(action?.name);
+    const description = readFirstString(action?.description);
+    if (!description) throw new Error("Create Tool preview requires a description.");
+    state.customToolDraft = { name, description };
+    if (els.createToolName) els.createToolName.value = name;
+    if (els.createToolText) els.createToolText.value = description;
+    renderCreateToolPreview();
+    const preview = toolRuntime.previewCreateTool({ name, description });
+    return {
+      ok: true,
+      message: `Create Tool preview ready for ${preview?.generatedManifest?.label || name || "new tool"}.`,
+      detail: preview?.generatedManifest || preview,
+    };
+  }
+
+  if (action.type === "create_tool") {
+    if (!toolRuntime?.createTool) throw new Error("Create Tool runtime bridge is unavailable.");
+    const name = readFirstString(action?.name);
+    const description = readFirstString(action?.description);
+    if (!description) throw new Error("Create Tool requires a description.");
+    state.customToolDraft = { name, description };
+    if (els.createToolName) els.createToolName.value = name;
+    if (els.createToolText) els.createToolText.value = description;
+    const manifest = toolRuntime.createTool({ name, description });
+    syncSessionToolsFromRegistry();
+    renderCreateToolPreview();
+    renderQuickActions();
+    return {
+      ok: true,
+      message: `Created tool ${manifest?.label || manifest?.toolId || name || "custom tool"}.`,
+      detail: manifest,
+    };
+  }
+
+  if (action.type === "invoke_custom_tool") {
+    if (!toolRuntime?.invokeTool) throw new Error("Tool runtime bridge is unavailable.");
+    if (typeof window === "undefined" || typeof window.juggernautApplyTool !== "function") {
+      throw new Error("Tool apply bridge is unavailable.");
+    }
+    const invocation = toolRuntime.invokeTool({
+      toolId: action.toolId,
+      activeImageId: activeImageId || null,
+      selectedImageIds,
+      source: "agent_runner",
+      trigger: "agent_run",
+    });
+    if (!invocation) throw new Error(`Custom tool ${action.toolId} could not be prepared.`);
+    const result = await window.juggernautApplyTool(invocation);
+    if (!result?.ok) throw new Error(readFirstString(result?.error) || `${action.toolId} failed.`);
+    return {
+      ok: true,
+      message: `Custom tool ${action.toolId} applied.`,
+      detail: result,
+    };
+  }
+
+  if (action.type === "export_psd") {
+    const ok = await requestJuggernautPsdExport({ source: "agent_runner" });
+    if (!ok) throw new Error("PSD export failed.");
+    return {
+      ok: true,
+      message: "PSD export requested.",
+      detail: {
+        format: "psd",
+      },
+    };
+  }
+
+  if (action.type === "stop") {
+    return {
+      ok: true,
+      terminal: true,
+      message: readFirstString(action?.message) || "Agent Run stopped.",
+      detail: {
+        type: "stop",
+      },
+    };
+  }
+
+  throw new Error(`Unsupported Agent Run action: ${readFirstString(action?.type) || "(empty)"}`);
+}
+
+async function runAgentRunnerStepInternal({ source = "agent_runner_panel" } = {}) {
+  const runner = captureAgentRunnerDraftFromUi();
+  const goal = String(runner.goal || "").trim();
+  if (!goal) {
+    showToast("Agent Run: enter a goal first.", "tip", 2200);
+    if (els.agentRunnerGoal) {
+      try {
+        els.agentRunnerGoal.focus();
+      } catch {
+        // ignore
+      }
+    }
+    return {
+      ok: false,
+      blocked: true,
+      message: "Missing goal",
+    };
+  }
+
+  const shellSnapshot = buildJuggernautShellContext();
+  const reviewState =
+    (typeof window !== "undefined" ? window.__JUGGERNAUT_REVIEW__?.getState?.() : null) ||
+    null;
+  const contextSummary = buildAgentRunnerContextSummary({
+    goal,
+    shellSnapshot,
+    reviewState,
+    sessionTools: state.sessionTools,
+    recentLog: runner.log,
+  });
+  runner.lastContextSummary = cloneToolRuntimeValue(contextSummary);
+
+  const plannerResult = await agentRunnerPlanner.plan({
+    goal,
+    shellSnapshot,
+    reviewState,
+    sessionTools: state.sessionTools,
+    recentLog: runner.log,
+    plannerMode: runner.plannerMode,
+    images: agentRunnerVisibleImages(shellSnapshot),
+    requestId: `agent-runner-plan-${Date.now()}`,
+  });
+  runner.stepCount = Math.max(0, Number(runner.stepCount) || 0) + 1;
+  runner.lastPlan = cloneToolRuntimeValue(plannerResult?.plan || null);
+  runner.lastPlanRawText = readFirstString(plannerResult?.rawText);
+  renderAgentRunnerPanel();
+
+  const plannedAction = plannerResult?.plan?.action || null;
+  appendAgentRunnerLog(
+    plannedAction?.type === "stop" ? "info" : "action",
+    plannerResult?.plan?.summary || summarizeAgentRunnerAction(plannedAction),
+    plannerResult?.plan,
+    {
+      actionType: plannedAction?.type || null,
+    }
+  );
+
+  if (!plannedAction || plannedAction.type === "stop") {
+    const stopMessage =
+      readFirstString(plannedAction?.message, plannerResult?.plan?.summary) || "Agent Run stopped.";
+    setStatus(`Agent Run: ${stopMessage}`);
+    return {
+      ok: true,
+      terminal: true,
+      status: plannerResult?.plan?.status || "complete",
+      action: plannedAction,
+      message: stopMessage,
+    };
+  }
+
+  const actionResult = await executeAgentRunnerAction(plannedAction, {
+    goal,
+    plannerSummary: plannerResult?.plan?.summary || "",
+    shellSnapshot,
+  });
+  appendAgentRunnerLog(actionResult?.ok ? "success" : "error", actionResult?.message || summarizeAgentRunnerAction(plannedAction), actionResult?.detail, {
+    actionType: plannedAction?.type || null,
+    ok: actionResult?.ok !== false,
+  });
+  setStatus(`Agent Run: ${actionResult?.message || summarizeAgentRunnerAction(plannedAction)}`);
+  return {
+    ok: actionResult?.ok !== false,
+    terminal: Boolean(actionResult?.terminal),
+    status: plannerResult?.plan?.status || "continue",
+    action: plannedAction,
+    result: actionResult,
+  };
+}
+
+async function runAgentRunnerStep({ source = "agent_runner_panel" } = {}) {
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  if (runner.running || runner.autoRunning) {
+    showToast("Agent Run is already executing.", "tip", 1800);
+    return null;
+  }
+  runner.running = true;
+  runner.stopRequested = false;
+  renderAgentRunnerPanel();
+  try {
+    return await runAgentRunnerStepInternal({ source });
+  } catch (error) {
+    const message = normalizeErrorMessage(error, "Agent Run step failed.");
+    appendAgentRunnerLog("error", message, error?.debugInfo || error?.stack || null);
+    setStatus(`Agent Run: ${message}`, true);
+    showToast(message, "error", 3200);
+    return {
+      ok: false,
+      blocked: true,
+      message,
+    };
+  } finally {
+    runner.running = false;
+    renderAgentRunnerPanel();
+  }
+}
+
+function requestAgentRunnerStop() {
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  runner.stopRequested = true;
+  renderAgentRunnerPanel();
+  showToast("Agent Run: stopping after the current step.", "tip", 1800);
+  return buildAgentRunnerBridgeSnapshot();
+}
+
+async function runAgentRunnerAuto({ source = "agent_runner_panel" } = {}) {
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  if (runner.running || runner.autoRunning) {
+    showToast("Agent Run is already executing.", "tip", 1800);
+    return null;
+  }
+  captureAgentRunnerDraftFromUi();
+  runner.autoRunning = true;
+  runner.stopRequested = false;
+  renderAgentRunnerPanel();
+  appendAgentRunnerLog("info", `Auto run started for up to ${normalizeAgentRunnerMaxSteps(runner.maxSteps)} step(s).`);
+  try {
+    for (let index = 0; index < normalizeAgentRunnerMaxSteps(runner.maxSteps); index += 1) {
+      if (runner.stopRequested) {
+        appendAgentRunnerLog("info", "Auto run stopped by user.");
+        break;
+      }
+      runner.running = true;
+      renderAgentRunnerPanel();
+      let outcome = null;
+      try {
+        outcome = await runAgentRunnerStepInternal({
+          source: `${source}_auto`,
+        });
+      } catch (error) {
+        const message = normalizeErrorMessage(error, "Agent Run auto step failed.");
+        appendAgentRunnerLog("error", message, error?.debugInfo || error?.stack || null);
+        setStatus(`Agent Run: ${message}`, true);
+        showToast(message, "error", 3200);
+        break;
+      } finally {
+        runner.running = false;
+        renderAgentRunnerPanel();
+      }
+      if (!outcome?.ok || outcome?.terminal || outcome?.status === "blocked" || outcome?.status === "complete") {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    }
+    if (!runner.stopRequested) {
+      appendAgentRunnerLog("info", "Auto run finished.");
+    }
+  } finally {
+    runner.autoRunning = false;
+    runner.running = false;
+    runner.stopRequested = false;
+    renderAgentRunnerPanel();
+  }
+  return buildAgentRunnerBridgeSnapshot();
+}
+
+function publishAgentRunnerBridge() {
+  if (typeof window === "undefined") return null;
+  window[AGENT_RUNNER_BRIDGE_KEY] = Object.freeze({
+    plannerOptions: agentRunnerPlanner.plannerOptions.map((option) => ({ ...option })),
+    stateEvent: AGENT_RUNNER_STATE_EVENT,
+    logEvent: AGENT_RUNNER_LOG_EVENT,
+    getState: () => buildAgentRunnerBridgeSnapshot(),
+    open() {
+      showAgentRunnerPanel();
+      return buildAgentRunnerBridgeSnapshot();
+    },
+    close() {
+      hideAgentRunnerPanel();
+      return buildAgentRunnerBridgeSnapshot();
+    },
+    setGoal(goal = "") {
+      state.agentRunner.goal = String(goal || "").trim();
+      renderAgentRunnerPanel();
+      return buildAgentRunnerBridgeSnapshot();
+    },
+    setPlannerMode(plannerMode = "auto") {
+      state.agentRunner.plannerMode = readFirstString(plannerMode, "auto") || "auto";
+      renderAgentRunnerPanel();
+      return buildAgentRunnerBridgeSnapshot();
+    },
+    setMaxSteps(maxSteps = AGENT_RUNNER_DEFAULT_MAX_STEPS) {
+      state.agentRunner.maxSteps = normalizeAgentRunnerMaxSteps(maxSteps);
+      renderAgentRunnerPanel();
+      return buildAgentRunnerBridgeSnapshot();
+    },
+    clearLog() {
+      return clearAgentRunnerLog();
+    },
+    step(meta = {}) {
+      return runAgentRunnerStep(meta);
+    },
+    auto(meta = {}) {
+      return runAgentRunnerAuto(meta);
+    },
+    stop() {
+      return requestAgentRunnerStop();
+    },
+  });
+  window.juggernautAgentRunner = window[AGENT_RUNNER_BRIDGE_KEY];
+  publishAgentRunnerStateEvent();
+  return window[AGENT_RUNNER_BRIDGE_KEY];
+}
+
 function _annotateBoxToCssRect(box) {
   if (!box) return null;
   const dpr = getDpr();
@@ -28285,6 +29161,7 @@ function renderQuickActions() {
   renderActionGrid();
   renderJuggernautShellChrome();
   renderCustomToolDock();
+  renderAgentRunnerPanel();
   return true;
 }
 
@@ -38841,6 +39718,16 @@ function installDnD() {
 }
 
 function installJuggernautShellUi() {
+  if (els.juggernautAgentRunnerOpen) {
+    els.juggernautAgentRunnerOpen.addEventListener("click", () => {
+      bumpInteraction();
+      if (els.agentRunnerPanel && !els.agentRunnerPanel.classList.contains("hidden")) {
+        hideAgentRunnerPanel();
+        return;
+      }
+      showAgentRunnerPanel();
+    });
+  }
   if (els.juggernautExportPsd) {
     els.juggernautExportPsd.addEventListener("click", () => {
       bumpInteraction();
@@ -38851,6 +39738,7 @@ function installJuggernautShellUi() {
   }
 
   renderJuggernautShellChrome();
+  renderAgentRunnerPanel();
 }
 
 function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
@@ -40019,6 +40907,62 @@ function installUi() {
     });
   }
 
+  if (els.agentRunnerClose) {
+    els.agentRunnerClose.addEventListener("click", () => {
+      bumpInteraction();
+      hideAgentRunnerPanel();
+    });
+  }
+  if (els.agentRunnerClear) {
+    els.agentRunnerClear.addEventListener("click", () => {
+      bumpInteraction();
+      clearAgentRunnerLog();
+    });
+  }
+  if (els.agentRunnerStep) {
+    els.agentRunnerStep.addEventListener("click", () => {
+      bumpInteraction();
+      runAgentRunnerStep({ source: "agent_runner_panel" }).catch((e) => console.error(e));
+    });
+  }
+  if (els.agentRunnerAuto) {
+    els.agentRunnerAuto.addEventListener("click", () => {
+      bumpInteraction();
+      runAgentRunnerAuto({ source: "agent_runner_panel" }).catch((e) => console.error(e));
+    });
+  }
+  if (els.agentRunnerStop) {
+    els.agentRunnerStop.addEventListener("click", () => {
+      bumpInteraction();
+      requestAgentRunnerStop();
+    });
+  }
+  if (els.agentRunnerPlanner) {
+    els.agentRunnerPlanner.addEventListener("change", () => {
+      captureAgentRunnerDraftFromUi();
+      renderAgentRunnerPanel();
+    });
+  }
+  if (els.agentRunnerMaxSteps) {
+    els.agentRunnerMaxSteps.addEventListener("input", () => {
+      captureAgentRunnerDraftFromUi();
+      renderAgentRunnerPanel();
+    });
+  }
+  if (els.agentRunnerGoal) {
+    els.agentRunnerGoal.addEventListener("input", () => {
+      captureAgentRunnerDraftFromUi();
+      renderAgentRunnerPanel();
+    });
+    els.agentRunnerGoal.addEventListener("keydown", (event) => {
+      const key = String(event?.key || "");
+      const mod = Boolean(event?.metaKey || event?.ctrlKey);
+      if (!mod || key !== "Enter") return;
+      event.preventDefault();
+      runAgentRunnerStep({ source: "agent_runner_panel" }).catch((e) => console.error(e));
+    });
+  }
+
   if (els.markClose) {
     els.markClose.addEventListener("click", () => {
       bumpInteraction();
@@ -40115,6 +41059,13 @@ function installUi() {
   });
 
   document.addEventListener("pointerdown", (event) => {
+    if (!els.agentRunnerPanel || els.agentRunnerPanel.classList.contains("hidden")) return;
+    const hit = event?.target?.closest ? event.target.closest("#agent-runner-panel, #juggernaut-agent-runner-open") : null;
+    if (hit) return;
+    hideAgentRunnerPanel();
+  });
+
+  document.addEventListener("pointerdown", (event) => {
     if (!motherMoodMenuIsOpen()) return;
     const hit = event?.target?.closest ? event.target.closest("#canvas-mood-status") : null;
     if (hit) return;
@@ -40193,6 +41144,10 @@ function installUi() {
             hideCreateToolPanel();
             return;
           }
+          if (els.agentRunnerPanel && !els.agentRunnerPanel.classList.contains("hidden")) {
+            hideAgentRunnerPanel();
+            return;
+          }
 		      clearSelection();
 		      return;
 		    }
@@ -40203,6 +41158,11 @@ function installUi() {
 
       if (key === "k") {
         showCreateToolPanel();
+        return;
+      }
+
+      if (key === "g") {
+        showAgentRunnerPanel();
         return;
       }
 
@@ -40412,6 +41372,7 @@ async function boot() {
       applyToolRuntimeEdit,
     });
     installAgentObservableDriverRuntime();
+    publishAgentRunnerBridge();
   }
   renderSessionApiCallsReadout();
   clearInterval(topMetricsTickTimer);
@@ -40438,6 +41399,8 @@ async function boot() {
   renderSelectionMeta();
   chooseSpawnNodes();
   renderFilmstrip();
+  renderAgentRunnerPlannerOptions();
+  renderAgentRunnerPanel();
   ensureCanvasSize();
   effectsRuntime = createEffectsRuntime({ canvas: els.effectsCanvas });
   effectsRuntime.resize({

@@ -46,6 +46,7 @@ test("design review bootstrap dispatches structured apply events and routes tray
   assert.match(bootstrap, /const reviewState =[\s\S]*runtimeState\.lastReviewState[\s\S]*pipeline\.getState\(\)/);
   assert.match(bootstrap, /pipeline\.acceptProposal\(proposalId,\s*\{[\s\S]*reviewState,/s);
   assert.match(bootstrap, /void pipeline\.applyProposal\(proposalId,\s*\{[\s\S]*reviewState,[\s\S]*onStateChange:/s);
+  assert.match(bootstrap, /acceptProposal\(\{\s*proposalId = "",\s*proposalRank = 1\s*\}\s*=\s*\{\}\)/);
 });
 
 test("design review bootstrap makes proposal cards directly clickable for apply", () => {

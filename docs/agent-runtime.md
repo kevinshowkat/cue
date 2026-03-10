@@ -32,6 +32,29 @@ An agent should prefer the loop:
 
 ## Current Surfaces
 
+### 0. Agent Run
+Juggernaut now includes a first-class `Agent Run` shell surface for live experimentation.
+
+Current built-in controls:
+- enter a freeform goal
+- choose planner routing preference
+- set a max step count
+- `Step`
+- `Auto`
+- `Stop`
+- inspect a live activity log and last returned plan
+
+Current built-in execution path:
+- plans through the shared design-review planner router
+- executes visible `Marker`, `Magic Select`, and `Eraser` actions through the observable driver
+- can request or accept `Design review`
+- can invoke seeded single-image jobs, direct affordances, custom tools, `Create Tool`, and PSD export
+
+This surface is intended for:
+- observing agent behavior inside the real app
+- automated manual testing
+- fast workflow experiments without a separate external harness
+
 ### 1. Direct Execution
 Current direct execution affordances correspond to the seeded single-image jobs:
 - `Cut Out`

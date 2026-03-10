@@ -1820,6 +1820,33 @@ export async function installDesignReviewBootstrap() {
       );
     },
     subscribe: (listener) => pipeline.subscribe(listener),
+    acceptProposal({ proposalId = "", proposalRank = 1 } = {}) {
+      const reviewState = bridge.getState();
+      const proposals = Array.isArray(reviewState?.proposals) ? reviewState.proposals : [];
+      const normalizedProposalId = readFirstString(proposalId);
+      const normalizedRank = Math.max(1, Math.min(3, Number(proposalRank) || 1));
+      const proposal =
+        (normalizedProposalId
+          ? proposals.find((entry) => readFirstString(entry?.proposalId) === normalizedProposalId)
+          : null) ||
+        proposals[normalizedRank - 1] ||
+        null;
+      if (!proposal) {
+        return {
+          ok: false,
+          error: "proposal_not_found",
+        };
+      }
+      const runtimeState = runtimeRegistry.runtimeStateForReviewState(reviewState);
+      acceptProposal(proposal, runtimeState);
+      return {
+        ok: true,
+        proposalId: readFirstString(proposal?.proposalId) || null,
+        requestId:
+          readFirstString(proposal?.requestId, reviewState?.request?.requestId, runtimeState?.activeRequestId) || null,
+        sessionKey: runtimeState?.sessionKey || null,
+      };
+    },
     startReviewFromShell(meta = {}) {
       return shellBridge()?.requestDesignReview?.(meta) || null;
     },

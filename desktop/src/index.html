@@ -376,6 +376,32 @@
               </div>
               <div class="brand-actions juggernaut-shell-actions" role="group" aria-label="Canvas actions">
                 <button
+                  id="juggernaut-agent-runner-open"
+                  class="juggernaut-shell-action"
+                  type="button"
+                  aria-label="Agent Run"
+                  title="Agent Run"
+                >
+                  <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M6 7.5h7.5M6 12h4.5M6 16.5h6"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.7"
+                      stroke-linecap="round"
+                    />
+                    <path
+                      d="M14 7l5.5 5-5.5 5"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.9"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  <span class="sr-only">Agent Run</span>
+                </button>
+                <button
                   id="juggernaut-export-psd"
                   class="juggernaut-shell-action"
                   type="button"
@@ -647,6 +673,56 @@
                 <div class="annotate-actions">
                   <button id="create-tool-cancel" type="button">Cancel</button>
                   <button id="create-tool-save" type="button">Create</button>
+                </div>
+              </div>
+            </div>
+            <div id="agent-runner-panel" class="annotate-panel hidden agent-runner-panel" role="dialog" aria-label="Agent Run">
+              <div class="annotate-header">
+                <div class="annotate-title">Agent Run</div>
+                <button id="agent-runner-close" class="ghost" type="button" aria-label="Close agent run panel">Close</button>
+              </div>
+              <div class="annotate-body">
+                <div id="agent-runner-meta" class="annotate-meta muted">
+                  Give the agent a goal, then step it or let it run. Actions execute through the visible canvas and the normal runtime bridges.
+                </div>
+                <label class="annotate-field">
+                  <div class="annotate-label">Planner</div>
+                  <select id="agent-runner-planner"></select>
+                </label>
+                <label class="annotate-field">
+                  <div class="annotate-label">Max Steps</div>
+                  <input
+                    id="agent-runner-max-steps"
+                    class="annotate-input"
+                    type="number"
+                    min="1"
+                    max="24"
+                    step="1"
+                    value="8"
+                  />
+                </label>
+                <label class="annotate-field">
+                  <div class="annotate-label">Goal</div>
+                  <textarea
+                    id="agent-runner-goal"
+                    class="annotate-text"
+                    rows="4"
+                    placeholder="Example: remove the background distractions, keep the subject intact, then export a PSD."
+                  ></textarea>
+                </label>
+                <label class="annotate-field">
+                  <div class="annotate-label">Last Plan</div>
+                  <pre id="agent-runner-plan" class="agent-runner-plan">No step yet.</pre>
+                </label>
+                <label class="annotate-field">
+                  <div class="annotate-label">Activity</div>
+                  <div id="agent-runner-log" class="agent-runner-log" aria-live="polite"></div>
+                </label>
+                <div class="annotate-actions">
+                  <button id="agent-runner-clear" type="button">Clear</button>
+                  <button id="agent-runner-step" type="button">Step</button>
+                  <button id="agent-runner-auto" type="button">Auto</button>
+                  <button id="agent-runner-stop" type="button">Stop</button>
                 </div>
               </div>
             </div>

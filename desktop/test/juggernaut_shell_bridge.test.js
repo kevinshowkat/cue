@@ -11,6 +11,11 @@ const app = readFileSync(join(here, "..", "src", "canvas_app.js"), "utf8");
 test("Juggernaut shell chrome exposes selection status, export button, rail root, and upload affordance", () => {
   assert.match(html, /class=\"juggernaut-shell-chrome\"/);
   assert.match(html, /id=\"juggernaut-selection-status\"/);
+  assert.match(html, /id=\"juggernaut-agent-runner-open\"/);
+  assert.match(html, /id=\"agent-runner-panel\"/);
+  assert.match(html, /id=\"agent-runner-goal\"/);
+  assert.match(html, /id=\"agent-runner-step\"/);
+  assert.match(html, /id=\"agent-runner-auto\"/);
   assert.match(html, /id=\"juggernaut-export-psd\"/);
   assert.match(html, /id=\"action-grid\"[^>]*aria-label=\"Juggernaut left rail\"/);
   assert.match(html, /id=\"drop-hint\"/);
@@ -24,6 +29,12 @@ test("Juggernaut shell bridge exposes tool/export registration and request metho
   assert.match(app, /registerPsdExportHandler\(fn\)/);
   assert.match(app, /requestToolInvocation\(toolKey,\s*meta\s*=\s*\{\}\)/);
   assert.match(app, /requestPsdExport\(meta\s*=\s*\{\}\)/);
+  assert.match(app, /agentRunnerBridgeKey:\s*AGENT_RUNNER_BRIDGE_KEY/);
+  assert.match(app, /openAgentRunner\(\)/);
+  assert.match(app, /getAgentRunnerState\(\)/);
+  assert.match(app, /window\[AGENT_RUNNER_BRIDGE_KEY\]\s*=\s*Object\.freeze\(\{/);
+  assert.match(app, /runAgentRunnerStep\(/);
+  assert.match(app, /runAgentRunnerAuto\(/);
   assert.match(app, /getRuntimeVisibility\(\)/);
   assert.match(app, /setRuntimeVisibility\(next\s*=\s*\{\}\)/);
   assert.match(app, /getCanvasSnapshot\(\)/);
