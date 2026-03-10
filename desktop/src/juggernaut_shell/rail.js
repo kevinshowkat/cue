@@ -24,9 +24,7 @@ const DEFAULT_DYNAMIC_ORDER = Object.freeze([
   "reframe",
   "variants",
 ]);
-const SHELL_FOCUS_ORDER = Object.freeze(["protect", "make_space"]);
 const SHELL_DIRECT_AFFORDANCE_ORDER = Object.freeze(["remove_people", "polish", "relight"]);
-const COMMUNICATION_TOOL_EVENT = "juggernaut:communication-state-changed";
 
 const RAIL_LABELS = Object.freeze({
   move: "Move",
@@ -147,7 +145,7 @@ export const SINGLE_IMAGE_RAIL_INVENTORY = Object.freeze([
       stickyKey: job.stickyKey,
     })
   ),
-  ...Object.values(SHELL_AFFORDANCE_LIBRARY).map((tool) =>
+  ...SHELL_DIRECT_AFFORDANCE_ORDER.map((toolId) => SHELL_AFFORDANCE_LIBRARY[toolId]).map((tool) =>
     Object.freeze({
       key: tool.jobId,
       label: tool.label,
@@ -470,24 +468,6 @@ function currentShellSnapshot() {
   };
 }
 
-function currentCommunicationState() {
-  const bridge = currentShellBridge();
-  if (typeof bridge?.communicationReview?.getState === "function") {
-    try {
-      const state = bridge.communicationReview.getState();
-      if (state && typeof state === "object") return state;
-    } catch {
-      // ignore
-    }
-  }
-  const state = bridge?.communicationReview?.state;
-  return state && typeof state === "object" ? state : null;
-}
-
-function currentCommunicationToolId() {
-  return String(currentCommunicationState()?.tool || "").trim();
-}
-
 function normalizeSelectedImageIds(snapshot = {}) {
   const ids = [];
   for (const value of Array.isArray(snapshot?.selectedImageIds) ? snapshot.selectedImageIds : []) {
@@ -546,41 +526,6 @@ function buildShellAffordanceRuntimeContext({ hasImage = false, busy = false } =
     busy: Boolean(busy),
     applyRuntimeReady: typeof browserWindow()?.juggernautApplyTool === "function",
   };
-}
-
-function focusAffordanceButton(seed, index, { hasImage = false, busy = false } = {}) {
-  const bridge = currentShellBridge();
-  const communicationReady = typeof bridge?.communicationReview?.setTool === "function";
-  const disabledReason = !hasImage
-    ? "unavailable_in_current_mode"
-    : busy
-      ? "busy"
-      : communicationReady
-        ? ""
-        : "capability_unavailable";
-  const selected = currentCommunicationToolId() === seed.communicationTool;
-  const button = {
-    slotKey: `focus-${index}`,
-    slotKind: "focus",
-    groupStart: index === 0,
-    toolId: seed.jobId,
-    actionKey: seed.jobId,
-    label: seed.label,
-    hotkey: "",
-    disabled: Boolean(disabledReason),
-    disabledReason,
-    selected,
-    toggleable: true,
-    running: false,
-    iconSvg: railIconSvg(seed.iconId),
-    title: "",
-    ariaLabel: "",
-    localUtility: Boolean(seed.localUtility),
-    invoke: () => bridge?.communicationReview?.setTool?.(seed.communicationTool),
-  };
-  button.title = buttonMetaTitle(button);
-  button.ariaLabel = buttonMetaAriaLabel(button);
-  return button;
 }
 
 function legacyRemovePeopleInvocation(runtimeContext = {}) {
@@ -660,13 +605,10 @@ function directAffordanceButton(seed, index, { hasImage = false, busy = false } 
 }
 
 function buildAffordanceButtons({ hasImage = false, busy = false } = {}) {
-  const focusButtons = SHELL_FOCUS_ORDER.map((toolId, index) =>
-    focusAffordanceButton(SHELL_AFFORDANCE_LIBRARY[toolId], index, { hasImage, busy })
-  );
   const directButtons = SHELL_DIRECT_AFFORDANCE_ORDER.map((toolId, index) =>
     directAffordanceButton(SHELL_AFFORDANCE_LIBRARY[toolId], index, { hasImage, busy })
   );
-  return focusButtons.concat(directButtons);
+  return directButtons;
 }
 
 export function getSingleImageRailMockRankedJobs({
@@ -818,31 +760,6 @@ function ensureRailButton(root, slotKey) {
   return toolEl;
 }
 
-function syncExternalRailState(root) {
-  if (!root) return;
-  const communicationTool = currentCommunicationToolId();
-  for (const button of Array.from(root.querySelectorAll("button[data-tool-id]"))) {
-    const toolId = String(button?.dataset?.toolId || "").trim();
-    const isSelected =
-      (toolId === "protect" && communicationTool === "marker") ||
-      (toolId === "make_space" && communicationTool === "magic_select");
-    if (toolId === "protect" || toolId === "make_space") {
-      button.classList.toggle("selected", isSelected);
-      button.setAttribute("aria-pressed", isSelected ? "true" : "false");
-    }
-  }
-}
-
-function bindExternalRailState(root) {
-  if (!root || root.__juggernautRailExternalStateBound) return;
-  root.__juggernautRailExternalStateBound = true;
-  const win = browserWindow();
-  if (!win || typeof win.addEventListener !== "function") return;
-  const sync = () => syncExternalRailState(root);
-  root.__juggernautRailExternalStateSync = sync;
-  win.addEventListener(COMMUNICATION_TOOL_EVENT, sync);
-}
-
 export function renderJuggernautRail(root, { buttons = [], onPress } = {}) {
   if (!root) return;
   root.__juggernautRailOnPress = typeof onPress === "function" ? onPress : null;
@@ -851,7 +768,6 @@ export function renderJuggernautRail(root, { buttons = [], onPress } = {}) {
   if (chromeRoot?.style?.setProperty) {
     chromeRoot.style.setProperty("--jg-primary-rail-button-count", String((Array.isArray(buttons) ? buttons.length : 0) || 0));
   }
-  bindExternalRailState(root);
 
   const nextSlotKeys = new Set();
   let cursor = root.firstElementChild;

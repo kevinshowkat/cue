@@ -56,6 +56,7 @@ test("marker pointer down consumes blank-canvas drags and seeds a screen-space d
   });
   const handleCommunicationCanvasPointerDown = instantiateFunction("handleCommunicationCanvasPointerDown", {
     communicationToolId: () => "marker",
+    communicationBehaviorToolId: (tool) => tool,
     eraseCommunicationAtCanvasPoint: () => null,
     dispatchJuggernautShellEvent: () => calls.push(["dispatch"]),
     COMMUNICATION_STATE_CHANGED_EVENT: "juggernaut:communication-state-changed",
@@ -128,6 +129,7 @@ test("eraser pointer down on an image starts a real image-erase stroke instead o
   });
   const handleCommunicationCanvasPointerDown = instantiateFunction("handleCommunicationCanvasPointerDown", {
     communicationToolId: () => "eraser",
+    communicationBehaviorToolId: (tool) => tool,
     eraseCommunicationAtCanvasPoint: () => null,
     invalidateActiveTabPreview: () => calls.push(["invalidate"]),
     dispatchJuggernautShellEvent: () => calls.push(["dispatch"]),

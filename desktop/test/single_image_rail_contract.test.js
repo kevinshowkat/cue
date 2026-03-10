@@ -36,8 +36,6 @@ test("single-image rail: contract renders 3 anchors plus 3 dynamic slots", () =>
       "cut_out",
       "new_background",
       "variants",
-      "protect",
-      "make_space",
       "remove_people",
       "polish",
       "relight",
@@ -50,11 +48,9 @@ test("single-image rail: contract renders 3 anchors plus 3 dynamic slots", () =>
   assert.equal(rail.buttons[3].label, "Cut Out");
   assert.equal(rail.buttons[4].label, "New Background");
   assert.equal(rail.buttons[5].label, "Variants");
-  assert.equal(rail.buttons[6].label, "Protect");
-  assert.equal(rail.buttons[7].label, "Make Space");
-  assert.equal(rail.buttons[8].label, "Remove People");
-  assert.equal(rail.buttons[9].label, "Polish");
-  assert.equal(rail.buttons[10].label, "Relight");
+  assert.equal(rail.buttons[6].label, "Remove People");
+  assert.equal(rail.buttons[7].label, "Polish");
+  assert.equal(rail.buttons[8].label, "Relight");
   assert.equal(rail.buttons[0].hotkey, "");
   assert.equal(rail.buttons[1].hotkey, "1");
   assert.equal(rail.buttons[2].hotkey, "2");
@@ -246,7 +242,7 @@ test("single-image rail: canonical affordance labels keep Remove People standard
   assert.equal(getSingleImageRailItem("make_space")?.label, "Make Space");
 });
 
-test("single-image rail: affordances use shell bridge state for enablement and selection", () => {
+test("single-image rail: direct affordances use shell bridge state for enablement", () => {
   const originalWindow = globalThis.window;
   globalThis.window = {
     __JUGGERNAUT_SHELL__: {
@@ -267,18 +263,6 @@ test("single-image rail: affordances use shell bridge state for enablement and s
           ],
         };
       },
-      communicationReview: {
-        state: {
-          tool: "marker",
-        },
-        getState() {
-          return this.state;
-        },
-        setTool(tool) {
-          this.state.tool = tool;
-          return tool;
-        },
-      },
     },
     juggernautApplyTool: async () => ({ ok: true }),
   };
@@ -291,9 +275,6 @@ test("single-image rail: affordances use shell bridge state for enablement and s
       toolHookReady: true,
     });
     const buttons = Object.fromEntries(rail.buttons.map((button) => [button.toolId, button]));
-    assert.equal(buttons.protect.disabled, false);
-    assert.equal(buttons.protect.selected, true);
-    assert.equal(buttons.make_space.disabled, false);
     assert.equal(buttons.remove_people.disabled, false);
     assert.equal(buttons.remove_people.label, "Remove People");
     assert.equal(buttons.polish.disabled, false);
@@ -348,8 +329,6 @@ test("single-image rail: affordances disable cleanly when no image or busy state
       toolHookReady: true,
     });
     const noImageButtons = Object.fromEntries(noImage.buttons.map((button) => [button.toolId, button]));
-    assert.equal(noImageButtons.protect.disabledReason, "unavailable_in_current_mode");
-    assert.equal(noImageButtons.make_space.disabledReason, "unavailable_in_current_mode");
     assert.equal(noImageButtons.remove_people.disabledReason, "unavailable_in_current_mode");
     assert.equal(noImageButtons.polish.disabledReason, "unavailable_in_current_mode");
     assert.equal(noImageButtons.relight.disabledReason, "unavailable_in_current_mode");
@@ -361,8 +340,6 @@ test("single-image rail: affordances disable cleanly when no image or busy state
       toolHookReady: true,
     });
     const busyButtons = Object.fromEntries(busyRail.buttons.map((button) => [button.toolId, button]));
-    assert.equal(busyButtons.protect.disabledReason, "busy");
-    assert.equal(busyButtons.make_space.disabledReason, "busy");
     assert.equal(busyButtons.remove_people.disabledReason, "busy");
     assert.equal(busyButtons.polish.disabledReason, "busy");
     assert.equal(busyButtons.relight.disabledReason, "busy");

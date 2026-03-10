@@ -17,8 +17,12 @@ test("communication rail markup exposes bottom rail tools and proposal tray scaf
   assert.match(html, /id="communication-proposal-tray-close"/);
   assert.match(html, /id="communication-rail"[^>]*aria-label="Communication rail"/);
   assert.match(html, /id="communication-tool-marker"/);
+  assert.match(html, /id="communication-tool-protect"/);
   assert.match(html, /id="communication-tool-magic-select"/);
+  assert.match(html, /id="communication-tool-make-space"/);
   assert.match(html, /id="communication-tool-eraser"/);
+  assert.match(html, /id="communication-tool-protect"[\s\S]*class="communication-icon communication-icon-protect"/);
+  assert.match(html, /id="communication-tool-make-space"[\s\S]*class="communication-icon communication-icon-make-space"/);
   assert.match(html, /id="communication-tool-marker"[\s\S]*d="M9\.15 7\.1c0-.91\.74-1\.65 1\.65-1\.65h2\.4c\.91 0 1\.65\.74 1\.65 1\.65v11\.44c0 1\.58-1\.28 2\.86-2\.86 2\.86h-.18a2\.86 2\.86 0 0 1-2\.86-2\.86V7\.1z"/);
   assert.match(html, /id="communication-tool-marker"[\s\S]*fill="rgba\(141, 151, 164, 0\.9\)"/);
   assert.match(html, /id="communication-tool-marker"[\s\S]*d="M12 2\.05c\.45 0 \.81\.23 1\.08\.69l1\.04 1\.87c\.19\.34\.29\.72\.29 1\.11 0 \.5-.4\.9-.9\.9h-3\.02c-.5 0-.9-.4-.9-.9 0-.39\.1-.77\.29-1\.11l1\.04-1\.87c\.27-.46\.63-.69 1\.08-.69z"/);
@@ -48,11 +52,14 @@ test("communication state is tab-local and design review is exposed through the 
   assert.match(app, /resolvedTarget:\s*resolveCommunicationReviewTarget\(\)/);
 });
 
-test("communication input layer intercepts marker, magic select, eraser, and titlebar review", () => {
+test("communication input layer supports semantic protect and make-space tools while reusing marker and magic-select behavior", () => {
+  assert.match(app, /COMMUNICATION_TOOL_IDS = Object\.freeze\(\["marker", "protect", "magic_select", "make_space", "eraser"\]\)/);
+  assert.match(app, /COMMUNICATION_TOOL_BEHAVIOR = Object\.freeze\(\{/);
   assert.match(app, /COMMUNICATION_POINTER_KINDS = Object\.freeze\(\{/);
   assert.match(app, /function handleCommunicationCanvasPointerDown\(event, p, pCss\) \{/);
   assert.equal((app.match(/handleCommunicationCanvasPointerDown\(event, p, pCss\)/g) || []).length, 3);
-  assert.match(app, /if \(communicationTool === "eraser"\) \{/);
+  assert.match(app, /const behaviorTool = communicationBehaviorToolId\(communicationTool\);/);
+  assert.match(app, /if \(behaviorTool === "eraser"\) \{/);
   assert.match(app, /function beginCommunicationMarkerStroke\(event, p, pCss, communicationImageId = null\) \{/);
   assert.match(app, /state\.pointer\.kind = COMMUNICATION_POINTER_KINDS\.MARKER;/);
   assert.match(app, /function beginCommunicationMagicSelectStroke\(event, p, pCss, communicationImageId = null\) \{/);

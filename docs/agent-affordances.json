@@ -384,6 +384,30 @@
       "latencyClass": "instant"
     },
     {
+      "id": "protect",
+      "label": "Protect",
+      "surface": "focus",
+      "source": "bottom_rail",
+      "whatItDoes": "Adds a visible protected-region mark that says do not edit this area.",
+      "whenToUse": [
+        "preserving a face or product detail",
+        "scoping design review with explicit no-edit zones",
+        "protecting content before a broader edit"
+      ],
+      "whenNotToUse": [
+        "committing a final image edit",
+        "requesting expansion or open space"
+      ],
+      "requiresImage": false,
+      "requiresFocus": false,
+      "mutatesPixels": false,
+      "reversible": true,
+      "executionType": "communication_protect",
+      "routeProfileId": null,
+      "costClass": "none",
+      "latencyClass": "instant"
+    },
+    {
       "id": "magic_select",
       "label": "Magic Select",
       "surface": "focus",
@@ -403,6 +427,30 @@
       "mutatesPixels": false,
       "reversible": true,
       "executionType": "region_candidate_select",
+      "routeProfileId": null,
+      "costClass": "low",
+      "latencyClass": "fast"
+    },
+    {
+      "id": "make_space",
+      "label": "Make Space",
+      "surface": "focus",
+      "source": "bottom_rail",
+      "whatItDoes": "Creates a reserved-space focus region that tells review or downstream execution to preserve or create room there.",
+      "whenToUse": [
+        "making room for copy",
+        "opening negative space",
+        "guiding reframe or relight toward a specific area"
+      ],
+      "whenNotToUse": [
+        "precise object removal",
+        "direct pixel editing by itself"
+      ],
+      "requiresImage": true,
+      "requiresFocus": false,
+      "mutatesPixels": false,
+      "reversible": true,
+      "executionType": "communication_make_space",
       "routeProfileId": null,
       "costClass": "low",
       "latencyClass": "fast"

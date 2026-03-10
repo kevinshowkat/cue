@@ -13,9 +13,19 @@ const OBSERVABLE_ACTIONS = Object.freeze({
     tool: "marker",
     minPoints: 2,
   }),
+  protect_stroke: Object.freeze({
+    method: "protectStroke",
+    tool: "protect",
+    minPoints: 2,
+  }),
   magic_select_click: Object.freeze({
     method: "magicSelectClick",
     tool: "magic_select",
+    minPoints: 1,
+  }),
+  make_space_click: Object.freeze({
+    method: "makeSpaceClick",
+    tool: "make_space",
     minPoints: 1,
   }),
   eraser_stroke: Object.freeze({
@@ -56,7 +66,9 @@ function normalizeObservableActionName(value = "") {
   if (!key) return "";
   if (OBSERVABLE_ACTIONS[key]) return key;
   if (key === "marker") return "marker_stroke";
+  if (key === "protect") return "protect_stroke";
   if (key === "magic_select" || key === "magicselect" || key === "magic-select") return "magic_select_click";
+  if (key === "make_space" || key === "makespace" || key === "make-space") return "make_space_click";
   if (key === "eraser") return "eraser_stroke";
   return "";
 }
@@ -114,17 +126,18 @@ export function normalizeAgentObservableRequest(actionName, input = {}) {
     throw new Error("Unsupported observable action");
   }
   const config = OBSERVABLE_ACTIONS[normalizedActionName];
+  const pointAction = normalizedActionName === "magic_select_click" || normalizedActionName === "make_space_click";
   const raw = asRecord(input) || {};
   const coordinateSpace = readFirstString(raw.coordinate_space, raw.coordinateSpace, "canvas_css").toLowerCase();
   if (coordinateSpace !== "canvas_css") {
     throw new Error(`Unsupported coordinate_space=${coordinateSpace}; use canvas_css`);
   }
   const point =
-    normalizedActionName === "magic_select_click"
+    pointAction
       ? normalizePoint(raw.point ?? raw.point_css ?? raw.pointCss ?? raw.points?.[0], "point")
       : null;
   const points =
-    normalizedActionName === "magic_select_click"
+    pointAction
       ? [point]
       : normalizePointList(raw.points ?? raw.points_css ?? raw.pointsCss, {
           minPoints: config.minPoints,
@@ -148,7 +161,9 @@ export function normalizeAgentObservableRequest(actionName, input = {}) {
 export function createAgentObservableDriver(
   {
     performMarkerStroke = null,
+    performProtectStroke = null,
     performMagicSelectClick = null,
+    performMakeSpaceClick = null,
     performEraserStroke = null,
     getContextSnapshot = null,
     traceLog = null,
@@ -159,7 +174,9 @@ export function createAgentObservableDriver(
   const fallbackTraceSeq = { value: 0 };
   const handlers = {
     marker_stroke: performMarkerStroke,
+    protect_stroke: performProtectStroke,
     magic_select_click: performMagicSelectClick,
+    make_space_click: performMakeSpaceClick,
     eraser_stroke: performEraserStroke,
   };
 
@@ -323,8 +340,14 @@ export function createAgentObservableDriver(
     markerStroke(request = {}) {
       return executeAction("marker_stroke", request);
     },
+    protectStroke(request = {}) {
+      return executeAction("protect_stroke", request);
+    },
     magicSelectClick(request = {}) {
       return executeAction("magic_select_click", request);
+    },
+    makeSpaceClick(request = {}) {
+      return executeAction("make_space_click", request);
     },
     eraserStroke(request = {}) {
       return executeAction("eraser_stroke", request);
@@ -398,7 +421,9 @@ export function installAgentObservableDriverBridge(
   const bridge = Object.freeze({
     run: (request = {}) => driver.run(request),
     markerStroke: (request = {}) => driver.markerStroke(request),
+    protectStroke: (request = {}) => driver.protectStroke(request),
     magicSelectClick: (request = {}) => driver.magicSelectClick(request),
+    makeSpaceClick: (request = {}) => driver.makeSpaceClick(request),
     eraserStroke: (request = {}) => driver.eraserStroke(request),
     replayTraceEntry: (entry = {}) => driver.replayTraceEntry(entry),
   });

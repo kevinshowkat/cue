@@ -120,7 +120,14 @@ const SINGLE_IMAGE_RAIL_CAPABILITY_SUPPORT = Object.freeze({
   identity_preserving_variation: true,
 });
 const COMMUNICATION_REVIEW_SCHEMA_VERSION = "juggernaut.communication-review.v1";
-const COMMUNICATION_TOOL_IDS = Object.freeze(["marker", "magic_select", "eraser"]);
+const COMMUNICATION_TOOL_IDS = Object.freeze(["marker", "protect", "magic_select", "make_space", "eraser"]);
+const COMMUNICATION_TOOL_BEHAVIOR = Object.freeze({
+  marker: "marker",
+  protect: "marker",
+  magic_select: "magic_select",
+  make_space: "magic_select",
+  eraser: "eraser",
+});
 const COMMUNICATION_POINTER_KINDS = Object.freeze({
   MARKER: "communication_marker",
   MAGIC_SELECT: "communication_magic_select",
@@ -661,7 +668,9 @@ const els = {
   overlayCanvas: document.getElementById("overlay-canvas"),
   communicationRail: document.getElementById("communication-rail"),
   communicationToolMarker: document.getElementById("communication-tool-marker"),
+  communicationToolProtect: document.getElementById("communication-tool-protect"),
   communicationToolMagicSelect: document.getElementById("communication-tool-magic-select"),
+  communicationToolMakeSpace: document.getElementById("communication-tool-make-space"),
   communicationToolEraser: document.getElementById("communication-tool-eraser"),
   communicationProposalTray: document.getElementById("communication-proposal-tray"),
   communicationProposalTrayClose: document.getElementById("communication-proposal-tray-close"),
@@ -20898,6 +20907,11 @@ function communicationToolId() {
   return COMMUNICATION_TOOL_IDS.includes(raw) ? raw : null;
 }
 
+function communicationBehaviorToolId(tool = null) {
+  const key = String(tool || communicationToolId() || "").trim();
+  return COMMUNICATION_TOOL_BEHAVIOR[key] || null;
+}
+
 function communicationCanvasMarks() {
   return Array.isArray(state.communication?.canvasMarks) ? state.communication.canvasMarks : [];
 }
@@ -21832,8 +21846,9 @@ async function commitCommunicationImageEraseDraft(draft = null) {
 
 function handleCommunicationCanvasPointerDown(event, p, pCss) {
   const communicationTool = communicationToolId();
+  const behaviorTool = communicationBehaviorToolId(communicationTool);
   if (event.button !== 0 || !communicationTool) return false;
-  if (communicationTool === "eraser") {
+  if (behaviorTool === "eraser") {
     const erased = eraseCommunicationAtCanvasPoint(p);
     if (erased) {
       invalidateActiveTabPreview("selection_overlay_change");
@@ -21852,12 +21867,12 @@ function handleCommunicationCanvasPointerDown(event, p, pCss) {
     return false;
   }
   const communicationImageId = hitTestVisibleCanvasImage(p);
-  if (communicationTool === "marker") {
+  if (behaviorTool === "marker") {
     beginCommunicationMarkerStroke(event, p, pCss, communicationImageId);
     return true;
   }
   const imagePoint = communicationImageId ? canvasToImageForImageId(p, communicationImageId) : null;
-  if (communicationTool === "magic_select" && communicationImageId && imagePoint) {
+  if (behaviorTool === "magic_select" && communicationImageId && imagePoint) {
     return beginCommunicationMagicSelectStroke(event, p, pCss, communicationImageId);
   }
   return false;
@@ -21895,7 +21910,9 @@ function renderCommunicationRail() {
   const activeTool = communicationToolId();
   const buttons = [
     els.communicationToolMarker,
+    els.communicationToolProtect,
     els.communicationToolMagicSelect,
+    els.communicationToolMakeSpace,
     els.communicationToolEraser,
   ].filter(Boolean);
   for (const button of buttons) {
@@ -22588,9 +22605,12 @@ function performObservableCommunicationAnnotationErase(
   };
 }
 
-async function performObservableCommunicationMarkerStroke(request = {}) {
-  assertObservableCommunicationReady("marker");
-  ensureCommunicationToolActive("marker", { source: readFirstString(request?.source, "agent_observable_driver") });
+async function performObservableCommunicationMarkerStroke(
+  request = {},
+  { toolId = "marker", toolLabel = "marker" } = {}
+) {
+  assertObservableCommunicationReady(toolLabel);
+  ensureCommunicationToolActive(toolId, { source: readFirstString(request?.source, "agent_observable_driver") });
   const pointsCss = Array.isArray(request?.points) ? request.points.map((point) => clampCanvasCssPoint(point)) : [];
   const startCss = pointsCss[0] || { x: 0, y: 0 };
   const startCanvas = communicationScreenCssPointToCanvas(startCss);
@@ -22605,19 +22625,22 @@ async function performObservableCommunicationMarkerStroke(request = {}) {
   return finishObservableCommunicationMarkerStroke(pointerEvent);
 }
 
-async function performObservableCommunicationMagicSelectClick(request = {}) {
-  assertObservableCommunicationReady("magic select");
-  ensureCommunicationToolActive("magic_select", { source: readFirstString(request?.source, "agent_observable_driver") });
+async function performObservableCommunicationMagicSelectClick(
+  request = {},
+  { toolId = "magic_select", toolLabel = "magic select" } = {}
+) {
+  assertObservableCommunicationReady(toolLabel);
+  ensureCommunicationToolActive(toolId, { source: readFirstString(request?.source, "agent_observable_driver") });
   const pointCss = clampCanvasCssPoint(request?.point || request?.points?.[0]);
   const pointCanvas = communicationScreenCssPointToCanvas(pointCss);
   const targetImageId = resolveObservableCommunicationImageId(pointCanvas, request?.image_id);
   if (!targetImageId) {
-    throw new Error("Magic Select requires a visible target image.");
+    throw new Error(`${toolLabel[0].toUpperCase()}${toolLabel.slice(1)} requires a visible target image.`);
   }
   const pointerEvent = buildObservableCommunicationPointerEvent(pointCss);
   const began = beginCommunicationMagicSelectStroke(pointerEvent, pointCanvas, pointCss, targetImageId);
   if (!began) {
-    throw new Error("Magic Select could not begin on the requested target image.");
+    throw new Error(`${toolLabel[0].toUpperCase()}${toolLabel.slice(1)} could not begin on the requested target image.`);
   }
   await waitObservableCommunicationStep(request?.step_delay_ms);
   return finishObservableCommunicationMagicSelectClick(pointerEvent);
@@ -22660,7 +22683,11 @@ function installAgentObservableDriverRuntime() {
   });
   const driver = createAgentObservableDriver({
     performMarkerStroke: performObservableCommunicationMarkerStroke,
+    performProtectStroke: (request = {}) =>
+      performObservableCommunicationMarkerStroke(request, { toolId: "protect", toolLabel: "protect" }),
     performMagicSelectClick: performObservableCommunicationMagicSelectClick,
+    performMakeSpaceClick: (request = {}) =>
+      performObservableCommunicationMagicSelectClick(request, { toolId: "make_space", toolLabel: "make space" }),
     performEraserStroke: performObservableCommunicationEraserStroke,
     getContextSnapshot: ({ request }) => buildObservableCommunicationTraceSnapshot(request),
     traceLog,
@@ -38550,13 +38577,14 @@ function installCanvasHandlers() {
         return;
       }
       const communicationTool = communicationToolId();
+      const behaviorTool = communicationBehaviorToolId(communicationTool);
       if (communicationTool) {
-        if (communicationTool === "eraser") {
+        if (behaviorTool === "eraser") {
           if (hitTestCommunicationMark(p) || hitTestCommunicationRegionCandidate(p) || hitTestVisibleCanvasImage(p)) {
             setOverlayCursor("cell");
             return;
           }
-        } else if (communicationTool === "marker" || hitTestVisibleCanvasImage(p)) {
+        } else if (behaviorTool === "marker" || hitTestVisibleCanvasImage(p)) {
           setOverlayCursor("crosshair");
           return;
         }

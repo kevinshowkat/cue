@@ -6840,8 +6840,8 @@ button.ghost:hover {
   z-index: 12;
   display: flex;
   align-items: stretch;
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px;
   border-radius: 22px;
   border: 1px solid rgba(18, 30, 44, 0.14);
   background:
@@ -6858,9 +6858,9 @@ button.ghost:hover {
 
 .communication-tool {
   position: relative;
-  min-width: 118px;
-  min-height: 72px;
-  padding: 10px 14px 12px;
+  min-width: 104px;
+  min-height: 70px;
+  padding: 10px 12px 12px;
   display: grid;
   place-items: center;
   gap: 6px;

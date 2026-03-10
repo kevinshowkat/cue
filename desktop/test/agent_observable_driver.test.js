@@ -184,6 +184,54 @@ test("observable driver can replay a persisted trace entry through the same hand
   assert.equal(replayed.trace.replay.method, "markerStroke");
 });
 
+test("observable driver supports protect and make-space actions as first-class observable calls", async () => {
+  const requests = [];
+  const driver = createAgentObservableDriver({
+    performProtectStroke: async (request = {}) => {
+      requests.push(request);
+      return {
+        ok: true,
+        tool: request.tool,
+        point_count: Array.isArray(request.points) ? request.points.length : 0,
+      };
+    },
+    performMakeSpaceClick: async (request = {}) => {
+      requests.push(request);
+      return {
+        ok: true,
+        tool: request.tool,
+        image_id: request.image_id,
+      };
+    },
+    nowMs: () => 1_700_000_025_000,
+  });
+
+  const protect = await driver.protectStroke({
+    request_id: "req-protect",
+    points: [
+      { x: 18, y: 22 },
+      { x: 28, y: 36 },
+    ],
+  });
+  const makeSpace = await driver.run({
+    action: "make_space",
+    request_id: "req-space",
+    image_id: "img-hero",
+    point: { x: 64, y: 72 },
+  });
+
+  assert.equal(protect.ok, true);
+  assert.equal(protect.trace.action.tool, "protect");
+  assert.equal(protect.trace.replay.method, "protectStroke");
+  assert.equal(makeSpace.ok, true);
+  assert.equal(makeSpace.trace.action.tool, "make_space");
+  assert.equal(makeSpace.trace.replay.method, "makeSpaceClick");
+  assert.deepEqual(
+    requests.map((request) => request.tool),
+    ["protect", "make_space"]
+  );
+});
+
 test("observable driver bridge exposes stable window APIs and result events", async () => {
   const windowObj = createFakeWindow();
   const resultEvents = [];
@@ -215,6 +263,8 @@ test("observable driver bridge exposes stable window APIs and result events", as
   });
 
   assert.equal(typeof windowObj[AGENT_OBSERVABLE_DRIVER_KEY]?.magicSelectClick, "function");
+  assert.equal(typeof windowObj[AGENT_OBSERVABLE_DRIVER_KEY]?.protectStroke, "function");
+  assert.equal(typeof windowObj[AGENT_OBSERVABLE_DRIVER_KEY]?.makeSpaceClick, "function");
 
   windowObj.dispatchEvent(
     new TestCustomEvent(AGENT_OBSERVABLE_ACTION_EVENT, {

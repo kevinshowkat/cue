@@ -23,7 +23,7 @@ An agent should prefer the loop:
 
 ## Working Rules
 - Prefer `observe` before every expensive or destructive mutation.
-- Treat `Marker` and `Magic Select` as focus-setting tools, not final edits.
+- Treat `Marker`, `Protect`, `Magic Select`, and `Make Space` as focus-setting tools, not final edits.
 - Use direct affordances when the desired edit class is already obvious.
 - Use `Design review` when the goal is ambiguous, aesthetic, or multi-step.
 - Use isolated tabs for speculative work when comparing options matters.
@@ -75,7 +75,9 @@ Agents should reason from what the affordance does, not from the internal type n
 ### 2. Focus And Scoping
 Current focus affordances correspond to the bottom communication rail:
 - `Marker`
+- `Protect`
 - `Magic Select`
+- `Make Space`
 - `Eraser`
 
 These are non-destructive communication operations.
