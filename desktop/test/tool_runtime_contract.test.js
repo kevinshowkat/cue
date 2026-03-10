@@ -5,11 +5,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  CREATE_TOOL_AFFORDANCE_ID,
+  CREATE_TOOL_EXECUTION_TYPE,
+  CREATE_TOOL_INVOCATION_CONTRACT,
+  CREATE_TOOL_ROUTE_PROFILE,
   SINGLE_IMAGE_RAIL_CONTRACT,
   TOOL_INVOCATION_EVENT,
   TOOL_INVOCATION_SCHEMA,
   TOOL_MANIFEST_SCHEMA,
   TOOL_RUNTIME_BRIDGE_KEY,
+  buildCreateToolInvocation,
   buildSingleImageDirectAffordanceInvocation,
   buildSingleImageRailInvocation,
   buildSingleImageRailJobEntries,
@@ -93,6 +98,8 @@ test("Create Tool UI and browser bridge are wired into the desktop app", () => {
   assert.match(app, /function runCreateToolFromPanel\(/);
   assert.match(app, /function invokeRegisteredTool\(/);
   assert.match(app, /window\[TOOL_RUNTIME_BRIDGE_KEY\]/);
+  assert.match(app, /createToolContract:\s*CREATE_TOOL_INVOCATION_CONTRACT/);
+  assert.match(app, /previewCreateTool:\s*\(\{\s*name = "",\s*description = ""\s*\}\s*=\s*\{\}\)\s*=>/);
   assert.match(app, /TOOL_INVOCATION_EVENT/);
   assert.match(app, /sessionToolRegistry\.createFromDescription/);
   assert.match(app, /customToolDock:\s*document\.getElementById\("custom-tool-dock"\)/);
@@ -102,6 +109,31 @@ test("Create Tool UI and browser bridge are wired into the desktop app", () => {
 test("tool runtime exports a stable bridge key and invocation event name", () => {
   assert.equal(TOOL_RUNTIME_BRIDGE_KEY, "__JUGGERNAUT_TOOL_RUNTIME__");
   assert.equal(TOOL_INVOCATION_EVENT, "juggernaut:tool-invoked");
+});
+
+test("create tool invocation is a first-class runtime contract with previewable generated manifest", () => {
+  const invocation = buildCreateToolInvocation({
+    name: "Mirror Punch",
+    description: "mirror the image and make it more punchy",
+    existingIds: ["mirror-punch"],
+    source: "bridge",
+    trigger: "preview",
+    requestId: "create-tool-7",
+  });
+
+  assert.equal(invocation.contract, CREATE_TOOL_INVOCATION_CONTRACT);
+  assert.equal(invocation.schema, TOOL_INVOCATION_SCHEMA);
+  assert.equal(invocation.requestId, "create-tool-7");
+  assert.equal(invocation.jobId, CREATE_TOOL_AFFORDANCE_ID);
+  assert.equal(invocation.tool.executionType, CREATE_TOOL_EXECUTION_TYPE);
+  assert.equal(invocation.tool.routeProfile, CREATE_TOOL_ROUTE_PROFILE);
+  assert.equal(invocation.execution.kind, "local_manifest_builder");
+  assert.equal(invocation.execution.generator, "juggernaut.local_manifest_builder.v1");
+  assert.deepEqual(invocation.execution.params.existingIds, ["mirror-punch"]);
+  assert.equal(invocation.generatedManifest.schema, TOOL_MANIFEST_SCHEMA);
+  assert.equal(invocation.generatedManifest.toolId, "mirror-punch-2");
+  assert.equal(invocation.outputContract.kind, "tool_manifest");
+  assert.equal(invocation.receipt.reproducible, true);
 });
 
 test("single-image rail invocation uses the approved capability contract without exposing providers", () => {

@@ -75,6 +75,27 @@ It should be used when the agent needs:
 
 `Design review` is not chat. It consumes visible canvas state plus focus hints and returns structured proposals that can be accepted into the normal execution layer.
 
+### 4. Create Tool
+`Create Tool` is a first-class tool-creation surface.
+
+It should be used when the agent has identified a reusable edit pattern that deserves a named tool instead of another one-off execution.
+
+Current behavior:
+- accepts an optional tool name plus a required short description
+- generates a deterministic local-edit tool manifest for the current slice
+- previews that manifest before registration
+- registers the new tool into the current session tool dock
+
+Agents should prefer `Create Tool` when:
+- the same edit would likely be reused within the session
+- a successful operation should become a named shortcut
+- the desired behavior fits Juggernaut's current local-edit tool schema
+
+Agents should not prefer `Create Tool` when:
+- an existing affordance already matches the job
+- the task is still ambiguous enough to need `Design review`
+- the desired behavior depends on provider-specific prompt hacking instead of a stable Juggernaut tool contract
+
 ## Direct Execution Vs Review
 
 ### Prefer Direct Execution When
@@ -172,10 +193,11 @@ For a new task:
 3. retrieve workflow priors for similar successful exports when available
 4. decide whether focus hints are needed
 5. if the edit class is obvious, use a direct affordance
-6. if the edit class is not obvious, request design review
-7. after any edit, evaluate progress
-8. if quality is uncertain, branch before trying another approach
-9. export only from the winning tab
+6. if a repeated local pattern should become reusable, consider `Create Tool`
+7. if the edit class is not obvious, request design review
+8. after any edit, evaluate progress
+9. if quality is uncertain, branch before trying another approach
+10. export only from the winning tab
 
 ## Safe Defaults
 - default to one tab unless comparing alternatives matters
@@ -190,6 +212,7 @@ Agents should learn:
 - which affordance changes pixels
 - which affordance only communicates focus
 - when review is better than direct execution
+- when a reusable pattern should become a tool instead of another one-off edit
 - how to compare branch results against a goal
 - how cost, latency, and privacy mode affect route choice
 

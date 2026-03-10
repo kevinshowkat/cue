@@ -127,6 +127,7 @@ Minimum mutate primitives:
 - `import_asset(tabId, assetRef)`
 - `set_focus_hint(tabId, focusSpec)`
 - `clear_focus_hints(tabId)`
+- `create_tool(name, description, options)`
 - `invoke_affordance(tabId, affordanceId, inputSpec)`
 - `accept_review_proposal(tabId, proposalId, executionMode)`
 - `create_checkpoint(tabId, label)`
@@ -184,6 +185,19 @@ Initial proposal generation uses the current `Design review` flow:
 - review returns 2-3 ranked action-first proposals
 - proposal acceptance routes through the normal execution layer
 - final apply replaces the target image in place on the active tab
+
+### Tool Creation
+Initial tool creation should use the existing `Create Tool` runtime surface rather than a separate agent-only implementation.
+
+Required behavior:
+- the agent can preview a generated tool manifest before registering it
+- the generated manifest resolves through the normal Juggernaut tool runtime
+- the created tool appears in the current session tool dock
+- receipts capture the draft, generated manifest, and local manifest-builder version
+
+Initial constraints:
+- `Create Tool` currently targets deterministic local-edit manifests for the current slice
+- it should be used for reusable patterns, not as a backdoor for arbitrary provider-specific prompt injection
 
 ## Affordances Instead Of Intent Labels
 Agent-facing tooling should not depend on a rigid "intent -> rail item" mapping. To encourage emergent tool use, affordances should be described by effect and usage pattern.

@@ -10,6 +10,10 @@ export const TOOL_MANIFEST_SCHEMA = "juggernaut.tool_manifest.v1";
 export const TOOL_INVOCATION_SCHEMA = "juggernaut.tool_invocation.v1";
 export const TOOL_INVOCATION_EVENT = "juggernaut:tool-invoked";
 export const TOOL_RUNTIME_BRIDGE_KEY = "__JUGGERNAUT_TOOL_RUNTIME__";
+export const CREATE_TOOL_AFFORDANCE_ID = "create_tool";
+export const CREATE_TOOL_INVOCATION_CONTRACT = "juggernaut.create_tool.v1";
+export const CREATE_TOOL_EXECUTION_TYPE = "tool_manifest_generation";
+export const CREATE_TOOL_ROUTE_PROFILE = "create_tool_local_manifest_builder_v1";
 
 export {
   SINGLE_IMAGE_AFFORDANCE_MAP,
@@ -373,6 +377,83 @@ export function buildToolInvocation(
       include: cloneJson(normalizedManifest.receipt?.include || []),
     },
     failureBehavior: cloneJson(normalizedManifest.failureBehavior),
+  };
+}
+
+export function buildCreateToolInvocation(
+  {
+    name = "",
+    description = "",
+    existingIds = [],
+    source = "create_tool_panel",
+    trigger = "click",
+    requestId = "",
+  } = {}
+) {
+  const normalizedName = normalizeText(name);
+  const normalizedDescription = normalizeText(description);
+  const normalizedExistingIds = Array.isArray(existingIds)
+    ? existingIds.map((id) => normalizeText(id)).filter(Boolean)
+    : [];
+  const generatedManifest = generateToolManifest({
+    name: normalizedName,
+    description: normalizedDescription,
+    existingIds: normalizedExistingIds,
+  });
+
+  return {
+    contract: CREATE_TOOL_INVOCATION_CONTRACT,
+    schema: TOOL_INVOCATION_SCHEMA,
+    requestId: normalizeText(requestId) || `tool-${Date.now()}`,
+    issuedAt: new Date().toISOString(),
+    source: normalizeText(source) || "create_tool_panel",
+    trigger: normalizeText(trigger) || "click",
+    jobId: CREATE_TOOL_AFFORDANCE_ID,
+    label: "Create Tool",
+    tool: {
+      toolId: CREATE_TOOL_AFFORDANCE_ID,
+      jobId: CREATE_TOOL_AFFORDANCE_ID,
+      label: "Create Tool",
+      version: 1,
+      executionKind: "local_manifest_builder",
+      executionType: CREATE_TOOL_EXECUTION_TYPE,
+      routeProfile: CREATE_TOOL_ROUTE_PROFILE,
+      surface: "custom_tool_dock",
+    },
+    draft: {
+      name: normalizedName,
+      description: normalizedDescription,
+    },
+    generatedManifest,
+    execution: {
+      kind: "local_manifest_builder",
+      generator: TOOL_GENERATOR_ID,
+      executionType: CREATE_TOOL_EXECUTION_TYPE,
+      routeProfile: CREATE_TOOL_ROUTE_PROFILE,
+      params: {
+        existingIds: normalizedExistingIds,
+      },
+    },
+    inputContract: {
+      requiresDescription: true,
+      acceptsOptionalName: true,
+      target: "session_tool_registry",
+    },
+    outputContract: {
+      kind: "tool_manifest",
+      target: "session_tool_registry",
+      previewable: true,
+      visibleInDock: true,
+    },
+    receipt: {
+      manifestSchema: TOOL_MANIFEST_SCHEMA,
+      reproducible: true,
+      include: ["tool_draft", "tool_manifest", "tool_generator"],
+    },
+    failureBehavior: {
+      kind: "toast",
+      message: "Create Tool could not build a manifest.",
+    },
   };
 }
 

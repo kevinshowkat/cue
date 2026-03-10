@@ -68,10 +68,12 @@ import {
   parseIntentIconsJsonDetailed as parseIntentIconsJsonDetailedUtil,
 } from "./intent_icons_parser.js";
 import {
+  CREATE_TOOL_INVOCATION_CONTRACT,
   TOOL_INVOCATION_EVENT,
   TOOL_MANIFEST_SCHEMA,
   TOOL_INVOCATION_SCHEMA,
   TOOL_RUNTIME_BRIDGE_KEY,
+  buildCreateToolInvocation,
   buildSingleImageRailInvocation,
   buildSingleImageRailJobEntries,
   buildToolInvocation,
@@ -26346,11 +26348,20 @@ function invokeRegisteredTool(
 function publishToolRuntimeBridge() {
   if (typeof window === "undefined") return;
   window[TOOL_RUNTIME_BRIDGE_KEY] = Object.freeze({
+    createToolContract: CREATE_TOOL_INVOCATION_CONTRACT,
     manifestSchema: TOOL_MANIFEST_SCHEMA,
     invocationSchema: TOOL_INVOCATION_SCHEMA,
     invocationEvent: TOOL_INVOCATION_EVENT,
     listTools: () => sessionToolRegistry.list(),
     getTool: (toolId) => sessionToolRegistry.get(toolId),
+    previewCreateTool: ({ name = "", description = "" } = {}) =>
+      buildCreateToolInvocation({
+        name,
+        description,
+        existingIds: state.sessionTools.map((tool) => String(tool?.toolId || "").trim()).filter(Boolean),
+        source: "bridge",
+        trigger: "preview",
+      }),
     createTool: ({ name = "", description = "" } = {}) => {
       const manifest = sessionToolRegistry.createFromDescription({ name, description });
       syncSessionToolsFromRegistry();
