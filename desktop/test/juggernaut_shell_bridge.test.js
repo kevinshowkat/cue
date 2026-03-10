@@ -37,3 +37,9 @@ test("Juggernaut shell bridge emits integration events for tools and PSD export"
   assert.match(app, /juggernaut:apply-tool/);
   assert.match(app, /juggernaut:export-psd/);
 });
+
+test("Juggernaut shell export falls back to the native PSD exporter when no handler is registered", () => {
+  assert.match(app, /const exportHookReady = typeof state\.juggernautShell\.psdExportHandler === "function" \|\| typeof invoke === "function";/);
+  assert.match(app, /if \(typeof invoke === "function"\) \{\s*await exportRun\(\);\s*return true;\s*\}/);
+  assert.doesNotMatch(app, /Export PSD hook ready for the export branch/);
+});

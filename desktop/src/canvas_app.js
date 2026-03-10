@@ -9738,7 +9738,7 @@ function renderJuggernautShellChrome() {
   syncRuntimeStatusAffordances();
 
   const toolHookReady = typeof state.juggernautShell.toolInvoker === "function";
-  const exportHookReady = typeof state.juggernautShell.psdExportHandler === "function";
+  const exportHookReady = typeof state.juggernautShell.psdExportHandler === "function" || typeof invoke === "function";
   if (els.juggernautExportPsd) {
     const exportTitle = !state.images.length
       ? "Upload an image before exporting PSD"
@@ -27703,7 +27703,11 @@ export async function exportJuggernautPsd() {
       })) ?? true
     );
   }
-  showToast("Export PSD hook ready for the export branch.", "tip", 2800);
+  if (typeof invoke === "function") {
+    await exportRun();
+    return true;
+  }
+  showToast("PSD export is unavailable in this runtime.", "tip", 2800);
   return false;
 }
 
