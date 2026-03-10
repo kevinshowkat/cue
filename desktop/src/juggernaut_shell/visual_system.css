@@ -362,8 +362,21 @@ body.juggernaut-shell .juggernaut-shell-chrome {
 }
 
 body.juggernaut-shell .juggernaut-shell-head {
+  position: absolute;
+  top: 0;
   left: calc(var(--jg-rail-width) + 14px);
+  right: 0;
+  width: auto;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+  display: flex;
+  align-items: flex-start;
   gap: 14px;
+  pointer-events: none;
 }
 
 body.juggernaut-shell .juggernaut-shell-brand,
@@ -404,6 +417,13 @@ body.juggernaut-shell .drop-hint-inner > * {
 }
 
 body.juggernaut-shell .juggernaut-shell-brand {
+  position: relative;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
   gap: 4px;
   padding: 14px 18px;
   border-radius: 20px;
@@ -438,6 +458,16 @@ body.juggernaut-shell .juggernaut-shell-action.is-ready {
 body.juggernaut-shell .juggernaut-shell-action.is-pending-hook {
   color: rgba(138, 112, 72, 0.88);
   border-color: rgba(138, 112, 72, 0.14);
+}
+
+body.juggernaut-shell .juggernaut-shell-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  pointer-events: auto;
 }
 
 body.juggernaut-shell .juggernaut-tool-rail,
