@@ -1,0 +1,129 @@
+{
+  "fixture": {
+    "name": "aragorn",
+    "relative_path": "images/aragorn.jpg",
+    "absolute_path": "/Users/mainframe/Desktop/projects/Juggernaut/images/aragorn.jpg",
+    "tracked": false,
+    "notes": [
+      "Local-only test fixture in the main checkout.",
+      "Not available in clean worktrees unless copied manually."
+    ]
+  },
+  "runner_defaults": {
+    "planner_mode": "auto",
+    "step_first": true,
+    "max_steps_step_mode": 4,
+    "max_steps_auto_mode": 6
+  },
+  "cases": [
+    {
+      "id": "aragorn-review-hero-polish",
+      "goal": "Use design review to find one strong improvement that makes Aragorn feel more cinematic while preserving his face, armor, sword, and horse, then export a PSD.",
+      "preconditions": [],
+      "expected_first_actions": [
+        "request_design_review",
+        "marker_stroke"
+      ],
+      "success_signals": [
+        "proposal or edit is conservative and cinematic",
+        "identity and gear are preserved",
+        "exports only after a meaningful improvement"
+      ],
+      "failure_signals": [
+        "removes important foreground story elements without justification",
+        "changes identity or costume",
+        "exports with no visible improvement"
+      ]
+    },
+    {
+      "id": "aragorn-premium-relight",
+      "goal": "Make this frame feel slightly more premium and readable by improving lighting and finish while keeping the same composition, then export a PSD.",
+      "preconditions": [],
+      "expected_first_actions": [
+        "invoke_direct_affordance:polish",
+        "invoke_direct_affordance:relight",
+        "request_design_review"
+      ],
+      "success_signals": [
+        "face reads more clearly",
+        "armor separation improves",
+        "composition stays stable"
+      ],
+      "failure_signals": [
+        "skin becomes plastic",
+        "contrast gets muddy",
+        "armor detail is lost"
+      ]
+    },
+    {
+      "id": "aragorn-local-problem-visible-scope",
+      "goal": "Identify the most distracting local problem in the frame, mark or select it visibly on the canvas, improve it, then export a PSD.",
+      "preconditions": [],
+      "expected_first_actions": [
+        "marker_stroke",
+        "magic_select_click"
+      ],
+      "success_signals": [
+        "visible scoping happens before editing",
+        "scope corresponds to a real problem area"
+      ],
+      "failure_signals": [
+        "edits immediately with no visible scoping",
+        "marks a low-value or random area"
+      ]
+    },
+    {
+      "id": "aragorn-copy-space-manual-make-space",
+      "goal": "Preserve Aragorn as the clear hero, keep his face and sword hand intact, and create a cleaner left-side area that could hold title text, then export a PSD.",
+      "preconditions": [
+        "human pre-places Make Space on the left side of the frame"
+      ],
+      "expected_first_actions": [
+        "request_design_review"
+      ],
+      "success_signals": [
+        "left-side negative space opens up",
+        "subject remains dominant"
+      ],
+      "failure_signals": [
+        "reserved space is ignored",
+        "subject is cropped or displaced badly"
+      ]
+    },
+    {
+      "id": "aragorn-protect-stress",
+      "goal": "Improve the image while strictly preserving the protected parts, then export a PSD.",
+      "preconditions": [
+        "human pre-places Protect over face, chest emblem, and sword hand"
+      ],
+      "expected_first_actions": [
+        "request_design_review"
+      ],
+      "success_signals": [
+        "protected regions remain stable",
+        "edit is conservative around preserved content"
+      ],
+      "failure_signals": [
+        "face or hand changes noticeably",
+        "protected content is overwritten"
+      ]
+    },
+    {
+      "id": "aragorn-create-tool-judgment",
+      "goal": "If you find a reusable cinematic polish pattern for this kind of hero frame, preview a tool for it, create the tool, then stop without exporting.",
+      "preconditions": [],
+      "expected_first_actions": [
+        "preview_create_tool",
+        "create_tool"
+      ],
+      "success_signals": [
+        "tool description is specific and reusable",
+        "run stops after tool creation"
+      ],
+      "failure_signals": [
+        "creates a vague tool",
+        "exports despite being told to stop"
+      ]
+    }
+  ]
+}

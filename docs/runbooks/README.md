@@ -14,6 +14,8 @@ These are the multi-agent execution documents created during the launch/design/p
 - [TODAY_REVIEW_APPLY_TASKS.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/TODAY_REVIEW_APPLY_TASKS.md): review-accept apply worker prompts
 - [WARP_AGENT_WORKFLOW_WAVE.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/WARP_AGENT_WORKFLOW_WAVE.md): observable-agent workflow wave setup
 - [TODAY_AGENT_WORKFLOW_TASKS.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/TODAY_AGENT_WORKFLOW_TASKS.md): observable-agent workflow worker prompts
+- [AGENT_RUNNER_ARAGORN.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/AGENT_RUNNER_ARAGORN.md): local Aragorn goal pack for manual Agent Run testing
+- [agent_runner_aragorn_goals.json](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/agent_runner_aragorn_goals.json): machine-readable Aragorn test cases for Agent Run
 
 ## Notes
 
