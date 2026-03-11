@@ -25227,28 +25227,24 @@ function ensureCanvasImageLoaded(item) {
         const iw = item.width;
         const ih = item.height;
         if (rect && rect.autoAspect && iw && ih) {
-          const prevH = Number(rect.h) || 1;
-          const nextH = Math.max(1, Math.round(rect.w * (ih / iw)));
-          rect.h = nextH;
-          // Keep the rect center stable as we switch from placeholder square -> real aspect.
-          rect.y = (Number(rect.y) || 0) + Math.round((prevH - nextH) / 2);
-          rect.autoAspect = false;
           const wrap = els.canvasWrap;
           const cw = wrap?.clientWidth || 0;
           const ch = wrap?.clientHeight || 0;
-          if (cw && ch) {
-            const clamped = clampFreeformRectCss(
-              rect,
-              cw,
-              ch,
-              freeformWorkspaceClampOptions(cw, ch, { minSize: 44 })
-            );
-            rect.x = clamped.x;
-            rect.y = clamped.y;
-            rect.w = clamped.w;
-            rect.h = clamped.h;
-            rect.autoAspect = clamped.autoAspect;
-          }
+          const settled = settleAutoAspectRectCss(
+            rect,
+            { width: iw, height: ih },
+            {
+              canvasCssW: cw,
+              canvasCssH: ch,
+              clampOptions:
+                cw && ch ? freeformWorkspaceClampOptions(cw, ch, { minSize: 44 }) : null,
+            }
+          );
+          rect.x = settled.x;
+          rect.y = settled.y;
+          rect.w = settled.w;
+          rect.h = settled.h;
+          rect.autoAspect = settled.autoAspect;
           invalidateActiveTabPreview("image_layout_settle");
           scheduleVisualPromptWrite();
           if (intentModeActive()) {
@@ -25497,6 +25493,54 @@ function clampFreeformRectCss(rectCss, canvasCssW, canvasCssH, { margin = 14, mi
     rotateDeg: normalizeFreeformRotateDeg(rectCss?.rotateDeg),
     skewXDeg: normalizeFreeformSkewDeg(rectCss?.skewXDeg),
   };
+}
+
+function settleAutoAspectRectCss(
+  rectCss,
+  { width = 0, height = 0 } = {},
+  { canvasCssW = 0, canvasCssH = 0, clampOptions = null } = {}
+) {
+  const baseRect = rectCss && typeof rectCss === "object" ? rectCss : {};
+  const prevW = Math.max(1, Math.round(Number(baseRect.w) || 1));
+  const prevH = Math.max(1, Math.round(Number(baseRect.h) || 1));
+  const iw = Math.max(1, Math.round(Number(width) || 0));
+  const ih = Math.max(1, Math.round(Number(height) || 0));
+  const aspect = iw / Math.max(1, ih);
+  let nextW = prevW;
+  let nextH = prevH;
+
+  if (aspect >= 1) {
+    nextH = Math.max(1, Math.round(prevW / Math.max(0.0001, aspect)));
+    if (nextH > prevH) {
+      nextH = prevH;
+      nextW = Math.max(1, Math.round(prevH * aspect));
+    }
+  } else {
+    nextW = Math.max(1, Math.round(prevH * aspect));
+    if (nextW > prevW) {
+      nextW = prevW;
+      nextH = Math.max(1, Math.round(prevW / Math.max(0.0001, aspect)));
+    }
+  }
+
+  const centered = {
+    ...baseRect,
+    x: (Number(baseRect.x) || 0) + Math.round((prevW - nextW) / 2),
+    y: (Number(baseRect.y) || 0) + Math.round((prevH - nextH) / 2),
+    w: nextW,
+    h: nextH,
+    autoAspect: false,
+  };
+
+  if (
+    canvasCssW > 0 &&
+    canvasCssH > 0 &&
+    clampOptions &&
+    typeof clampOptions === "object"
+  ) {
+    return clampFreeformRectCss(centered, canvasCssW, canvasCssH, clampOptions);
+  }
+  return centered;
 }
 
 function freeformWorkspaceClampOptions(canvasCssW, canvasCssH, { minSize = 44 } = {}) {
