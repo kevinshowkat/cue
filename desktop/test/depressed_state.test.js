@@ -81,3 +81,12 @@ test("Juggernaut shell rail hover styling does not override selected or pressed 
     /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button:hover:not\(:disabled\):not\(\.selected\):not\(\.is-active-request\):not\(\.is-pressing\):not\(\.depressed\)\s*\{/
   );
 });
+
+test("Juggernaut shell rail selected hover keeps a light-shell pressed treatment", () => {
+  assert.match(
+    visualSystemCss,
+    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-pressing\s*\{/
+  );
+  assert.match(visualSystemCss, /filter:\s*none;/);
+  assert.match(visualSystemCss, /transform:\s*translate3d\(0,\s*1px,\s*0\)/);
+});
