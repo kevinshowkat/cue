@@ -642,7 +642,7 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button {
     opacity 140ms ease;
 }
 
-body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:hover:not(:disabled) {
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:hover:not(:disabled):not(.selected):not(.is-active-request):not(.is-pressing):not(.depressed) {
   transform: translate3d(0, -0.5px, 0);
   border-color: rgba(30, 35, 44, 0.12);
   border-top-color: rgba(255, 255, 255, 1);

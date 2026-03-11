@@ -7,9 +7,11 @@ import { dirname, join } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
 const cssPath = join(here, "..", "src", "styles.css");
+const visualSystemCssPath = join(here, "..", "src", "juggernaut_shell", "visual_system.css");
 const railPath = join(here, "..", "src", "juggernaut_shell", "rail.js");
 const app = readFileSync(appPath, "utf8");
 const css = readFileSync(cssPath, "utf8");
+const visualSystemCss = readFileSync(visualSystemCssPath, "utf8");
 const rail = readFileSync(railPath, "utf8");
 
 test("Juggernaut rail: depressed class is applied only when an action is actively running", () => {
@@ -70,5 +72,12 @@ test("Juggernaut rail selected active-request state keeps the pressed treatment"
   assert.match(
     css,
     /\.juggernaut-tool\.juggernaut-rail-anchor\.selected\.is-active-request \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.selected\.is-active-request \.tool-icon,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.selected\.is-active-request:hover \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.selected\.is-active-request:hover \.tool-icon,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.is-pressing\.is-active-request \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.is-pressing\.is-active-request \.tool-icon\s*\{/
+  );
+});
+
+test("Juggernaut shell rail hover styling does not override selected or pressed buttons", () => {
+  assert.match(
+    visualSystemCss,
+    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button:hover:not\(:disabled\):not\(\.selected\):not\(\.is-active-request\):not\(\.is-pressing\):not\(\.depressed\)\s*\{/
   );
 });
