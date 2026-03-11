@@ -60,3 +60,15 @@ test("Juggernaut rail hover and click keep selected tools visibly pressed", () =
     /\.juggernaut-tool\.juggernaut-rail-anchor:active \.tool-icon,\s*\.juggernaut-tool\.is-local-utility:active \.tool-icon,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.is-pressing \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.is-pressing \.tool-icon,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.selected:hover \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.selected:hover \.tool-icon\s*\{/
   );
 });
+
+test("Juggernaut rail selected active-request state keeps the pressed treatment", () => {
+  assert.match(
+    css,
+    /\.juggernaut-tool\.juggernaut-rail-anchor\.selected\.is-active-request,\s*\.juggernaut-tool\.is-local-utility\.selected\.is-active-request,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.selected\.is-active-request:hover,\s*\.juggernaut-tool\.is-local-utility\.selected\.is-active-request:hover,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.is-pressing\.is-active-request,\s*\.juggernaut-tool\.is-local-utility\.is-pressing\.is-active-request\s*\{/
+  );
+  assert.match(css, /transform:\s*translate3d\(0,\s*3px,\s*0\)\s*scale\(0\.976\)/);
+  assert.match(
+    css,
+    /\.juggernaut-tool\.juggernaut-rail-anchor\.selected\.is-active-request \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.selected\.is-active-request \.tool-icon,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.selected\.is-active-request:hover \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.selected\.is-active-request:hover \.tool-icon,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.is-pressing\.is-active-request \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.is-pressing\.is-active-request \.tool-icon\s*\{/
+  );
+});
