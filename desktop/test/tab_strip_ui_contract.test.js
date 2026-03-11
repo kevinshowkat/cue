@@ -82,6 +82,8 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-strip-new\s*\{/);
   assert.match(css, /\.session-tab-strip-review\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\s*\{/);
+  assert.match(css, /\.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*white-space:\s*nowrap/s);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*padding:\s*0 14px/s);
   assert.match(css, /\.session-tab-runtime-action\.is-ready\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\.is-pending-hook\s*\{/);
   assert.match(css, /@keyframes\s+sessionTabBusyPulse/);
