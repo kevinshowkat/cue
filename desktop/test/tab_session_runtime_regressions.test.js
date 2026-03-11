@@ -8,6 +8,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(here, "..");
 const app = readFileSync(join(desktopRoot, "src", "canvas_app.js"), "utf8");
 const createRunSignature = "async function createRun({ announce = true, source = \"new_run\" } = {}) {";
+const ensureBootShellTabChunk = app.slice(app.indexOf("function ensureBootShellTab() {"), app.indexOf("function captureActiveTabSession("));
 const ensureRunChunk = app.slice(app.indexOf("async function ensureRun() {"), app.indexOf(createRunSignature));
 const ensureEngineSpawnedChunk = app.slice(
   app.indexOf("async function ensureEngineSpawned({ reason = \"engine\", showToastOnFailure = true } = {}) {"),
@@ -104,7 +105,9 @@ test("tab activation is lazy and validates engine binding before reusing a PTY",
 
 test("boot creates the initial run without showing the new-tab toast", () => {
   const createRunSource = extractFunctionSource("createRun");
-  assert.equal(bootChunk.includes('await createRun({ announce: false, source: "boot" });'), true);
+  assert.equal(bootChunk.includes("ensureBootShellTab();"), true);
+  assert.equal(bootChunk.includes("await ensureRun();"), true);
+  assert.equal(bootChunk.includes('await createRun({ announce: false, source: "boot" });'), false);
   assert.equal(app.includes(createRunSignature), true);
   assert.equal(createRunSource.includes('const normalizedSource = String(source || "new_run").trim() || "new_run";'), true);
   assert.equal(
@@ -114,6 +117,18 @@ test("boot creates the initial run without showing the new-tab toast", () => {
   assert.equal(createRunSource.includes("engineFailureToast: showCreateRunToast,"), true);
   assert.equal(createRunSource.includes("New tab ready:"), false);
   assert.equal(createRunSource.includes("engine did not start"), false);
+});
+
+test("boot seeds a visible shell tab before the backend provisions the first run", () => {
+  assert.equal(app.includes("function ensureBootShellTab() {"), true);
+  assert.equal(ensureBootShellTabChunk.includes("if (tabbedSessions.tabsOrder.length) return"), true);
+  assert.equal(ensureBootShellTabChunk.includes("const session = createFreshTabSession();"), true);
+  assert.equal(ensureBootShellTabChunk.includes("const label = tabLabelForRunDir(null, `Run ${tabbedSessions.tabsOrder.length + 1}`);"), true);
+  assert.equal(ensureBootShellTabChunk.includes("runDir: null,"), true);
+  assert.equal(ensureBootShellTabChunk.includes("eventsPath: null,"), true);
+  assert.equal(ensureBootShellTabChunk.includes("{ activate: true }"), true);
+  assert.equal(ensureBootShellTabChunk.includes("bindTabSessionToState(session);"), true);
+  assert.equal(ensureBootShellTabChunk.includes('publishActiveTabVisibleState({ reason: "boot_shell_tab" });'), true);
 });
 
 test("tab rename can only start for the active tab", () => {

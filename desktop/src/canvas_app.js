@@ -32626,6 +32626,29 @@ function currentTabSwitchBlockMessage(reason = currentTabSwitchBlockReason()) {
   return "The current tab is busy.";
 }
 
+function ensureBootShellTab() {
+  if (tabbedSessions.tabsOrder.length) return tabbedSessions.getTab(tabbedSessions.activeTabId || tabbedSessions.tabsOrder[0]) || null;
+  const tabId = createTabId();
+  const session = createFreshTabSession();
+  const label = tabLabelForRunDir(null, `Run ${tabbedSessions.tabsOrder.length + 1}`);
+  const record = tabbedSessions.upsertTab(
+    {
+      tabId,
+      label,
+      runDir: null,
+      eventsPath: null,
+      session,
+      busy: false,
+      tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
+      thumbnailPath: session.tabUiMeta?.thumbnailPath || null,
+    },
+    { activate: true }
+  );
+  bindTabSessionToState(session);
+  publishActiveTabVisibleState({ reason: "boot_shell_tab" });
+  return record;
+}
+
 function captureActiveTabSession(session = null) {
   const next = session && typeof session === "object" ? session : createFreshTabSession();
   next.label = state.activeTabId ? tabbedSessions.getTab(state.activeTabId)?.label || next.label || null : next.label || null;
@@ -41498,6 +41521,7 @@ async function boot() {
     requestRender();
   }).observe(els.canvasWrap);
 
+  ensureBootShellTab();
   installCanvasHandlers();
   installDnD();
   installUi();
@@ -41600,8 +41624,8 @@ async function boot() {
     }
   });
 
-  // Auto-create a run for speed; users can always "Open Run" later.
-  await createRun({ announce: false, source: "boot" });
+  // Provision the visible boot tab with a real run as soon as the backend is ready.
+  await ensureRun();
   installJuggernautShellBridge();
   installBuiltInSingleImageRailIntegration();
   applyRuntimeChromeVisibility({ source: "bridge_ready" });
