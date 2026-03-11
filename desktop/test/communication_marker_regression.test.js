@@ -8,18 +8,47 @@ const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
 const app = readFileSync(appPath, "utf8");
 
-function loadNamedFunctionSource(name) {
-  const pattern = new RegExp(
-    `function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}\\n\\n(?:async\\s+)?function\\s+`,
-    "m"
-  );
-  const match = app.match(pattern);
-  assert.ok(match, `${name} function not found`);
-  return match[0].replace(/\n\n(?:async\s+)?function\s+[\s\S]*$/, "").trim();
+function extractFunctionSource(name) {
+  const markers = [
+    `export async function ${name}(`,
+    `export function ${name}(`,
+    `async function ${name}(`,
+    `function ${name}(`,
+  ];
+  const start = markers
+    .map((marker) => app.indexOf(marker))
+    .find((index) => index >= 0);
+  assert.notEqual(start, undefined, `${name} function not found`);
+  const signatureStart = app.indexOf("(", start);
+  assert.notEqual(signatureStart, -1, `Could not find signature for ${name}`);
+  let parenDepth = 0;
+  let bodyStart = -1;
+  for (let index = signatureStart; index < app.length; index += 1) {
+    const char = app[index];
+    if (char === "(") parenDepth += 1;
+    if (char === ")") parenDepth -= 1;
+    if (parenDepth === 0 && char === "{") {
+      bodyStart = index;
+      break;
+    }
+  }
+  assert.notEqual(bodyStart, -1, `Could not find body for ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < app.length; index += 1) {
+    const char = app[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) {
+      return app
+        .slice(start, index + 1)
+        .replace(/^export\s+/, "");
+    }
+  }
+  throw new Error(`Could not extract function ${name}`);
 }
 
 function instantiateFunction(name, deps = {}) {
-  const source = loadNamedFunctionSource(name);
+  const source = extractFunctionSource(name);
   const keys = Object.keys(deps);
   const values = Object.values(deps);
   return new Function(...keys, `return (${source});`)(...values);
@@ -236,6 +265,61 @@ test("blank-canvas marker commits stay in the overlay mark bucket with raw point
   assert.equal(state.communication.canvasMarks.length, 1);
   assert.equal(state.communication.markDraft, null);
   assert.equal(state.communication.lastAnchor?.markId, mark.id);
+});
+
+test("move tool clears the active communication marker before returning to pan", async () => {
+  const calls = [];
+  const state = {
+    tool: "pan",
+    activeId: "img-hero",
+    juggernautShell: {
+      lastToolKey: "",
+      selectedImageId: "img-hero",
+      selectedImageIds: ["img-hero"],
+      selectedImage: { id: "img-hero" },
+      toolInvoker: null,
+    },
+  };
+  const applyJuggernautTool = instantiateFunction("applyJuggernautTool", {
+    state,
+    renderJuggernautShellChrome: () => calls.push(["render"]),
+    singleImageRailJobMeta: () => null,
+    juggernautShellToolLabel: () => "Move",
+    JUGGERNAUT_SHELL_RAIL_CONTRACT: "single_image_shell",
+    buildJuggernautShellContext: () => ({ activeId: state.activeId }),
+    dispatchJuggernautShellEvent: (type) => {
+      calls.push(["dispatch", type]);
+      return { defaultPrevented: false };
+    },
+    setCommunicationTool: (tool, options = {}) => {
+      calls.push(["setCommunicationTool", tool, options.source || null]);
+      return null;
+    },
+    setTool: (tool) => {
+      calls.push(["setTool", tool]);
+    },
+    runWithUserError: async () => {
+      throw new Error("unexpected upload invocation");
+    },
+    importPhotos: async () => {
+      throw new Error("unexpected import invocation");
+    },
+    exportJuggernautPsd: async () => {
+      throw new Error("unexpected export invocation");
+    },
+  });
+
+  const ok = await applyJuggernautTool("move");
+
+  assert.equal(ok, true);
+  assert.equal(state.juggernautShell.lastToolKey, "move");
+  const clearIndex = calls.findIndex(([name]) => name === "setCommunicationTool");
+  const panIndex = calls.findIndex(([name]) => name === "setTool");
+  assert.notEqual(clearIndex, -1);
+  assert.notEqual(panIndex, -1);
+  assert.ok(clearIndex < panIndex);
+  assert.deepEqual(calls[clearIndex], ["setCommunicationTool", null, "shell_move"]);
+  assert.deepEqual(calls[panIndex], ["setTool", "pan"]);
 });
 
 test("image-hit marker commits preserve overlay-space geometry and avoid image buckets", () => {

@@ -28623,6 +28623,7 @@ export async function applyJuggernautTool(toolId) {
   if (delegated?.defaultPrevented) return true;
 
   if (normalized === "move") {
+    setCommunicationTool(null, { source: "shell_move" });
     setTool("pan");
     return true;
   }
@@ -28632,6 +28633,7 @@ export async function applyJuggernautTool(toolId) {
     });
   }
   if (normalized === "select") {
+    setCommunicationTool(null, { source: "shell_select" });
     setTool(state.tool === "lasso" ? "pan" : "lasso");
     return true;
   }
