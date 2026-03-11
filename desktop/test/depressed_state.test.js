@@ -52,11 +52,11 @@ test("Juggernaut rail selected state reads as a pressed-in active button", () =>
 test("Juggernaut rail hover and click keep selected tools visibly pressed", () => {
   assert.match(
     css,
-    /\.juggernaut-tool\.juggernaut-rail-anchor:active,\s*\.juggernaut-tool\.is-local-utility:active,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.selected:hover,\s*\.juggernaut-tool\.is-local-utility\.selected:hover\s*\{/
+    /\.juggernaut-tool\.juggernaut-rail-anchor:active,\s*\.juggernaut-tool\.is-local-utility:active,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.is-pressing,\s*\.juggernaut-tool\.is-local-utility\.is-pressing,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.selected:hover,\s*\.juggernaut-tool\.is-local-utility\.selected:hover\s*\{/
   );
   assert.match(css, /transform:\s*translate3d\(0,\s*3px,\s*0\)\s*scale\(0\.976\)/);
   assert.match(
     css,
-    /\.juggernaut-tool\.juggernaut-rail-anchor:active \.tool-icon,\s*\.juggernaut-tool\.is-local-utility:active \.tool-icon,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.selected:hover \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.selected:hover \.tool-icon\s*\{/
+    /\.juggernaut-tool\.juggernaut-rail-anchor:active \.tool-icon,\s*\.juggernaut-tool\.is-local-utility:active \.tool-icon,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.is-pressing \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.is-pressing \.tool-icon,\s*\.juggernaut-tool\.juggernaut-rail-anchor\.selected:hover \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.selected:hover \.tool-icon\s*\{/
   );
 });

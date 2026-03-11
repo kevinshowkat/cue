@@ -9762,6 +9762,8 @@ button.ghost:hover {
 
 .juggernaut-tool.juggernaut-rail-anchor:active,
 .juggernaut-tool.is-local-utility:active,
+.juggernaut-tool.juggernaut-rail-anchor.is-pressing,
+.juggernaut-tool.is-local-utility.is-pressing,
 .juggernaut-tool.juggernaut-rail-anchor.selected:hover,
 .juggernaut-tool.is-local-utility.selected:hover {
   border-color: rgba(146, 234, 255, 0.78);
@@ -9781,6 +9783,8 @@ button.ghost:hover {
 
 .juggernaut-tool.juggernaut-rail-anchor:active .tool-icon,
 .juggernaut-tool.is-local-utility:active .tool-icon,
+.juggernaut-tool.juggernaut-rail-anchor.is-pressing .tool-icon,
+.juggernaut-tool.is-local-utility.is-pressing .tool-icon,
 .juggernaut-tool.juggernaut-rail-anchor.selected:hover .tool-icon,
 .juggernaut-tool.is-local-utility.selected:hover .tool-icon {
   transform: translateY(2px) scale(0.95);

@@ -763,18 +763,53 @@ function ensureRailButton(root, slotKey) {
   const toolEl = document.createElement("button");
   toolEl.type = "button";
   toolEl.className = "tool juggernaut-tool juggernaut-rail-button";
+  toolEl.addEventListener("pointerdown", (event) => {
+    if (Number(event?.button) !== 0) return;
+    if (toolEl.disabled) return;
+    if (toolEl.__juggernautRailPressReleaseTimer) {
+      clearTimeout(toolEl.__juggernautRailPressReleaseTimer);
+      toolEl.__juggernautRailPressReleaseTimer = null;
+    }
+    toolEl.classList.add("is-pressing");
+  });
+  const scheduleRailPressRelease = (delayMs = 0) => {
+    if (toolEl.__juggernautRailPressReleaseTimer) {
+      clearTimeout(toolEl.__juggernautRailPressReleaseTimer);
+      toolEl.__juggernautRailPressReleaseTimer = null;
+    }
+    const win = browserWindow();
+    if (delayMs > 0 && win && typeof win.setTimeout === "function") {
+      toolEl.__juggernautRailPressReleaseTimer = win.setTimeout(() => {
+        toolEl.__juggernautRailPressReleaseTimer = null;
+        toolEl.classList.remove("is-pressing");
+      }, delayMs);
+      return;
+    }
+    toolEl.classList.remove("is-pressing");
+  };
+  toolEl.addEventListener("pointerup", () => {
+    scheduleRailPressRelease(140);
+  });
+  toolEl.addEventListener("pointercancel", () => {
+    scheduleRailPressRelease();
+  });
+  toolEl.addEventListener("blur", () => {
+    scheduleRailPressRelease();
+  });
   toolEl.addEventListener("click", (event) => {
     const button = toolEl.__juggernautRailButton;
     if (button && !button.disabled && typeof button.invoke === "function") {
       Promise.resolve(button.invoke({ button, event, root })).catch((error) => {
         console.error("Juggernaut shell affordance failed:", error);
       });
+      scheduleRailPressRelease(160);
       return;
     }
     const onPress = root.__juggernautRailOnPress;
     if (typeof onPress === "function" && button && !button.disabled) {
       onPress(button, event);
     }
+    scheduleRailPressRelease(160);
   });
   return toolEl;
 }

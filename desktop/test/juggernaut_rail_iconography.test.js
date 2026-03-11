@@ -48,6 +48,9 @@ test("Juggernaut rail iconography: rail rendering consumes generated registry an
   assert.match(railSource, /getJuggernautRailIconSvg/);
   assert.match(railSource, /toolEl\.dataset\.toolKey/);
   assert.match(railSource, /className = "tool juggernaut-tool juggernaut-rail-button"/);
+  assert.match(railSource, /toolEl\.addEventListener\("pointerdown"/);
+  assert.match(railSource, /toolEl\.classList\.add\("is-pressing"\)/);
+  assert.match(railSource, /scheduleRailPressRelease\(160\)/);
   assert.match(railSource, /toolEl\.dataset\.slotKey/);
   assert.match(railSource, /root\.insertBefore\(toolEl,\s*cursor \|\| null\)/);
   assert.doesNotMatch(railSource, /root\.innerHTML = "";/);
