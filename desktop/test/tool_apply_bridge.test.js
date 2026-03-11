@@ -232,6 +232,32 @@ test("canvas app keeps a thin bridge into the runtime module", () => {
   assert.match(app, /installToolApplyBridge\(\{\s*windowObj:\s*window,\s*CustomEventCtor:\s*typeof CustomEvent === "function" \? CustomEvent : null,\s*applyToolRuntimeEdit,/s);
 });
 
+test("canvas app routes Agent Run seeded tools through the shaped tool-apply bridge", () => {
+  assert.match(
+    app,
+    /if \(action\.type === "invoke_seeded_tool"\) \{[\s\S]*?const invocation = buildSingleImageRailInvocation\(action\.toolId,\s*\{[\s\S]*?const result = await window\.juggernautApplyTool\(invocation\);/s
+  );
+  assert.doesNotMatch(
+    app,
+    /if \(action\.type === "invoke_seeded_tool"\) \{[\s\S]*?const ok = await applyJuggernautTool\(action\.toolId\);/s
+  );
+});
+
+test("canvas app executes cut out through the Gemini-backed subject isolation path", () => {
+  assert.match(app, /const SINGLE_IMAGE_RAIL_SUBJECT_ISOLATION_MODEL = "Gemini Nano Banana 2";/);
+  assert.match(app, /async function executeSingleImageRailSubjectIsolation\(/);
+  assert.match(app, /providerRouter\.runApply\(\{[\s\S]*?model:\s*SINGLE_IMAGE_RAIL_SUBJECT_ISOLATION_MODEL,/s);
+  assert.match(app, /Cut Out needs a lasso or Magic Select region first\./);
+});
+
+test("canvas app blocks Agent Run from using remove as subject extraction during compositing prep", () => {
+  assert.match(app, /function agentRunnerSummarySuggestsSubjectExtraction\(goal = "", plannerSummary = ""\)/);
+  assert.match(
+    app,
+    /if \(readFirstString\(action\?\.toolId\) === "remove" && agentRunnerSummarySuggestsSubjectExtraction\(goal, plannerSummary\)\) \{[\s\S]*?Use cut_out to extract a subject for compositing\./s
+  );
+});
+
 test("tool apply runtime: routes approved single-image capability requests through a provider-agnostic executor", async () => {
   const calls = [];
   const result = await applyToolRuntimeRequest(
@@ -241,6 +267,11 @@ test("tool apply runtime: routes approved single-image capability requests throu
       target: {
         activeImageId: "img-2",
         selectedImageIds: ["img-2"],
+      },
+      selection: {
+        activeId: "img-2",
+        selectedImageIds: ["img-2"],
+        subjectSelectionAvailable: true,
       },
       execution: {
         kind: "model_capability",
@@ -292,7 +323,49 @@ test("tool apply runtime: routes approved single-image capability requests throu
   assert.deepEqual(calls[0].selection, {
     activeImageId: "img-2",
     selectedImageIds: ["img-2"],
+    subjectSelectionAvailable: true,
   });
+});
+
+test("tool apply runtime: cut out returns a shaped selection_required failure without a real subject selection", async () => {
+  const result = await applyToolRuntimeRequest(
+    {
+      contract: SINGLE_IMAGE_RAIL_CONTRACT,
+      jobId: "cut_out",
+      target: {
+        activeImageId: "img-2",
+        selectedImageIds: ["img-2"],
+      },
+      selection: {
+        activeId: "img-2",
+        selectedImageIds: ["img-2"],
+        subjectSelectionAvailable: false,
+      },
+      execution: {
+        kind: "model_capability",
+        capability: "subject_isolation",
+      },
+    },
+    {
+      getActiveImageId: () => "img-2",
+      hasImageId: (imageId) => imageId === "img-2",
+      getImageById: () => ({
+        id: "img-2",
+        path: "/tmp/source.png",
+      }),
+      getCapabilityAvailability: () => ({
+        available: true,
+      }),
+      normalizeErrorMessage: (error) => String(error?.message || error),
+    }
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.toolId, "cut_out");
+  assert.equal(result.jobId, "cut_out");
+  assert.equal(result.capability, "subject_isolation");
+  assert.equal(result.disabledReason, "selection_required");
+  assert.match(result.error, /lasso|magic select/i);
 });
 
 test("tool apply runtime: direct local-first affordances can execute through the existing local raster path", async () => {

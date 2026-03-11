@@ -5,7 +5,7 @@ export const SINGLE_IMAGE_RAIL_SEEDED_JOBS = Object.freeze([
     jobId: "cut_out",
     label: "Cut Out",
     capability: "subject_isolation",
-    requiresSelection: false,
+    requiresSelection: true,
   }),
   Object.freeze({
     jobId: "remove",

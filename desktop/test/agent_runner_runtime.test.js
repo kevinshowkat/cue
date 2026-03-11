@@ -90,7 +90,9 @@ test("agent runner context summary keeps the visible canvas compact and action-o
   assert.equal(summary.goal, "Remove the background clutter and keep the subject intact before export.");
   assert.equal(summary.canvas.visibleImages[0].rectCss.left, 112);
   assert.equal(summary.canvas.marks[0].id, "mark-1");
+  assert.equal(summary.canvas.subjectSelections.activeImageHasRegionSelection, false);
   assert.deepEqual(summary.availableActions.directAffordances, ["remove_people", "polish", "relight"]);
+  assert.equal(summary.availableActions.seededToolGuidance.cut_out.requiresSubjectRegion, true);
   assert.equal(summary.review.proposals[0].proposalId, "prop-1");
   assert.equal(summary.sessionTools[0].toolId, "soft-contrast");
 });
@@ -99,6 +101,21 @@ test("agent runner planner prompt carries the single-step JSON contract and comp
   const prompt = buildAgentRunnerPlannerPrompt({
     goal: "Make room on the right for copy.",
     shellSnapshot: {
+      singleImageRail: {
+        visibleJobs: [
+          {
+            jobId: "remove",
+            enabled: true,
+            requiresSelection: true,
+          },
+          {
+            jobId: "cut_out",
+            enabled: false,
+            requiresSelection: true,
+            disabledReason: "capability_unavailable",
+          },
+        ],
+      },
       communicationReview: {
         canvas: {
           visibleImages: [
@@ -118,11 +135,128 @@ test("agent runner planner prompt carries the single-step JSON contract and comp
 
   assert.match(prompt, /You are the planner for Juggernaut Agent Run\./);
   assert.match(prompt, /Return JSON only\./);
-  assert.match(prompt, /"type": "marker_stroke" \| "magic_select_click"/);
+  assert.match(prompt, /The first visual input is the current rendered visible canvas view, including visible marks and overlays\./);
+  assert.match(prompt, /Any additional visual inputs are visible source images for detail only; use the rendered canvas view to reason about the next step\./);
+  assert.match(prompt, /"type": "set_active_image" \| "set_selected_images" \| "marker_stroke"/);
+  assert.match(prompt, /Only choose invoke_seeded_tool when toolId is listed in availableActions\.seededTools\./);
+  assert.match(prompt, /For cut_out, first create a real subject region on the active source image/);
+  assert.match(prompt, /cut_out requires a real Magic Select or lasso region on that active image before it can run\./);
+  assert.match(prompt, /remove erases the selected region from the active image\. It is destructive cleanup, not subject extraction\./);
+  assert.match(prompt, /Never use remove to isolate or prepare a source subject for compositing into another image\. Use cut_out for that\./);
+  assert.match(prompt, /remove deletes the selected content from that active image and must not be used to extract a reusable subject\./);
+  assert.match(prompt, /Design Review is goal-agnostic\. It sees only the visible canvas plus visible marks and Magic Select regions, not hidden intent\./);
+  assert.match(prompt, /Before request_design_review, use marks and\/or Magic Select when composition, placement, interaction, pose, or source-vs-target intent needs to be made explicit on-canvas\./);
+  assert.match(prompt, /For cross-image composites, mark the source subject and the destination area before request_design_review when placement matters\./);
+  assert.match(prompt, /For request_design_review summaries, do not restate the user goal, inferred scene, or hidden intent\./);
   assert.match(prompt, /"goal":\s*"Make room on the right for copy\."/);
 });
 
-test("agent runner plan parser accepts direct-affordance and percent-based observable actions", () => {
+test("agent runner context summary only exposes enabled seeded tools from the shell affordance snapshot", () => {
+  const summary = buildAgentRunnerContextSummary({
+    shellSnapshot: {
+      activeImageId: "img-target",
+      selectedImageIds: ["img-target"],
+      singleImageRail: {
+        visibleJobs: [
+          {
+            jobId: "remove",
+            enabled: true,
+            requiresSelection: true,
+            reasonCodes: ["targeted_cleanup"],
+          },
+          {
+            jobId: "cut_out",
+            enabled: false,
+            requiresSelection: true,
+            disabledReason: "capability_unavailable",
+            reasonCodes: ["capability_unavailable"],
+          },
+          {
+            jobId: "variants",
+            enabled: true,
+            requiresSelection: true,
+            reasonCodes: ["identity_preserving"],
+          },
+        ],
+      },
+    },
+  });
+
+  assert.deepEqual(summary.availableActions.seededTools, ["remove", "variants"]);
+  assert.deepEqual(summary.availableActions.seededToolStates, [
+    {
+      toolId: "remove",
+      enabled: true,
+      requiresSelection: true,
+      disabledReason: null,
+      reasonCodes: ["targeted_cleanup"],
+    },
+    {
+      toolId: "cut_out",
+      enabled: false,
+      requiresSelection: true,
+      disabledReason: "capability_unavailable",
+      reasonCodes: ["capability_unavailable"],
+    },
+    {
+      toolId: "variants",
+      enabled: true,
+      requiresSelection: true,
+      disabledReason: null,
+      reasonCodes: ["identity_preserving"],
+    },
+  ]);
+  assert.deepEqual(summary.canvas.subjectSelections, {
+    imageIds: [],
+    activeImageHasRegionSelection: false,
+  });
+  assert.deepEqual(summary.availableActions.seededToolGuidance.cut_out, {
+    requiresActiveImage: true,
+    requiresSubjectRegion: true,
+    acceptedRegionSources: ["magic_select_region", "lasso_region"],
+    effect: "extract the selected subject into a reusable cutout",
+    agentPreferredSetupActions: ["marker_stroke", "magic_select_click"],
+    ifDisabledReasonIsSelectionRequired: "Create a subject region on the active source image first.",
+  });
+  assert.deepEqual(summary.availableActions.seededToolGuidance.remove, {
+    requiresActiveImage: true,
+    requiresSubjectRegion: true,
+    effect: "erase the selected content from the active image",
+    doNotUseFor: ["subject extraction", "preparing a source subject for compositing"],
+    ifGoalNeedsReusableSubject: "Use cut_out instead of remove.",
+  });
+  assert.deepEqual(summary.availableActions.reviewGuidance, {
+    goalAgnostic: true,
+    seesVisibleCanvasOnly: true,
+    usesVisibleAnnotationsOnly: true,
+    preferredPrepActions: ["set_active_image", "set_selected_images", "marker_stroke", "magic_select_click"],
+    markBeforeReviewFor: [
+      "source_vs_target_disambiguation",
+      "subject_placement",
+      "interaction_or_pose",
+      "destination_area",
+    ],
+  });
+  assert.equal(summary.shell.singleImageRail.visibleJobs[1].toolId, "cut_out");
+});
+
+test("agent runner plan parser accepts selection, direct-affordance, and percent-based observable actions", () => {
+  const selection = parseAgentRunnerPlanResponse(
+    JSON.stringify({
+      status: "continue",
+      summary: "Select the source and target images first.",
+      action: {
+        type: "set_selected_images",
+        imageIds: ["img-source", "img-target"],
+        activeImageId: "img-target",
+      },
+    })
+  );
+
+  assert.equal(selection.action.type, "set_selected_images");
+  assert.deepEqual(selection.action.imageIds, ["img-source", "img-target"]);
+  assert.equal(selection.action.activeImageId, "img-target");
+
   const direct = parseAgentRunnerPlanResponse(
     JSON.stringify({
       status: "continue",
@@ -130,6 +264,7 @@ test("agent runner plan parser accepts direct-affordance and percent-based obser
       action: {
         type: "invoke_direct_affordance",
         toolId: "polish",
+        imageId: "img-target",
         params: {
           intensity: 0.58,
         },
@@ -139,6 +274,7 @@ test("agent runner plan parser accepts direct-affordance and percent-based obser
 
   assert.equal(direct.action.type, "invoke_direct_affordance");
   assert.equal(direct.action.toolId, "polish");
+  assert.equal(direct.action.imageId, "img-target");
   assert.equal(direct.action.params.intensity, 0.58);
   assert.equal(summarizeAgentRunnerAction(direct.action), "Run polish");
 
@@ -160,6 +296,28 @@ test("agent runner plan parser accepts direct-affordance and percent-based obser
   assert.equal(marker.action.type, "marker_stroke");
   assert.equal(marker.action.imageId, "img-1");
   assert.equal(marker.action.pointsPct.length, 2);
+});
+
+test("agent runner plan parser sanitizes request design review summaries to visible-state wording", () => {
+  const review = parseAgentRunnerPlanResponse(
+    JSON.stringify({
+      status: "continue",
+      summary: "Request design review now that both subjects are selected and combat intent has been marked on-canvas.",
+      action: {
+        type: "request_design_review",
+      },
+    })
+  );
+
+  assert.equal(review.action.type, "request_design_review");
+  assert.equal(
+    review.summary,
+    "Request design review using only the visible canvas, marks, Magic Select regions, and current selections."
+  );
+  assert.equal(
+    review.raw.summary,
+    "Request design review using only the visible canvas, marks, Magic Select regions, and current selections."
+  );
 });
 
 test("agent runner planner reuses the design-review router and returns a parsed next step", async () => {
@@ -215,6 +373,7 @@ test("agent runner planner reuses the design-review router and returns a parsed 
   assert.equal(AGENT_RUNNER_MAX_STEPS_LIMIT, 24);
   assert.equal(requests[0].kind, "planner");
   assert.equal(requests[0].provider, "openai");
+  assert.deepEqual(requests[0].images, [{ imageId: "img-1", path: "/tmp/img-1.png" }]);
   assert.equal(result.plan.action.type, "marker_stroke");
   assert.equal(result.plan.action.imageId, "img-1");
 });

@@ -59,6 +59,19 @@ function defaultNormalizeErrorMessage(error) {
   return text || "Tool apply failed";
 }
 
+function readFirstBoolean(...values) {
+  for (const value of values) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number" && Number.isFinite(value)) return value !== 0;
+    if (typeof value !== "string") continue;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) continue;
+    if (normalized === "true" || normalized === "1" || normalized === "yes") return true;
+    if (normalized === "false" || normalized === "0" || normalized === "no") return false;
+  }
+  return null;
+}
+
 function toolIdFromRequest(request = {}) {
   const { raw, tool } = resolveRequestEnvelope(request);
   return (
@@ -187,34 +200,50 @@ async function applySingleImageCapabilityRequest(request = {}, route, host = {})
     getImageById: host.getImageById,
   });
   const selectedImageIds = resolveSelectedImageIds(request, activeImageId);
-  const target = imageId && typeof host.getImageById === "function" ? host.getImageById(imageId) : null;
+  const { selection, target, raw } = resolveRequestEnvelope(request);
+  const subjectSelectionAvailable = readFirstBoolean(
+    raw.subjectSelectionAvailable,
+    raw.subject_selection_available,
+    raw.regionSelectionActive,
+    raw.region_selection_active,
+    selection?.subjectSelectionAvailable,
+    selection?.subject_selection_available,
+    selection?.regionSelectionActive,
+    selection?.region_selection_active,
+    target?.subjectSelectionAvailable,
+    target?.subject_selection_available,
+    target?.regionSelectionActive,
+    target?.region_selection_active
+  );
+  const resolvedTarget = imageId && typeof host.getImageById === "function" ? host.getImageById(imageId) : null;
 
   const rawCapabilityAvailability = await maybeResolve(host.getCapabilityAvailability, route.capability, {
     route,
     request,
     imageId,
-    target,
+    target: resolvedTarget,
   });
   const availability = resolveSingleImageCapabilityAvailability(route, {
     activeImageId,
     selectedImageIds,
+    subjectSelectionAvailable,
     busy: await maybeResolve(host.isBusy, {
       route,
       request,
       imageId,
-      target,
+      target: resolvedTarget,
     }),
     mode:
       (await maybeResolve(host.getExecutionMode, {
         route,
         request,
         imageId,
-        target,
+        target: resolvedTarget,
       })) ||
       host.mode ||
       host.runtimeMode ||
       "",
-    image: target,
+    image: resolvedTarget,
     capabilityAvailability:
       rawCapabilityAvailability != null
         ? normalizeCapabilityAvailabilityMap(route.capability, rawCapabilityAvailability)
@@ -263,7 +292,7 @@ async function applySingleImageCapabilityRequest(request = {}, route, host = {})
       await host.setActiveImage(imageId);
     }
 
-    if (!target?.path) {
+    if (!resolvedTarget?.path) {
       throw new Error("Selected image is unavailable for tool apply.");
     }
 
@@ -272,7 +301,7 @@ async function applySingleImageCapabilityRequest(request = {}, route, host = {})
     }
 
     if (typeof host.beginApply === "function") {
-      await host.beginApply(route, { imageId, target });
+      await host.beginApply(route, { imageId, target: resolvedTarget });
       applyStarted = true;
     }
 
@@ -284,10 +313,11 @@ async function applySingleImageCapabilityRequest(request = {}, route, host = {})
       request,
       route,
       imageId,
-      target,
+      target: resolvedTarget,
       selection: {
         activeImageId: imageId,
         selectedImageIds,
+        subjectSelectionAvailable: Boolean(subjectSelectionAvailable),
       },
     });
 
@@ -310,7 +340,7 @@ async function applySingleImageCapabilityRequest(request = {}, route, host = {})
     };
 
     if (typeof host.afterApply === "function") {
-      await host.afterApply({ result, plan: route, artifact, imageId, target });
+      await host.afterApply({ result, plan: route, artifact, imageId, target: resolvedTarget });
     }
 
     return result;
@@ -321,11 +351,12 @@ async function applySingleImageCapabilityRequest(request = {}, route, host = {})
     return buildToolApplyFailureResult(request, error, {
       imageId,
       normalizeErrorMessage: host.normalizeErrorMessage,
-      extras: {
-        jobId: route.jobId,
-        capability: route.capability,
-      },
-    });
+        extras: {
+          jobId: route.jobId,
+          capability: route.capability,
+          disabledReason: readFirstString(error?.disabledReason) || null,
+        },
+      });
   } finally {
     if (applyStarted && typeof host.endApply === "function") {
       await host.endApply();

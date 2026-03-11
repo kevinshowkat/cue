@@ -16,6 +16,9 @@ test("OpenRouter onboarding: settings card exposes trigger + status controls", (
   assert.match(html, /id=\"openrouter-onboarding-status\"/);
   assert.match(html, /id=\"openrouter-onboarding-open\"/);
   assert.match(html, /id=\"openrouter-onboarding-reset\"/);
+  assert.match(html, /id=\"openrouter-api-key-clear\"/);
+  assert.match(html, /Reset onboarding/);
+  assert.match(html, /Clear key/);
 });
 
 test("OpenRouter onboarding: modal scaffolding is present", () => {
@@ -33,8 +36,11 @@ test("OpenRouter onboarding: first-run auto open and settings relaunch are wired
 
 test("OpenRouter onboarding: key save invokes backend persistence + verification", () => {
   assert.match(app, /invoke\(\"save_openrouter_api_key\", \{ apiKey \}\)/);
+  assert.match(app, /async function clearStoredOpenRouterApiKey\(\)/);
+  assert.match(app, /invoke\("clear_openrouter_api_key"\)/);
   assert.match(app, /invoke\(\"openrouter_oauth_pkce_sign_in\", \{ timeoutSeconds: 240 \}\)/);
   assert.match(app, /await refreshKeyStatus\(\{\s*reason:\s*"openrouter_onboarding"\s*\}\)\.catch\(\(\) => \{\}\);/);
+  assert.match(app, /await refreshKeyStatus\(\{\s*reason:\s*"openrouter_settings_clear"\s*\}\)\.catch\(\(\) => \{\}\);/);
   assert.match(app, /if \(!state\?\.keyStatus\?\.openrouter\)/);
   assert.match(app, /function restartEngineAfterOpenRouterKeySave\(\)/);
   assert.match(app, /async function signInWithOpenRouterOauthPkce\(\)/);
@@ -42,6 +48,15 @@ test("OpenRouter onboarding: key save invokes backend persistence + verification
   assert.match(app, /invoke\("get_pty_status"\)/);
   assert.match(app, /engine did not report ready after restart/);
   assert.match(app, /OpenRouter connected/);
+});
+
+test("OpenRouter onboarding: settings clear-key control is wired as a distinct action from onboarding reset", () => {
+  assert.match(app, /if \(els\.openrouterOnboardingReset\) \{/);
+  assert.match(app, /OpenRouter onboarding state cleared\./);
+  assert.match(app, /if \(els\.openrouterApiKeyClear\) \{/);
+  assert.match(app, /clearStoredOpenRouterApiKey\(\)\.catch/);
+  assert.match(app, /Stored OpenRouter key cleared\./);
+  assert.match(app, /Another OpenRouter key is still detected from environment\./);
 });
 
 test("OpenRouter onboarding: oauth-first copy, manual reveal, and bottom progress dots are concise", () => {

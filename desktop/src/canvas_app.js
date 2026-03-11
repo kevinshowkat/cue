@@ -99,6 +99,12 @@ import { installCanvasPointerHandlers } from "./canvas_handlers/pointer_handlers
 import { installCanvasWheelHandlers } from "./canvas_handlers/wheel_handlers.js";
 import { POINTER_KINDS, isEffectTokenPath, isMotherRolePath } from "./canvas_handlers/pointer_paths.js";
 import { applyToolRuntimeRequest, installToolApplyBridge } from "./tool_apply_runtime.js";
+import { invokeDesignReviewProviderRequest } from "./design_review_backend.js";
+import { createDesignReviewProviderRouter } from "./design_review_provider_router.js";
+import {
+  buildAgentRunnerEvaluationPrompt,
+  parseAgentRunnerEvaluationResponse,
+} from "./agent_runner_evaluation.js";
 import {
   TABBED_SESSIONS_BRIDGE_KEY,
   TABBED_SESSIONS_CHANGED_EVENT,
@@ -113,12 +119,13 @@ const SINGLE_IMAGE_RAIL_REGISTERED_ADAPTER = Object.freeze({
 const SINGLE_IMAGE_RAIL_CAPABILITY_EXECUTION_TIMEOUT_MS = 90_000;
 const SINGLE_IMAGE_RAIL_RECENT_SUCCESS_LIMIT = 3;
 const SINGLE_IMAGE_RAIL_CAPABILITY_SUPPORT = Object.freeze({
-  subject_isolation: false,
+  subject_isolation: true,
   targeted_remove: true,
   background_replace: true,
   crop_or_outpaint: true,
   identity_preserving_variation: true,
 });
+const SINGLE_IMAGE_RAIL_SUBJECT_ISOLATION_MODEL = "Gemini Nano Banana 2";
 const COMMUNICATION_REVIEW_SCHEMA_VERSION = "juggernaut.communication-review.v1";
 const COMMUNICATION_TOOL_IDS = Object.freeze(["marker", "protect", "magic_select", "make_space", "eraser"]);
 const COMMUNICATION_TOOL_BEHAVIOR = Object.freeze({
@@ -149,7 +156,7 @@ const DESIGN_REVIEW_BOOTSTRAP_TRAY_ID = "design-review-tray";
 const DESIGN_REVIEW_APPLY_SOURCE = "design_review_apply";
 const DESIGN_REVIEW_TRAY_DISMISS_MS = 180;
 const DESIGN_REVIEW_APPLY_SHIMMER_LOOP_MS = 1350;
-const EDIT_PROPOSALS_LABEL = "Try Edits";
+const EDIT_PROPOSALS_LABEL = "Design Review";
 const COMMUNICATION_MARK_STROKE = "rgba(235, 76, 52, 0.94)";
 const COMMUNICATION_REGION_ACTIVE = "rgba(100, 210, 255, 0.94)";
 const COMMUNICATION_REGION_IDLE = "rgba(100, 210, 255, 0.34)";
@@ -654,6 +661,7 @@ const els = {
   openrouterOnboardingStatus: document.getElementById("openrouter-onboarding-status"),
   openrouterOnboardingOpen: document.getElementById("openrouter-onboarding-open"),
   openrouterOnboardingReset: document.getElementById("openrouter-onboarding-reset"),
+  openrouterApiKeyClear: document.getElementById("openrouter-api-key-clear"),
   portraitsDir: document.getElementById("portraits-dir"),
   portraitsDirPick: document.getElementById("portraits-dir-pick"),
   portraitsDirClear: document.getElementById("portraits-dir-clear"),
@@ -766,11 +774,20 @@ const els = {
   agentRunnerMaxSteps: document.getElementById("agent-runner-max-steps"),
   agentRunnerGoal: document.getElementById("agent-runner-goal"),
   agentRunnerPlan: document.getElementById("agent-runner-plan"),
+  agentRunnerScore: document.getElementById("agent-runner-score"),
   agentRunnerLog: document.getElementById("agent-runner-log"),
+  agentRunnerCopy: document.getElementById("agent-runner-copy"),
   agentRunnerClear: document.getElementById("agent-runner-clear"),
   agentRunnerStep: document.getElementById("agent-runner-step"),
   agentRunnerAuto: document.getElementById("agent-runner-auto"),
   agentRunnerStop: document.getElementById("agent-runner-stop"),
+  agentRunnerBanner: document.getElementById("agent-runner-banner"),
+  agentRunnerBannerMode: document.getElementById("agent-runner-banner-mode"),
+  agentRunnerBannerStep: document.getElementById("agent-runner-banner-step"),
+  agentRunnerBannerSummary: document.getElementById("agent-runner-banner-summary"),
+  agentRunnerBannerDetail: document.getElementById("agent-runner-banner-detail"),
+  agentRunnerBannerShow: document.getElementById("agent-runner-banner-show"),
+  agentRunnerBannerStop: document.getElementById("agent-runner-banner-stop"),
   imageMenu: document.getElementById("image-menu"),
   motherWheelMenu: document.getElementById("mother-wheel-menu"),
   quickActions: document.getElementById("quick-actions"),
@@ -819,6 +836,7 @@ function createFreshAgentRunnerState() {
     lastPlan: null,
     lastPlanRawText: "",
     lastContextSummary: null,
+    finalEvaluation: null,
     stepCount: 0,
     running: false,
     autoRunning: false,
@@ -7340,6 +7358,25 @@ function clearOpenRouterOnboardingProfile() {
   localStorage.removeItem(OPENROUTER_ONBOARDING_COMPLETED_KEY);
 }
 
+async function clearStoredOpenRouterApiKey() {
+  const result = await invoke("clear_openrouter_api_key");
+  clearOpenRouterOnboardingProfile();
+  await refreshKeyStatus({ reason: "openrouter_settings_clear" }).catch(() => {});
+  renderOpenRouterOnboardingStatus();
+  const stillDetected = Boolean(state?.keyStatus?.openrouter);
+  if (stillDetected) {
+    showToast("Stored OpenRouter key cleared. Another OpenRouter key is still detected from environment.", "tip", 3200);
+    return result;
+  }
+  const removed = Boolean(result?.removed);
+  showToast(
+    removed ? "Stored OpenRouter key cleared." : "No stored OpenRouter key was found.",
+    "tip",
+    2200
+  );
+  return result;
+}
+
 function formatOpenRouterOnboardingTimestamp(value) {
   const at = new Date(value || 0);
   if (!Number.isFinite(at.getTime())) return "unknown time";
@@ -9566,8 +9603,98 @@ function juggernautToolButtons() {
   return Array.from(els.actionGrid?.querySelectorAll?.("button[data-tool-id], button[data-tool-key]") || []);
 }
 
-function singleImageRailRegionSelectionActive() {
-  return Boolean(getActiveImage() && Array.isArray(state.selection?.points) && state.selection.points.length >= 3);
+function singleImageRailMagicSelectSelectionForImage(imageId = "") {
+  const normalizedImageId = String(imageId || "").trim();
+  if (!normalizedImageId) return null;
+  const group = communicationRegionGroupForImage(normalizedImageId);
+  if (!group || typeof group !== "object") return null;
+  const candidates = Array.isArray(group.candidates) ? group.candidates : [];
+  if (!candidates.length) return null;
+  const chosenCandidateId = String(group.chosenCandidateId || "").trim();
+  const activeCandidateIndex = clamp(Math.max(0, Number(group.activeCandidateIndex) || 0), 0, Math.max(0, candidates.length - 1));
+  const candidate =
+    (chosenCandidateId
+      ? candidates.find((entry) => String(entry?.id || "").trim() === chosenCandidateId)
+      : null) ||
+    candidates[activeCandidateIndex] ||
+    candidates.find((entry) => entry?.active) ||
+    null;
+  const polygon = Array.isArray(candidate?.polygon)
+    ? candidate.polygon
+        .map((point) => ({
+          x: Number(point?.x) || 0,
+          y: Number(point?.y) || 0,
+        }))
+        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    : [];
+  if (polygon.length < 3) return null;
+  const bounds = candidate?.bounds
+    ? {
+        x0: Number(candidate.bounds.x) || 0,
+        y0: Number(candidate.bounds.y) || 0,
+        x1: (Number(candidate.bounds.x) || 0) + Math.max(1, Number(candidate.bounds.w) || 1),
+        y1: (Number(candidate.bounds.y) || 0) + Math.max(1, Number(candidate.bounds.h) || 1),
+        w: Math.max(1, Number(candidate.bounds.w) || 1),
+        h: Math.max(1, Number(candidate.bounds.h) || 1),
+      }
+    : communicationPointsBounds(polygon);
+  if (!bounds) return null;
+  return {
+    kind: "magic_select_region",
+    imageId: normalizedImageId,
+    polygon,
+    bounds,
+    regionCandidateId: String(candidate?.id || "").trim() || null,
+    chosenRegionCandidate: {
+      id: String(candidate?.id || "").trim() || null,
+      imageId: normalizedImageId,
+      bounds: {
+        x: Number(bounds.x0) || 0,
+        y: Number(bounds.y0) || 0,
+        width: Math.max(1, Number(bounds.w) || 1),
+        height: Math.max(1, Number(bounds.h) || 1),
+      },
+    },
+  };
+}
+
+function singleImageRailLassoSelectionForImage(imageId = "") {
+  const normalizedImageId = String(imageId || "").trim();
+  if (!normalizedImageId || normalizedImageId !== String(state.activeId || "").trim()) return null;
+  const polygon = Array.isArray(state.selection?.points)
+    ? state.selection.points
+        .map((point) => ({
+          x: Number(point?.x) || 0,
+          y: Number(point?.y) || 0,
+        }))
+        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    : [];
+  if (polygon.length < 3) return null;
+  const bounds = communicationPointsBounds(polygon);
+  if (!bounds) return null;
+  return {
+    kind: "lasso_polygon",
+    imageId: normalizedImageId,
+    polygon,
+    bounds,
+    regionCandidateId: null,
+    chosenRegionCandidate: null,
+  };
+}
+
+function resolveSingleImageRailSubjectSelection(imageId = "") {
+  const normalizedImageId = String(imageId || state.activeId || "").trim();
+  if (!normalizedImageId) return null;
+  return (
+    singleImageRailMagicSelectSelectionForImage(normalizedImageId) ||
+    singleImageRailLassoSelectionForImage(normalizedImageId) ||
+    null
+  );
+}
+
+function singleImageRailRegionSelectionActive(imageId = "") {
+  const targetImageId = String(imageId || state.activeId || "").trim();
+  return Boolean(resolveSingleImageRailSubjectSelection(targetImageId));
 }
 
 function singleImageRailBusy() {
@@ -9666,6 +9793,7 @@ function buildSingleImageRailRuntimeContext() {
   return {
     activeImageId: state.activeId || "",
     selectedImageIds: getSelectedIds().slice(0, 3),
+    subjectSelectionAvailable: singleImageRailRegionSelectionActive(state.activeId || ""),
     busy: singleImageRailBusy(),
     mode: state.canvasMode || "single",
     image: activeImage
@@ -9754,6 +9882,7 @@ function resolveSingleImageRailRankedJobs(context) {
 function buildJuggernautShellContext() {
   const selectedIds = getSelectedIds();
   const activeImage = getActiveImage();
+  const subjectSelection = resolveSingleImageRailSubjectSelection(state.activeId || "");
   return {
     version: JUGGERNAUT_SHELL_BRIDGE_VERSION,
     railContract: JUGGERNAUT_SHELL_RAIL_CONTRACT,
@@ -9763,8 +9892,8 @@ function buildJuggernautShellContext() {
     imageCount: Array.isArray(state.images) ? state.images.length : 0,
     activeImageId: state.activeId || null,
     activeImagePath: activeImage?.path || null,
-    regionSelectionActive: singleImageRailRegionSelectionActive(),
-    regionSelectionPointCount: Array.isArray(state.selection?.points) ? state.selection.points.length : 0,
+    regionSelectionActive: Boolean(subjectSelection),
+    regionSelectionPointCount: Array.isArray(subjectSelection?.polygon) ? subjectSelection.polygon.length : 0,
     singleImageRail: {
       contract: state.juggernautShell.singleImageRail.contract,
       adapter: { ...state.juggernautShell.singleImageRail.adapter },
@@ -9806,19 +9935,7 @@ function renderJuggernautShellChrome() {
 
   const toolHookReady = typeof state.juggernautShell.toolInvoker === "function";
   const exportHookReady = typeof state.juggernautShell.psdExportHandler === "function" || typeof invoke === "function";
-  const agentRunnerVisible = Boolean(els.agentRunnerPanel && !els.agentRunnerPanel.classList.contains("hidden"));
-  if (els.juggernautAgentRunnerOpen) {
-    const runner = state.agentRunner || createFreshAgentRunnerState();
-    const agentTitle = runner.autoRunning
-      ? "Agent Run is executing"
-      : runner.running
-        ? "Agent Run is stepping"
-        : "Open Agent Run";
-    els.juggernautAgentRunnerOpen.title = agentTitle;
-    els.juggernautAgentRunnerOpen.setAttribute("aria-label", agentTitle);
-    els.juggernautAgentRunnerOpen.classList.toggle("is-ready", state.images.length > 0);
-    els.juggernautAgentRunnerOpen.classList.toggle("is-active-request", agentRunnerVisible || runner.running || runner.autoRunning);
-  }
+  renderAgentRunnerActivityChrome();
   if (els.juggernautExportPsd) {
     const exportTitle = !state.images.length
       ? "Upload an image before exporting PSD"
@@ -9984,7 +10101,7 @@ function installJuggernautShellBridge() {
     },
     agentRunnerBridgeKey: AGENT_RUNNER_BRIDGE_KEY,
     openAgentRunner() {
-      return showAgentRunnerPanel();
+      return showAgentRunnerPanel({ focusGoal: !agentRunnerActive() });
     },
     closeAgentRunner() {
       return hideAgentRunnerPanel();
@@ -21099,12 +21216,50 @@ function communicationMarkPointsToCanvas(mark = null) {
   return communicationMarkPointsToCanvasCss(mark).map((point) => communicationScreenCssPointToCanvas(point));
 }
 
-function communicationAnchorFromMark(mark = null) {
-  const points = communicationMarkPointsToCanvasCss(mark);
-  if (!mark || !points.length) return null;
-  const bounds = communicationPointsBounds(points);
-  const tail = points[points.length - 1] || null;
+function communicationCanvasCssScaleForImageId(imageId) {
+  const id = String(imageId || "").trim();
+  if (!id) return 1;
+  const item = state.imagesById.get(id) || null;
+  const dpr = Math.max(0.0001, getDpr());
+  if (!item) return 1;
+  if (state.canvasMode === "multi") {
+    const rect = state.multiRects.get(id) || null;
+    const ms = Math.max(0.0001, Number(state.multiView?.scale) || 1);
+    if (!rect) return ms;
+    const iw = Math.max(1, Number(item?.img?.naturalWidth || item?.width || rect.w) || 1);
+    const ih = Math.max(1, Number(item?.img?.naturalHeight || item?.height || rect.h) || 1);
+    const scaleX = (Math.max(1, Number(rect.w) || 1) * ms) / iw;
+    const scaleY = (Math.max(1, Number(rect.h) || 1) * ms) / ih;
+    return Math.max(0.05, ((scaleX + scaleY) * 0.5) / dpr);
+  }
+  return Math.max(0.05, (Math.max(0.0001, Number(state.view?.scale) || 1)) / dpr);
+}
+
+function communicationMarkViewportScale(mark = null) {
   const coordinateSpace = String(mark?.coordinateSpace || "").trim();
+  const imageId = String(mark?.imageId || "").trim();
+  if (coordinateSpace === "canvas_overlay") return 1;
+  if (coordinateSpace === "canvas_world" || !imageId) {
+    return state.canvasMode === "multi" ? Math.max(0.05, Number(state.multiView?.scale) || 1) : 1;
+  }
+  return communicationCanvasCssScaleForImageId(imageId);
+}
+
+function communicationAnchorFromMark(mark = null) {
+  if (!mark) return null;
+  const coordinateSpace = String(mark?.coordinateSpace || "").trim();
+  const imageId = String(mark?.imageId || "").trim();
+  const rawPoints = Array.isArray(mark?.points)
+    ? mark.points.map((point) => ({
+        x: Number(point?.x) || 0,
+        y: Number(point?.y) || 0,
+      }))
+    : [];
+  const canvasPoints = communicationMarkPointsToCanvasCss(mark);
+  if (!rawPoints.length && !canvasPoints.length) return null;
+  const bounds = communicationPointsBounds(rawPoints);
+  const tail = rawPoints[rawPoints.length - 1] || null;
+  const canvasTail = canvasPoints[canvasPoints.length - 1] || null;
   if (coordinateSpace === "canvas_overlay") {
     return {
       kind: "mark",
@@ -21126,10 +21281,11 @@ function communicationAnchorFromMark(mark = null) {
   }
   return {
     kind: "mark",
-    imageId: String(mark.imageId || ""),
+    imageId,
     markId: String(mark.id || ""),
     imagePoint: tail ? { x: Number(tail.x) || 0, y: Number(tail.y) || 0 } : null,
     imageBounds: bounds,
+    canvasPoint: canvasTail ? { x: Number(canvasTail.x) || 0, y: Number(canvasTail.y) || 0 } : null,
   };
 }
 
@@ -21254,6 +21410,16 @@ function communicationTrayAnchorPlacement(anchor = null) {
 
 function communicationTrayAnchorPinnedToTitlebar(anchor = null) {
   return String(anchor?.kind || "").trim().toLowerCase() === "titlebar_button";
+}
+
+function shouldPinCommunicationReviewTrayToTitlebar(source = "") {
+  const normalizedSource = String(source || "").trim().toLowerCase();
+  if (!normalizedSource) return true;
+  if (normalizedSource.startsWith("titlebar")) return true;
+  if (normalizedSource === "agent_runner") return true;
+  if (normalizedSource === "bridge") return true;
+  if (normalizedSource === "bridge_nested") return true;
+  return false;
 }
 
 function clearCommunicationProposalTrayAnchorLock(tray = state.communication?.proposalTray || null) {
@@ -22025,23 +22191,64 @@ function commitCommunicationMarkDraft() {
   }
   const imageId = String(draft.imageId || "").trim();
   const sourceImageId = imageId || null;
+  const nextId = `mark-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  const finalize = (mark, { imageBucketId = "" } = {}) => {
+    if (imageBucketId) {
+      const existing = communicationMarksForImage(imageBucketId);
+      state.communication.marksByImageId.set(imageBucketId, existing.concat(mark));
+    } else {
+      state.communication.canvasMarks = communicationCanvasMarks().concat(mark);
+    }
+    state.communication.markDraft = null;
+    state.communication.lastAnchor = communicationAnchorFromMark(mark);
+    return mark;
+  };
+  if (imageId) {
+    const imagePoints = committedPoints
+      .map((point) =>
+        canvasToImageForImageId(communicationScreenCssPointToCanvas(point), imageId)
+      )
+      .filter(
+        (point) =>
+          Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y))
+      )
+      .map((point) => ({
+        x: Number(point.x) || 0,
+        y: Number(point.y) || 0,
+      }));
+    if (imagePoints.length >= 2) {
+      return finalize(
+        {
+          id: nextId,
+          imageId,
+          sourceImageId,
+          kind: "freehand_marker",
+          coordinateSpace: "image",
+          color: COMMUNICATION_MARK_STROKE,
+          points: imagePoints.slice(0, COMMUNICATION_MARK_MAX_POINTS),
+          createdAt: Date.now(),
+        },
+        { imageBucketId: imageId }
+      );
+    }
+  }
   const next = {
-    id: `mark-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-    imageId: sourceImageId,
+    id: nextId,
+    imageId: null,
     sourceImageId,
     kind: "freehand_marker",
-    coordinateSpace: "canvas_overlay",
+    coordinateSpace: "canvas_world",
     color: COMMUNICATION_MARK_STROKE,
-    points: committedPoints.slice(0, COMMUNICATION_MARK_MAX_POINTS).map((point) => ({
-      x: Number(point?.x) || 0,
-      y: Number(point?.y) || 0,
-    })),
+    points: committedPoints
+      .slice(0, COMMUNICATION_MARK_MAX_POINTS)
+      .map((point) => canvasScreenCssToWorldCss(point))
+      .map((point) => ({
+        x: Number(point?.x) || 0,
+        y: Number(point?.y) || 0,
+      })),
     createdAt: Date.now(),
   };
-  state.communication.canvasMarks = communicationCanvasMarks().concat(next);
-  state.communication.markDraft = null;
-  state.communication.lastAnchor = communicationAnchorFromMark(next);
-  return next;
+  return finalize(next);
 }
 
 function eraseCommunicationAtCanvasPoint(ptCanvas) {
@@ -22978,8 +23185,8 @@ function requestCommunicationDesignReview({ source = "titlebar" } = {}) {
     showToast("Add a mark or Magic Select region first.", "tip", 1800);
     return { ok: false, reason: "missing_anchor" };
   }
-  const titlebarSource = String(source || "").trim().startsWith("titlebar");
-  const trayAnchor = titlebarSource ? designReviewButtonTrayAnchor() || reviewAnchor : reviewAnchor;
+  const pinToTitlebar = shouldPinCommunicationReviewTrayToTitlebar(source);
+  const trayAnchor = pinToTitlebar ? designReviewButtonTrayAnchor() || reviewAnchor : reviewAnchor;
   suppressBootstrapDesignReviewTray();
   const now = Date.now();
   const tray = state.communication.proposalTray || createFreshCommunicationState().proposalTray;
@@ -22991,7 +23198,7 @@ function requestCommunicationDesignReview({ source = "titlebar" } = {}) {
   }
   state.communication.lastReviewRequestedAt = now;
   const requestId = `design-review-${Date.now()}-${Math.max(1, ++state.communication.reviewRequestSeq)}`;
-  const silentPrime = titlebarSource;
+  const silentPrime = pinToTitlebar;
   setCommunicationProposalTray(
     {
       visible: true,
@@ -23528,6 +23735,7 @@ function renderCommunicationOverlay(octx) {
   for (const [imageId, group] of Array.from(state.communication?.regionProposalsByImageId?.entries?.() || [])) {
     const candidates = Array.isArray(group?.candidates) ? group.candidates : [];
     const activeIndex = Math.max(0, Number(group?.activeCandidateIndex) || 0);
+    const viewportScale = communicationCanvasCssScaleForImageId(imageId);
     candidates.forEach((candidate, index) => {
       const polygon = Array.isArray(candidate?.polygon)
         ? candidate.polygon
@@ -23536,11 +23744,14 @@ function renderCommunicationOverlay(octx) {
         : [];
       if (polygon.length < 3) return;
       octx.save();
-      octx.lineWidth = Math.max(1, Math.round((index === activeIndex ? 2.5 : 1.5) * dpr));
+      octx.lineWidth = Math.max(1, Math.round((index === activeIndex ? 2.5 : 1.5) * dpr * viewportScale));
       octx.strokeStyle = index === activeIndex ? COMMUNICATION_REGION_ACTIVE : COMMUNICATION_REGION_IDLE;
       octx.fillStyle = index === activeIndex ? "rgba(100, 210, 255, 0.14)" : "rgba(100, 210, 255, 0.05)";
       if (index !== activeIndex) {
-        octx.setLineDash([Math.round(8 * dpr), Math.round(7 * dpr)]);
+        octx.setLineDash([
+          Math.max(2, Math.round(8 * dpr * viewportScale)),
+          Math.max(2, Math.round(7 * dpr * viewportScale)),
+        ]);
       }
       if (drawPolygonPath(octx, polygon)) {
         octx.fill();
@@ -23556,16 +23767,20 @@ function renderCommunicationOverlay(octx) {
     const markerColor = String(mark?.color || COMMUNICATION_MARK_STROKE);
     const markerShoulderColor = markerStrokeVariant(markerColor, draft ? 0.26 : 0.16);
     const markerCoreColor = markerStrokeVariant(markerColor, draft ? 0.68 : 0.94);
+    const viewportScale =
+      draft && String(mark?.imageId || "").trim()
+        ? communicationCanvasCssScaleForImageId(mark.imageId)
+        : communicationMarkViewportScale(mark);
     octx.save();
     octx.lineCap = "round";
     octx.lineJoin = "round";
     octx.globalAlpha = 1;
     octx.shadowColor = "transparent";
     octx.shadowBlur = 0;
-    octx.lineWidth = Math.max(4, Math.round((draft ? 8.5 : 11.5) * dpr));
+    octx.lineWidth = Math.max(1, Math.round((draft ? 8.5 : 11.5) * dpr * viewportScale));
     octx.strokeStyle = markerShoulderColor;
     if (traceCommunicationMarkPath(octx, points)) octx.stroke();
-    octx.lineWidth = Math.max(3, Math.round((draft ? 5.75 : 8.25) * dpr));
+    octx.lineWidth = Math.max(1, Math.round((draft ? 5.75 : 8.25) * dpr * viewportScale));
     octx.strokeStyle = markerCoreColor;
     if (traceCommunicationMarkPath(octx, points)) octx.stroke();
     octx.restore();
@@ -26564,6 +26779,177 @@ async function runCreateToolFromPanel() {
   return manifest;
 }
 
+function agentRunnerPanelVisible() {
+  return Boolean(els.agentRunnerPanel && !els.agentRunnerPanel.classList.contains("hidden"));
+}
+
+function agentRunnerActive(runner = null) {
+  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
+  const evaluationStatus = readFirstString(record?.finalEvaluation?.status).toLowerCase();
+  return Boolean(record.running || record.autoRunning || record.stopRequested || evaluationStatus === "pending");
+}
+
+function latestAgentRunnerLogEntry(runner = null) {
+  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
+  const log = Array.isArray(record.log) ? record.log : [];
+  return log.length ? log[log.length - 1] : null;
+}
+
+function resolveAgentRunnerActivitySummary(runner = null) {
+  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
+  const evaluation = asRecord(record?.finalEvaluation);
+  const evaluationStatus = readFirstString(evaluation?.status).toLowerCase();
+  if (evaluationStatus === "pending") return "Scoring the visible result against the goal.";
+  if (record.stopRequested) return "Stopping after the current step finishes.";
+  if (evaluationStatus === "ready" && Number.isFinite(Number(evaluation?.score))) {
+    return `Final score ${Math.round(Number(evaluation.score))} / 100.`;
+  }
+  if (evaluationStatus === "failed") {
+    return readFirstString(evaluation?.error) || "Final scoring was unavailable.";
+  }
+  const planSummary = readFirstString(record?.lastPlan?.summary);
+  if (planSummary) return clampText(planSummary, 160);
+  const lastMessage = readFirstString(latestAgentRunnerLogEntry(record)?.message);
+  if (lastMessage) return clampText(lastMessage, 160);
+  if (record.autoRunning || record.running) return "Agent Run is controlling the canvas.";
+  if (String(record.goal || "").trim()) return "Goal ready. Step it or let it run.";
+  return "Give the agent a goal, then step it or let it run.";
+}
+
+function resolveAgentRunnerBannerMode(runner = null) {
+  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
+  const evaluationStatus = readFirstString(record?.finalEvaluation?.status).toLowerCase();
+  if (evaluationStatus === "pending") return "Agent Run · scoring";
+  if (record.stopRequested) return "Agent Run · stopping";
+  if (record.autoRunning) return "Agent Run · auto";
+  if (record.running) return "Agent Run · step";
+  return "Agent Run";
+}
+
+function resolveAgentRunnerBannerStepLabel(runner = null) {
+  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
+  const stepCount = Math.max(0, Number(record.stepCount) || 0);
+  const evaluationStatus = readFirstString(record?.finalEvaluation?.status).toLowerCase();
+  if (evaluationStatus === "pending") return "Scoring";
+  if (record.stopRequested) return stepCount > 0 ? `Finishing step ${stepCount}` : "Finishing";
+  if (record.autoRunning) {
+    return stepCount > 0
+      ? `Step ${stepCount} / ${normalizeAgentRunnerMaxSteps(record.maxSteps)}`
+      : `Preparing / ${normalizeAgentRunnerMaxSteps(record.maxSteps)}`;
+  }
+  if (record.running) return stepCount > 0 ? `Step ${stepCount}` : "Preparing";
+  return "Idle";
+}
+
+function resolveAgentRunnerBannerDetail(runner = null) {
+  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
+  const actionLabel = summarizeAgentRunnerAction(record?.lastPlan?.action || null);
+  const evaluation = asRecord(record?.finalEvaluation);
+  const evaluationStatus = readFirstString(evaluation?.status).toLowerCase();
+  if (evaluationStatus === "pending") {
+    return "Comparing the visible canvas against the goal with the shared vision planner.";
+  }
+  if (record.stopRequested) {
+    return "The current runtime action is finishing before control returns to you.";
+  }
+  if (record.autoRunning) {
+    return actionLabel
+      ? `Watching the canvas and running ${actionLabel.toLowerCase()} through the normal runtime.`
+      : "Watching the canvas, planning the next move, and applying edits through the normal runtime.";
+  }
+  if (record.running) {
+    return actionLabel
+      ? `Executing ${actionLabel.toLowerCase()} on the visible canvas.`
+      : "Planning the current step on the visible canvas.";
+  }
+  if (evaluationStatus === "ready" && Number.isFinite(Number(evaluation?.score))) {
+    return readFirstString(evaluation?.verdict) || `Final score ${Math.round(Number(evaluation.score))} / 100.`;
+  }
+  if (evaluationStatus === "failed") {
+    return readFirstString(evaluation?.error) || "Final scoring was unavailable.";
+  }
+  const lastMessage = readFirstString(latestAgentRunnerLogEntry(record)?.message);
+  return lastMessage || "Agent Run is idle.";
+}
+
+function renderAgentRunnerBanner() {
+  if (!els.agentRunnerBanner) return;
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  const visible = agentRunnerActive(runner) && !agentRunnerPanelVisible();
+  els.agentRunnerBanner.classList.toggle("hidden", !visible);
+  if (!visible) return;
+  const evaluationStatus = readFirstString(runner?.finalEvaluation?.status).toLowerCase();
+  const stateKey = evaluationStatus === "pending"
+    ? "scoring"
+    : runner.stopRequested
+      ? "stopping"
+      : runner.autoRunning
+        ? "auto"
+        : runner.running
+          ? "step"
+          : "idle";
+  els.agentRunnerBanner.dataset.state = stateKey;
+  if (els.agentRunnerBannerMode) {
+    els.agentRunnerBannerMode.textContent = resolveAgentRunnerBannerMode(runner);
+  }
+  if (els.agentRunnerBannerStep) {
+    els.agentRunnerBannerStep.textContent = resolveAgentRunnerBannerStepLabel(runner);
+  }
+  if (els.agentRunnerBannerSummary) {
+    els.agentRunnerBannerSummary.textContent = resolveAgentRunnerActivitySummary(runner);
+  }
+  if (els.agentRunnerBannerDetail) {
+    els.agentRunnerBannerDetail.textContent = resolveAgentRunnerBannerDetail(runner);
+  }
+  if (els.agentRunnerBannerStop) {
+    els.agentRunnerBannerStop.disabled = !(runner.running || runner.autoRunning);
+  }
+}
+
+function renderAgentRunnerActivityChrome() {
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  const active = agentRunnerActive(runner);
+  const panelVisible = agentRunnerPanelVisible();
+  const openTitle = active
+    ? panelVisible
+      ? "Hide Agent Run and watch the canvas"
+      : "Show Agent Run"
+    : panelVisible
+      ? "Hide Agent Run"
+      : "Open Agent Run";
+  if (els.juggernautAgentRunnerOpen) {
+    els.juggernautAgentRunnerOpen.title = openTitle;
+    els.juggernautAgentRunnerOpen.setAttribute("aria-label", openTitle);
+    els.juggernautAgentRunnerOpen.classList.toggle("is-ready", state.images.length > 0);
+    els.juggernautAgentRunnerOpen.classList.toggle("is-active-request", active || panelVisible);
+    els.juggernautAgentRunnerOpen.classList.toggle("is-agent-runner-live", active);
+  }
+  if (els.canvasWrap) {
+    els.canvasWrap.classList.toggle("agent-runner-active", active);
+    els.canvasWrap.classList.toggle("agent-runner-auto", Boolean(runner.autoRunning));
+    els.canvasWrap.classList.toggle("agent-runner-stopping", Boolean(runner.stopRequested));
+    const evaluationStatus = readFirstString(runner?.finalEvaluation?.status).toLowerCase();
+    els.canvasWrap.dataset.agentRunnerState = active
+      ? evaluationStatus === "pending"
+        ? "scoring"
+        : runner.stopRequested
+          ? "stopping"
+          : runner.autoRunning
+            ? "auto"
+            : "step"
+      : "idle";
+  }
+  renderAgentRunnerBanner();
+}
+
+function collapseAgentRunnerPanelToBanner() {
+  if (!els.agentRunnerPanel) return false;
+  els.agentRunnerPanel.classList.add("hidden");
+  renderQuickActions();
+  renderAgentRunnerActivityChrome();
+  return true;
+}
+
 function buildAgentRunnerBridgeSnapshot() {
   const runner = asRecord(state.agentRunner) || createFreshAgentRunnerState();
   return {
@@ -26577,7 +26963,10 @@ function buildAgentRunnerBridgeSnapshot() {
     lastPlan: cloneToolRuntimeValue(runner.lastPlan),
     lastPlanRawText: String(runner.lastPlanRawText || ""),
     lastContextSummary: cloneToolRuntimeValue(runner.lastContextSummary),
+    finalEvaluation: cloneToolRuntimeValue(runner.finalEvaluation),
     log: cloneToolRuntimeValue(runner.log || []),
+    panelVisible: agentRunnerPanelVisible(),
+    activitySummary: resolveAgentRunnerActivitySummary(runner),
   };
 }
 
@@ -26655,10 +27044,124 @@ function clearAgentRunnerLog() {
   runner.lastPlan = null;
   runner.lastPlanRawText = "";
   runner.lastContextSummary = null;
+  runner.finalEvaluation = null;
   runner.stepCount = 0;
   renderAgentRunnerPanel();
   publishAgentRunnerStateEvent();
   return buildAgentRunnerBridgeSnapshot();
+}
+
+function buildAgentRunnerClipboardText() {
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  const sections = [];
+  const goal = String(runner.goal || "").trim();
+  const lastPlan = runner.lastPlan ? JSON.stringify(runner.lastPlan, null, 2) : "No step yet.";
+  const finalEvaluation = asRecord(runner.finalEvaluation);
+  const log = Array.isArray(runner.log) ? runner.log : [];
+
+  sections.push("Goal");
+  sections.push(goal || "(empty)");
+  sections.push("");
+  sections.push("Last Plan");
+  sections.push(lastPlan);
+  sections.push("");
+  sections.push("Final Score");
+  if (!finalEvaluation) {
+    sections.push("No final score yet.");
+  } else if (readFirstString(finalEvaluation.status).toLowerCase() === "pending") {
+    sections.push("Scoring the visible result against the goal...");
+  } else if (readFirstString(finalEvaluation.status).toLowerCase() === "ready") {
+    sections.push(`${Math.max(0, Math.min(100, Math.round(Number(finalEvaluation.score) || 0)))} / 100`);
+    if (readFirstString(finalEvaluation.verdict)) sections.push(readFirstString(finalEvaluation.verdict));
+    const strengths = Array.isArray(finalEvaluation.strengths) ? finalEvaluation.strengths.filter(Boolean) : [];
+    if (strengths.length) sections.push(`Strengths: ${strengths.join(" | ")}`);
+    const misses = Array.isArray(finalEvaluation.misses) ? finalEvaluation.misses.filter(Boolean) : [];
+    if (misses.length) sections.push(`Misses: ${misses.join(" | ")}`);
+    const uxSuggestions = Array.isArray(finalEvaluation.uxSuggestions) ? finalEvaluation.uxSuggestions.filter(Boolean) : [];
+    if (uxSuggestions.length) sections.push(`UX Suggestions: ${uxSuggestions.join(" | ")}`);
+    const agentSuggestions = Array.isArray(finalEvaluation.agentSuggestions) ? finalEvaluation.agentSuggestions.filter(Boolean) : [];
+    if (agentSuggestions.length) sections.push(`Agent Suggestions: ${agentSuggestions.join(" | ")}`);
+    const suggestions =
+      Array.isArray(finalEvaluation.suggestions) && !uxSuggestions.length && !agentSuggestions.length
+        ? finalEvaluation.suggestions.filter(Boolean)
+        : [];
+    if (suggestions.length) sections.push(`Suggestions: ${suggestions.join(" | ")}`);
+  } else {
+    sections.push(readFirstString(finalEvaluation.error) || "Final score unavailable.");
+  }
+  sections.push("");
+  sections.push("Activity");
+
+  if (!log.length) {
+    sections.push("No agent steps yet.");
+  } else {
+    for (const entry of log) {
+      const stamp = new Date(entry?.at || Date.now());
+      const time = Number.isNaN(stamp.getTime())
+        ? "Now"
+        : stamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      sections.push(`${String(entry?.kind || "info").toUpperCase()} ${time}`);
+      sections.push(String(entry?.message || "").trim() || "Agent runner update.");
+      const detail = String(entry?.detail || "").trim();
+      if (detail) sections.push(detail);
+      sections.push("");
+    }
+  }
+
+  return sections.join("\n").trim();
+}
+
+function renderAgentRunnerFinalEvaluation() {
+  if (!els.agentRunnerScore) return;
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  const evaluation = asRecord(runner.finalEvaluation);
+  const status = readFirstString(evaluation?.status).toLowerCase();
+  els.agentRunnerScore.dataset.state = status || "idle";
+  if (!evaluation) {
+    els.agentRunnerScore.textContent = "No final score yet.";
+    return;
+  }
+  if (status === "pending") {
+    els.agentRunnerScore.textContent = "Scoring the visible result against the goal...";
+    return;
+  }
+  if (status === "failed") {
+    els.agentRunnerScore.textContent = readFirstString(evaluation?.error) || "Final score unavailable.";
+    return;
+  }
+  const lines = [];
+  lines.push(`${Math.max(0, Math.min(100, Math.round(Number(evaluation?.score) || 0)))} / 100`);
+  if (readFirstString(evaluation?.verdict)) lines.push(readFirstString(evaluation.verdict));
+  const strengths = Array.isArray(evaluation?.strengths) ? evaluation.strengths.filter(Boolean) : [];
+  if (strengths.length) lines.push(`Strengths: ${strengths.join(" | ")}`);
+  const misses = Array.isArray(evaluation?.misses) ? evaluation.misses.filter(Boolean) : [];
+  if (misses.length) lines.push(`Misses: ${misses.join(" | ")}`);
+  const uxSuggestions = Array.isArray(evaluation?.uxSuggestions) ? evaluation.uxSuggestions.filter(Boolean) : [];
+  if (uxSuggestions.length) lines.push(`UX Suggestions: ${uxSuggestions.join(" | ")}`);
+  const agentSuggestions = Array.isArray(evaluation?.agentSuggestions) ? evaluation.agentSuggestions.filter(Boolean) : [];
+  if (agentSuggestions.length) lines.push(`Agent Suggestions: ${agentSuggestions.join(" | ")}`);
+  const suggestions =
+    Array.isArray(evaluation?.suggestions) && !uxSuggestions.length && !agentSuggestions.length
+      ? evaluation.suggestions.filter(Boolean)
+      : [];
+  if (suggestions.length) lines.push(`Suggestions: ${suggestions.join(" | ")}`);
+  els.agentRunnerScore.textContent = lines.join("\n");
+}
+
+async function copyAgentRunnerLogToClipboard() {
+  const text = buildAgentRunnerClipboardText();
+  if (!text) {
+    showToast("Agent Run: nothing to copy yet.", "tip", 1800);
+    return false;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("Agent Run logs copied.", "tip", 1800);
+    return true;
+  } catch {
+    showToast("Could not copy Agent Run logs.", "error", 2200);
+    return false;
+  }
 }
 
 function renderAgentRunnerLog() {
@@ -26735,9 +27238,12 @@ function renderAgentRunnerPanel() {
   if (els.agentRunnerMeta) {
     const imageCount = Array.isArray(state.images) ? state.images.length : 0;
     const selectedCount = getSelectedIds().length;
+    const evaluationStatus = readFirstString(runner?.finalEvaluation?.status).toLowerCase();
     let text = "Give the agent a goal, then step it or let it run.";
     if (!String(runner.goal || "").trim()) {
-      text = "Describe the goal first. The runner will use the visible canvas, design review, and current tool runtime.";
+      text = "Describe the goal first. The runner will use the visible canvas, markings, design review, and current tool runtime.";
+    } else if (evaluationStatus === "pending") {
+      text = `Scoring the final visible result against the goal on ${imageCount} image${imageCount === 1 ? "" : "s"}.`;
     } else if (runner.stopRequested) {
       text = "Stopping after the current step finishes.";
     } else if (runner.autoRunning) {
@@ -26756,30 +27262,35 @@ function renderAgentRunnerPanel() {
       ? JSON.stringify(runner.lastPlan, null, 2)
       : "No step yet.";
   }
+  renderAgentRunnerFinalEvaluation();
+  if (els.agentRunnerClose) {
+    const closeLabel = agentRunnerActive(runner) ? "Hide" : "Close";
+    els.agentRunnerClose.textContent = closeLabel;
+    els.agentRunnerClose.setAttribute("aria-label", `${closeLabel} agent run panel`);
+  }
+  if (els.agentRunnerCopy) {
+    const hasCopyableContent = Boolean(String(runner.goal || "").trim() || runner.lastPlan || (Array.isArray(runner.log) && runner.log.length));
+    els.agentRunnerCopy.disabled = !hasCopyableContent;
+  }
   if (els.agentRunnerClear) els.agentRunnerClear.disabled = Boolean(runner.running || runner.autoRunning);
   if (els.agentRunnerStep) els.agentRunnerStep.disabled = Boolean(runner.running || runner.autoRunning);
   if (els.agentRunnerAuto) els.agentRunnerAuto.disabled = Boolean(runner.running || runner.autoRunning);
   if (els.agentRunnerStop) els.agentRunnerStop.disabled = !(runner.running || runner.autoRunning);
   renderAgentRunnerLog();
+  renderAgentRunnerActivityChrome();
   publishAgentRunnerStateEvent();
 }
 
 function hideAgentRunnerPanel({ force = false } = {}) {
   if (!els.agentRunnerPanel) return false;
-  const runner = captureAgentRunnerDraftFromUi();
-  if (!force && (runner.running || runner.autoRunning)) {
-    runner.stopRequested = true;
-    renderAgentRunnerPanel();
-    showToast("Agent Run: stopping after the current step.", "tip", 2200);
-    return false;
-  }
+  captureAgentRunnerDraftFromUi();
   els.agentRunnerPanel.classList.add("hidden");
   renderQuickActions();
   renderAgentRunnerPanel();
   return true;
 }
 
-function showAgentRunnerPanel() {
+function showAgentRunnerPanel({ focusGoal = true } = {}) {
   if (!els.agentRunnerPanel) return false;
   renderAgentRunnerPlannerOptions();
   els.agentRunnerPanel.style.left = "50%";
@@ -26790,7 +27301,7 @@ function showAgentRunnerPanel() {
   renderAgentRunnerPanel();
   setTimeout(() => {
     try {
-      if (els.agentRunnerGoal) els.agentRunnerGoal.focus();
+      if (focusGoal && els.agentRunnerGoal) els.agentRunnerGoal.focus();
     } catch {
       // ignore
     }
@@ -26804,6 +27315,20 @@ function agentRunnerVisibleImages(shellSnapshot = null) {
     shellSnapshot?.communicationReview?.canvas?.visible_images ||
     [];
   return Array.isArray(visible) ? visible.filter((item) => item && typeof item === "object") : [];
+}
+
+async function buildAgentRunnerPlannerImages(shellSnapshot = null) {
+  const visibleImages = agentRunnerVisibleImages(shellSnapshot);
+  const runDir = readFirstString(state.runDir, shellSnapshot?.runDir, shellSnapshot?.communicationReview?.runDir);
+  if (!runDir) return visibleImages;
+  try {
+    const visibleCanvasRef = await captureAgentRunnerVisibleCanvasRef(runDir);
+    if (!visibleCanvasRef) return visibleImages;
+    return [visibleCanvasRef, ...visibleImages];
+  } catch (error) {
+    console.warn("Agent Run planner vision capture failed; falling back to visible images.", error);
+    return visibleImages;
+  }
 }
 
 function resolveAgentRunnerVisibleImage(shellSnapshot = null, imageId = "") {
@@ -26892,6 +27417,100 @@ async function waitForAgentRunnerReviewState({
   throw new Error("Agent Run: design review timed out.");
 }
 
+function normalizeAgentRunnerImageIdList(imageIds = [], { min = 0, max = 3, label = "imageIds" } = {}) {
+  const out = [];
+  for (const value of Array.isArray(imageIds) ? imageIds : []) {
+    const imageId = readFirstString(value);
+    if (!imageId || out.includes(imageId)) continue;
+    if (!isVisibleCanvasImageId(imageId)) {
+      throw new Error(`${label} references an unavailable image: ${imageId}`);
+    }
+    out.push(imageId);
+  }
+  if (out.length < min) {
+    throw new Error(`${label} requires at least ${min} image id${min === 1 ? "" : "s"}`);
+  }
+  if (out.length > max) {
+    throw new Error(`${label} supports at most ${max} image id${max === 1 ? "" : "s"}`);
+  }
+  return out;
+}
+
+async function applyAgentRunnerImageSelection({ imageIds = [], activeImageId = null } = {}) {
+  const selectedImageIds = normalizeAgentRunnerImageIdList(imageIds, {
+    min: 1,
+    max: 3,
+    label: "imageIds",
+  });
+  const requestedActiveId = readFirstString(activeImageId);
+  const nextActiveId = requestedActiveId || selectedImageIds[selectedImageIds.length - 1] || null;
+  if (nextActiveId && !selectedImageIds.includes(nextActiveId)) {
+    throw new Error(`activeImageId must be included in imageIds (${nextActiveId})`);
+  }
+
+  setSelectedIds(selectedImageIds);
+  invalidateActiveTabPreview("selection_change");
+  recordUserEvent("selection_change", {
+    actor: "system",
+    source: "agent_runner",
+    reason: "agent_runner_select_images",
+    canvas_mode: state.canvasMode,
+    active_id: nextActiveId || state.activeId || null,
+    selected_ids: selectedImageIds.slice(0, 3),
+    toggle: false,
+  });
+
+  if (nextActiveId && nextActiveId !== state.activeId) {
+    await setActiveImage(nextActiveId, {
+      preserveSelection: true,
+      source: "agent_runner",
+      reason: "agent_runner_select_images",
+      actor: "system",
+    }).catch(() => {});
+  } else {
+    renderSelectionMeta();
+    renderQuickActions();
+    renderHudReadout();
+    requestRender();
+  }
+
+  return {
+    activeImageId: readFirstString(state.activeId) || null,
+    selectedImageIds: getSelectedIds().slice(0, 3),
+  };
+}
+
+async function ensureAgentRunnerSingleImageTarget(imageId = null) {
+  const requestedImageId = readFirstString(imageId);
+  const targetImageId = requestedImageId || readFirstString(state.activeId);
+  if (!targetImageId || !isVisibleCanvasImageId(targetImageId)) {
+    throw new Error(`Agent Run could not resolve a single-image target (${targetImageId || "none"}).`);
+  }
+  return applyAgentRunnerImageSelection({
+    imageIds: [targetImageId],
+    activeImageId: targetImageId,
+  });
+}
+
+function formatAgentRunnerToolFailure(toolId = "", result = null) {
+  const toolName = readFirstString(result?.label, toolId) || "This tool";
+  const baseMessage = readFirstString(result?.error) || `${toolName} failed.`;
+  const disabledReason = readFirstString(result?.disabledReason);
+  if (!disabledReason || baseMessage.toLowerCase().includes(disabledReason.toLowerCase())) {
+    return baseMessage;
+  }
+  return `${baseMessage} (${disabledReason})`;
+}
+
+function agentRunnerSummarySuggestsSubjectExtraction(goal = "", plannerSummary = "") {
+  const text = `${String(plannerSummary || "").trim()} ${String(goal || "").trim()}`.toLowerCase();
+  if (!text) return false;
+  return (
+    /\b(isolate|isolated|isolating|extract|extraction|cut ?out|cutout|source subject|reusable subject|reusable cutout)\b/.test(text) ||
+    /\b(place|put|insert|composite|merge|bring|add)\b[\s\S]{0,32}\b(into|onto|with|next)\b/.test(text)
+  );
+}
+
 async function executeAgentRunnerAction(action = null, { goal = "", plannerSummary = "", shellSnapshot = null } = {}) {
   const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
   const requestId = `agent-runner-${Date.now()}-${Math.max(1, Number(runner.stepCount) || 0)}`;
@@ -26899,12 +27518,52 @@ async function executeAgentRunnerAction(action = null, { goal = "", plannerSumma
   const observable = typeof window !== "undefined" ? window.__JUGGERNAUT_AGENT_OBSERVABLE__ : null;
   const reviewBridge = typeof window !== "undefined" ? window.__JUGGERNAUT_REVIEW__ : null;
   const toolRuntime = typeof window !== "undefined" ? window[TOOL_RUNTIME_BRIDGE_KEY] : null;
-  const activeImage = getActiveImage();
-  const activeImageId = readFirstString(activeImage?.id, state.activeId);
-  const selectedImageIds = getSelectedIds();
+  const currentImageContext = () => {
+    const activeImage = getActiveImage();
+    return {
+      activeImage,
+      activeImageId: readFirstString(activeImage?.id, state.activeId),
+      selectedImageIds: getSelectedIds(),
+    };
+  };
 
   if (!action || typeof action !== "object") {
     throw new Error("Agent Run action is missing.");
+  }
+
+  if (action.type === "set_active_image") {
+    const imageId = readFirstString(action?.imageId);
+    if (!imageId || !isVisibleCanvasImageId(imageId)) {
+      throw new Error(`Agent Run could not activate image ${imageId || "(empty)"}.`);
+    }
+    if (state.activeId !== imageId) {
+      await setActiveImage(imageId, {
+        preserveSelection: true,
+        source: "agent_runner",
+        reason: "agent_runner_set_active_image",
+        actor: "system",
+      }).catch(() => {});
+    }
+    return {
+      ok: true,
+      message: `${actionLabel} complete.`,
+      detail: {
+        activeImageId: readFirstString(state.activeId) || null,
+        selectedImageIds: getSelectedIds().slice(0, 3),
+      },
+    };
+  }
+
+  if (action.type === "set_selected_images") {
+    const selection = await applyAgentRunnerImageSelection({
+      imageIds: action?.imageIds,
+      activeImageId: action?.activeImageId,
+    });
+    return {
+      ok: true,
+      message: `${actionLabel} complete.`,
+      detail: selection,
+    };
   }
 
   if (action.type === "marker_stroke") {
@@ -27027,14 +27686,32 @@ async function executeAgentRunnerAction(action = null, { goal = "", plannerSumma
   }
 
   if (action.type === "invoke_seeded_tool") {
-    const ok = await applyJuggernautTool(action.toolId);
-    if (!ok) throw new Error(`${action.toolId} could not be applied.`);
+    if (typeof window === "undefined" || typeof window.juggernautApplyTool !== "function") {
+      throw new Error("Tool apply bridge is unavailable.");
+    }
+    if (readFirstString(action?.toolId) === "remove" && agentRunnerSummarySuggestsSubjectExtraction(goal, plannerSummary)) {
+      throw new Error("Remove deletes the selected content from the active image. Use cut_out to extract a subject for compositing.");
+    }
+    await ensureAgentRunnerSingleImageTarget(action?.imageId);
+    const { activeImage, activeImageId, selectedImageIds } = currentImageContext();
+    const invocation = buildSingleImageRailInvocation(action.toolId, {
+      activeImageId: activeImageId || null,
+      selectedImageIds: [activeImageId].filter(Boolean).length ? [activeImageId] : selectedImageIds,
+      subjectSelectionAvailable: singleImageRailRegionSelectionActive(activeImageId || ""),
+      source: "agent_runner",
+      trigger: "agent_run",
+      requestId,
+      mode: state.canvasMode,
+      image: activeImage,
+      capabilityAvailability: singleImageRailCapabilityAvailability(),
+      capabilityExecutorAvailable: true,
+    });
+    const result = await window.juggernautApplyTool(invocation);
+    if (!result?.ok) throw new Error(formatAgentRunnerToolFailure(action.toolId, result));
     return {
       ok: true,
       message: `${action.toolId} applied.`,
-      detail: {
-        toolId: action.toolId,
-      },
+      detail: result,
     };
   }
 
@@ -27042,9 +27719,11 @@ async function executeAgentRunnerAction(action = null, { goal = "", plannerSumma
     if (typeof window === "undefined" || typeof window.juggernautApplyTool !== "function") {
       throw new Error("Tool apply bridge is unavailable.");
     }
+    await ensureAgentRunnerSingleImageTarget(action?.imageId);
+    const { activeImage, activeImageId, selectedImageIds } = currentImageContext();
     const invocation = buildSingleImageDirectAffordanceInvocation(action.toolId, {
       activeImageId: activeImageId || null,
-      selectedImageIds,
+      selectedImageIds: [activeImageId].filter(Boolean).length ? [activeImageId] : selectedImageIds,
       source: "agent_runner",
       trigger: "agent_run",
       requestId,
@@ -27055,7 +27734,7 @@ async function executeAgentRunnerAction(action = null, { goal = "", plannerSumma
       localExecutorAvailable: true,
     });
     const result = await window.juggernautApplyTool(invocation);
-    if (!result?.ok) throw new Error(readFirstString(result?.error) || `${action.toolId} failed.`);
+    if (!result?.ok) throw new Error(formatAgentRunnerToolFailure(action.toolId, result));
     return {
       ok: true,
       message: `${action.toolId} applied.`,
@@ -27104,16 +27783,18 @@ async function executeAgentRunnerAction(action = null, { goal = "", plannerSumma
     if (typeof window === "undefined" || typeof window.juggernautApplyTool !== "function") {
       throw new Error("Tool apply bridge is unavailable.");
     }
+    await ensureAgentRunnerSingleImageTarget(action?.imageId);
+    const { activeImageId, selectedImageIds } = currentImageContext();
     const invocation = toolRuntime.invokeTool({
       toolId: action.toolId,
       activeImageId: activeImageId || null,
-      selectedImageIds,
+      selectedImageIds: [activeImageId].filter(Boolean).length ? [activeImageId] : selectedImageIds,
       source: "agent_runner",
       trigger: "agent_run",
     });
     if (!invocation) throw new Error(`Custom tool ${action.toolId} could not be prepared.`);
     const result = await window.juggernautApplyTool(invocation);
-    if (!result?.ok) throw new Error(readFirstString(result?.error) || `${action.toolId} failed.`);
+    if (!result?.ok) throw new Error(formatAgentRunnerToolFailure(action.toolId, result));
     return {
       ok: true,
       message: `Custom tool ${action.toolId} applied.`,
@@ -27147,6 +27828,154 @@ async function executeAgentRunnerAction(action = null, { goal = "", plannerSumma
   throw new Error(`Unsupported Agent Run action: ${readFirstString(action?.type) || "(empty)"}`);
 }
 
+async function readAgentRunnerEvaluationKeyStatus() {
+  if (state.keyStatus && typeof state.keyStatus === "object") return state.keyStatus;
+  await refreshKeyStatus({ reason: "agent_runner_evaluation" }).catch(() => {});
+  return state.keyStatus || {};
+}
+
+function createAgentRunnerEvaluationProviderRouter() {
+  return createDesignReviewProviderRouter({
+    requestProvider: invokeDesignReviewProviderRequest,
+    keyStatus: state.keyStatus || {},
+    getKeyStatus: () => readAgentRunnerEvaluationKeyStatus(),
+  });
+}
+
+async function captureAgentRunnerVisibleCanvasRef(runDir = "") {
+  const normalizedRunDir = String(runDir || "").trim();
+  if (!normalizedRunDir) return null;
+  const canvases = [
+    document.getElementById("work-canvas"),
+    document.getElementById("effects-canvas"),
+    document.getElementById("overlay-canvas"),
+  ].filter(Boolean);
+  const source = canvases.find((canvas) => Number(canvas?.width) > 0 && Number(canvas?.height) > 0);
+  if (!source) return null;
+  const composite = document.createElement("canvas");
+  composite.width = source.width;
+  composite.height = source.height;
+  const ctx = composite.getContext("2d");
+  if (!ctx) return null;
+  for (const canvas of canvases) {
+    if (!canvas || !canvas.width || !canvas.height) continue;
+    ctx.drawImage(canvas, 0, 0, composite.width, composite.height);
+  }
+  const blob = await new Promise((resolve) => composite.toBlob(resolve, "image/png"));
+  if (!blob) return null;
+  const buffer = await blob.arrayBuffer();
+  const outputPath = await join(normalizedRunDir, `agent-runner-visible-${Date.now()}.png`);
+  await writeBinaryFile(outputPath, new Uint8Array(buffer));
+  return outputPath;
+}
+
+function shouldRunAgentRunnerFinalEvaluation({ runner = null, shellSnapshot = null } = {}) {
+  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
+  if (!String(record.goal || "").trim()) return false;
+  if (!(Math.max(0, Number(record.stepCount) || 0) > 0)) return false;
+  if (readFirstString(record?.finalEvaluation?.status).toLowerCase() === "pending") return false;
+  return agentRunnerVisibleImages(shellSnapshot || buildJuggernautShellContext()).length > 0;
+}
+
+function resolveAgentRunnerFinalEvaluationFinishReason({ outcome = null, stopped = false, maxStepsReached = false } = {}) {
+  if (stopped) return "stopped_by_user";
+  if (maxStepsReached) return "max_steps_reached";
+  if (!outcome?.ok) return "failed";
+  if (outcome?.terminal) return "terminal";
+  const status = readFirstString(outcome?.status).toLowerCase();
+  if (status === "complete") return "complete";
+  if (status === "blocked") return "blocked";
+  return "finished";
+}
+
+async function maybeRunAgentRunnerFinalEvaluation({
+  runner = null,
+  outcome = null,
+  stopped = false,
+  maxStepsReached = false,
+} = {}) {
+  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
+  const shellSnapshot = buildJuggernautShellContext();
+  if (!shouldRunAgentRunnerFinalEvaluation({ runner: record, shellSnapshot })) return null;
+  const goal = String(record.goal || "").trim();
+  const runDir = readFirstString(state.runDir, shellSnapshot?.runDir, shellSnapshot?.communicationReview?.runDir);
+  if (!runDir) return null;
+  const finishReason = resolveAgentRunnerFinalEvaluationFinishReason({ outcome, stopped, maxStepsReached });
+  record.finalEvaluation = {
+    status: "pending",
+    goal,
+    finishReason,
+    startedAt: new Date().toISOString(),
+  };
+  appendAgentRunnerLog("info", "Scoring the final result against the goal.");
+  renderAgentRunnerPanel();
+  try {
+    const visibleCanvasRef = await captureAgentRunnerVisibleCanvasRef(runDir);
+    if (!visibleCanvasRef) {
+      throw new Error("Could not capture the visible canvas for scoring.");
+    }
+    const providerRouter = createAgentRunnerEvaluationProviderRouter();
+    const prompt = buildAgentRunnerEvaluationPrompt({
+      goal,
+      finishReason,
+      stepCount: record.stepCount,
+      lastPlan: record.lastPlan,
+      visibleImages: agentRunnerVisibleImages(shellSnapshot),
+      recentLog: record.log,
+    });
+    const requestId = `agent-runner-eval-${Date.now()}`;
+    const result = await providerRouter.runPlanner({
+      request: { requestId },
+      prompt,
+      images: [visibleCanvasRef],
+    });
+    const parsed = parseAgentRunnerEvaluationResponse(
+      result?.text || result?.outputText || result?.rawText || "",
+      { goal }
+    );
+    record.finalEvaluation = {
+      ...parsed,
+      status: "ready",
+      finishReason,
+      visibleCanvasRef,
+      provider: readFirstString(result?.provider, result?.debugInfo?.provider) || null,
+      requestedModel:
+        readFirstString(result?.requestedModel, result?.debugInfo?.requestedModel, result?.debugInfo?.providerRequest?.model) ||
+        null,
+      normalizedModel:
+        readFirstString(result?.normalizedModel, result?.debugInfo?.normalizedModel, result?.debugInfo?.route?.normalizedModel) ||
+        null,
+      debugInfo: cloneToolRuntimeValue(result?.debugInfo || null),
+      completedAt: new Date().toISOString(),
+    };
+    appendAgentRunnerLog("success", `Final score: ${parsed.score} / 100.`, {
+      score: parsed.score,
+      goalAchieved: Boolean(parsed.goalAchieved),
+      verdict: parsed.verdict,
+      strengths: parsed.strengths,
+      misses: parsed.misses,
+      uxSuggestions: parsed.uxSuggestions,
+      agentSuggestions: parsed.agentSuggestions,
+      suggestions: parsed.suggestions,
+    });
+    renderAgentRunnerPanel();
+    return cloneToolRuntimeValue(record.finalEvaluation);
+  } catch (error) {
+    const message = normalizeErrorMessage(error, "Final scoring failed.");
+    record.finalEvaluation = {
+      status: "failed",
+      goal,
+      finishReason,
+      error: message,
+      debugInfo: cloneToolRuntimeValue(error?.debugInfo || null),
+      completedAt: new Date().toISOString(),
+    };
+    appendAgentRunnerLog("error", `Final score unavailable: ${message}`, error?.debugInfo || error?.stack || null);
+    renderAgentRunnerPanel();
+    return cloneToolRuntimeValue(record.finalEvaluation);
+  }
+}
+
 async function runAgentRunnerStepInternal({ source = "agent_runner_panel" } = {}) {
   const runner = captureAgentRunnerDraftFromUi();
   const goal = String(runner.goal || "").trim();
@@ -27178,6 +28007,7 @@ async function runAgentRunnerStepInternal({ source = "agent_runner_panel" } = {}
     recentLog: runner.log,
   });
   runner.lastContextSummary = cloneToolRuntimeValue(contextSummary);
+  const plannerImages = await buildAgentRunnerPlannerImages(shellSnapshot);
 
   const plannerResult = await agentRunnerPlanner.plan({
     goal,
@@ -27186,7 +28016,7 @@ async function runAgentRunnerStepInternal({ source = "agent_runner_panel" } = {}
     sessionTools: state.sessionTools,
     recentLog: runner.log,
     plannerMode: runner.plannerMode,
-    images: agentRunnerVisibleImages(shellSnapshot),
+    images: plannerImages,
     requestId: `agent-runner-plan-${Date.now()}`,
   });
   runner.stepCount = Math.max(0, Number(runner.stepCount) || 0) + 1;
@@ -27242,25 +28072,49 @@ async function runAgentRunnerStep({ source = "agent_runner_panel" } = {}) {
     showToast("Agent Run is already executing.", "tip", 1800);
     return null;
   }
+  const draft = captureAgentRunnerDraftFromUi();
+  if (!String(draft.goal || "").trim()) {
+    showToast("Agent Run: enter a goal first.", "tip", 2200);
+    if (els.agentRunnerGoal) {
+      try {
+        els.agentRunnerGoal.focus();
+      } catch {
+        // ignore
+      }
+    }
+    renderAgentRunnerPanel();
+    return {
+      ok: false,
+      blocked: true,
+      message: "Missing goal",
+    };
+  }
   runner.running = true;
   runner.stopRequested = false;
+  runner.finalEvaluation = null;
+  collapseAgentRunnerPanelToBanner();
   renderAgentRunnerPanel();
+  let outcome = null;
   try {
-    return await runAgentRunnerStepInternal({ source });
+    outcome = await runAgentRunnerStepInternal({ source });
   } catch (error) {
     const message = normalizeErrorMessage(error, "Agent Run step failed.");
     appendAgentRunnerLog("error", message, error?.debugInfo || error?.stack || null);
     setStatus(`Agent Run: ${message}`, true);
     showToast(message, "error", 3200);
-    return {
+    outcome = {
       ok: false,
-      blocked: true,
+      status: "blocked",
       message,
     };
   } finally {
     runner.running = false;
     renderAgentRunnerPanel();
   }
+  if (outcome?.terminal || outcome?.status === "complete" || outcome?.status === "blocked" || outcome?.ok === false) {
+    await maybeRunAgentRunnerFinalEvaluation({ runner, outcome });
+  }
+  return outcome;
 }
 
 function requestAgentRunnerStop() {
@@ -27277,15 +28131,37 @@ async function runAgentRunnerAuto({ source = "agent_runner_panel" } = {}) {
     showToast("Agent Run is already executing.", "tip", 1800);
     return null;
   }
-  captureAgentRunnerDraftFromUi();
+  const draft = captureAgentRunnerDraftFromUi();
+  if (!String(draft.goal || "").trim()) {
+    showToast("Agent Run: enter a goal first.", "tip", 2200);
+    if (els.agentRunnerGoal) {
+      try {
+        els.agentRunnerGoal.focus();
+      } catch {
+        // ignore
+      }
+    }
+    renderAgentRunnerPanel();
+    return {
+      ok: false,
+      blocked: true,
+      message: "Missing goal",
+    };
+  }
   runner.autoRunning = true;
   runner.stopRequested = false;
+  runner.finalEvaluation = null;
+  collapseAgentRunnerPanelToBanner();
   renderAgentRunnerPanel();
   appendAgentRunnerLog("info", `Auto run started for up to ${normalizeAgentRunnerMaxSteps(runner.maxSteps)} step(s).`);
+  let finalOutcome = null;
+  let stoppedByUser = false;
+  let maxStepsReached = false;
   try {
     for (let index = 0; index < normalizeAgentRunnerMaxSteps(runner.maxSteps); index += 1) {
       if (runner.stopRequested) {
         appendAgentRunnerLog("info", "Auto run stopped by user.");
+        stoppedByUser = true;
         break;
       }
       runner.running = true;
@@ -27295,11 +28171,17 @@ async function runAgentRunnerAuto({ source = "agent_runner_panel" } = {}) {
         outcome = await runAgentRunnerStepInternal({
           source: `${source}_auto`,
         });
+        finalOutcome = outcome;
       } catch (error) {
         const message = normalizeErrorMessage(error, "Agent Run auto step failed.");
         appendAgentRunnerLog("error", message, error?.debugInfo || error?.stack || null);
         setStatus(`Agent Run: ${message}`, true);
         showToast(message, "error", 3200);
+        finalOutcome = {
+          ok: false,
+          status: "blocked",
+          message,
+        };
         break;
       } finally {
         runner.running = false;
@@ -27310,6 +28192,15 @@ async function runAgentRunnerAuto({ source = "agent_runner_panel" } = {}) {
       }
       await new Promise((resolve) => setTimeout(resolve, 180));
     }
+    if (!stoppedByUser && !finalOutcome && runner.stopRequested) stoppedByUser = true;
+    if (
+      !stoppedByUser &&
+      !maxStepsReached &&
+      Math.max(0, Number(runner.stepCount) || 0) >= normalizeAgentRunnerMaxSteps(runner.maxSteps) &&
+      !(finalOutcome?.terminal || finalOutcome?.status === "complete" || finalOutcome?.status === "blocked" || finalOutcome?.ok === false)
+    ) {
+      maxStepsReached = true;
+    }
     if (!runner.stopRequested) {
       appendAgentRunnerLog("info", "Auto run finished.");
     }
@@ -27319,6 +28210,12 @@ async function runAgentRunnerAuto({ source = "agent_runner_panel" } = {}) {
     runner.stopRequested = false;
     renderAgentRunnerPanel();
   }
+  await maybeRunAgentRunnerFinalEvaluation({
+    runner,
+    outcome: finalOutcome,
+    stopped: stoppedByUser,
+    maxStepsReached,
+  });
   return buildAgentRunnerBridgeSnapshot();
 }
 
@@ -27330,7 +28227,7 @@ function publishAgentRunnerBridge() {
     logEvent: AGENT_RUNNER_LOG_EVENT,
     getState: () => buildAgentRunnerBridgeSnapshot(),
     open() {
-      showAgentRunnerPanel();
+      showAgentRunnerPanel({ focusGoal: !agentRunnerActive() });
       return buildAgentRunnerBridgeSnapshot();
     },
     close() {
@@ -28768,14 +29665,300 @@ async function waitForSingleImageRailArtifact(route, snapshot, { timeoutMs = SIN
   throw new Error(`${route?.label || "This action"} did not produce an output artifact.`);
 }
 
+async function readSingleImageRailApplyKeyStatus() {
+  if (state.keyStatus && typeof state.keyStatus === "object") return state.keyStatus;
+  await refreshKeyStatus({ reason: "single_image_rail_apply" }).catch(() => {});
+  return state.keyStatus || {};
+}
+
+function createSingleImageRailApplyProviderRouter() {
+  return createDesignReviewProviderRouter({
+    requestProvider: invokeDesignReviewProviderRequest,
+    keyStatus: state.keyStatus || {},
+    getKeyStatus: () => readSingleImageRailApplyKeyStatus(),
+  });
+}
+
+function singleImageRailSubjectIsolationTargetRegion(selection = null) {
+  if (!selection || typeof selection !== "object") return null;
+  const bounds = selection.bounds && typeof selection.bounds === "object"
+    ? {
+        x: Number(selection.bounds.x0) || 0,
+        y: Number(selection.bounds.y0) || 0,
+        width: Math.max(1, Number(selection.bounds.w) || 1),
+        height: Math.max(1, Number(selection.bounds.h) || 1),
+      }
+    : null;
+  return {
+    markIds: [],
+    regionCandidateId: String(selection.regionCandidateId || "").trim() || null,
+    bounds,
+  };
+}
+
+async function writeSingleImageRailSubjectIsolationHintImage({ imageId = "", target = null, selection = null, requestId = "" } = {}) {
+  if (!state.runDir) return null;
+  const normalizedImageId = String(imageId || "").trim();
+  const polygon = Array.isArray(selection?.polygon) ? selection.polygon : [];
+  const bounds = selection?.bounds && typeof selection.bounds === "object" ? selection.bounds : null;
+  if (!normalizedImageId || !target?.path || polygon.length < 3 || !bounds) return null;
+  const img = await ensureSingleImageRailTargetLoaded(target);
+  if (!img) return null;
+
+  const x0 = Math.max(0, Math.floor(Number(bounds.x0) || 0));
+  const y0 = Math.max(0, Math.floor(Number(bounds.y0) || 0));
+  const width = Math.max(1, Math.ceil(Number(bounds.w) || 1));
+  const height = Math.max(1, Math.ceil(Number(bounds.h) || 1));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.clearRect(0, 0, width, height);
+  ctx.save();
+  ctx.translate(-x0, -y0);
+  if (!drawPolygonPath(ctx, polygon)) {
+    ctx.restore();
+    return null;
+  }
+  ctx.clip();
+  ctx.drawImage(img, 0, 0);
+  ctx.restore();
+
+  const stem = exportBaseStem(target?.label || target?.path || normalizedImageId);
+  const requestKey = String(requestId || Date.now()).replace(/[^a-z0-9._:-]+/gi, "_");
+  const outputPath = `${state.runDir}/cut-out-hint-${stem}-${requestKey}.png`;
+  await writeCanvasPngToPath(canvas, outputPath);
+  return {
+    imageId: `${normalizedImageId}:cut_out_hint`,
+    path: outputPath,
+    label: "Cut Out Hint",
+    width,
+    height,
+  };
+}
+
+function buildSingleImageRailSubjectIsolationApplyPayload({ route, imageId, target, selection, hintImage = null } = {}) {
+  const requestId = `single-image-cut-out-${Date.now()}`;
+  const proposalId = `${requestId}-proposal`;
+  const outputStem = exportBaseStem(target?.label || target?.path || imageId || "cut-out");
+  const outputPath = `${state.runDir}/review-apply-${outputStem}-${proposalId}.png`;
+  const targetImage = {
+    id: String(imageId || "").trim() || null,
+    imageId: String(imageId || "").trim() || null,
+    path: String(target?.path || "").trim() || null,
+    label: String(target?.label || basename(target?.path || "") || "Image").trim() || "Image",
+    width: Number(target?.img?.naturalWidth || target?.width) || null,
+    height: Number(target?.img?.naturalHeight || target?.height) || null,
+  };
+  const targetRegion = singleImageRailSubjectIsolationTargetRegion(selection);
+  const visibleImages = [targetImage];
+  if (hintImage?.path) {
+    visibleImages.push({
+      id: String(hintImage.imageId || "").trim() || null,
+      imageId: String(hintImage.imageId || "").trim() || null,
+      path: String(hintImage.path || "").trim() || null,
+      label: String(hintImage.label || "Cut Out Hint").trim() || "Cut Out Hint",
+      width: Number(hintImage.width) || null,
+      height: Number(hintImage.height) || null,
+    });
+  }
+  const request = {
+    requestId,
+    sessionId: currentDesignReviewApplySessionKey() || `single_image:${String(imageId || "").trim()}`,
+    primaryImageId: String(imageId || "").trim() || null,
+    imageIdsInView: [String(imageId || "").trim()].filter(Boolean),
+    selectedImageIds: [String(imageId || "").trim()].filter(Boolean),
+    markIds: [],
+    activeRegionCandidateId: String(selection?.regionCandidateId || "").trim() || null,
+    selectionState: "region",
+    visibleCanvasContext: {
+      runDir: state.runDir || null,
+      canvasMode: "single",
+      imageCount: 1,
+      activeImageId: String(imageId || "").trim() || null,
+      images: visibleImages,
+    },
+    chosenRegionCandidate: selection?.chosenRegionCandidate || null,
+  };
+  const proposal = {
+    proposalId,
+    imageId: String(imageId || "").trim() || null,
+    label: String(route?.label || "Cut Out").trim() || "Cut Out",
+    actionType: "cut_out_subject",
+    applyBrief:
+      "Cut out only the selected subject. Remove everything outside the selected subject and return a transparent background PNG. " +
+      "Preserve the subject's exact identity, pose, silhouette, clothing, logos, and readable text. " +
+      "Do not add a new background, halo, shadow, padding, extra objects, or extra people.",
+    targetRegion,
+    referenceImageIds: hintImage?.imageId ? [String(hintImage.imageId)] : [],
+    negativeConstraints: [
+      "no background fill",
+      "no drop shadow",
+      "no glow or halo",
+      "no extra objects",
+      "no extra people",
+      "preserve subject details exactly",
+    ],
+  };
+  return {
+    request,
+    proposal,
+    outputPath,
+    targetImage,
+    referenceImages: hintImage?.path ? [hintImage] : [],
+    referenceImageIds: hintImage?.imageId ? [String(hintImage.imageId)] : [],
+  };
+}
+
+async function executeSingleImageRailSubjectIsolation({ route, imageId, target }) {
+  const targetId = String(imageId || "").trim();
+  const selection = resolveSingleImageRailSubjectSelection(targetId);
+  if (!selection) {
+    const error = new Error("Cut Out needs a lasso or Magic Select region first.");
+    error.disabledReason = "selection_required";
+    throw error;
+  }
+
+  await ensureSingleImageRailTargetLoaded(target);
+  await readSingleImageRailApplyKeyStatus();
+
+  const label = String(route?.label || "Cut Out").trim() || "Cut Out";
+  beginRunningAction("cut_out");
+  setImageFxActive(true, label);
+  portraitWorking(label, { providerOverride: "gemini" });
+  setStatus(`Engine: ${label.toLowerCase()}…`);
+
+  const targetSnapshot = {
+    id: targetId,
+    path: String(target?.path || ""),
+    receiptPath: target?.receiptPath ? String(target.receiptPath) : null,
+    kind: target?.kind ? String(target.kind) : null,
+    source: target?.source ? String(target.source) : null,
+    label: target?.label ? String(target.label) : basename(target?.path || ""),
+    timelineNodeId: target?.timelineNodeId ? String(target.timelineNodeId) : null,
+  };
+
+  try {
+    const hintImage = await writeSingleImageRailSubjectIsolationHintImage({
+      imageId: targetId,
+      target,
+      selection,
+      requestId: Date.now().toString(36),
+    }).catch(() => null);
+    const applyPayload = buildSingleImageRailSubjectIsolationApplyPayload({
+      route,
+      imageId: targetId,
+      target,
+      selection,
+      hintImage,
+    });
+    const providerRouter = createSingleImageRailApplyProviderRouter();
+    const result = await providerRouter.runApply({
+      request: applyPayload.request,
+      proposal: applyPayload.proposal,
+      targetImage: applyPayload.targetImage,
+      referenceImages: applyPayload.referenceImages,
+      outputPath: applyPayload.outputPath,
+      model: SINGLE_IMAGE_RAIL_SUBJECT_ISOLATION_MODEL,
+    });
+
+    const outputPath = readFirstString(result?.outputPath, applyPayload.outputPath);
+    if (!outputPath) {
+      throw new Error("Cut Out did not produce an output image.");
+    }
+
+    const receiptPath = await writeDesignReviewApplyReceipt({
+      outputPath,
+      targetBefore: targetSnapshot,
+      targetImageId: targetId,
+      referenceImageIds: applyPayload.referenceImageIds,
+      proposal: applyPayload.proposal,
+      request: applyPayload.request,
+      debugInfo: result?.debugInfo || null,
+      provider: result?.provider || null,
+      requestedModel: result?.requestedModel || SINGLE_IMAGE_RAIL_SUBJECT_ISOLATION_MODEL,
+      normalizedModel: result?.normalizedModel || null,
+      costTotalUsd: readFirstNumber(result?.costTotalUsd, result?.cost_total_usd),
+      latencyPerImageS: readFirstNumber(result?.latencyPerImageS, result?.latency_per_image_s),
+    }).catch((error) => {
+      console.error("Failed to write cut-out receipt:", error);
+      return null;
+    });
+
+    const ok = await replaceImageInPlace(targetId, {
+      path: outputPath,
+      receiptPath,
+      kind: "engine",
+      label: targetSnapshot.label || basename(outputPath),
+    }).catch((error) => {
+      console.error(error);
+      return false;
+    });
+    if (!ok) {
+      if (receiptPath) removeFile(receiptPath).catch(() => {});
+      throw new Error("Cut Out failed to replace the active image.");
+    }
+
+    const nodeId = recordTimelineNode({
+      imageId: targetId,
+      path: outputPath,
+      receiptPath,
+      label: targetSnapshot.label || basename(outputPath),
+      action: label,
+      parents: targetSnapshot.timelineNodeId ? [targetSnapshot.timelineNodeId] : [],
+    });
+    const item = state.imagesById.get(targetId) || null;
+    if (item) {
+      item.source = DESIGN_REVIEW_APPLY_SOURCE;
+      if (nodeId) item.timelineNodeId = nodeId;
+    }
+
+    dropCommunicationStateForImageId(targetId);
+    if (String(state.activeId || "").trim() === targetId) {
+      clearSelection();
+    }
+    updateDesignReviewApplyCostLatency({
+      provider: result?.provider || null,
+      requestedModel: result?.requestedModel || SINGLE_IMAGE_RAIL_SUBJECT_ISOLATION_MODEL,
+      normalizedModel: result?.normalizedModel || null,
+      costTotalUsd: readFirstNumber(result?.costTotalUsd, result?.cost_total_usd),
+      latencyPerImageS: readFirstNumber(result?.latencyPerImageS, result?.latency_per_image_s),
+    });
+    if (receiptPath) {
+      ingestTopMetricsFromReceiptPath(receiptPath, {
+        allowCostFallback: true,
+        allowLatencyFallback: true,
+      }).catch(() => {});
+    }
+    setStatus("Engine: ready");
+    return {
+      imageId: targetId,
+      outputPath: String(item?.path || outputPath),
+      receiptPath,
+      provider: result?.provider || null,
+      requestedModel: result?.requestedModel || SINGLE_IMAGE_RAIL_SUBJECT_ISOLATION_MODEL,
+      normalizedModel: result?.normalizedModel || null,
+      costTotalUsd: readFirstNumber(result?.costTotalUsd, result?.cost_total_usd),
+      latencyPerImageS: readFirstNumber(result?.latencyPerImageS, result?.latency_per_image_s),
+    };
+  } finally {
+    setImageFxActive(false);
+    updatePortraitIdle();
+    clearRunningAction("cut_out");
+  }
+}
+
 async function executeSingleImageRailCapability({ route, imageId, target }) {
   const snapshot = captureSingleImageRailArtifactSnapshot(imageId);
-  if (route?.capability === "crop_or_outpaint") {
+  if (route?.capability === "crop_or_outpaint" || route?.capability === "subject_isolation") {
     await ensureSingleImageRailTargetLoaded(target);
   }
 
   let runner = null;
-  if (route?.capability === "targeted_remove") {
+  if (route?.capability === "subject_isolation") {
+    runner = () => executeSingleImageRailSubjectIsolation({ route, imageId, target });
+  } else if (route?.capability === "targeted_remove") {
     runner = () => aiRemovePeople();
   } else if (route?.capability === "background_replace") {
     runner = () => applyBackground("white");
@@ -28789,7 +29972,10 @@ async function executeSingleImageRailCapability({ route, imageId, target }) {
     throw new Error("Capability executor is unavailable.");
   }
 
-  await runner();
+  const artifact = await runner();
+  if (artifact?.outputPath || artifact?.imagePath) {
+    return artifact;
+  }
   return waitForSingleImageRailArtifact(route, snapshot);
 }
 
@@ -28816,6 +30002,10 @@ function installBuiltInSingleImageRailIntegration() {
         selectedImageIds: Array.isArray(request?.selectedImageIds)
           ? request.selectedImageIds.slice(0, 3)
           : runtimeContext.selectedImageIds,
+        subjectSelectionAvailable:
+          request?.subjectSelectionAvailable == null
+            ? runtimeContext.subjectSelectionAvailable
+            : Boolean(request.subjectSelectionAvailable),
         source: String(request?.source || "shell").trim() || "shell",
         trigger: "click",
         requestId: `single-image-rail-${state.toolInvocationSeq++}`,
@@ -39887,7 +41077,7 @@ function installJuggernautShellUi() {
         hideAgentRunnerPanel();
         return;
       }
-      showAgentRunnerPanel();
+      showAgentRunnerPanel({ focusGoal: !agentRunnerActive() });
     });
   }
   if (els.juggernautExportPsd) {
@@ -40668,6 +41858,15 @@ function installUi() {
       showToast("OpenRouter onboarding state cleared.", "tip", 2200);
     });
   }
+  if (els.openrouterApiKeyClear) {
+    els.openrouterApiKeyClear.addEventListener("click", () => {
+      bumpInteraction();
+      clearStoredOpenRouterApiKey().catch((err) => {
+        console.error(err);
+        showToast(normalizeErrorMessage(err, "Could not clear the stored OpenRouter key."), "error", 3200);
+      });
+    });
+  }
   if (els.aestheticOnboardingClear) {
     els.aestheticOnboardingClear.addEventListener("click", () => {
       bumpInteraction();
@@ -41107,6 +42306,12 @@ function installUi() {
       clearAgentRunnerLog();
     });
   }
+  if (els.agentRunnerCopy) {
+    els.agentRunnerCopy.addEventListener("click", () => {
+      bumpInteraction();
+      copyAgentRunnerLogToClipboard().catch((e) => console.error(e));
+    });
+  }
   if (els.agentRunnerStep) {
     els.agentRunnerStep.addEventListener("click", () => {
       bumpInteraction();
@@ -41121,6 +42326,18 @@ function installUi() {
   }
   if (els.agentRunnerStop) {
     els.agentRunnerStop.addEventListener("click", () => {
+      bumpInteraction();
+      requestAgentRunnerStop();
+    });
+  }
+  if (els.agentRunnerBannerShow) {
+    els.agentRunnerBannerShow.addEventListener("click", () => {
+      bumpInteraction();
+      showAgentRunnerPanel({ focusGoal: false });
+    });
+  }
+  if (els.agentRunnerBannerStop) {
+    els.agentRunnerBannerStop.addEventListener("click", () => {
       bumpInteraction();
       requestAgentRunnerStop();
     });
@@ -41350,7 +42567,7 @@ function installUi() {
       }
 
       if (key === "g") {
-        showAgentRunnerPanel();
+        showAgentRunnerPanel({ focusGoal: !agentRunnerActive() });
         return;
       }
 

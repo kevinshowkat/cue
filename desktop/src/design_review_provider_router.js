@@ -426,7 +426,14 @@ export function createDesignReviewProviderRouter({
         proposal,
       });
     },
-    async runApply({ request = {}, proposal = {}, targetImage = null, referenceImages = [], outputPath = "" } = {}) {
+    async runApply({
+      request = {},
+      proposal = {},
+      targetImage = null,
+      referenceImages = [],
+      outputPath = "",
+      model = DESIGN_REVIEW_FINAL_APPLY_MODEL,
+    } = {}) {
       const providerSelection = await resolveProviderSelectionLive();
       assertApplyProviderAvailable(providerSelection);
       return runProviderRequest(
@@ -437,7 +444,7 @@ export function createDesignReviewProviderRouter({
           referenceImages,
           outputPath,
           provider: providerSelection.applyProvider,
-          model: DESIGN_REVIEW_FINAL_APPLY_MODEL,
+          model,
         })
       );
     },

@@ -151,6 +151,7 @@ test("single-image rail invocation uses the approved capability contract without
   const invocation = buildSingleImageRailInvocation("cut_out", {
     activeImageId: "img-1",
     selectedImageIds: ["img-1"],
+    subjectSelectionAvailable: true,
     requestId: "single-image-7",
     confidence: jobs[0].confidence,
     reasonCodes: jobs[0].reasonCodes,
@@ -166,6 +167,7 @@ test("single-image rail invocation uses the approved capability contract without
   assert.equal(invocation.tool.toolId, "cut_out");
   assert.equal(invocation.rail.stickyKey, "single-image-rail:cut_out");
   assert.equal(invocation.availability.enabled, true);
+  assert.equal(invocation.selection.subjectSelectionAvailable, true);
   assert.doesNotMatch(JSON.stringify(invocation), /openai|gemini|flux|imagen/i);
 });
 
