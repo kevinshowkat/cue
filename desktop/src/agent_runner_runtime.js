@@ -28,6 +28,8 @@ const DIRECT_AFFORDANCE_IDS = new Set(["remove_people", "polish", "relight"]);
 const STOPLIKE_ACTIONS = new Set(["stop", "done", "complete", "finish"]);
 const REVIEW_REQUEST_ACTIONS = new Set(["design_review", "request_design_review", "review"]);
 const REVIEW_ACCEPT_ACTIONS = new Set(["accept_review_proposal", "accept_review", "accept_proposal"]);
+const SET_ACTIVE_IMAGE_ACTIONS = new Set(["set_active_image", "activate_image", "focus_image"]);
+const SET_SELECTED_IMAGES_ACTIONS = new Set(["set_selected_images", "select_images", "select_canvas_images"]);
 const CREATE_TOOL_PREVIEW_ACTIONS = new Set(["preview_create_tool", "preview_tool"]);
 const CREATE_TOOL_ACTIONS = new Set(["create_tool", "make_tool"]);
 const CUSTOM_TOOL_ACTIONS = new Set(["invoke_custom_tool", "run_custom_tool"]);
@@ -115,6 +117,22 @@ function normalizePointPctList(points = [], { minPoints = 1, label = "pointsPct"
   }
   if (out.length < minPoints) {
     throw new Error(`${label} requires at least ${minPoints} point${minPoints === 1 ? "" : "s"}`);
+  }
+  return out;
+}
+
+function normalizeImageIdList(values = [], { min = 0, max = 3, label = "imageIds" } = {}) {
+  const out = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const imageId = readFirstString(value);
+    if (!imageId || out.includes(imageId)) continue;
+    out.push(imageId);
+  }
+  if (out.length < min) {
+    throw new Error(`${label} requires at least ${min} image id${min === 1 ? "" : "s"}`);
+  }
+  if (out.length > max) {
+    throw new Error(`${label} supports at most ${max} image ids`);
   }
   return out;
 }
@@ -285,6 +303,20 @@ function summarizeRegionSelections(groups = []) {
   }));
 }
 
+function summarizeSubjectSelectionState({ activeImageId = "", regionSelections = [] } = {}) {
+  const imageIds = [];
+  for (const group of Array.isArray(regionSelections) ? regionSelections : []) {
+    const imageId = readFirstString(group?.imageId);
+    if (!imageId || imageIds.includes(imageId)) continue;
+    imageIds.push(imageId);
+  }
+  const activeId = readFirstString(activeImageId) || null;
+  return {
+    imageIds,
+    activeImageHasRegionSelection: Boolean(activeId && imageIds.includes(activeId)),
+  };
+}
+
 function summarizeReviewState(reviewState = null) {
   const record = asRecord(reviewState) || {};
   return {
@@ -332,7 +364,28 @@ function summarizeSessionTools(sessionTools = []) {
     label: clampText(tool?.label, 42),
     operation: readFirstString(tool?.execution?.operation) || null,
     executionKind: readFirstString(tool?.execution?.kind) || null,
+    minImages: Math.max(0, Number(tool?.inputContract?.minImages) || 0),
+    maxImages: Math.max(0, Number(tool?.inputContract?.maxImages) || 0),
   }));
+}
+
+function summarizeSeededToolStates(singleImageRail = null) {
+  const visibleJobs = Array.isArray(singleImageRail?.visibleJobs) ? singleImageRail.visibleJobs : [];
+  const seen = new Set();
+  const states = [];
+  for (const job of visibleJobs) {
+    const toolId = readFirstString(job?.jobId, job?.toolId);
+    if (!toolId || seen.has(toolId) || !SEEDED_TOOL_IDS.has(toolId)) continue;
+    seen.add(toolId);
+    states.push({
+      toolId,
+      enabled: job?.enabled !== false,
+      requiresSelection: job?.requiresSelection !== false,
+      disabledReason: readFirstString(job?.disabledReason) || null,
+      reasonCodes: (Array.isArray(job?.reasonCodes) ? job.reasonCodes : []).slice(0, 6).map((code) => readFirstString(code)).filter(Boolean),
+    });
+  }
+  return states;
 }
 
 export function buildAgentRunnerContextSummary({
@@ -346,6 +399,16 @@ export function buildAgentRunnerContextSummary({
   const communication = asRecord(shell.communicationReview) || {};
   const communicationCanvas = asRecord(communication.canvas) || {};
   const communicationData = asRecord(communication.communication) || {};
+  const selectedImageIds = Array.isArray(shell.selectedImageIds) ? shell.selectedImageIds.slice(0, 6) : [];
+  const regionSelections = summarizeRegionSelections(communicationData.regionSelections);
+  const seededToolStates = summarizeSeededToolStates(shell.singleImageRail);
+  const availableSeededTools = seededToolStates.length
+    ? seededToolStates.filter((tool) => tool.enabled).map((tool) => tool.toolId)
+    : Array.from(SEEDED_TOOL_IDS);
+  const subjectSelections = summarizeSubjectSelectionState({
+    activeImageId: shell.activeImageId,
+    regionSelections: communicationData.regionSelections,
+  });
   return {
     goal: clampText(goal, 400),
     shell: {
@@ -354,7 +417,12 @@ export function buildAgentRunnerContextSummary({
       canvasMode: readFirstString(shell.canvasMode) || null,
       imageCount: Number(shell.imageCount) || 0,
       activeImageId: readFirstString(shell.activeImageId) || null,
-      selectedImageIds: Array.isArray(shell.selectedImageIds) ? shell.selectedImageIds.slice(0, 6) : [],
+      selectedImageIds,
+      singleImageRail: seededToolStates.length
+        ? {
+            visibleJobs: seededToolStates,
+          }
+        : null,
     },
     canvas: {
       sizeCss: asRecord(communicationCanvas.sizeCss)
@@ -365,20 +433,63 @@ export function buildAgentRunnerContextSummary({
         : null,
       visibleImages: summarizeVisibleImages(communicationCanvas.visibleImages),
       marks: summarizeMarks(communicationData.marks),
-      regionSelections: summarizeRegionSelections(communicationData.regionSelections),
+      regionSelections,
+      subjectSelections,
       activeTool: readFirstString(communicationData.tool) || null,
     },
     review: summarizeReviewState(reviewState),
     sessionTools: summarizeSessionTools(sessionTools),
     recentActivity: summarizeRecentLog(recentLog),
     availableActions: {
+      selection: ["set_active_image", "set_selected_images"],
       observable: ["marker_stroke", "magic_select_click", "eraser_stroke"],
       review: ["request_design_review", "accept_review_proposal"],
-      seededTools: Array.from(SEEDED_TOOL_IDS),
+      reviewGuidance: {
+        goalAgnostic: true,
+        seesVisibleCanvasOnly: true,
+        usesVisibleAnnotationsOnly: true,
+        preferredPrepActions: ["set_active_image", "set_selected_images", "marker_stroke", "magic_select_click"],
+        markBeforeReviewFor: [
+          "source_vs_target_disambiguation",
+          "subject_placement",
+          "interaction_or_pose",
+          "destination_area",
+        ],
+      },
+      seededTools: availableSeededTools,
+      seededToolStates,
+      seededToolGuidance: {
+        cut_out: {
+          requiresActiveImage: true,
+          requiresSubjectRegion: true,
+          acceptedRegionSources: ["magic_select_region", "lasso_region"],
+          effect: "extract the selected subject into a reusable cutout",
+          agentPreferredSetupActions: ["marker_stroke", "magic_select_click"],
+          ifDisabledReasonIsSelectionRequired: "Create a subject region on the active source image first.",
+        },
+        remove: {
+          requiresActiveImage: true,
+          requiresSubjectRegion: true,
+          effect: "erase the selected content from the active image",
+          doNotUseFor: ["subject extraction", "preparing a source subject for compositing"],
+          ifGoalNeedsReusableSubject: "Use cut_out instead of remove.",
+        },
+      },
       directAffordances: Array.from(DIRECT_AFFORDANCE_IDS),
       toolCreation: ["preview_create_tool", "create_tool", "invoke_custom_tool"],
       export: ["export_psd"],
       control: ["stop"],
+      actionConstraints: {
+        focusOnly: ["marker_stroke", "magic_select_click", "eraser_stroke"],
+        singleImageTools: {
+          toolActionTypes: ["invoke_seeded_tool", "invoke_direct_affordance"],
+          requiresActiveImage: true,
+          maxSelectedImages: 1,
+        },
+        multiImageSelection: {
+          maxSelectedImages: 3,
+        },
+      },
     },
   };
 }
@@ -389,23 +500,37 @@ export function buildAgentRunnerPlannerPrompt(input = {}) {
     "You are the planner for Juggernaut Agent Run.",
     "Choose exactly one next action that best advances the visual goal.",
     "Return JSON only. Do not include markdown fences or prose outside the JSON.",
+    "The first visual input is the current rendered visible canvas view, including visible marks and overlays.",
+    "Any additional visual inputs are visible source images for detail only; use the rendered canvas view to reason about the next step.",
     "",
     "Priorities:",
     "1. Make visible, reversible progress toward the goal.",
     "2. Prefer one bounded action at a time.",
     "3. Use Marker or Magic Select when scope is unclear and visible guidance would help.",
-    "4. Use request_design_review when the goal is aesthetic, ambiguous, or multi-step.",
-    "5. Use accept_review_proposal only if review status is ready and a proposal is available.",
-    "6. Use create_tool only when a reusable local pattern is clearly warranted.",
-    "7. Export only when the goal appears satisfied.",
+    "4. Use set_active_image or set_selected_images when source and target images must be disambiguated.",
+    "5. Only choose invoke_seeded_tool when toolId is listed in availableActions.seededTools.",
+    "6. For cut_out, first create a real subject region on the active source image with Magic Select or an existing lasso region; image selection alone is not enough.",
+    "7. If cut_out is disabled with selection_required, do not invoke it yet. Use marker_stroke and/or magic_select_click to establish the subject first.",
+    "8. remove erases the selected region from the active image. It is destructive cleanup, not subject extraction.",
+    "9. Never use remove to isolate or prepare a source subject for compositing into another image. Use cut_out for that.",
+    "10. Design Review is goal-agnostic. It sees only the visible canvas plus visible marks and Magic Select regions, not hidden intent.",
+    "11. Before request_design_review, use marks and/or Magic Select when composition, placement, interaction, pose, or source-vs-target intent needs to be made explicit on-canvas.",
+    "12. For cross-image composites, mark the source subject and the destination area before request_design_review when placement matters.",
+    "13. For request_design_review summaries, do not restate the user goal, inferred scene, or hidden intent. Describe only the visible canvas state and visible prep signals.",
+    "14. Use request_design_review when the goal is aesthetic, ambiguous, or multi-step and no direct single-image action can complete it.",
+    "15. Use accept_review_proposal only if review status is ready and a proposal is available.",
+    "16. Use create_tool only when a reusable local pattern is clearly warranted.",
+    "17. Export only when the goal appears satisfied.",
     "",
     "Action schema:",
     '{',
     '  "status": "continue" | "complete" | "blocked",',
     '  "summary": "short reason",',
     '  "action": {',
-    '    "type": "marker_stroke" | "magic_select_click" | "eraser_stroke" | "request_design_review" | "accept_review_proposal" | "invoke_seeded_tool" | "invoke_direct_affordance" | "preview_create_tool" | "create_tool" | "invoke_custom_tool" | "export_psd" | "stop",',
-    '    "imageId": "optional image id for observable actions",',
+    '    "type": "set_active_image" | "set_selected_images" | "marker_stroke" | "magic_select_click" | "eraser_stroke" | "request_design_review" | "accept_review_proposal" | "invoke_seeded_tool" | "invoke_direct_affordance" | "preview_create_tool" | "create_tool" | "invoke_custom_tool" | "export_psd" | "stop",',
+    '    "imageId": "optional image id for single-image actions or observable actions",',
+    '    "activeImageId": "for set_selected_images",',
+    '    "imageIds": ["for set_selected_images"],',
     '    "points": [{"x": 120, "y": 80}],',
     '    "pointsPct": [{"x": 0.15, "y": 0.22}],',
     '    "point": {"x": 120, "y": 80},',
@@ -424,6 +549,12 @@ export function buildAgentRunnerPlannerPrompt(input = {}) {
     "- pointsPct and pointPct are normalized 0..1 coordinates inside imageId.rectCss and are preferred when image bounds are available.",
     "- marker_stroke requires at least 2 points.",
     "- eraser_stroke requires at least 1 point.",
+    "- Marker, Magic Select, and Eraser are focus-setting actions; they do not change pixels.",
+    "- invoke_seeded_tool and invoke_direct_affordance apply to exactly one active image.",
+    "- cut_out requires a real Magic Select or lasso region on that active image before it can run.",
+    "- remove deletes the selected content from that active image and must not be used to extract a reusable subject.",
+    "- Disabled seeded tools appear in availableActions.seededToolStates; do not choose them.",
+    "- set_selected_images supports 1..3 visible image ids.",
     "",
     "Context JSON:",
     JSON.stringify(context, null, 2),
@@ -443,6 +574,27 @@ function normalizeAgentRunnerAction(rawAction = null) {
     return {
       type: "stop",
       message: clampText(action.message || action.reason || action.summary, 140),
+    };
+  }
+  if (SET_ACTIVE_IMAGE_ACTIONS.has(rawType)) {
+    return {
+      type: "set_active_image",
+      imageId: readFirstString(action.imageId, action.image_id, action.activeImageId, action.active_image_id) || null,
+    };
+  }
+  if (SET_SELECTED_IMAGES_ACTIONS.has(rawType)) {
+    return {
+      type: "set_selected_images",
+      imageIds: normalizeImageIdList(
+        action.imageIds || action.image_ids || action.selectedImageIds || action.selected_image_ids || [],
+        {
+          min: 1,
+          max: 3,
+          label: "imageIds",
+        }
+      ),
+      activeImageId:
+        readFirstString(action.activeImageId, action.active_image_id, action.imageId, action.image_id) || null,
     };
   }
   if (OBSERVABLE_MARKER_ACTIONS.has(rawType)) {
@@ -498,12 +650,14 @@ function normalizeAgentRunnerAction(rawAction = null) {
     return {
       type: "invoke_seeded_tool",
       toolId: SEEDED_TOOL_IDS.has(toolId) ? toolId : rawType,
+      imageId: readFirstString(action.imageId, action.image_id, action.activeImageId, action.active_image_id) || null,
     };
   }
   if (DIRECT_AFFORDANCE_IDS.has(toolId) || DIRECT_AFFORDANCE_IDS.has(rawType)) {
     return {
       type: "invoke_direct_affordance",
       toolId: DIRECT_AFFORDANCE_IDS.has(toolId) ? toolId : rawType,
+      imageId: readFirstString(action.imageId, action.image_id, action.activeImageId, action.active_image_id) || null,
       params: cloneJson(asRecord(action.params) || {}),
     };
   }
@@ -525,6 +679,7 @@ function normalizeAgentRunnerAction(rawAction = null) {
     return {
       type: "invoke_custom_tool",
       toolId: readFirstString(action.toolId, action.tool_id, action.id) || "",
+      imageId: readFirstString(action.imageId, action.image_id, action.activeImageId, action.active_image_id) || null,
     };
   }
   if (EXPORT_ACTIONS.has(rawType)) {
@@ -536,6 +691,8 @@ function normalizeAgentRunnerAction(rawAction = null) {
 export function summarizeAgentRunnerAction(action = null) {
   const record = asRecord(action) || {};
   const type = readFirstString(record.type) || "unknown";
+  if (type === "set_active_image") return `Set active image${record.imageId ? ` (${record.imageId})` : ""}`;
+  if (type === "set_selected_images") return `Set selected images${Array.isArray(record.imageIds) && record.imageIds.length ? ` (${record.imageIds.join(", ")})` : ""}`;
   if (type === "marker_stroke") return "Marker stroke";
   if (type === "magic_select_click") return "Magic Select";
   if (type === "eraser_stroke") return "Eraser stroke";
@@ -551,6 +708,27 @@ export function summarizeAgentRunnerAction(action = null) {
   return type;
 }
 
+function sanitizeAgentRunnerPlanSummary(summary = "", action = null) {
+  const type = readFirstString(action?.type).toLowerCase();
+  const normalized = clampText(summary, 220);
+  if (type === "request_design_review") {
+    return "Request design review using only the visible canvas, marks, Magic Select regions, and current selections.";
+  }
+  return normalized || summarizeAgentRunnerAction(action);
+}
+
+function sanitizeAgentRunnerRawPlanForDisplay(rawPlan = null, summary = "", action = null) {
+  const record = asRecord(rawPlan);
+  if (!record) return cloneJson(rawPlan);
+  const type = readFirstString(action?.type).toLowerCase();
+  if (type !== "request_design_review") return cloneJson(record);
+  const next = cloneJson(record);
+  next.summary = summary;
+  if (Object.prototype.hasOwnProperty.call(next, "reason")) next.reason = summary;
+  if (Object.prototype.hasOwnProperty.call(next, "why")) next.why = summary;
+  return next;
+}
+
 export function parseAgentRunnerPlanResponse(raw = "") {
   const parsed = extractStructuredPlanCandidate(raw);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -558,23 +736,24 @@ export function parseAgentRunnerPlanResponse(raw = "") {
   }
   const status = normalizeKey(parsed.status || parsed.state || "continue") || "continue";
   const normalizedStatus = status === "complete" || status === "blocked" ? status : "continue";
-  const summary = clampText(parsed.summary || parsed.reason || parsed.why, 220);
+  const requestedSummary = clampText(parsed.summary || parsed.reason || parsed.why, 220);
   let action = null;
   if (asRecord(parsed.action)) {
     action = normalizeAgentRunnerAction(parsed.action);
   } else if (normalizedStatus === "complete" || normalizedStatus === "blocked") {
     action = {
       type: "stop",
-      message: summary,
+      message: requestedSummary,
     };
   } else {
     throw new Error("Planner response is missing action");
   }
+  const summary = sanitizeAgentRunnerPlanSummary(requestedSummary, action);
   return {
     status: normalizedStatus,
     summary,
     action,
-    raw: cloneJson(parsed),
+    raw: sanitizeAgentRunnerRawPlanForDisplay(parsed, summary, action),
   };
 }
 

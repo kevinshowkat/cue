@@ -910,6 +910,15 @@ button.ghost:hover {
     inset 0 0 0 12px rgba(82, 255, 148, 0.10);
 }
 
+@keyframes agentRunnerCanvasSweep {
+  0% {
+    background-position: 0 0, 0 11px, 11px -11px, -11px 0px;
+  }
+  100% {
+    background-position: 22px 0, 22px 11px, 33px -11px, 11px 0px;
+  }
+}
+
 .canvas-wrap::before {
   content: "";
   position: absolute;
@@ -924,6 +933,32 @@ button.ghost:hover {
   background-position: 0 0, 0 11px, 11px -11px, -11px 0px;
   opacity: 0.25;
   pointer-events: none;
+}
+
+.canvas-wrap.agent-runner-active {
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 215, 255, 0.26),
+    inset 0 0 0 8px rgba(120, 215, 255, 0.08),
+    0 0 0 1px rgba(120, 215, 255, 0.08);
+}
+
+.canvas-wrap.agent-runner-active::before {
+  opacity: 0.38;
+  animation: agentRunnerCanvasSweep 7.5s linear infinite;
+}
+
+.canvas-wrap.agent-runner-auto {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 198, 112, 0.34),
+    inset 0 0 0 8px rgba(120, 215, 255, 0.10),
+    0 0 0 1px rgba(255, 198, 112, 0.12);
+}
+
+.canvas-wrap.agent-runner-stopping {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 120, 120, 0.34),
+    inset 0 0 0 8px rgba(255, 120, 120, 0.08),
+    0 0 0 1px rgba(255, 120, 120, 0.12);
 }
 
 #work-canvas,
@@ -6334,7 +6369,10 @@ button.ghost:hover {
   left: 0;
   top: 0;
   z-index: 9;
+  display: flex;
+  flex-direction: column;
   width: min(420px, calc(100% - 24px));
+  max-height: calc(100vh - 24px);
   border-radius: 14px;
   border: 1px solid rgba(54, 76, 106, 0.72);
   border-bottom-color: rgba(0, 0, 0, 0.78);
@@ -6385,7 +6423,11 @@ button.ghost:hover {
   padding: 10px;
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .annotate-meta {
@@ -6461,8 +6503,203 @@ button.ghost:hover {
   top: 50%;
   width: min(540px, calc(100% - (var(--jg-shell-inset, 18px) * 2) - var(--jg-rail-width, 74px) - 32px));
   max-width: calc(100% - (var(--jg-shell-inset, 18px) * 2) - var(--jg-rail-width, 74px) - 32px);
+  max-height: calc(100vh - 48px);
   transform: translate(-50%, -50%);
   z-index: 14;
+}
+
+@keyframes agentRunnerBannerPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+}
+
+.agent-runner-banner {
+  --agent-runner-banner-accent: rgba(100, 210, 255, 0.92);
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 18;
+  width: min(392px, calc(100% - 32px));
+  display: grid;
+  gap: 12px;
+  padding: 13px 15px 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background:
+    radial-gradient(148px 84px at 10% 0%, color-mix(in srgb, var(--agent-runner-banner-accent) 24%, transparent), transparent 72%),
+    radial-gradient(170px 88px at 100% 10%, rgba(255, 255, 255, 0.24), transparent 74%),
+    linear-gradient(180deg, rgba(248, 251, 255, 0.8), rgba(227, 235, 244, 0.68));
+  color: rgba(16, 28, 44, 0.9);
+  box-shadow:
+    0 28px 60px rgba(7, 15, 24, 0.22),
+    0 6px 18px color-mix(in srgb, var(--agent-runner-banner-accent) 18%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(24px) saturate(1.32);
+  overflow: hidden;
+}
+
+.agent-runner-banner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.4), transparent 28%),
+    radial-gradient(220px 120px at 78% -10%, rgba(255, 255, 255, 0.28), transparent 70%);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.agent-runner-banner::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  border: 1px solid color-mix(in srgb, var(--agent-runner-banner-accent) 14%, rgba(255, 255, 255, 0.5));
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.agent-runner-banner[data-state="auto"] {
+  --agent-runner-banner-accent: rgba(255, 190, 92, 0.96);
+}
+
+.agent-runner-banner[data-state="stopping"] {
+  --agent-runner-banner-accent: rgba(255, 124, 132, 0.96);
+}
+
+.agent-runner-banner[data-state="scoring"] {
+  --agent-runner-banner-accent: rgba(142, 188, 255, 0.96);
+}
+
+.agent-runner-banner-head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-runner-banner-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(24, 42, 63, 0.76);
+}
+
+.agent-runner-banner-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  background:
+    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.82), transparent 44%),
+    radial-gradient(circle at 65% 70%, color-mix(in srgb, var(--agent-runner-banner-accent) 88%, white 12%), color-mix(in srgb, var(--agent-runner-banner-accent) 52%, transparent) 72%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--agent-runner-banner-accent) 16%, transparent),
+    0 8px 16px color-mix(in srgb, var(--agent-runner-banner-accent) 16%, transparent);
+  animation: agentRunnerBannerPulse 1400ms ease-in-out infinite;
+}
+
+.agent-runner-banner-step {
+  position: relative;
+  z-index: 1;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(34, 52, 72, 0.72);
+}
+
+.agent-runner-banner-summary {
+  position: relative;
+  z-index: 1;
+  color: rgba(18, 31, 46, 0.92);
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.38;
+  text-wrap: balance;
+}
+
+.agent-runner-banner-detail {
+  position: relative;
+  z-index: 1;
+  color: rgba(46, 67, 90, 0.8);
+  font-size: 11px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.agent-runner-banner-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agent-runner-banner-actions button {
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.44), rgba(255, 255, 255, 0.24)),
+    rgba(244, 248, 252, 0.3);
+  color: rgba(18, 31, 46, 0.86);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.58),
+    0 6px 16px rgba(15, 26, 39, 0.08);
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.agent-runner-banner-actions button:hover,
+.agent-runner-banner-actions button:focus-visible {
+  border-color: color-mix(in srgb, var(--agent-runner-banner-accent) 40%, rgba(255, 255, 255, 0.42));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.28)),
+    rgba(244, 248, 252, 0.38);
+  color: rgba(12, 23, 38, 0.94);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 10px 22px color-mix(in srgb, var(--agent-runner-banner-accent) 14%, rgba(10, 18, 28, 0.08));
+  outline: none;
+}
+
+.agent-runner-banner-actions button:disabled {
+  opacity: 0.48;
+  transform: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.36),
+    0 4px 10px rgba(15, 26, 39, 0.04);
 }
 
 .create-tool-preview {
@@ -6495,6 +6732,32 @@ button.ghost:hover {
   font-size: 11px;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+
+.agent-runner-score {
+  min-height: 72px;
+  max-height: 132px;
+  overflow: auto;
+  padding: 10px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(54, 76, 106, 0.7);
+  border-bottom-color: rgba(0, 0, 0, 0.78);
+  background: rgba(6, 8, 12, 0.55);
+  color: rgba(195, 219, 238, 0.92);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.agent-runner-score[data-state="ready"] {
+  border-color: rgba(90, 156, 114, 0.7);
+  background: rgba(8, 20, 13, 0.58);
+}
+
+.agent-runner-score[data-state="failed"] {
+  border-color: rgba(173, 72, 66, 0.62);
+  background: rgba(38, 14, 14, 0.56);
 }
 
 .agent-runner-log {
@@ -6573,6 +6836,16 @@ button.ghost:hover {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin-top: auto;
+  padding-top: 6px;
+  padding-bottom: max(2px, env(safe-area-inset-bottom, 0px));
+  background:
+    linear-gradient(180deg, rgba(13, 18, 25, 0), rgba(13, 18, 25, 0.9) 34%, rgba(13, 18, 25, 0.98));
+  backdrop-filter: blur(8px);
 }
 
 .annotate-actions button {
@@ -9523,7 +9796,17 @@ button.ghost:hover {
 .session-tab-strip-review {
   width: auto;
   min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: 0 12px;
+}
+
+.session-tab-strip-review svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
 }
 
 .session-tab-strip-review span,
@@ -9565,6 +9848,16 @@ button.ghost:hover {
     radial-gradient(36px 28px at 50% 0%, rgba(100, 210, 255, 0.16), transparent 74%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.04)),
     rgba(14, 22, 32, 0.90);
+}
+
+.session-tab-runtime-action.is-agent-runner-live::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 194, 104, 0.98);
+  box-shadow: 0 0 0 5px rgba(255, 194, 104, 0.14);
+  animation: agentRunnerBannerPulse 1400ms ease-in-out infinite;
 }
 
 .session-tab-runtime-action.is-pending-hook {
@@ -10033,6 +10326,12 @@ body.juggernaut-shell .brand-strip {
     max-width: calc(100% - 24px);
   }
 
+  .agent-runner-banner {
+    top: 12px;
+    right: 12px;
+    width: min(420px, calc(100% - 24px));
+  }
+
   .session-tab-strip {
     gap: 6px;
   }
@@ -10403,6 +10702,7 @@ body.juggernaut-shell .brand-strip .session-tab-strip-new {
 
 body.juggernaut-shell .brand-strip .session-tab-strip-review {
   width: auto;
+  gap: 7px;
   padding: 0 12px;
   border-color: rgba(24, 31, 42, 0.1);
 }

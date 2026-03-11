@@ -483,7 +483,7 @@ test("review bootstrap shows only the active proposal card while apply is runnin
     communicationTraySlotList: () => list,
     shouldCollapseReviewTray,
     readFirstString,
-    EDIT_PROPOSALS_LABEL: "Try Edits",
+    EDIT_PROPOSALS_LABEL: "Design Review",
     slotCanAcceptProposal,
     convertFileSrc: (value) => value,
     clampText,

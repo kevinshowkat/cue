@@ -76,6 +76,7 @@ test("single-image rail job entries use generic availability reasons and stable 
     {
       activeImageId: "img-1",
       selectedImageIds: ["img-1"],
+      subjectSelectionAvailable: true,
       busy: false,
       capabilityAvailability: {
         subject_isolation: { available: true },
@@ -106,6 +107,20 @@ test("single-image rail job entries use generic availability reasons and stable 
 });
 
 test("single-image capability availability blocks selectionless and local-only requests without provider leakage", () => {
+  const cutOutBlocked = resolveSingleImageCapabilityAvailability("cut_out", {
+    activeImageId: "img-1",
+    selectedImageIds: ["img-1"],
+    subjectSelectionAvailable: false,
+    capabilityAvailability: {
+      subject_isolation: { available: true },
+    },
+  });
+  assert.equal(cutOutBlocked.disabledReason, "selection_required");
+  assert.equal(
+    buildSingleImageCapabilityDisabledMessage("cut_out", cutOutBlocked),
+    "Cut Out needs a lasso or Magic Select region first."
+  );
+
   const selectionBlocked = resolveSingleImageCapabilityAvailability("new_background", {
     activeImageId: "",
     selectedImageIds: [],

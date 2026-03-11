@@ -11,8 +11,8 @@ const app = readFileSync(join(here, "..", "src", "canvas_app.js"), "utf8");
 
 test("communication rail markup exposes bottom rail tools and proposal tray scaffold", () => {
   assert.match(html, /id="communication-proposal-tray"/);
-  assert.match(html, /id="communication-proposal-tray"[\s\S]*aria-label="Try edits"/);
-  assert.match(html, /class="communication-proposal-tray-title">Try Edits</);
+  assert.match(html, /id="communication-proposal-tray"[\s\S]*aria-label="Design Review"/);
+  assert.match(html, /class="communication-proposal-tray-title">Design Review</);
   assert.match(html, /id="communication-proposal-slot-list"/);
   assert.match(html, /id="communication-proposal-tray-close"/);
   assert.match(html, /id="communication-rail"[^>]*aria-label="Communication rail"/);
@@ -70,13 +70,16 @@ test("communication input layer supports semantic protect and make-space tools w
   assert.match(app, /triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar" \}\);/);
 });
 
-test("communication marker keeps the draft in screen space, commits canvas marks, and renders a smoothed freehand path", () => {
+test("communication marker keeps the draft in screen space, commits viewport-aware marks, and renders a smoothed freehand path", () => {
   assert.match(app, /canvasMarks:\s*\[\]/);
   assert.match(app, /screenPoints:\s*\[/);
   assert.match(app, /if \(typeof event\.getCoalescedEvents === "function"\) \{/);
   assert.match(app, /const committedPoints = communicationCommittedPointsFromDraft\(draft\);/);
   assert.match(app, /coordinateSpace:\s*"canvas_overlay"/);
-  assert.match(app, /state\.communication\.canvasMarks = communicationCanvasMarks\(\)\.concat\(next\);/);
+  assert.match(app, /coordinateSpace:\s*"image"/);
+  assert.match(app, /state\.communication\.marksByImageId\.set\(imageBucketId, existing\.concat\(mark\)\);/);
+  assert.match(app, /coordinateSpace:\s*"canvas_world"/);
+  assert.match(app, /state\.communication\.canvasMarks = communicationCanvasMarks\(\)\.concat\(mark\);/);
   assert.match(app, /kind:\s*"freehand_marker"/);
   assert.match(app, /function traceCommunicationMarkPath\(octx, points = \[\]\) \{/);
   assert.match(app, /octx\.quadraticCurveTo\(/);

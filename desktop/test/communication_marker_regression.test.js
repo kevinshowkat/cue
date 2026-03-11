@@ -218,7 +218,7 @@ test("marker drag samples include coalesced pointer events when available", () =
   ]);
 });
 
-test("blank-canvas marker commits stay in the overlay mark bucket with raw points", () => {
+test("blank-canvas marker commits stay in the canvas mark bucket in viewport-aware world space", () => {
   const state = {
     communication: {
       markDraft: {
@@ -244,6 +244,7 @@ test("blank-canvas marker commits stay in the overlay mark bucket with raw point
     COMMUNICATION_MARK_MAX_POINTS: 240,
     communicationMarksForImage: () => [],
     communicationCanvasMarks: () => state.communication.canvasMarks,
+    canvasScreenCssToWorldCss: (point) => point,
     communicationAnchorFromMark: (mark) => ({
       kind: "mark",
       imageId: mark.imageId,
@@ -255,7 +256,7 @@ test("blank-canvas marker commits stay in the overlay mark bucket with raw point
 
   assert.equal(mark.imageId, null);
   assert.equal(mark.sourceImageId, null);
-  assert.equal(mark.coordinateSpace, "canvas_overlay");
+  assert.equal(mark.coordinateSpace, "canvas_world");
   assert.equal(mark.kind, "freehand_marker");
   assert.deepEqual(mark.points, [
     { x: 12, y: 18 },
@@ -376,7 +377,7 @@ test("communication tool selection refreshes quick actions so left-rail selectio
   assert.ok(calls.some(([name]) => name === "renderQuickActions"));
 });
 
-test("image-hit marker commits preserve overlay-space geometry and avoid image buckets", () => {
+test("image-hit marker commits into the image mark bucket so zoom keeps the stroke attached", () => {
   const state = {
     communication: {
       markDraft: {
@@ -402,9 +403,15 @@ test("image-hit marker commits preserve overlay-space geometry and avoid image b
     COMMUNICATION_MARK_MAX_POINTS: 240,
     communicationMarksForImage: () => [],
     communicationCanvasMarks: () => state.communication.canvasMarks,
+    communicationScreenCssPointToCanvas: (point) => point,
+    canvasToImageForImageId: (point) => ({
+      x: Math.round((Number(point?.x) || 0) * 0.5),
+      y: Math.round((Number(point?.y) || 0) * 0.25),
+    }),
+    canvasScreenCssToWorldCss: (point) => point,
     communicationAnchorFromMark: (mark) => ({
       kind: "mark",
-      imageId: null,
+      imageId: mark.imageId,
       sourceImageId: mark.sourceImageId,
       markId: mark.id,
     }),
@@ -412,16 +419,16 @@ test("image-hit marker commits preserve overlay-space geometry and avoid image b
 
   const mark = commitCommunicationMarkDraft();
 
-  assert.equal(mark.coordinateSpace, "canvas_overlay");
+  assert.equal(mark.coordinateSpace, "image");
   assert.equal(mark.imageId, "img-1");
   assert.equal(mark.sourceImageId, "img-1");
   assert.deepEqual(mark.points, [
-    { x: 18, y: 24 },
-    { x: 48, y: 72 },
+    { x: 9, y: 6 },
+    { x: 24, y: 18 },
   ]);
-  assert.equal(state.communication.marksByImageId.size, 0);
-  assert.equal(state.communication.canvasMarks.length, 1);
-  assert.equal(state.communication.canvasMarks[0].id, mark.id);
+  assert.equal(state.communication.marksByImageId.size, 1);
+  assert.equal(state.communication.canvasMarks.length, 0);
+  assert.equal(state.communication.marksByImageId.get("img-1")?.[0]?.id, mark.id);
 });
 
 test("communication overlay renders each annotation with a felt-tip shoulder and core stroke", () => {
@@ -464,6 +471,8 @@ test("communication overlay renders each annotation with a felt-tip shoulder and
     COMMUNICATION_MARK_STROKE: "rgba(255, 94, 190, 0.96)",
     traceCommunicationMarkPath: () => true,
     communicationCanvasMarks: () => state.communication.canvasMarks,
+    communicationCanvasCssScaleForImageId: () => 1,
+    communicationMarkViewportScale: () => 1,
   });
 
   renderCommunicationOverlay(octx);
@@ -478,6 +487,103 @@ test("communication overlay renders each annotation with a felt-tip shoulder and
     lineWidth: 8,
     strokeStyle: "rgba(255, 94, 190, 0.94)",
     globalAlpha: 1,
+  });
+});
+
+test("communication overlay scales image-space annotations with the viewport zoom", () => {
+  const rendered = [];
+  const state = {
+    communication: {
+      regionProposalsByImageId: new Map(),
+      marksByImageId: new Map([[
+        "img-1",
+        [{
+          id: "mark-1",
+          imageId: "img-1",
+          coordinateSpace: "image",
+          points: [
+            { x: 10, y: 12 },
+            { x: 30, y: 42 },
+          ],
+        }],
+      ]]),
+      canvasMarks: [],
+      markDraft: null,
+    },
+  };
+  const octx = {
+    save() {},
+    restore() {},
+    stroke() {
+      rendered.push({
+        lineWidth: this.lineWidth,
+        strokeStyle: this.strokeStyle,
+      });
+    },
+  };
+  const renderCommunicationOverlay = instantiateFunction("renderCommunicationOverlay", {
+    getDpr: () => 1,
+    state,
+    imageToCanvasForImageId: () => null,
+    COMMUNICATION_REGION_ACTIVE: "active",
+    COMMUNICATION_REGION_IDLE: "idle",
+    drawPolygonPath: () => false,
+    communicationDraftPointsToCanvas: () => [],
+    communicationMarkPointsToCanvas: (mark) => mark.points,
+    COMMUNICATION_MARK_STROKE: "rgba(255, 94, 190, 0.96)",
+    traceCommunicationMarkPath: () => true,
+    communicationCanvasMarks: () => state.communication.canvasMarks,
+    communicationCanvasCssScaleForImageId: () => 0.5,
+    communicationMarkViewportScale: () => 0.5,
+  });
+
+  renderCommunicationOverlay(octx);
+
+  assert.deepEqual(rendered, [
+    {
+      lineWidth: 6,
+      strokeStyle: "rgba(255, 94, 190, 0.16)",
+    },
+    {
+      lineWidth: 4,
+      strokeStyle: "rgba(255, 94, 190, 0.94)",
+    },
+  ]);
+});
+
+test("image-space communication anchors preserve image coordinates for downstream targeting", () => {
+  const communicationAnchorFromMark = instantiateFunction("communicationAnchorFromMark", {
+    communicationMarkPointsToCanvasCss: () => [
+      { x: 20, y: 30 },
+      { x: 60, y: 70 },
+    ],
+    communicationPointsBounds: instantiateFunction("communicationPointsBounds"),
+  });
+
+  const anchor = communicationAnchorFromMark({
+    id: "mark-image",
+    imageId: "img-hero",
+    coordinateSpace: "image",
+    points: [
+      { x: 120, y: 220 },
+      { x: 180, y: 260 },
+    ],
+  });
+
+  assert.deepEqual(anchor, {
+    kind: "mark",
+    imageId: "img-hero",
+    markId: "mark-image",
+    imagePoint: { x: 180, y: 260 },
+    imageBounds: {
+      x0: 120,
+      y0: 220,
+      x1: 180,
+      y1: 260,
+      w: 60,
+      h: 40,
+    },
+    canvasPoint: { x: 60, y: 70 },
   });
 });
 

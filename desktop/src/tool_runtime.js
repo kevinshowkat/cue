@@ -550,6 +550,7 @@ export function buildSingleImageRailInvocation(
   {
     activeImageId = null,
     selectedImageIds = [],
+    subjectSelectionAvailable = false,
     source = "single_image_rail",
     trigger = "click",
     requestId = "",
@@ -571,6 +572,7 @@ export function buildSingleImageRailInvocation(
   const availability = resolveSingleImageCapabilityAvailability(job, {
     activeImageId: activeId,
     selectedImageIds: selection,
+    subjectSelectionAvailable,
     busy,
     mode,
     image,
@@ -606,6 +608,7 @@ export function buildSingleImageRailInvocation(
     selection: {
       activeId: activeId || null,
       selectedImageIds: selection,
+      subjectSelectionAvailable: Boolean(subjectSelectionAvailable),
     },
     execution: {
       kind: "model_capability",

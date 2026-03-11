@@ -253,6 +253,49 @@ fn upsert_dotenv_key(path: &Path, key: &str, value: &str) -> Result<(), String> 
     std::fs::write(path, rendered).map_err(|e| e.to_string())
 }
 
+fn remove_dotenv_key(path: &Path, key: &str) -> Result<bool, String> {
+    if !path.exists() {
+        return Ok(false);
+    }
+
+    let original = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let mut removed = false;
+    let mut lines: Vec<String> = Vec::new();
+
+    for raw_line in original.lines() {
+        let trimmed = raw_line.trim();
+        let normalized = if let Some(stripped) = trimmed.strip_prefix("export ") {
+            stripped.trim()
+        } else {
+            trimmed
+        };
+        let matches_key = normalized
+            .split_once('=')
+            .map(|(existing_key, _)| existing_key.trim() == key)
+            .unwrap_or(false);
+        if matches_key {
+            removed = true;
+            continue;
+        }
+        lines.push(raw_line.to_string());
+    }
+
+    if !removed {
+        return Ok(false);
+    }
+
+    while lines.last().map(|line| line.trim().is_empty()).unwrap_or(false) {
+        lines.pop();
+    }
+
+    let mut rendered = lines.join("\n");
+    if !rendered.is_empty() {
+        rendered.push('\n');
+    }
+    std::fs::write(path, rendered).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 fn collect_brood_env_snapshot() -> HashMap<String, String> {
     let mut vars: HashMap<String, String> = std::env::vars().collect();
 
@@ -305,6 +348,19 @@ fn save_openrouter_api_key(api_key: String) -> Result<serde_json::Value, String>
     Ok(serde_json::json!({
         "ok": true,
         "key_masked": masked,
+        "env_path": env_path.to_string_lossy().to_string(),
+    }))
+}
+
+#[tauri::command]
+fn clear_openrouter_api_key() -> Result<serde_json::Value, String> {
+    let home = tauri::api::path::home_dir().ok_or("No home dir")?;
+    let env_path = home.join(".brood").join(".env");
+    let removed = remove_dotenv_key(&env_path, "OPENROUTER_API_KEY")?;
+    std::env::remove_var("OPENROUTER_API_KEY");
+    Ok(serde_json::json!({
+        "ok": true,
+        "removed": removed,
         "env_path": env_path.to_string_lossy().to_string(),
     }))
 }
@@ -5174,6 +5230,7 @@ fn main() {
             get_install_telemetry_defaults,
             append_install_telemetry_event,
             save_openrouter_api_key,
+            clear_openrouter_api_key,
             openrouter_oauth_pkce_sign_in,
             run_design_review_provider_request,
             get_pty_status,

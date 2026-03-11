@@ -58,7 +58,7 @@ test("single-image ranking: group photo with region selection prioritizes target
   assert.match(job(result, "remove")?.reasonCodes.join(","), /group_hint/);
 });
 
-test("single-image ranking: product shot on messy background prioritizes new background then cut out", () => {
+test("single-image ranking: product shot on messy background keeps cut out gated until a region exists", () => {
   const result = rankSingleImageIntentJobs({
     imageCount: 1,
     hasActiveImage: true,
@@ -75,8 +75,10 @@ test("single-image ranking: product shot on messy background prioritizes new bac
   });
 
   assert.equal(result.rankedJobs[0].jobId, "new_background");
-  assert.equal(result.rankedJobs[1].jobId, "cut_out");
-  assert.ok(job(result, "new_background")?.confidence > job(result, "cut_out")?.confidence);
+  assert.equal(result.rankedJobs[1].jobId, "reframe");
+  assert.equal(job(result, "cut_out")?.enabled, false);
+  assert.equal(job(result, "cut_out")?.disabledReason, "selection_required");
+  assert.ok(job(result, "cut_out")?.confidence > job(result, "remove")?.confidence);
 });
 
 test("single-image ranking: screenshot image favors reframe and suppresses semantic cut-out actions", () => {
@@ -120,7 +122,8 @@ test("single-image ranking: transparent isolated asset demotes cut out and favor
 
   assert.equal(result.rankedJobs[0].jobId, "new_background");
   assert.equal(result.rankedJobs[1].jobId, "variants");
-  assert.equal(result.rankedJobs.at(-1)?.jobId, "remove");
+  assert.equal(result.rankedJobs.at(-1)?.jobId, "cut_out");
+  assert.equal(job(result, "cut_out")?.disabledReason, "selection_required");
   assert.ok(job(result, "cut_out")?.confidence < job(result, "variants")?.confidence);
   assert.match(job(result, "cut_out")?.reasonCodes.join(","), /already_isolated/);
 });

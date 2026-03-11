@@ -27,7 +27,7 @@ test("Session tab strip mounts inside the titlebar brand strip with core-owned i
   assert.equal(brandStripChunk.includes('id="session-tab-strip-shell-head-placeholder"'), false);
 });
 
-test("Session tab strip seeds a visible launch tab and exposes the Try Edits action", () => {
+test("Session tab strip seeds a visible launch tab and exposes the Design Review action", () => {
   assert.match(
     html,
     /id=\"session-tab-list\"[^>]*role=\"tablist\"[^>]*aria-label=\"Open sessions\">[\s\S]*data-tab-id=\"tab-launch\"[\s\S]*<span class=\"session-tab-title\">Untitled Canvas<\/span>[\s\S]*<\/div>/
@@ -38,7 +38,7 @@ test("Session tab strip seeds a visible launch tab and exposes the Try Edits act
   );
   assert.match(
     html,
-    /id=\"session-tab-design-review\"[^>]*class=\"session-tab-strip-action session-tab-strip-review\"[^>]*aria-label=\"Try edits\"[^>]*title=\"Try Edits\"[\s\S]*<span>Try Edits<\/span>/
+    /id=\"session-tab-design-review\"[^>]*class=\"session-tab-strip-action session-tab-strip-review\"[^>]*aria-label=\"Design Review\"[^>]*title=\"Design Review\"[\s\S]*<svg[\s\S]*<\/svg>[\s\S]*<span>Design Review<\/span>/
   );
   assert.match(
     html,

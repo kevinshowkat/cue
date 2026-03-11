@@ -360,6 +360,27 @@ function resolveSelectionCount(context = {}) {
   return ids.length;
 }
 
+function resolveSubjectSelectionAvailable(context = {}) {
+  for (const candidate of [
+    context.subjectSelectionAvailable,
+    context.subject_selection_available,
+    context.regionSelectionActive,
+    context.region_selection_active,
+    context.selection?.subjectSelectionAvailable,
+    context.selection?.subject_selection_available,
+    context.selection?.regionSelectionActive,
+    context.selection?.region_selection_active,
+    context.target?.subjectSelectionAvailable,
+    context.target?.subject_selection_available,
+    context.target?.regionSelectionActive,
+    context.target?.region_selection_active,
+  ]) {
+    const value = coerceBoolean(candidate, null);
+    if (value != null) return value;
+  }
+  return false;
+}
+
 function imageBlocksCapability(capability, context = {}) {
   if (coerceBoolean(context.unsupportedImage, false)) return true;
 
@@ -514,13 +535,16 @@ export function resolveSingleImageCapabilityAvailability(jobOrEntry, context = {
   if (!route) return null;
 
   const selectionCount = resolveSelectionCount(context);
+  const subjectSelectionAvailable = resolveSubjectSelectionAvailable(context);
   const mode = normalizeMode(context.mode || context.runtimeMode || context.executionMode);
   const capabilityState = resolveCapabilityState(route.capability, context);
   const reasonCodes = normalizeReasonCodes(context.reasonCodes || []);
   const usesLocalExecution = route.executionKind === "local_edit";
 
   let disabledReason = null;
-  if (route.requiresSelection && selectionCount <= 0) {
+  if (route.capability === "subject_isolation" && route.requiresSelection && !subjectSelectionAvailable) {
+    disabledReason = "selection_required";
+  } else if (route.requiresSelection && selectionCount <= 0) {
     disabledReason = "selection_required";
   } else if (coerceBoolean(context.busy, false)) {
     disabledReason = "busy";
@@ -668,6 +692,9 @@ export function buildSingleImageCapabilityDisabledMessage(jobOrRequest, availabi
   const disabledReason = normalizeDisabledReason(availability?.disabledReason) || "capability_unavailable";
   const label = route?.label || "This action";
   if (disabledReason === "selection_required") {
+    if (route?.capability === "subject_isolation") {
+      return `${label} needs a lasso or Magic Select region first.`;
+    }
     return `Select an image before using ${label}.`;
   }
   if (disabledReason === "busy") {

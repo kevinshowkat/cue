@@ -159,10 +159,28 @@
               id="session-tab-design-review"
               class="session-tab-strip-action session-tab-strip-review"
               type="button"
-              aria-label="Try edits"
-              title="Try Edits"
+              aria-label="Design Review"
+              title="Design Review"
             >
-              <span>Try Edits</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 4.5l1.3 2.9 2.9 1.3-2.9 1.3-1.3 2.9-1.3-2.9-2.9-1.3 2.9-1.3L12 4.5Z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M18.25 4.75 18.8 6l1.25.55-1.25.55-.55 1.25-.55-1.25L16.45 6.55 17.7 6l.55-1.25ZM6.25 13.75l.75 1.75 1.75.75-1.75.75-.75 1.75-.75-1.75-1.75-.75 1.75-.75.75-1.75Z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.55"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span>Design Review</span>
             </button>
           </div>
         </div>
@@ -287,15 +305,15 @@
               id="communication-proposal-tray"
               class="communication-proposal-tray hidden"
               role="group"
-              aria-label="Try edits"
+              aria-label="Design Review"
             >
               <div class="communication-proposal-tray-head">
-                <div class="communication-proposal-tray-title">Try Edits</div>
+                <div class="communication-proposal-tray-title">Design Review</div>
                 <button
                   id="communication-proposal-tray-close"
                   class="communication-proposal-tray-close"
                   type="button"
-                  aria-label="Close Try Edits tray"
+                  aria-label="Close Design Review tray"
                 >
                   Close
                 </button>
@@ -663,15 +681,39 @@
                   <pre id="agent-runner-plan" class="agent-runner-plan">No step yet.</pre>
                 </label>
                 <label class="annotate-field">
+                  <div class="annotate-label">Final Score</div>
+                  <div id="agent-runner-score" class="agent-runner-score" data-state="idle">No final score yet.</div>
+                </label>
+                <label class="annotate-field">
                   <div class="annotate-label">Activity</div>
                   <div id="agent-runner-log" class="agent-runner-log" aria-live="polite"></div>
                 </label>
                 <div class="annotate-actions">
+                  <button id="agent-runner-copy" type="button">Copy Logs</button>
                   <button id="agent-runner-clear" type="button">Clear</button>
                   <button id="agent-runner-step" type="button">Step</button>
                   <button id="agent-runner-auto" type="button">Auto</button>
                   <button id="agent-runner-stop" type="button">Stop</button>
                 </div>
+              </div>
+            </div>
+            <div id="agent-runner-banner" class="agent-runner-banner hidden" role="status" aria-live="polite" aria-label="Agent Run status">
+              <div class="agent-runner-banner-head">
+                <div class="agent-runner-banner-badge">
+                  <span class="agent-runner-banner-dot" aria-hidden="true"></span>
+                  <span id="agent-runner-banner-mode">Agent Run</span>
+                </div>
+                <div id="agent-runner-banner-step" class="agent-runner-banner-step">Preparing</div>
+              </div>
+              <div id="agent-runner-banner-summary" class="agent-runner-banner-summary">
+                Agent Run is controlling the canvas.
+              </div>
+              <div id="agent-runner-banner-detail" class="agent-runner-banner-detail">
+                Watching the visible canvas, planning the next action, and applying edits through the normal runtime.
+              </div>
+              <div class="agent-runner-banner-actions">
+                <button id="agent-runner-banner-show" type="button">Show</button>
+                <button id="agent-runner-banner-stop" type="button">Stop</button>
               </div>
             </div>
               <div id="canvas-mood-status" class="canvas-mood-status" aria-label="Mood status">
@@ -953,7 +995,8 @@
             <div id="openrouter-onboarding-status" class="key-status-list muted">Not started</div>
             <div class="controls">
               <button id="openrouter-onboarding-open" type="button">Run setup</button>
-              <button id="openrouter-onboarding-reset" class="ghost" type="button">Reset</button>
+              <button id="openrouter-onboarding-reset" class="ghost" type="button">Reset onboarding</button>
+              <button id="openrouter-api-key-clear" class="ghost" type="button">Clear key</button>
             </div>
           </div>
           <div class="key-status-card">

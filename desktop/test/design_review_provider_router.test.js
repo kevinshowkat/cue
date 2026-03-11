@@ -319,6 +319,56 @@ test("design review provider router falls back to OpenRouter for final apply whe
   assert.equal(result.debugInfo?.route?.apiPlan?.primaryTransport, "responses");
 });
 
+test("design review provider router preserves an explicit requested apply model override", async () => {
+  const requests = [];
+  const router = createDesignReviewProviderRouter({
+    keyStatus: {
+      openai: true,
+      openrouter: true,
+      gemini: true,
+    },
+    requestProvider: async (request) => {
+      requests.push(request);
+      return {
+        ok: true,
+        provider: request.provider,
+        requestedModel: request.requestedModel,
+        normalizedModel: request.normalizedModel,
+        model: request.normalizedModel,
+        transport: "generate_content",
+        outputPath: request.outputPath,
+      };
+    },
+  });
+
+  const result = await router.runApply({
+    request: {
+      requestId: "review-apply-model-override",
+      primaryImageId: "img-target",
+      visibleCanvasContext: {
+        images: [{ id: "img-target", path: "/tmp/target-override.png" }],
+      },
+    },
+    proposal: {
+      proposalId: "proposal-model-override",
+      imageId: "img-target",
+      applyBrief: "Isolate the selected subject onto transparency.",
+    },
+    targetImage: {
+      imageId: "img-target",
+      path: "/tmp/target-override.png",
+    },
+    outputPath: "/tmp/review-apply-override.png",
+    model: "Gemini Nano Banana 2",
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].requestedModel, "Gemini Nano Banana 2");
+  assert.equal(requests[0].normalizedModel, DESIGN_REVIEW_FINAL_APPLY_MODEL);
+  assert.equal(result.debugInfo?.route?.requestedModel, "Gemini Nano Banana 2");
+  assert.equal(result.debugInfo?.route?.normalizedModel, DESIGN_REVIEW_FINAL_APPLY_MODEL);
+});
+
 test("design review provider router fails clearly when no final apply credentials are configured", async () => {
   const router = createDesignReviewProviderRouter({
     keyStatus: {

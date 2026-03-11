@@ -75,6 +75,8 @@ test("requestCommunicationDesignReview primes immediate communication-tray state
     },
     resolveCommunicationReviewAnchor: () => ({ kind: "mark", x: 120, y: 88 }),
     designReviewButtonTrayAnchor: () => buttonAnchor,
+    shouldPinCommunicationReviewTrayToTitlebar: (source = "") =>
+      ["titlebar_pointer", "agent_runner", "bridge", "bridge_nested", "titlebar", "titlebar_keyboard"].includes(source),
     showToast: () => {
       throw new Error("requestCommunicationDesignReview should not toast when an anchor exists");
     },
@@ -261,11 +263,14 @@ test("titlebar Design review primes the communication tray before bootstrap revi
   assert.match(app, /function startBootstrapDesignReview\(request = null,\s*\{ source = "titlebar" \} = \{\}\) \{/);
   assert.match(app, /function triggerCommunicationDesignReviewFromTitlebar\(\{ source = "titlebar" \} = \{\}\) \{/);
   assert.match(app, /function communicationTrayAnchorPinnedToTitlebar\(anchor = null\) \{/);
+  assert.match(app, /function shouldPinCommunicationReviewTrayToTitlebar\(source = ""\) \{/);
+  assert.match(app, /if \(normalizedSource === "agent_runner"\) return true;/);
   assert.match(app, /els\.sessionTabDesignReview\.addEventListener\("pointerup",\s*\(event\)\s*=>\s*\{/);
   assert.match(app, /suppressNextDesignReviewTitlebarClick\(\);\s*triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar_pointer" \}\);/);
   assert.match(app, /els\.sessionTabDesignReview\.addEventListener\("keydown",\s*\(event\)\s*=>\s*\{/);
   assert.match(app, /triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar_keyboard" \}\);/);
   assert.match(app, /triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar" \}\);/);
+  assert.match(app, /const pinToTitlebar = shouldPinCommunicationReviewTrayToTitlebar\(source\);/);
   assert.match(app, /!communicationTrayAnchorPinnedToTitlebar\(state\.communication\?\.proposalTray\?\.anchor\)/);
   assert.match(app, /window\.addEventListener\(DESIGN_REVIEW_BOOTSTRAP_STATE_EVENT,\s*\(event\)\s*=>\s*\{/);
 });
