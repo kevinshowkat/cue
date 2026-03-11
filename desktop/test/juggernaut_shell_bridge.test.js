@@ -7,6 +7,8 @@ import { dirname, join } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "src", "index.html"), "utf8");
 const app = readFileSync(join(here, "..", "src", "canvas_app.js"), "utf8");
+const styles = readFileSync(join(here, "..", "src", "styles.css"), "utf8");
+const visualSystem = readFileSync(join(here, "..", "src", "juggernaut_shell", "visual_system.css"), "utf8");
 
 test("Juggernaut shell chrome exposes selection status, export button, rail root, and upload affordance", () => {
   assert.match(html, /class=\"juggernaut-shell-chrome\"/);
@@ -53,4 +55,10 @@ test("Juggernaut shell export falls back to the native PSD exporter when no hand
   assert.match(app, /const exportHookReady = typeof state\.juggernautShell\.psdExportHandler === "function" \|\| typeof invoke === "function";/);
   assert.match(app, /if \(typeof invoke === "function"\) \{\s*await exportRun\(\);\s*return true;\s*\}/);
   assert.doesNotMatch(app, /Export PSD hook ready for the export branch/);
+});
+
+test("Juggernaut shell actions stay visible in the shell runtime", () => {
+  assert.match(visualSystem, /body\.juggernaut-shell \.juggernaut-shell-actions\s*\{[\s\S]*display:\s*flex;/);
+  assert.doesNotMatch(styles, /(^|\n)\.juggernaut-shell-actions\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(styles, /body:not\(\.juggernaut-shell\) \.juggernaut-shell-actions\s*\{\s*display:\s*none;\s*\}/);
 });

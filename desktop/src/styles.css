@@ -9614,7 +9614,7 @@ button.ghost:hover {
   display: none !important;
 }
 
-.juggernaut-shell-actions {
+body:not(.juggernaut-shell) .juggernaut-shell-actions {
   display: none;
 }
 
