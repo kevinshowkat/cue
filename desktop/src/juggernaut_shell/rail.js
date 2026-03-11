@@ -25,6 +25,7 @@ const DEFAULT_DYNAMIC_ORDER = Object.freeze([
   "variants",
 ]);
 const SHELL_DIRECT_AFFORDANCE_ORDER = Object.freeze(["remove_people", "polish", "relight"]);
+const COMMUNICATION_TOOL_EVENT = "juggernaut:communication-state-changed";
 
 const RAIL_LABELS = Object.freeze({
   move: "Move",
@@ -437,6 +438,24 @@ function currentShellState() {
   return state && typeof state === "object" ? state : null;
 }
 
+function currentCommunicationState() {
+  const bridge = currentShellBridge();
+  if (typeof bridge?.communicationReview?.getState === "function") {
+    try {
+      const state = bridge.communicationReview.getState();
+      if (state && typeof state === "object") return state;
+    } catch {
+      // ignore
+    }
+  }
+  const state = bridge?.communicationReview?.state;
+  return state && typeof state === "object" ? state : null;
+}
+
+function currentCommunicationToolId() {
+  return String(currentCommunicationState()?.tool || "").trim();
+}
+
 function currentShellSnapshot() {
   const bridge = currentShellBridge();
   if (typeof bridge?.getCanvasSnapshot === "function") {
@@ -760,6 +779,31 @@ function ensureRailButton(root, slotKey) {
   return toolEl;
 }
 
+function syncExternalRailState(root) {
+  if (!root) return;
+  const communicationTool = currentCommunicationToolId();
+  for (const button of Array.from(root.querySelectorAll("button[data-tool-id]"))) {
+    const toolId = String(button?.dataset?.toolId || "").trim();
+    const isSelected =
+      (toolId === "protect" && communicationTool === "marker") ||
+      (toolId === "make_space" && communicationTool === "magic_select");
+    if (toolId === "protect" || toolId === "make_space") {
+      button.classList.toggle("selected", isSelected);
+      button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    }
+  }
+}
+
+function bindExternalRailState(root) {
+  if (!root || root.__juggernautRailExternalStateBound) return;
+  root.__juggernautRailExternalStateBound = true;
+  const win = browserWindow();
+  if (!win || typeof win.addEventListener !== "function") return;
+  const sync = () => syncExternalRailState(root);
+  root.__juggernautRailExternalStateSync = sync;
+  win.addEventListener(COMMUNICATION_TOOL_EVENT, sync);
+}
+
 export function renderJuggernautRail(root, { buttons = [], onPress } = {}) {
   if (!root) return;
   root.__juggernautRailOnPress = typeof onPress === "function" ? onPress : null;
@@ -768,6 +812,7 @@ export function renderJuggernautRail(root, { buttons = [], onPress } = {}) {
   if (chromeRoot?.style?.setProperty) {
     chromeRoot.style.setProperty("--jg-primary-rail-button-count", String((Array.isArray(buttons) ? buttons.length : 0) || 0));
   }
+  bindExternalRailState(root);
 
   const nextSlotKeys = new Set();
   let cursor = root.firstElementChild;

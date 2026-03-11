@@ -4328,6 +4328,15 @@ function updateEmptyCanvasHint() {
   showDropHint((state.images?.length || 0) === 0);
 }
 
+function syncDropHintInteractivity() {
+  if (!els.dropHint) return;
+  const interactive = (state.images?.length || 0) === 0 && !communicationToolArmed();
+  els.dropHint.dataset.interactive = interactive ? "1" : "0";
+  els.dropHint.tabIndex = interactive ? 0 : -1;
+  els.dropHint.style.pointerEvents = interactive ? "auto" : "none";
+  els.dropHint.style.cursor = interactive ? "pointer" : "default";
+}
+
 function ensureIntentTicker() {
   if (intentTicker) return;
   if (!intentModeActive()) return;
@@ -21888,6 +21897,7 @@ function applyCommunicationToolSelection(tool = null, { source = "communication_
   }
   state.communication.markDraft = null;
   state.communication.eraseDraft = null;
+  syncDropHintInteractivity();
   renderCommunicationChrome();
   dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
     source,
@@ -26051,6 +26061,7 @@ function setTool(tool) {
 function showDropHint(show) {
   if (!els.dropHint) return;
   els.dropHint.classList.toggle("hidden", !show);
+  syncDropHintInteractivity();
 }
 
 function renderSelectionMeta() {
