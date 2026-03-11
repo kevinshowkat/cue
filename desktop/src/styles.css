@@ -9760,6 +9760,32 @@ button.ghost:hover {
     drop-shadow(0 0 24px rgba(112, 222, 255, 0.12));
 }
 
+.juggernaut-tool.juggernaut-rail-anchor:active,
+.juggernaut-tool.is-local-utility:active,
+.juggernaut-tool.juggernaut-rail-anchor.selected:hover,
+.juggernaut-tool.is-local-utility.selected:hover {
+  border-color: rgba(146, 234, 255, 0.78);
+  transform: translate3d(0, 3px, 0) scale(0.976);
+  filter: saturate(1.1) brightness(0.92);
+  background:
+    radial-gradient(66px 42px at 50% 12%, rgba(112, 222, 255, 0.14), transparent 68%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.0) 28%),
+    linear-gradient(180deg, rgba(8, 14, 22, 0.995), rgba(16, 28, 40, 0.995));
+  box-shadow:
+    inset 0 3px 10px rgba(4, 8, 12, 0.64),
+    inset 0 0 0 1px rgba(146, 234, 255, 0.22),
+    inset 0 -1px 0 rgba(188, 241, 255, 0.06),
+    0 3px 10px rgba(0, 0, 0, 0.34),
+    0 0 16px rgba(112, 222, 255, 0.12);
+}
+
+.juggernaut-tool.juggernaut-rail-anchor:active .tool-icon,
+.juggernaut-tool.is-local-utility:active .tool-icon,
+.juggernaut-tool.juggernaut-rail-anchor.selected:hover .tool-icon,
+.juggernaut-tool.is-local-utility.selected:hover .tool-icon {
+  transform: translateY(2px) scale(0.95);
+}
+
 .juggernaut-tool.juggernaut-rail-suggestion,
 .juggernaut-tool.is-ai-tool {
   color: rgba(255, 235, 173, 0.96);
