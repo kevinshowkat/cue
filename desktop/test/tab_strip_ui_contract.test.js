@@ -27,8 +27,11 @@ test("Session tab strip mounts inside the titlebar brand strip with core-owned i
   assert.equal(brandStripChunk.includes('id="session-tab-strip-shell-head-placeholder"'), false);
 });
 
-test("Session tab strip leaves the live titlebar list empty for JS hydration and exposes the Try Edits action", () => {
-  assert.match(html, /id=\"session-tab-list\"[^>]*role=\"tablist\"[^>]*aria-label=\"Open sessions\"><\/div>/);
+test("Session tab strip seeds a visible launch tab and exposes the Try Edits action", () => {
+  assert.match(
+    html,
+    /id=\"session-tab-list\"[^>]*role=\"tablist\"[^>]*aria-label=\"Open sessions\">[\s\S]*data-tab-id=\"tab-launch\"[\s\S]*<span class=\"session-tab-title\">Untitled Canvas<\/span>[\s\S]*<\/div>/
+  );
   assert.match(
     html,
     /class=\"session-tab-run\"[^>]*aria-label=\"Open sessions and new session\"[\s\S]*id=\"session-tab-list\"[\s\S]*id=\"session-tab-new\"/
@@ -44,6 +47,7 @@ test("Session tab strip leaves the live titlebar list empty for JS hydration and
     brandStripChunk,
     /class=\"session-tab-run\"[\s\S]*id=\"session-tab-list\"[\s\S]*id=\"session-tab-new\"[\s\S]*class=\"session-tab-strip-actions\"[\s\S]*id=\"session-tab-open\"/
   );
+  assert.equal(brandStripChunk.includes('data-tab-id="tab-launch"'), true);
   assert.equal(brandStripChunk.includes('data-tab-id="tab-hero"'), false);
   assert.equal(brandStripChunk.includes('data-tab-id="tab-cleanup"'), false);
 });
