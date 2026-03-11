@@ -21899,6 +21899,7 @@ function applyCommunicationToolSelection(tool = null, { source = "communication_
   state.communication.eraseDraft = null;
   syncDropHintInteractivity();
   renderCommunicationChrome();
+  renderQuickActions();
   dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
     source,
     communication: buildCommunicationBridgeSnapshot(),
@@ -28554,6 +28555,7 @@ function currentRunningActionKey() {
 }
 
 function juggernautActiveToolId() {
+  if (communicationToolArmed()) return "";
   if (state.tool === "pan") return "move";
   if (state.tool === "lasso") return "select";
   return "";
@@ -29223,6 +29225,7 @@ function quickActionsRenderSignature() {
     state.quickActionsVersion,
     state.spawnNodesVersion,
     state.canvasMode || "multi",
+    juggernautActiveToolId(),
     state.activeId || "",
     getSelectedIds().join(","),
     Array.isArray(state.images) ? state.images.length : 0,

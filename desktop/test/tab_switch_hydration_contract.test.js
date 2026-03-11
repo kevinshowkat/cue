@@ -166,6 +166,7 @@ test("deferred hydration surfaces are individually gated by stable render signat
   const renderFilmstripSource = extractFunctionSource("renderFilmstrip");
   const renderTimelineSource = extractFunctionSource("renderTimeline");
   const chooseSpawnNodesSource = extractFunctionSource("chooseSpawnNodes");
+  const quickActionsSignatureSource = extractFunctionSource("quickActionsRenderSignature");
   const renderQuickActionsSource = extractFunctionSource("renderQuickActions");
   const renderCustomToolDockSource = extractFunctionSource("renderCustomToolDock");
 
@@ -173,6 +174,7 @@ test("deferred hydration surfaces are individually gated by stable render signat
   assert.match(renderFilmstripSource, /state\.lastRenderedFilmstripSelectionKey === nextSelectionKey/);
   assert.match(renderTimelineSource, /state\.lastRenderedTimelineKey === nextKey/);
   assert.match(chooseSpawnNodesSource, /state\.lastRenderedSpawnNodesKey === nextKey/);
+  assert.match(quickActionsSignatureSource, /juggernautActiveToolId\(\)/);
   assert.match(renderQuickActionsSource, /state\.lastRenderedQuickActionsKey === nextKey/);
   assert.match(renderCustomToolDockSource, /state\.lastRenderedCustomToolDockKey === nextKey/);
 });

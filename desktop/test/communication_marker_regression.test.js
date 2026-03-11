@@ -322,6 +322,60 @@ test("move tool clears the active communication marker before returning to pan",
   assert.deepEqual(calls[panIndex], ["setTool", "pan"]);
 });
 
+test("shell move/select selection yields to an armed communication tool", () => {
+  const juggernautActiveToolId = instantiateFunction("juggernautActiveToolId", {
+    state: { tool: "pan" },
+    communicationToolArmed: () => true,
+  });
+  assert.equal(juggernautActiveToolId(), "");
+
+  const panToolId = instantiateFunction("juggernautActiveToolId", {
+    state: { tool: "pan" },
+    communicationToolArmed: () => false,
+  });
+  assert.equal(panToolId(), "move");
+
+  const lassoToolId = instantiateFunction("juggernautActiveToolId", {
+    state: { tool: "lasso" },
+    communicationToolArmed: () => false,
+  });
+  assert.equal(lassoToolId(), "select");
+});
+
+test("communication tool selection refreshes quick actions so left-rail selection can change", () => {
+  const calls = [];
+  const state = {
+    communication: {
+      tool: null,
+      markDraft: { id: "draft-mark" },
+      eraseDraft: { id: "draft-erase" },
+    },
+  };
+  const applyCommunicationToolSelection = instantiateFunction("applyCommunicationToolSelection", {
+    COMMUNICATION_TOOL_IDS: ["marker", "protect", "magic_select", "make_space", "eraser"],
+    state,
+    syncDropHintInteractivity: () => calls.push(["syncDropHintInteractivity"]),
+    renderCommunicationChrome: () => calls.push(["renderCommunicationChrome"]),
+    renderQuickActions: () => calls.push(["renderQuickActions"]),
+    dispatchJuggernautShellEvent: (type, detail) => {
+      calls.push(["dispatch", type, detail?.source || null]);
+      return null;
+    },
+    COMMUNICATION_STATE_CHANGED_EVENT: "juggernaut:communication-state-changed",
+    buildCommunicationBridgeSnapshot: () => ({ tool: state.communication.tool }),
+    buildJuggernautShellContext: () => ({ activeId: "img-hero" }),
+    requestRender: () => calls.push(["requestRender"]),
+  });
+
+  const tool = applyCommunicationToolSelection("marker", { source: "communication_rail", toggle: true });
+
+  assert.equal(tool, "marker");
+  assert.equal(state.communication.tool, "marker");
+  assert.equal(state.communication.markDraft, null);
+  assert.equal(state.communication.eraseDraft, null);
+  assert.ok(calls.some(([name]) => name === "renderQuickActions"));
+});
+
 test("image-hit marker commits preserve overlay-space geometry and avoid image buckets", () => {
   const state = {
     communication: {
