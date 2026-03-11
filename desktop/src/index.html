@@ -111,6 +111,51 @@
               <span class="sr-only">Open session</span>
             </button>
             <button
+              id="juggernaut-agent-runner-open"
+              class="session-tab-strip-action session-tab-runtime-action"
+              type="button"
+              aria-label="Agent Run"
+              title="Agent Run"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M6 7.5h7.5M6 12h4.5M6 16.5h6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M14 7l5.5 5-5.5 5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.9"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span>Agent Run</span>
+            </button>
+            <button
+              id="juggernaut-export-psd"
+              class="session-tab-strip-action session-tab-runtime-action"
+              type="button"
+              aria-label="Export PSD"
+              title="Export PSD"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 4v11m0 0-4-4m4 4 4-4M5 18.5h14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.9"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span>Export PSD</span>
+            </button>
+            <button
               id="session-tab-design-review"
               class="session-tab-strip-action session-tab-strip-review"
               type="button"
@@ -191,200 +236,10 @@
           <div class="juggernaut-shell-chrome" aria-label="Juggernaut shell">
             <div id="action-grid" class="action-grid juggernaut-tool-rail" role="toolbar" aria-label="Juggernaut left rail"></div>
             <div id="custom-tool-dock" class="custom-tool-dock" role="toolbar" aria-label="Custom tools"></div>
+            <div id="juggernaut-selection-status" class="sr-only" aria-live="polite">
+              Drop an image to begin
+            </div>
             <div class="juggernaut-shell-head" aria-hidden="true">
-              <div class="juggernaut-shell-brand" aria-label="Canvas workspace">
-                <div class="juggernaut-shell-wordmark">Canvas</div>
-                <div>
-                  <div id="juggernaut-selection-status" class="sr-only" aria-live="polite">
-                    Drop an image to begin
-                  </div>
-                </div>
-              </div>
-              <div id="session-tab-strip-shell-head-placeholder" class="session-tab-strip" role="presentation" aria-hidden="true">
-                <div class="session-tab-run" role="presentation" aria-hidden="true">
-                  <div id="session-tab-list-shell-head-placeholder" class="session-tab-list" role="presentation" aria-hidden="true">
-                    <div
-                      class="session-tab-item is-active is-dirty"
-                      data-tab-id="tab-hero"
-                      data-title="Hero Composite"
-                      data-run-dir="/runs/hero-composite"
-                      data-thumbnail-path="./assets/logo.jpeg"
-                      data-active="true"
-                      data-busy="false"
-                      data-dirty="true"
-                      data-can-close="true"
-                    >
-                      <button
-                        class="session-tab-hit"
-                        type="button"
-                        role="tab"
-                        aria-selected="true"
-                        tabindex="0"
-                        title="Hero Composite"
-                      >
-                        <span class="session-tab-thumbnail" aria-hidden="true">
-                          <img src="./assets/logo.jpeg" alt="" />
-                        </span>
-                        <span class="session-tab-labels">
-                          <span class="session-tab-title">Hero Composite</span>
-                          <span class="session-tab-run-dir">/runs/hero-composite</span>
-                        </span>
-                        <span class="session-tab-flags" aria-hidden="true">
-                          <span class="session-tab-busy-indicator"></span>
-                        </span>
-                      </button>
-                      <button class="session-tab-close" type="button" aria-label="Close Hero Composite" title="Close Hero Composite">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                          <path
-                            d="M7 7l10 10M17 7 7 17"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                    <div
-                      class="session-tab-item is-busy"
-                      data-tab-id="tab-cleanup"
-                      data-title="Cleanup Pass"
-                      data-run-dir="/runs/cleanup-pass"
-                      data-thumbnail-path="./assets/logo.jpeg"
-                      data-active="false"
-                      data-busy="true"
-                      data-dirty="false"
-                      data-can-close="true"
-                    >
-                      <button
-                        class="session-tab-hit"
-                        type="button"
-                        role="tab"
-                        aria-selected="false"
-                        tabindex="-1"
-                        title="Cleanup Pass"
-                      >
-                        <span class="session-tab-thumbnail" aria-hidden="true">
-                          <img src="./assets/logo.jpeg" alt="" />
-                        </span>
-                        <span class="session-tab-labels">
-                          <span class="session-tab-title">Cleanup Pass</span>
-                          <span class="session-tab-run-dir">/runs/cleanup-pass</span>
-                        </span>
-                        <span class="session-tab-flags" aria-hidden="true">
-                          <span class="session-tab-busy-indicator"></span>
-                        </span>
-                      </button>
-                      <button class="session-tab-close" type="button" aria-label="Close Cleanup Pass" title="Close Cleanup Pass">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                          <path
-                            d="M7 7l10 10M17 7 7 17"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                    <div
-                      class="session-tab-item"
-                      data-tab-id="tab-background"
-                      data-title="Background Swap"
-                      data-run-dir="/runs/background-swap"
-                      data-thumbnail-path="./assets/logo.jpeg"
-                      data-active="false"
-                      data-busy="false"
-                      data-dirty="false"
-                      data-can-close="false"
-                    >
-                      <button
-                        class="session-tab-hit"
-                        type="button"
-                        role="tab"
-                        aria-selected="false"
-                        tabindex="-1"
-                        title="Background Swap"
-                      >
-                        <span class="session-tab-thumbnail" aria-hidden="true">
-                          <img src="./assets/logo.jpeg" alt="" />
-                        </span>
-                        <span class="session-tab-labels">
-                          <span class="session-tab-title">Background Swap</span>
-                          <span class="session-tab-run-dir">/runs/background-swap</span>
-                        </span>
-                        <span class="session-tab-flags" aria-hidden="true">
-                          <span class="session-tab-busy-indicator"></span>
-                        </span>
-                      </button>
-                      <button
-                        class="session-tab-close"
-                        type="button"
-                        aria-label="Close Background Swap"
-                        title="Close Background Swap"
-                        hidden
-                      >
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                          <path
-                            d="M7 7l10 10M17 7 7 17"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                  <button
-                    id="session-tab-new-shell-head-placeholder"
-                    class="session-tab-strip-action session-tab-strip-new"
-                    type="button"
-                    aria-label="New session"
-                    title="New session"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path
-                        d="M4.75 10.25A2.25 2.25 0 0 1 7 8h4.05l1.55 1.7H17a2.25 2.25 0 0 1 2.25 2.25v5.3A2.25 2.25 0 0 1 17 19.5H7a2.25 2.25 0 0 1-2.25-2.25z"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.8"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      />
-                      <path
-                        d="M12 11.2v5.1M9.45 13.75h5.1"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.8"
-                        stroke-linecap="round"
-                      />
-                    </svg>
-                    <span class="sr-only">New session</span>
-                  </button>
-                </div>
-                <div class="session-tab-strip-actions" role="group" aria-label="Session actions">
-                  <button
-                    id="session-tab-open-shell-head-placeholder"
-                    class="session-tab-strip-action"
-                    type="button"
-                    aria-label="Open session"
-                    title="Open session"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path
-                        d="M4.5 8.5h5l1.8 2h8.2v7.5a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2zM4.5 8.5V7a2 2 0 0 1 2-2h3.2l1.8 2H17.5a2 2 0 0 1 2 2v1.5"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.8"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      />
-                    </svg>
-                    <span class="sr-only">Open session</span>
-                  </button>
-                </div>
-              </div>
               <div id="top-metrics" class="top-metrics hidden" aria-label="Session metrics ribbon">
                 <span id="top-metric-tokens" class="top-metric-chip" data-heat="nodata">
                   <span class="top-metric-chip-label">TOK</span>
@@ -412,53 +267,6 @@
                   <span class="top-metric-chip-label">AVG</span>
                   <span id="top-metric-render-value" class="top-metric-chip-value">--</span>
                 </span>
-              </div>
-              <div class="brand-actions juggernaut-shell-actions" role="group" aria-label="Canvas actions">
-                <button
-                  id="juggernaut-agent-runner-open"
-                  class="juggernaut-shell-action"
-                  type="button"
-                  aria-label="Agent Run"
-                  title="Agent Run"
-                >
-                  <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M6 7.5h7.5M6 12h4.5M6 16.5h6"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.7"
-                      stroke-linecap="round"
-                    />
-                    <path
-                      d="M14 7l5.5 5-5.5 5"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.9"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                  <span class="sr-only">Agent Run</span>
-                </button>
-                <button
-                  id="juggernaut-export-psd"
-                  class="juggernaut-shell-action"
-                  type="button"
-                  aria-label="Export PSD"
-                  title="Export PSD"
-                >
-                  <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M12 4v11m0 0-4-4m4 4 4-4M5 18.5h14"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.9"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                  <span class="sr-only">Export PSD</span>
-                </button>
               </div>
             </div>
           </div>

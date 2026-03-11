@@ -8,7 +8,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "src", "index.html"), "utf8");
 const app = readFileSync(join(here, "..", "src", "canvas_app.js"), "utf8");
 const styles = readFileSync(join(here, "..", "src", "styles.css"), "utf8");
-const visualSystem = readFileSync(join(here, "..", "src", "juggernaut_shell", "visual_system.css"), "utf8");
 
 test("Juggernaut shell chrome exposes selection status, export button, rail root, and upload affordance", () => {
   assert.match(html, /class=\"juggernaut-shell-chrome\"/);
@@ -57,8 +56,16 @@ test("Juggernaut shell export falls back to the native PSD exporter when no hand
   assert.doesNotMatch(app, /Export PSD hook ready for the export branch/);
 });
 
-test("Juggernaut shell actions stay visible in the shell runtime", () => {
-  assert.match(visualSystem, /body\.juggernaut-shell \.juggernaut-shell-actions\s*\{[\s\S]*display:\s*flex;/);
-  assert.doesNotMatch(styles, /(^|\n)\.juggernaut-shell-actions\s*\{\s*display:\s*none;\s*\}/);
-  assert.match(styles, /body:not\(\.juggernaut-shell\) \.juggernaut-shell-actions\s*\{\s*display:\s*none;\s*\}/);
+test("Juggernaut runner and export controls live in the titlebar session actions", () => {
+  const brandStripStart = html.indexOf('<div class="brand-strip"');
+  const mainStart = html.indexOf("<main", brandStripStart);
+  assert.ok(brandStripStart >= 0 && mainStart > brandStripStart, "expected brand strip before main");
+  const brandStripChunk = html.slice(brandStripStart, mainStart);
+  assert.match(
+    brandStripChunk,
+    /class=\"session-tab-strip-actions\"[^>]*role=\"group\"[^>]*aria-label=\"Session actions\"[\s\S]*id=\"session-tab-open\"[\s\S]*id=\"juggernaut-agent-runner-open\"[\s\S]*id=\"juggernaut-export-psd\"[\s\S]*id=\"session-tab-design-review\"/
+  );
+  assert.doesNotMatch(html, /session-tab-strip-shell-head-placeholder/);
+  assert.match(styles, /\.session-tab-runtime-action\s*\{/);
+  assert.match(styles, /\.session-tab-runtime-action\.is-ready\s*\{/);
 });

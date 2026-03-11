@@ -40,12 +40,20 @@ test("Session tab strip seeds a visible launch tab and exposes the Try Edits act
     html,
     /id=\"session-tab-design-review\"[^>]*class=\"session-tab-strip-action session-tab-strip-review\"[^>]*aria-label=\"Try edits\"[^>]*title=\"Try Edits\"[\s\S]*<span>Try Edits<\/span>/
   );
+  assert.match(
+    html,
+    /id=\"juggernaut-agent-runner-open\"[^>]*class=\"session-tab-strip-action session-tab-runtime-action\"[^>]*title=\"Agent Run\"[\s\S]*<span>Agent Run<\/span>/
+  );
+  assert.match(
+    html,
+    /id=\"juggernaut-export-psd\"[^>]*class=\"session-tab-strip-action session-tab-runtime-action\"[^>]*title=\"Export PSD\"[\s\S]*<span>Export PSD<\/span>/
+  );
   const brandStripStart = html.indexOf('<div class="brand-strip"');
   const mainStart = html.indexOf("<main", brandStripStart);
   const brandStripChunk = html.slice(brandStripStart, mainStart);
   assert.match(
     brandStripChunk,
-    /class=\"session-tab-run\"[\s\S]*id=\"session-tab-list\"[\s\S]*id=\"session-tab-new\"[\s\S]*class=\"session-tab-strip-actions\"[\s\S]*id=\"session-tab-open\"/
+    /class=\"session-tab-run\"[\s\S]*id=\"session-tab-list\"[\s\S]*id=\"session-tab-new\"[\s\S]*class=\"session-tab-strip-actions\"[\s\S]*id=\"session-tab-open\"[\s\S]*id=\"juggernaut-agent-runner-open\"[\s\S]*id=\"juggernaut-export-psd\"[\s\S]*id=\"session-tab-design-review\"/
   );
   assert.equal(brandStripChunk.includes('data-tab-id="tab-launch"'), true);
   assert.equal(brandStripChunk.includes('data-tab-id="tab-hero"'), false);
@@ -73,6 +81,9 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-close\s*\{/);
   assert.match(css, /\.session-tab-strip-new\s*\{/);
   assert.match(css, /\.session-tab-strip-review\s*\{/);
+  assert.match(css, /\.session-tab-runtime-action\s*\{/);
+  assert.match(css, /\.session-tab-runtime-action\.is-ready\s*\{/);
+  assert.match(css, /\.session-tab-runtime-action\.is-pending-hook\s*\{/);
   assert.match(css, /@keyframes\s+sessionTabBusyPulse/);
   assert.match(css, /@keyframes\s+sessionTabReviewPulse/);
 });
