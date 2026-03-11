@@ -10068,7 +10068,8 @@ body.juggernaut-shell .brand-strip .session-tab-run {
 
 body.juggernaut-shell .brand-strip .session-tab-list {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+  max-width: min(68vw, 960px);
   gap: 6px;
   padding: 4px;
   align-items: stretch;
