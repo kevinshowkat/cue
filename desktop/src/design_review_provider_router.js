@@ -228,6 +228,37 @@ function decorateProviderResult(result, request = {}) {
   };
 }
 
+function plannerTransportFailure(error, provider = "") {
+  const expectedProvider = readFirstString(provider).toLowerCase();
+  const routeKind = readFirstString(error?.debugInfo?.route?.kind).toLowerCase();
+  const routeProvider = readFirstString(error?.debugInfo?.route?.provider).toLowerCase();
+  const failureMessage = readFirstString(error?.debugInfo?.failure?.message, error?.message, error).toLowerCase();
+  if (routeKind && routeKind !== "planner") return false;
+  if (expectedProvider && routeProvider && routeProvider !== expectedProvider) return false;
+  return failureMessage.includes("planner transport timed out") || failureMessage.includes("planner transport failed");
+}
+
+function withPlannerFallbackDebugInfo(result, { fallbackFromProvider = "", fallbackReason = "" } = {}) {
+  if (!result || typeof result !== "object") return result;
+  const provider = readFirstString(fallbackFromProvider) || null;
+  const reason = readFirstString(fallbackReason) || null;
+  if (!provider && !reason) return result;
+  return {
+    ...result,
+    debugInfo: {
+      ...(asRecord(result.debugInfo) || {}),
+      route: {
+        ...(asRecord(result?.debugInfo?.route) || {}),
+        fallbackFromProvider: provider,
+      },
+      fallback: {
+        fromProvider: provider,
+        reason,
+      },
+    },
+  };
+}
+
 export function resolveDesignReviewProviderSelection({
   keyStatus = {},
   preferredPlannerProvider = "",
@@ -271,6 +302,8 @@ export function createDesignReviewProviderRouter({
   preferredPlannerProvider = "",
   preferredPreviewProvider = "",
 } = {}) {
+  const preferredPlanner = normalizeProviderPreference(preferredPlannerProvider, VALID_PLANNER_PROVIDERS);
+
   async function runProviderRequest(request) {
     if (typeof requestProvider !== "function") {
       throw new Error("Design-review provider request handler is unavailable.");
@@ -283,7 +316,7 @@ export function createDesignReviewProviderRouter({
     }
   }
 
-  async function resolveProviderSelectionLive() {
+  async function readLiveKeyStatus() {
     let liveKeyStatus = keyStatus;
     if (typeof getKeyStatus === "function") {
       try {
@@ -295,11 +328,27 @@ export function createDesignReviewProviderRouter({
         // Keep the last known fallback if key-status refresh fails.
       }
     }
+    return liveKeyStatus;
+  }
+
+  async function resolveProviderSelectionLive() {
+    const liveKeyStatus = await readLiveKeyStatus();
     return resolveDesignReviewProviderSelection({
       keyStatus: liveKeyStatus,
       preferredPlannerProvider,
       preferredPreviewProvider,
     });
+  }
+
+  function plannerFallbackProvider(primaryProvider, liveKeyStatus) {
+    if (preferredPlanner === "openai") return "";
+    if (readFirstString(primaryProvider).toLowerCase() !== "openai") return "";
+    const fallbackSelection = resolveDesignReviewProviderSelection({
+      keyStatus: liveKeyStatus,
+      preferredPlannerProvider: "openrouter",
+      preferredPreviewProvider,
+    });
+    return fallbackSelection?.plannerProvider === "openrouter" ? "openrouter" : "";
   }
 
   function assertPlannerProviderAvailable(providerSelection) {
@@ -323,16 +372,35 @@ export function createDesignReviewProviderRouter({
       });
     },
     async runPlanner({ request = {}, prompt = "", images = [] } = {}) {
-      const providerSelection = await resolveProviderSelectionLive();
+      const liveKeyStatus = await readLiveKeyStatus();
+      const providerSelection = resolveDesignReviewProviderSelection({
+        keyStatus: liveKeyStatus,
+        preferredPlannerProvider,
+        preferredPreviewProvider,
+      });
       assertPlannerProviderAvailable(providerSelection);
-      return runProviderRequest({
+      const plannerRequest = {
         kind: "planner",
         provider: providerSelection.plannerProvider,
         model: DESIGN_REVIEW_PLANNER_MODEL,
         requestId: request?.requestId || null,
         prompt,
         images,
-      });
+      };
+      try {
+        return await runProviderRequest(plannerRequest);
+      } catch (error) {
+        const fallbackProvider = plannerFallbackProvider(providerSelection.plannerProvider, liveKeyStatus);
+        if (!fallbackProvider || !plannerTransportFailure(error, "openai")) throw error;
+        const fallbackResult = await runProviderRequest({
+          ...plannerRequest,
+          provider: fallbackProvider,
+        });
+        return withPlannerFallbackDebugInfo(fallbackResult, {
+          fallbackFromProvider: providerSelection.plannerProvider,
+          fallbackReason: readFirstString(error?.message, error),
+        });
+      }
     },
     async runUploadAnalysis({ image = {}, prompt = "" } = {}) {
       const providerSelection = await resolveProviderSelectionLive();

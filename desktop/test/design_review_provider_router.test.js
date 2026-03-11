@@ -138,6 +138,72 @@ test("design review provider router attaches debug payloads to planner transport
   );
 });
 
+test("design review provider router falls back to OpenRouter for planner transport failures in auto mode", async () => {
+  const requests = [];
+  const router = createDesignReviewProviderRouter({
+    keyStatus: {
+      openai: true,
+      openrouter: true,
+      gemini: false,
+    },
+    requestProvider: async (request) => {
+      requests.push(request);
+      if (request.provider === "openai") {
+        throw new Error("OpenAI planner transport timed out.");
+      }
+      return {
+        ok: true,
+        provider: "openrouter",
+        model: request.model,
+        requestedModel: request.model,
+        normalizedModel: request.model,
+        transport: "chat_completions",
+        text: "{\"proposals\":[]}",
+      };
+    },
+  });
+
+  const result = await router.runPlanner({
+    request: { requestId: "review-fallback-openrouter" },
+    prompt: "Return proposals",
+    images: ["/tmp/review-visible.png"],
+  });
+
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].provider, "openai");
+  assert.equal(requests[1].provider, "openrouter");
+  assert.equal(result.debugInfo?.route?.provider, "openrouter");
+  assert.equal(result.debugInfo?.route?.fallbackFromProvider, "openai");
+});
+
+test("design review provider router honors explicit OpenAI planner preference without OpenRouter fallback", async () => {
+  const requests = [];
+  const router = createDesignReviewProviderRouter({
+    keyStatus: {
+      openai: true,
+      openrouter: true,
+      gemini: false,
+    },
+    preferredPlannerProvider: "openai",
+    requestProvider: async (request) => {
+      requests.push(request);
+      throw new Error("OpenAI planner transport timed out.");
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      router.runPlanner({
+        request: { requestId: "review-explicit-openai" },
+        prompt: "Return proposals",
+      }),
+    /OpenAI planner transport timed out/
+  );
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].provider, "openai");
+});
+
 test("design review provider router resolves apply target and guidance references from the existing request snapshot", async () => {
   const requests = [];
   const router = createDesignReviewProviderRouter({
