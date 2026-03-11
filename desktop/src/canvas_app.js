@@ -25294,7 +25294,8 @@ function freeformDefaultTileCss(canvasCssW, canvasCssH, { count = null } = {}) {
   const margin = 14;
   const gapFrac = 0.11;
   let cols = 1;
-  if (n === 2) cols = 2;
+  if (n <= 1) cols = 1;
+  else if (n === 2) cols = 2;
   else if (n <= 4) cols = 2;
   else cols = 3;
   const rows = Math.ceil(n / cols);
@@ -25325,7 +25326,8 @@ function ensureFreeformLayoutRectsCss(items, canvasCssW, canvasCssH) {
 
   const n = list.length;
   let cols = 1;
-  if (n === 2) cols = 2;
+  if (n <= 1) cols = 1;
+  else if (n === 2) cols = 2;
   else if (n <= 4) cols = 2;
   else cols = 3;
   const rows = Math.ceil(n / cols);
@@ -30297,21 +30299,61 @@ function _defaultImportPointCss() {
   return { x: Math.round(w * 0.5), y: Math.round(h * 0.5) };
 }
 
-function _computeImportPlacementsCss(n, center, tile, gap, canvasCssW, canvasCssH) {
+function visibleImportWorldBoundsCss(canvasCssW, canvasCssH) {
+  const width = Math.max(0, Number(canvasCssW) || 0);
+  const height = Math.max(0, Number(canvasCssH) || 0);
+  if (state.canvasMode !== "multi") {
+    return {
+      minX: 0,
+      minY: 0,
+      maxX: width,
+      maxY: height,
+    };
+  }
+  const topLeft = canvasScreenCssToWorldCss({ x: 0, y: 0 });
+  const bottomRight = canvasScreenCssToWorldCss({ x: width, y: height });
+  const x0 = Number(topLeft?.x) || 0;
+  const y0 = Number(topLeft?.y) || 0;
+  const x1 = Number(bottomRight?.x) || 0;
+  const y1 = Number(bottomRight?.y) || 0;
+  return {
+    minX: Math.min(x0, x1),
+    minY: Math.min(y0, y1),
+    maxX: Math.max(x0, x1),
+    maxY: Math.max(y0, y1),
+  };
+}
+
+function _computeImportPlacementsCss(n, center, tile, gap, canvasCssW, canvasCssH, worldBounds = null) {
   const count = Math.max(0, Number(n) || 0);
   if (!count) return [];
   const margin = 14;
+  const bounds = worldBounds && typeof worldBounds === "object"
+    ? worldBounds
+    : {
+        minX: 0,
+        minY: 0,
+        maxX: Number(canvasCssW) || 0,
+        maxY: Number(canvasCssH) || 0,
+      };
+  const minX = Math.round(Number(bounds.minX) || 0);
+  const minY = Math.round(Number(bounds.minY) || 0);
+  const maxWorldX = Math.round(Number(bounds.maxX) || 0);
+  const maxWorldY = Math.round(Number(bounds.maxY) || 0);
   let cols = 1;
-  if (count === 2) cols = 2;
+  if (count <= 1) cols = 1;
+  else if (count === 2) cols = 2;
   else if (count <= 4) cols = 2;
   else cols = 3;
   const rows = Math.ceil(count / cols);
   const clusterW = cols * tile + (cols - 1) * gap;
   const clusterH = rows * tile + (rows - 1) * gap;
-  const maxX = Math.max(margin, Math.round(canvasCssW - clusterW - margin));
-  const maxY = Math.max(margin, Math.round(canvasCssH - clusterH - margin));
-  const startX = clamp(Math.round((Number(center?.x) || 0) - clusterW / 2), margin, maxX);
-  const startY = clamp(Math.round((Number(center?.y) || 0) - clusterH / 2), margin, maxY);
+  const startMinX = minX + margin;
+  const startMinY = minY + margin;
+  const startMaxX = Math.max(startMinX, maxWorldX - clusterW - margin);
+  const startMaxY = Math.max(startMinY, maxWorldY - clusterH - margin);
+  const startX = clamp(Math.round((Number(center?.x) || 0) - clusterW / 2), startMinX, startMaxX);
+  const startY = clamp(Math.round((Number(center?.y) || 0) - clusterH / 2), startMinY, startMaxY);
   const out = [];
   for (let i = 0; i < count; i += 1) {
     const col = i % cols;
@@ -30360,7 +30402,7 @@ function seedPromptGeneratePlacementRectCss(artifactId, pendingPromptGenerate = 
 
 async function importLocalPathsAtCanvasPoint(
   paths,
-  pointCss,
+  pointWorldCss,
   { source = "picker", idPrefix = "input", enforceIntentLimit = true, focusImported = false } = {}
 ) {
   let list = (Array.isArray(paths) ? paths : [paths])
@@ -30409,7 +30451,16 @@ async function importLocalPathsAtCanvasPoint(
   const totalAfter = (state.images?.length || 0) + importable.length;
   const tile = freeformDefaultTileCss(canvasCssW, canvasCssH, { count: totalAfter });
   const gap = Math.round(tile * 0.11);
-  const placements = _computeImportPlacementsCss(importable.length, pointCss, tile, gap, canvasCssW, canvasCssH);
+  const visibleBounds = visibleImportWorldBoundsCss(canvasCssW, canvasCssH);
+  const placements = _computeImportPlacementsCss(
+    importable.length,
+    pointWorldCss,
+    tile,
+    gap,
+    canvasCssW,
+    canvasCssH,
+    visibleBounds
+  );
 
   let ok = 0;
   let failed = 0;
@@ -30516,7 +30567,7 @@ async function importLocalPathsAtCanvasPoint(
   return { ok, failed, importedIds };
 }
 
-async function importPhotosAtCanvasPoint(pointCss) {
+async function importPhotosAtCanvasPoint(pointWorldCss) {
   bumpInteraction();
   setStatus("Engine: pick photos…");
   const picked = await open({
@@ -30528,7 +30579,7 @@ async function importPhotosAtCanvasPoint(pointCss) {
     setStatus("Engine: ready");
     return;
   }
-  await importLocalPathsAtCanvasPoint(pickedPaths, pointCss, {
+  await importLocalPathsAtCanvasPoint(pickedPaths, pointWorldCss, {
     source: "picker",
     idPrefix: "input",
     enforceIntentLimit: true,
