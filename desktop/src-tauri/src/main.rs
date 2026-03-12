@@ -63,7 +63,7 @@ const REVIEW_OPENROUTER_RESPONSES_TRANSPORT: &str = "responses";
 const REVIEW_OPENAI_RESPONSES_WS_IO_TIMEOUT: Duration = Duration::from_secs(45);
 const REVIEW_OPENAI_RESPONSES_WS_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(45);
 const REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT: Duration = Duration::from_secs(90);
-const REVIEW_FAST_PLANNER_HTTP_TIMEOUT: Duration = Duration::from_secs(20);
+const REVIEW_FAST_PLANNER_HTTP_TIMEOUT: Duration = Duration::from_secs(45);
 const REVIEW_STANDARD_PLANNER_HTTP_TIMEOUT: Duration = Duration::from_secs(90);
 
 fn build_app_menu(app_name: &str) -> Menu {

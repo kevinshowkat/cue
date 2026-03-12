@@ -38,7 +38,7 @@ Important:
 
 - Agent Run now checks the visible canvas against that goal contract before allowing `stop` or `Export PSD`.
 - If a required named person or interaction is still missing, the run should continue instead of stopping cleanly.
-- Goal contract compile and stop-check requests use a fast HTTP planner path rather than the slower websocket-first planner path.
+- Goal contract compile and stop-check requests use a bounded 45-second HTTP planner path rather than the slower websocket-first planner path.
 - If the goal contract is still pending or unavailable, Agent Run fails open and keeps moving with the raw goal instead of stalling the run.
 - Weird or vibe-heavy goals should compile to sparse hard requirements and richer soft intents rather than becoming over-constrained.
 
