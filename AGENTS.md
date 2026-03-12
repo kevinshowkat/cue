@@ -80,6 +80,7 @@ git worktree remove ../juggernaut-<feature>
 
 ## Documentation Rules
 - If scope, milestones, acceptance criteria, or constraints change, update [`PRD.md`](/Users/mainframe/Desktop/projects/Juggernaut/PRD.md) in the same task.
+- If app behavior, UI, workflows, or tool contracts change, update any affected agent-facing documentation in the same task, including [`AGENT_PROMPTS.md`](/Users/mainframe/Desktop/projects/Juggernaut/AGENT_PROMPTS.md) and relevant files under [`docs/runbooks/`](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/), so agent run documentation stays in sync with the product.
 - If a material technical decision is made, add a short decision record under `docs/decisions/` once that folder exists.
 - When ambiguity remains, capture it in the PRD instead of burying it in chat.
 

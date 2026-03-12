@@ -6499,13 +6499,481 @@ button.ghost:hover {
 }
 
 .agent-runner-panel {
+  --agent-runner-panel-accent: rgba(100, 210, 255, 0.92);
   left: calc(50% + ((var(--jg-shell-inset, 18px) + var(--jg-rail-width, 74px)) / 2));
-  top: 50%;
+  top: auto;
+  bottom: 178px;
   width: min(540px, calc(100% - (var(--jg-shell-inset, 18px) * 2) - var(--jg-rail-width, 74px) - 32px));
   max-width: calc(100% - (var(--jg-shell-inset, 18px) * 2) - var(--jg-rail-width, 74px) - 32px);
-  max-height: calc(100vh - 48px);
-  transform: translate(-50%, -50%);
+  max-height: calc(100vh - 236px);
+  transform: translateX(-50%);
   z-index: 14;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background:
+    radial-gradient(160px 96px at 12% 0%, color-mix(in srgb, var(--agent-runner-panel-accent) 24%, transparent), transparent 72%),
+    radial-gradient(220px 124px at 100% 0%, rgba(255, 255, 255, 0.28), transparent 72%),
+    linear-gradient(180deg, rgba(248, 251, 255, 0.82), rgba(225, 233, 242, 0.72));
+  color: rgba(16, 28, 44, 0.92);
+  box-shadow:
+    0 32px 72px rgba(7, 15, 24, 0.24),
+    0 10px 28px color-mix(in srgb, var(--agent-runner-panel-accent) 14%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(26px) saturate(1.28);
+  overflow: hidden;
+}
+
+.agent-runner-panel::before,
+.agent-runner-panel::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.agent-runner-panel::before {
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent 26%),
+    radial-gradient(260px 180px at 86% -12%, rgba(255, 255, 255, 0.28), transparent 70%);
+  opacity: 0.96;
+}
+
+.agent-runner-panel::after {
+  inset: 1px;
+  border: 1px solid color-mix(in srgb, var(--agent-runner-panel-accent) 16%, rgba(255, 255, 255, 0.54));
+  opacity: 0.82;
+}
+
+.agent-runner-panel .annotate-header,
+.agent-runner-panel .annotate-body,
+.agent-runner-panel .annotate-actions,
+.agent-runner-panel .annotate-field,
+.agent-runner-panel .agent-runner-plan,
+.agent-runner-panel .agent-runner-score,
+.agent-runner-panel .agent-runner-log {
+  position: relative;
+  z-index: 1;
+}
+
+.agent-runner-panel-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-runner-panel .annotate-header {
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.26);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.08)),
+    linear-gradient(90deg, color-mix(in srgb, var(--agent-runner-panel-accent) 12%, transparent), transparent 34%);
+}
+
+.agent-runner-panel .annotate-title {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: rgba(16, 28, 44, 0.94);
+}
+
+.agent-runner-panel #agent-runner-expand,
+.agent-runner-panel #agent-runner-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.46), rgba(255, 255, 255, 0.22)),
+    rgba(244, 248, 252, 0.28);
+  color: rgba(18, 31, 46, 0.86);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 6px 16px rgba(15, 26, 39, 0.08);
+}
+
+.agent-runner-panel .agent-runner-button-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.agent-runner-panel.is-expanded #agent-runner-expand .agent-runner-button-icon {
+  transform: rotate(180deg);
+}
+
+.agent-runner-panel #agent-runner-expand {
+  min-width: 72px;
+}
+
+.agent-runner-panel #agent-runner-close:hover,
+.agent-runner-panel #agent-runner-close:focus-visible,
+.agent-runner-panel #agent-runner-expand:hover,
+.agent-runner-panel #agent-runner-expand:focus-visible {
+  border-color: color-mix(in srgb, var(--agent-runner-panel-accent) 42%, rgba(255, 255, 255, 0.48));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.26)),
+    rgba(244, 248, 252, 0.38);
+  color: rgba(12, 23, 38, 0.94);
+  outline: none;
+}
+
+.agent-runner-panel .annotate-body {
+  padding: 16px 18px 18px;
+  gap: 12px;
+}
+
+.agent-runner-panel .agent-runner-panel-expanded {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.agent-runner-panel .agent-runner-panel-compact-actions {
+  display: none;
+}
+
+.agent-runner-panel .agent-runner-goal-field {
+  margin: 0;
+}
+
+.agent-runner-panel.is-collapsed {
+  top: calc(var(--jg-header-clearance, 92px) - 36px);
+  bottom: auto;
+  width: min(720px, calc(100% - (var(--jg-shell-inset, 18px) * 2) - var(--jg-rail-width, 74px) - 64px));
+  max-width: calc(100% - (var(--jg-shell-inset, 18px) * 2) - var(--jg-rail-width, 74px) - 64px);
+  max-height: none;
+  transform: translateX(-50%);
+}
+
+.agent-runner-panel.is-collapsed .annotate-header {
+  padding: 12px 18px 10px;
+}
+
+.agent-runner-panel.is-collapsed .annotate-title {
+  font-size: clamp(22px, 2.1vw, 30px);
+  letter-spacing: 0.01em;
+}
+
+.agent-runner-panel.is-collapsed #agent-runner-expand,
+.agent-runner-panel.is-collapsed #agent-runner-close {
+  width: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  font-size: 11px;
+}
+
+.agent-runner-panel.is-collapsed #agent-runner-expand .agent-runner-button-label,
+.agent-runner-panel.is-collapsed #agent-runner-close .agent-runner-button-label {
+  display: none;
+}
+
+.agent-runner-panel.is-collapsed #agent-runner-expand .agent-runner-button-icon,
+.agent-runner-panel.is-collapsed #agent-runner-close .agent-runner-button-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.agent-runner-panel.is-collapsed .annotate-body {
+  padding: 12px 18px 16px;
+  gap: 10px;
+}
+
+.agent-runner-panel.is-collapsed .agent-runner-panel-compact-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.agent-runner-panel.is-collapsed .agent-runner-panel-expanded {
+  display: none;
+}
+
+.agent-runner-panel.is-collapsed .agent-runner-goal-field {
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-radius: 20px;
+}
+
+.agent-runner-panel.is-collapsed .annotate-label {
+  font-size: 14px;
+  letter-spacing: 0.12em;
+}
+
+.agent-runner-panel.is-collapsed .agent-runner-panel-compact-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(230, 240, 252, 0.42)),
+    color-mix(in srgb, var(--agent-runner-panel-accent) 22%, rgba(245, 249, 253, 0.68));
+  color: rgba(18, 31, 46, 0.94);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 18px 30px rgba(15, 26, 39, 0.12),
+    0 0 26px color-mix(in srgb, var(--agent-runner-panel-accent) 12%, transparent);
+}
+
+.agent-runner-panel.is-collapsed #agent-runner-submit {
+  border-color: color-mix(in srgb, var(--agent-runner-panel-accent) 26%, rgba(255, 255, 255, 0.52));
+  background:
+    linear-gradient(180deg, rgba(248, 251, 255, 0.92), rgba(224, 234, 246, 0.74)),
+    color-mix(in srgb, var(--agent-runner-panel-accent) 34%, rgba(246, 250, 255, 0.78));
+  color: rgba(14, 26, 40, 0.94);
+}
+
+.agent-runner-panel.is-collapsed #agent-runner-submit .agent-runner-button-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.agent-runner-panel.is-collapsed .agent-runner-panel-compact-actions button:hover:not(:disabled),
+.agent-runner-panel.is-collapsed .agent-runner-panel-compact-actions button:focus-visible {
+  border-color: color-mix(in srgb, var(--agent-runner-panel-accent) 42%, rgba(255, 255, 255, 0.5));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(233, 243, 255, 0.5)),
+    color-mix(in srgb, var(--agent-runner-panel-accent) 28%, rgba(247, 250, 255, 0.76));
+  outline: none;
+}
+
+.agent-runner-panel.is-collapsed .agent-runner-panel-compact-actions button:disabled {
+  opacity: 0.84;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.62),
+    0 10px 18px rgba(15, 26, 39, 0.08);
+}
+
+.agent-runner-panel.is-collapsed #agent-runner-submit:disabled {
+  border-color: rgba(195, 205, 218, 0.82);
+  background:
+    linear-gradient(180deg, rgba(246, 249, 253, 0.9), rgba(232, 238, 245, 0.72)),
+    rgba(240, 245, 250, 0.82);
+  color: rgba(98, 110, 126, 0.88);
+}
+
+.agent-runner-panel.is-collapsed .agent-runner-goal-field .annotate-text {
+  min-height: 88px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-size: clamp(22px, 1.8vw, 28px);
+  line-height: 1.38;
+}
+
+.agent-runner-panel.is-collapsed .agent-runner-goal-field .annotate-text::placeholder {
+  font-size: clamp(18px, 1.45vw, 22px);
+}
+
+.agent-runner-panel .annotate-meta {
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.22)),
+    rgba(240, 246, 252, 0.28);
+  color: rgba(42, 60, 82, 0.82);
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+  text-overflow: clip;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.58),
+    0 8px 20px rgba(13, 26, 41, 0.06);
+}
+
+.agent-runner-panel .annotate-field {
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.14)),
+    rgba(238, 244, 251, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.56),
+    0 8px 22px rgba(12, 23, 38, 0.05);
+}
+
+.agent-runner-panel .annotate-label {
+  color: rgba(40, 58, 80, 0.7);
+}
+
+.agent-runner-panel .annotate-input,
+.agent-runner-panel .annotate-field select,
+.agent-runner-panel .annotate-text,
+.agent-runner-panel .agent-runner-plan,
+.agent-runner-panel .agent-runner-score,
+.agent-runner-panel .agent-runner-log {
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.54), rgba(255, 255, 255, 0.18)),
+    rgba(241, 246, 252, 0.34);
+  color: rgba(18, 31, 46, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.62),
+    0 6px 18px rgba(15, 26, 39, 0.06);
+}
+
+.agent-runner-panel .annotate-input,
+.agent-runner-panel .annotate-field select,
+.agent-runner-panel .annotate-text {
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.agent-runner-panel .annotate-input::placeholder,
+.agent-runner-panel .annotate-text::placeholder {
+  color: rgba(67, 88, 112, 0.58);
+}
+
+.agent-runner-panel .annotate-input:focus-visible,
+.agent-runner-panel .annotate-text:focus-visible,
+.agent-runner-panel .annotate-field select:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--agent-runner-panel-accent) 52%, rgba(255, 255, 255, 0.44));
+  outline-offset: 2px;
+}
+
+.agent-runner-panel .agent-runner-plan,
+.agent-runner-panel .agent-runner-score,
+.agent-runner-panel .agent-runner-log {
+  border-radius: 16px;
+}
+
+.agent-runner-panel .agent-runner-plan {
+  color: rgba(27, 42, 59, 0.9);
+}
+
+.agent-runner-panel .agent-runner-score[data-state="ready"] {
+  border-color: rgba(106, 194, 142, 0.38);
+  background:
+    linear-gradient(180deg, rgba(245, 255, 249, 0.6), rgba(236, 250, 242, 0.32)),
+    rgba(222, 246, 231, 0.24);
+}
+
+.agent-runner-panel .agent-runner-score[data-state="failed"] {
+  border-color: rgba(219, 134, 134, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 246, 246, 0.6), rgba(250, 234, 234, 0.3)),
+    rgba(248, 219, 219, 0.22);
+}
+
+.agent-runner-panel .agent-runner-log-entry {
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.16)),
+    rgba(236, 243, 250, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.52),
+    0 6px 16px rgba(15, 26, 39, 0.05);
+}
+
+.agent-runner-panel .agent-runner-log-entry[data-kind="error"] {
+  border-color: rgba(219, 134, 134, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 246, 246, 0.58), rgba(249, 235, 235, 0.28)),
+    rgba(248, 219, 219, 0.2);
+}
+
+.agent-runner-panel .agent-runner-log-entry[data-kind="success"] {
+  border-color: rgba(106, 194, 142, 0.34);
+  background:
+    linear-gradient(180deg, rgba(245, 255, 249, 0.58), rgba(236, 250, 242, 0.28)),
+    rgba(222, 246, 231, 0.2);
+}
+
+.agent-runner-panel .agent-runner-log-entry[data-kind="action"] {
+  border-color: color-mix(in srgb, var(--agent-runner-panel-accent) 30%, rgba(255, 255, 255, 0.26));
+}
+
+.agent-runner-panel .agent-runner-log-kind,
+.agent-runner-panel .agent-runner-log-time,
+.agent-runner-panel .annotate-label {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.agent-runner-panel .agent-runner-log-kind,
+.agent-runner-panel .agent-runner-log-time,
+.agent-runner-panel .annotate-label {
+  color: rgba(49, 70, 93, 0.68);
+}
+
+.agent-runner-panel .agent-runner-log-message {
+  color: rgba(18, 31, 46, 0.9);
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 12px;
+}
+
+.agent-runner-panel .agent-runner-log-detail {
+  color: rgba(58, 79, 102, 0.76);
+}
+
+.agent-runner-panel .annotate-actions {
+  gap: 8px;
+  padding-top: 10px;
+  padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
+  background:
+    linear-gradient(180deg, rgba(248, 251, 255, 0), rgba(242, 247, 252, 0.88) 28%, rgba(233, 240, 247, 0.96));
+  backdrop-filter: blur(14px);
+}
+
+.agent-runner-panel .annotate-actions button {
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.46), rgba(255, 255, 255, 0.22)),
+    rgba(244, 248, 252, 0.28);
+  color: rgba(18, 31, 46, 0.86);
+  border-radius: 999px;
+  padding: 8px 13px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 6px 16px rgba(15, 26, 39, 0.08);
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.agent-runner-panel .annotate-actions button:hover,
+.agent-runner-panel .annotate-actions button:focus-visible {
+  border-color: color-mix(in srgb, var(--agent-runner-panel-accent) 42%, rgba(255, 255, 255, 0.48));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.26)),
+    rgba(244, 248, 252, 0.38);
+  color: rgba(12, 23, 38, 0.94);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 10px 22px color-mix(in srgb, var(--agent-runner-panel-accent) 14%, rgba(10, 18, 28, 0.08));
+}
+
+.agent-runner-panel .annotate-actions button:disabled {
+  opacity: 0.5;
+  transform: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.36),
+    0 4px 10px rgba(15, 26, 39, 0.04);
 }
 
 @keyframes agentRunnerBannerPulse {
@@ -6523,10 +6991,11 @@ button.ghost:hover {
 .agent-runner-banner {
   --agent-runner-banner-accent: rgba(100, 210, 255, 0.92);
   position: absolute;
-  top: 16px;
-  right: 16px;
+  left: auto;
+  right: calc(var(--jg-shell-inset, 18px) + 12px);
+  bottom: 116px;
   z-index: 18;
-  width: min(392px, calc(100% - 32px));
+  width: min(332px, calc(100% - (var(--jg-shell-inset, 18px) * 2) - 32px));
   display: grid;
   gap: 12px;
   padding: 13px 15px 14px;
@@ -6543,6 +7012,7 @@ button.ghost:hover {
     inset 0 1px 0 rgba(255, 255, 255, 0.78),
     inset 0 -1px 0 rgba(255, 255, 255, 0.16);
   backdrop-filter: blur(24px) saturate(1.32);
+  transform: none;
   overflow: hidden;
 }
 
@@ -7109,95 +7579,265 @@ button.ghost:hover {
 .communication-rail {
   position: absolute;
   left: 50%;
-  bottom: 22px;
+  bottom: -56px;
   z-index: 12;
   display: flex;
-  align-items: stretch;
-  gap: 8px;
-  padding: 8px;
-  border-radius: 22px;
-  border: 1px solid rgba(18, 30, 44, 0.14);
+  align-items: flex-start;
+  justify-content: center;
+  gap: 10px;
+  width: min(620px, calc(100vw - 48px));
+  height: 214px;
+  padding: 16px 20px 0;
+  border-radius: 34px 34px 42px 42px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(240, 244, 250, 0.94)),
-    linear-gradient(135deg, rgba(255, 94, 190, 0.07), rgba(100, 210, 255, 0.08));
+    radial-gradient(220px 118px at 50% -4%, rgba(255, 255, 255, 0.42), transparent 72%),
+    radial-gradient(260px 144px at 12% 0%, rgba(232, 240, 250, 0.22), transparent 72%),
+    linear-gradient(180deg, rgba(246, 249, 253, 0.72), rgba(218, 227, 237, 0.5));
   box-shadow:
-    0 18px 42px rgba(6, 18, 34, 0.18),
-    0 2px 0 rgba(255, 255, 255, 0.72) inset,
-    0 -1px 0 rgba(18, 30, 44, 0.06) inset;
+    0 28px 58px rgba(10, 18, 28, 0.18),
+    0 10px 28px rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.84),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.16);
   transform: translateX(-50%);
   pointer-events: auto;
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(30px) saturate(1.22);
+  isolation: isolate;
+  overflow: visible;
+}
+
+.communication-rail::before,
+.communication-rail::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.communication-rail::before {
+  inset: 74px 16px 18px;
+  border-radius: 32px 32px 40px 40px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background:
+    radial-gradient(180px 72px at 50% 0%, rgba(255, 255, 255, 0.68), transparent 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(227, 234, 243, 0.14) 28%, rgba(220, 229, 238, 0.22) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.84),
+    0 14px 26px rgba(18, 31, 46, 0.07);
+  z-index: 0;
+}
+
+.communication-rail::after {
+  inset: 124px 8px 10px;
+  border-radius: 28px 28px 34px 34px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(223, 231, 240, 0.34)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 22%);
+  clip-path: polygon(0 38%, 5% 35%, 12% 31%, 21% 25%, 32% 19%, 44% 15%, 57% 13%, 70% 14%, 82% 17%, 92% 22%, 100% 28%, 100% 100%, 0 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.76),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.14),
+    0 18px 30px rgba(18, 31, 46, 0.08);
+  z-index: 2;
 }
 
 .communication-tool {
   position: relative;
-  min-width: 104px;
-  min-height: 70px;
-  padding: 10px 12px 12px;
-  display: grid;
-  place-items: center;
-  gap: 6px;
-  border: 1px solid rgba(18, 30, 44, 0.10);
-  border-radius: 16px;
-  background:
-    radial-gradient(120px 60px at 50% 0%, rgba(255, 255, 255, 0.72), transparent 68%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(233, 239, 247, 0.96));
-  color: rgba(18, 30, 44, 0.84);
+  --communication-tool-glow: rgba(255, 255, 255, 0.3);
+  --communication-tool-tilt: 0deg;
+  --communication-tool-scale: 1;
+  --communication-tool-lift: 0px;
+  --communication-tool-accent: rgba(255, 255, 255, 0.14);
+  --communication-tool-saturation: 0.92;
+  width: 96px;
+  min-width: 96px;
+  height: 188px;
+  min-height: 188px;
+  padding: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(237, 243, 250, 0.94);
   font: inherit;
   cursor: pointer;
   transition:
-    transform 120ms ease,
-    border-color 120ms ease,
-    box-shadow 120ms ease,
-    background 120ms ease,
+    opacity 120ms ease,
+    filter 120ms ease,
     color 120ms ease;
+  isolation: isolate;
 }
 
 .communication-tool svg {
-  width: 32px;
-  height: 32px;
+  position: relative;
+  z-index: 1;
+  width: 60px;
+  height: 352px;
+  margin: -4px 0 0;
+  transform: translateY(var(--communication-tool-lift)) rotate(var(--communication-tool-tilt)) scale(var(--communication-tool-scale));
+  transform-origin: center 72%;
+  filter:
+    saturate(var(--communication-tool-saturation))
+    brightness(1.04)
+    contrast(0.95)
+    drop-shadow(0 14px 18px rgba(18, 31, 46, 0.18))
+    drop-shadow(0 0 16px var(--communication-tool-accent))
+    drop-shadow(0 2px 0 rgba(255, 255, 255, 0.24));
+  transition:
+    transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 180ms ease,
+    opacity 140ms ease;
+  will-change: transform, filter;
+}
+
+.communication-tool.communication-tool-marker {
+  --communication-tool-tilt: -8deg;
+  --communication-tool-scale: 1.2;
+  --communication-tool-accent: rgba(226, 82, 82, 0.22);
+  --communication-tool-saturation: 0.96;
+}
+
+.communication-tool.communication-tool-protect {
+  --communication-tool-tilt: 4deg;
+  --communication-tool-scale: 1.14;
+  --communication-tool-accent: rgba(122, 225, 255, 0.22);
+  --communication-tool-saturation: 0.98;
+}
+
+.communication-tool.communication-tool-magic-select {
+  --communication-tool-tilt: -2deg;
+  --communication-tool-scale: 1.1;
+  --communication-tool-accent: rgba(255, 120, 202, 0.24);
+  --communication-tool-saturation: 1.02;
+}
+
+.communication-tool.communication-tool-make-space {
+  --communication-tool-tilt: 6deg;
+  --communication-tool-scale: 1.17;
+  --communication-tool-accent: rgba(255, 182, 102, 0.22);
+  --communication-tool-saturation: 0.94;
+}
+
+.communication-tool.communication-tool-eraser {
+  --communication-tool-tilt: 10deg;
+  --communication-tool-scale: 1.28;
+  --communication-tool-accent: rgba(255, 150, 182, 0.22);
+  --communication-tool-saturation: 0.98;
 }
 
 .communication-tool:hover {
-  transform: translateY(-1px);
-  border-color: rgba(255, 94, 190, 0.24);
-  box-shadow:
-    0 16px 26px rgba(17, 31, 48, 0.12),
-    0 0 0 1px rgba(255, 255, 255, 0.64) inset;
+  --communication-tool-lift: -22px;
+  filter: brightness(1.02);
+}
+
+.communication-tool:hover svg {
+  filter:
+    saturate(calc(var(--communication-tool-saturation) + 0.14))
+    brightness(1.1)
+    contrast(0.94)
+    drop-shadow(0 24px 28px rgba(18, 31, 46, 0.18))
+    drop-shadow(0 0 28px var(--communication-tool-accent))
+    drop-shadow(0 0 10px rgba(255, 255, 255, 0.1));
 }
 
 .communication-tool:active {
-  transform: translateY(1px);
+  --communication-tool-lift: -22px;
 }
 
 .communication-tool.is-active {
-  border-color: rgba(255, 94, 190, 0.32);
-  background:
-    radial-gradient(150px 70px at 50% 0%, rgba(255, 255, 255, 0.72), transparent 64%),
-    linear-gradient(180deg, rgba(255, 239, 248, 0.98), rgba(232, 244, 255, 0.98));
-  color: rgba(168, 36, 109, 0.94);
-  box-shadow:
-    0 18px 32px rgba(17, 31, 48, 0.14),
-    0 0 0 1px rgba(255, 94, 190, 0.14) inset,
-    0 0 0 1px rgba(255, 255, 255, 0.72);
+  --communication-tool-lift: -30px;
+  color: rgba(250, 252, 255, 0.98);
+  filter: brightness(1.08);
 }
 
-.communication-tool.is-active::after {
-  content: "";
-  position: absolute;
-  inset: auto 16px 8px;
-  height: 3px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255, 94, 190, 0.96), rgba(100, 210, 255, 0.96));
+.communication-tool.is-active svg {
+  filter:
+    saturate(calc(var(--communication-tool-saturation) + 0.18))
+    brightness(1.14)
+    contrast(0.95)
+    drop-shadow(0 26px 30px rgba(18, 31, 46, 0.18))
+    drop-shadow(0 0 34px var(--communication-tool-accent))
+    drop-shadow(0 0 10px rgba(255, 255, 255, 0.12));
 }
 
 .communication-tool-label {
+  position: absolute;
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4;
+  min-width: 0;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.28)),
+    rgba(236, 243, 251, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.76),
+    0 10px 22px rgba(18, 31, 46, 0.1);
+  backdrop-filter: blur(16px) saturate(1.16);
   font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
+  color: rgba(32, 49, 67, 0.88);
+  opacity: 0.94;
+}
+
+.communication-tool.is-active .communication-tool-label {
+  border-color: rgba(255, 255, 255, 0.42);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(255, 255, 255, 0.26)),
+    rgba(245, 249, 255, 0.28);
+  color: rgba(24, 40, 58, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 12px 22px rgba(18, 31, 46, 0.1);
+  opacity: 1;
+}
+
+@media (max-width: 900px) {
+  .communication-rail {
+    bottom: -48px;
+    width: min(560px, calc(100vw - 28px));
+    height: 196px;
+    gap: 8px;
+    padding: 14px 12px 0;
+  }
+
+  .communication-rail::before {
+    inset: 66px 12px 18px;
+  }
+
+  .communication-rail::after {
+    inset: 112px 6px 10px;
+  }
+
+  .communication-tool {
+    width: 84px;
+    min-width: 84px;
+    height: 176px;
+    min-height: 176px;
+  }
+
+  .communication-tool svg {
+    width: 54px;
+    height: 320px;
+  }
+
+  .communication-tool-label {
+    bottom: 60px;
+    font-size: 7px;
+  }
 }
 
 .communication-proposal-tray {
@@ -10322,14 +10962,48 @@ body.juggernaut-shell .brand-strip {
 
   .agent-runner-panel {
     left: 50%;
+    bottom: 156px;
     width: min(460px, calc(100% - 24px));
     max-width: calc(100% - 24px);
+    max-height: calc(100vh - 196px);
+  }
+
+  .agent-runner-panel.is-collapsed {
+    top: calc(var(--jg-header-clearance, 82px) - 30px);
+    bottom: auto;
+    width: min(520px, calc(100% - 24px));
+    max-width: calc(100% - 24px);
+    transform: translateX(-50%);
+  }
+
+  .agent-runner-panel.is-collapsed .annotate-title {
+    font-size: clamp(20px, 5vw, 26px);
+  }
+
+  .agent-runner-panel.is-collapsed .annotate-label {
+    font-size: 12px;
+  }
+
+  .agent-runner-panel.is-collapsed .agent-runner-panel-compact-actions button {
+    min-height: 34px;
+    font-size: 11px;
+  }
+
+  .agent-runner-panel.is-collapsed .agent-runner-goal-field .annotate-text {
+    min-height: 76px;
+    font-size: clamp(18px, 4.2vw, 24px);
+  }
+
+  .agent-runner-panel.is-collapsed .agent-runner-goal-field .annotate-text::placeholder {
+    font-size: clamp(15px, 3.5vw, 20px);
   }
 
   .agent-runner-banner {
-    top: 12px;
+    left: auto;
     right: 12px;
-    width: min(420px, calc(100% - 24px));
+    bottom: 104px;
+    width: min(320px, calc(100% - 24px));
+    transform: none;
   }
 
   .session-tab-strip {

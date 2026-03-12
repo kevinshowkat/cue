@@ -111,6 +111,7 @@ test("agent runner context summary keeps the visible canvas compact and action-o
   assert.equal(summary.canvas.subjectSelections.activeImageHasRegionSelection, false);
   assert.deepEqual(summary.availableActions.directAffordances, ["remove_people", "polish", "relight"]);
   assert.equal(summary.availableActions.seededToolGuidance.cut_out.requiresSubjectRegion, true);
+  assert.ok(summary.availableActions.reviewGuidance.markBeforeReviewFor.includes("cross_image_linkage"));
   assert.equal(summary.review.proposals[0].proposalId, "prop-1");
   assert.equal(summary.sessionTools[0].toolId, "soft-contrast");
 });
@@ -182,6 +183,7 @@ test("agent runner planner prompt carries the single-step JSON contract and comp
   assert.match(prompt, /remove deletes the selected content from that active image and must not be used to extract a reusable subject\./);
   assert.match(prompt, /Design Review is goal-agnostic\. It sees only the visible canvas plus visible marks and Magic Select regions, not hidden intent\./);
   assert.match(prompt, /Before request_design_review, use marks and\/or Magic Select when composition, placement, interaction, pose, or source-vs-target intent needs to be made explicit on-canvas\./);
+  assert.match(prompt, /Off-image and between-image marks are valid visible cues\. Use them to show linkage, movement, handoff, spacing, or placement relationships between visible images\./);
   assert.match(prompt, /For cross-image composites, mark the source subject and the destination area before request_design_review when placement matters\./);
   assert.match(prompt, /For request_design_review summaries, do not restate the user goal, inferred scene, or hidden intent\./);
   assert.match(prompt, /If goalContract\.hardRequirements exist, do not treat palette shifts, props, uniforms, or single-subject styling as sufficient/);
@@ -271,6 +273,7 @@ test("agent runner context summary only exposes enabled seeded tools from the sh
     preferredPrepActions: ["set_active_image", "set_selected_images", "marker_stroke", "magic_select_click"],
     markBeforeReviewFor: [
       "source_vs_target_disambiguation",
+      "cross_image_linkage",
       "subject_placement",
       "interaction_or_pose",
       "destination_area",

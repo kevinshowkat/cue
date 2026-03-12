@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(here, "..", "src", "canvas_app.js"), "utf8");
+const visualSystemCss = readFileSync(join(here, "..", "src", "juggernaut_shell", "visual_system.css"), "utf8");
 
 test("Runtime minimalism hides idle engine status unless diagnostics are enabled or an error occurs", () => {
   assert.match(
@@ -27,4 +28,14 @@ test("Runtime minimalism keeps the empty-state upload tool from pulsing", () => 
   const fnMatch = app.match(/function renderJuggernautShellChrome\(\)[\s\S]*?\n}\n\nasync function invokeJuggernautShellTool/);
   assert.ok(fnMatch, "renderJuggernautShellChrome function not found");
   assert.doesNotMatch(fnMatch[0], /classList\.toggle\("pulse"/);
+});
+
+test("Runtime minimalism gives the empty-state upload tool a gold shimmer cue without affecting populated canvases", () => {
+  assert.match(app, /const emptyCanvas = state\.images\.length === 0;/);
+  assert.match(app, /btn\.classList\.toggle\("is-empty-canvas-cue", key === "upload" && emptyCanvas\);/);
+  assert.match(visualSystemCss, /@keyframes juggernautUploadGoldShimmer/);
+  assert.match(
+    visualSystemCss,
+    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-empty-canvas-cue\[data-tool-id="upload"\]\s*\{/
+  );
 });

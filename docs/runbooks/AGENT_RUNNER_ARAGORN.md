@@ -16,11 +16,12 @@ Important:
 1. Launch Juggernaut from the main checkout.
 2. Import `/Users/mainframe/Desktop/projects/Juggernaut/images/aragorn.jpg` into the canvas.
 3. Keep Aragorn as the only image on canvas for the cleanest run, or make sure Aragorn is the active image if other images are present.
-4. Open `Agent Run` from the top-right shell action.
-5. Set:
+4. Open `Agent Run` from the top-right shell action. It now opens as a compact card tucked tight to the tab bar, clearing the titlebar shadow while keeping the panel title fully visible, with the goal field and icon-only `Submit`, `Expand`, and `Close` controls.
+5. If you need planner controls, click `Expand` to open the full Agent Run menu.
+6. Set:
    - `Planner`: `Auto`
    - `Max Steps`: `4` for step-by-step testing or `6` for short auto runs
-6. Start with `Step`, not `Auto`.
+7. Start with `Step`, not `Auto`.
 
 ## Goal Contract Flow
 

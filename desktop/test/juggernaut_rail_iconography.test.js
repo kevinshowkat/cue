@@ -25,6 +25,7 @@ test("Juggernaut rail iconography: manifest covers the shared generated glyph se
     "protect",
     "relight",
     "remove_people",
+    "select_region",
     "select_subject",
     "upload",
     "variations",
@@ -35,6 +36,7 @@ test("Juggernaut rail iconography: manifest covers the shared generated glyph se
 
 test("Juggernaut rail iconography: generated registry exports custom SVG glyphs", () => {
   assert.equal(typeof JUGGERNAUT_RAIL_ICON_REGISTRY.upload, "string");
+  assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.select_region, /tool-icon-select-region/);
   assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.select_subject, /tool-icon-select-subject/);
   assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.background_swap, /fill-opacity=/);
   assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.protect, /tool-icon-protect/);
@@ -54,4 +56,14 @@ test("Juggernaut rail iconography: rail rendering consumes generated registry an
   assert.match(railSource, /toolEl\.dataset\.slotKey/);
   assert.match(railSource, /root\.insertBefore\(toolEl,\s*cursor \|\| null\)/);
   assert.doesNotMatch(railSource, /root\.innerHTML = "";/);
+
+  const selectAnchorStart = railSource.indexOf('toolId: "select"');
+  const selectRegionIconStart = railSource.indexOf('iconSvg: railIconSvg("select_region")', selectAnchorStart);
+  const cutOutStart = railSource.indexOf('cut_out: Object.freeze({');
+  const cutOutSubjectIconStart = railSource.indexOf('iconId: "select_subject"', cutOutStart);
+
+  assert.ok(selectAnchorStart >= 0);
+  assert.ok(selectRegionIconStart > selectAnchorStart);
+  assert.ok(cutOutStart >= 0);
+  assert.ok(cutOutSubjectIconStart > cutOutStart);
 });

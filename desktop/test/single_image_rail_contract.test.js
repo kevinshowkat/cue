@@ -242,6 +242,18 @@ test("single-image rail: canonical affordance labels keep Remove People standard
   assert.equal(getSingleImageRailItem("make_space")?.label, "Make Space");
 });
 
+test("single-image rail: region select uses a marquee glyph while Cut Out keeps subject extraction art", () => {
+  const selectAnchorStart = railSource.indexOf('toolId: "select"');
+  const selectRegionIconStart = railSource.indexOf('iconSvg: railIconSvg("select_region")', selectAnchorStart);
+  const cutOutStart = railSource.indexOf('cut_out: Object.freeze({');
+  const cutOutSubjectIconStart = railSource.indexOf('iconId: "select_subject"', cutOutStart);
+
+  assert.ok(selectAnchorStart >= 0);
+  assert.ok(selectRegionIconStart > selectAnchorStart);
+  assert.ok(cutOutStart >= 0);
+  assert.ok(cutOutSubjectIconStart > cutOutStart);
+});
+
 test("single-image rail: direct affordances use shell bridge state for enablement", () => {
   const originalWindow = globalThis.window;
   globalThis.window = {

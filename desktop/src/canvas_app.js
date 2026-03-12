@@ -772,11 +772,13 @@ const els = {
   createToolCancel: document.getElementById("create-tool-cancel"),
   createToolSave: document.getElementById("create-tool-save"),
   agentRunnerPanel: document.getElementById("agent-runner-panel"),
+  agentRunnerExpand: document.getElementById("agent-runner-expand"),
   agentRunnerClose: document.getElementById("agent-runner-close"),
   agentRunnerMeta: document.getElementById("agent-runner-meta"),
   agentRunnerPlanner: document.getElementById("agent-runner-planner"),
   agentRunnerMaxSteps: document.getElementById("agent-runner-max-steps"),
   agentRunnerGoal: document.getElementById("agent-runner-goal"),
+  agentRunnerSubmit: document.getElementById("agent-runner-submit"),
   agentRunnerPlan: document.getElementById("agent-runner-plan"),
   agentRunnerScore: document.getElementById("agent-runner-score"),
   agentRunnerLog: document.getElementById("agent-runner-log"),
@@ -843,6 +845,7 @@ function createFreshAgentRunnerState() {
     goalContractSourceGoal: "",
     goalContractStatus: "idle",
     lastStopCheck: null,
+    panelExpanded: false,
     plannerMode: "auto",
     maxSteps: AGENT_RUNNER_DEFAULT_MAX_STEPS,
     log: [],
@@ -9932,8 +9935,9 @@ function buildJuggernautShellContext() {
 function renderJuggernautShellChrome() {
   const activeImage = getActiveImage();
   const selectedIds = getSelectedIds();
+  const emptyCanvas = state.images.length === 0;
   if (els.juggernautSelectionStatus) {
-    if (!state.images.length) {
+    if (emptyCanvas) {
       els.juggernautSelectionStatus.textContent = "Drop an image to begin";
     } else if (activeImage) {
       const dims =
@@ -9950,14 +9954,14 @@ function renderJuggernautShellChrome() {
   const exportHookReady = typeof state.juggernautShell.psdExportHandler === "function" || typeof invoke === "function";
   renderAgentRunnerActivityChrome();
   if (els.juggernautExportPsd) {
-    const exportTitle = !state.images.length
+    const exportTitle = emptyCanvas
       ? "Upload an image before exporting PSD"
       : exportHookReady
         ? "Export PSD"
         : "PSD export hook is scaffolded and waiting for integration";
     els.juggernautExportPsd.title = exportTitle;
     els.juggernautExportPsd.setAttribute("aria-label", exportTitle);
-    els.juggernautExportPsd.classList.toggle("is-ready", exportHookReady && state.images.length > 0);
+    els.juggernautExportPsd.classList.toggle("is-ready", exportHookReady && !emptyCanvas);
     els.juggernautExportPsd.classList.toggle("is-pending-hook", !exportHookReady);
   }
 
@@ -9974,6 +9978,7 @@ function renderJuggernautShellChrome() {
       "is-selection-empty",
       disabledReason === "selection_required" || (key === "select" && disabledReason === "unavailable_in_current_mode")
     );
+    btn.classList.toggle("is-empty-canvas-cue", key === "upload" && emptyCanvas);
   }
 }
 
@@ -10114,7 +10119,7 @@ function installJuggernautShellBridge() {
     },
     agentRunnerBridgeKey: AGENT_RUNNER_BRIDGE_KEY,
     openAgentRunner() {
-      return showAgentRunnerPanel({ focusGoal: !agentRunnerActive() });
+      return showAgentRunnerPanel({ focusGoal: !agentRunnerActive(), expand: false });
     },
     closeAgentRunner() {
       return hideAgentRunnerPanel();
@@ -26868,7 +26873,7 @@ function resolveAgentRunnerBannerDetail(runner = null) {
     return readFirstString(stopCheck.summary) || "Visible hard requirements are still missing.";
   }
   if (evaluationStatus === "pending") {
-    return "Comparing the visible canvas against the goal with the shared vision planner.";
+    return "";
   }
   if (record.stopRequested) {
     return "The current runtime action is finishing before control returns to you.";
@@ -26920,7 +26925,9 @@ function renderAgentRunnerBanner() {
     els.agentRunnerBannerSummary.textContent = resolveAgentRunnerActivitySummary(runner);
   }
   if (els.agentRunnerBannerDetail) {
-    els.agentRunnerBannerDetail.textContent = resolveAgentRunnerBannerDetail(runner);
+    const detailText = resolveAgentRunnerBannerDetail(runner);
+    els.agentRunnerBannerDetail.textContent = detailText;
+    els.agentRunnerBannerDetail.classList.toggle("hidden", !detailText);
   }
   if (els.agentRunnerBannerStop) {
     els.agentRunnerBannerStop.disabled = !(runner.running || runner.autoRunning);
@@ -26979,6 +26986,7 @@ function buildAgentRunnerBridgeSnapshot() {
     goalContractStatus: readFirstString(runner.goalContractStatus) || "idle",
     goalContractSourceGoal: String(runner.goalContractSourceGoal || ""),
     lastStopCheck: cloneToolRuntimeValue(runner.lastStopCheck),
+    panelExpanded: Boolean(runner.panelExpanded),
     plannerMode: String(runner.plannerMode || "auto"),
     maxSteps: Math.max(1, Math.min(AGENT_RUNNER_MAX_STEPS_LIMIT, Number(runner.maxSteps) || AGENT_RUNNER_DEFAULT_MAX_STEPS)),
     stepCount: Math.max(0, Number(runner.stepCount) || 0),
@@ -27268,7 +27276,21 @@ function renderAgentRunnerLog() {
 
 function renderAgentRunnerPanel() {
   const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  const expanded = Boolean(runner.panelExpanded);
+  const setAgentRunnerButtonLabel = (button, label) => {
+    if (!button) return;
+    const labelNode = button.querySelector(".agent-runner-button-label");
+    if (labelNode) {
+      labelNode.textContent = label;
+      return;
+    }
+    button.textContent = label;
+  };
   renderAgentRunnerPlannerOptions();
+  if (els.agentRunnerPanel) {
+    els.agentRunnerPanel.classList.toggle("is-expanded", expanded);
+    els.agentRunnerPanel.classList.toggle("is-collapsed", !expanded);
+  }
   if (els.agentRunnerGoal && document.activeElement !== els.agentRunnerGoal) {
     els.agentRunnerGoal.value = String(runner.goal || "");
   }
@@ -27311,8 +27333,23 @@ function renderAgentRunnerPanel() {
   renderAgentRunnerFinalEvaluation();
   if (els.agentRunnerClose) {
     const closeLabel = agentRunnerActive(runner) ? "Hide" : "Close";
-    els.agentRunnerClose.textContent = closeLabel;
+    setAgentRunnerButtonLabel(els.agentRunnerClose, closeLabel);
     els.agentRunnerClose.setAttribute("aria-label", `${closeLabel} agent run panel`);
+    els.agentRunnerClose.setAttribute("title", `${closeLabel} agent run panel`);
+  }
+  if (els.agentRunnerExpand) {
+    const expandLabel = expanded ? "Compact" : "Expand";
+    setAgentRunnerButtonLabel(els.agentRunnerExpand, expandLabel);
+    els.agentRunnerExpand.setAttribute("aria-label", `${expandLabel} agent run panel`);
+    els.agentRunnerExpand.setAttribute("title", `${expandLabel} agent run panel`);
+  }
+  if (els.agentRunnerSubmit) {
+    const canSubmit = Boolean(String(runner.goal || "").trim()) && !(runner.running || runner.autoRunning);
+    els.agentRunnerSubmit.disabled = !canSubmit;
+    setAgentRunnerButtonLabel(els.agentRunnerSubmit, runner.autoRunning ? "Running" : "Submit");
+    const submitLabel = runner.autoRunning ? "Agent Run is running" : "Submit agent run";
+    els.agentRunnerSubmit.setAttribute("aria-label", submitLabel);
+    els.agentRunnerSubmit.setAttribute("title", submitLabel);
   }
   if (els.agentRunnerCopy) {
     const hasCopyableContent = Boolean(String(runner.goal || "").trim() || runner.lastPlan || (Array.isArray(runner.log) && runner.log.length));
@@ -27336,12 +27373,15 @@ function hideAgentRunnerPanel({ force = false } = {}) {
   return true;
 }
 
-function showAgentRunnerPanel({ focusGoal = true } = {}) {
+function showAgentRunnerPanel({ focusGoal = true, expand = false } = {}) {
   if (!els.agentRunnerPanel) return false;
+  const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
   renderAgentRunnerPlannerOptions();
-  els.agentRunnerPanel.style.left = "50%";
-  els.agentRunnerPanel.style.top = "50%";
-  els.agentRunnerPanel.style.transform = "translate(-50%, -50%)";
+  runner.panelExpanded = Boolean(expand);
+  els.agentRunnerPanel.style.left = "";
+  els.agentRunnerPanel.style.top = "";
+  els.agentRunnerPanel.style.bottom = "";
+  els.agentRunnerPanel.style.transform = "";
   els.agentRunnerPanel.classList.remove("hidden");
   renderQuickActions();
   renderAgentRunnerPanel();
@@ -28424,7 +28464,7 @@ function publishAgentRunnerBridge() {
     logEvent: AGENT_RUNNER_LOG_EVENT,
     getState: () => buildAgentRunnerBridgeSnapshot(),
     open() {
-      showAgentRunnerPanel({ focusGoal: !agentRunnerActive() });
+      showAgentRunnerPanel({ focusGoal: !agentRunnerActive(), expand: false });
       return buildAgentRunnerBridgeSnapshot();
     },
     close() {
@@ -41274,7 +41314,7 @@ function installJuggernautShellUi() {
         hideAgentRunnerPanel();
         return;
       }
-      showAgentRunnerPanel({ focusGoal: !agentRunnerActive() });
+      showAgentRunnerPanel({ focusGoal: !agentRunnerActive(), expand: false });
     });
   }
   if (els.juggernautExportPsd) {
@@ -42497,6 +42537,24 @@ function installUi() {
       hideAgentRunnerPanel();
     });
   }
+  if (els.agentRunnerExpand) {
+    els.agentRunnerExpand.addEventListener("click", () => {
+      bumpInteraction();
+      captureAgentRunnerDraftFromUi();
+      const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+      runner.panelExpanded = !runner.panelExpanded;
+      renderAgentRunnerPanel();
+      if (!runner.panelExpanded && els.agentRunnerGoal) {
+        setTimeout(() => {
+          try {
+            els.agentRunnerGoal.focus();
+          } catch {
+            // ignore
+          }
+        }, 0);
+      }
+    });
+  }
   if (els.agentRunnerClear) {
     els.agentRunnerClear.addEventListener("click", () => {
       bumpInteraction();
@@ -42521,6 +42579,12 @@ function installUi() {
       runAgentRunnerAuto({ source: "agent_runner_panel" }).catch((e) => console.error(e));
     });
   }
+  if (els.agentRunnerSubmit) {
+    els.agentRunnerSubmit.addEventListener("click", () => {
+      bumpInteraction();
+      runAgentRunnerAuto({ source: "agent_runner_panel_compact" }).catch((e) => console.error(e));
+    });
+  }
   if (els.agentRunnerStop) {
     els.agentRunnerStop.addEventListener("click", () => {
       bumpInteraction();
@@ -42530,7 +42594,7 @@ function installUi() {
   if (els.agentRunnerBannerShow) {
     els.agentRunnerBannerShow.addEventListener("click", () => {
       bumpInteraction();
-      showAgentRunnerPanel({ focusGoal: false });
+      showAgentRunnerPanel({ focusGoal: false, expand: true });
     });
   }
   if (els.agentRunnerBannerStop) {
@@ -42561,7 +42625,10 @@ function installUi() {
       const mod = Boolean(event?.metaKey || event?.ctrlKey);
       if (!mod || key !== "Enter") return;
       event.preventDefault();
-      runAgentRunnerStep({ source: "agent_runner_panel" }).catch((e) => console.error(e));
+      const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+      const source = runner.panelExpanded ? "agent_runner_panel" : "agent_runner_panel_compact";
+      const run = runner.panelExpanded ? runAgentRunnerStep : runAgentRunnerAuto;
+      run({ source }).catch((e) => console.error(e));
     });
   }
 
@@ -42764,7 +42831,7 @@ function installUi() {
       }
 
       if (key === "g") {
-        showAgentRunnerPanel({ focusGoal: !agentRunnerActive() });
+        showAgentRunnerPanel({ focusGoal: !agentRunnerActive(), expand: false });
         return;
       }
 
