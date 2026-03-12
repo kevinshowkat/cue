@@ -90,6 +90,7 @@ function summarizeRecentActivity(recentLog = [], { limit = 8 } = {}) {
 
 export function buildAgentRunnerEvaluationPrompt({
   goal = "",
+  goalContract = null,
   finishReason = "",
   stepCount = 0,
   lastPlan = null,
@@ -103,8 +104,10 @@ export function buildAgentRunnerEvaluationPrompt({
     "You are evaluating the final visible canvas result for Juggernaut Agent Run.",
     "Judge only what is visibly present on the canvas image.",
     "Compare the visible result against the user goal.",
+    "When a compiled goalContract is present, treat its hardRequirements as the visible completion contract.",
     "Do not give credit for setup work, hidden intent, apparent effort, or reasonable intermediate steps.",
     "If the requested interaction, composition, pose, or placement is still missing, penalize heavily.",
+    "Soft intents in goalContract are non-blocking quality signals. Missing a soft intent should not outweigh a failed hard requirement.",
     "A partially prepared canvas should score low even if the intermediate work looks sensible.",
     "",
     "Score rubric:",
@@ -134,6 +137,7 @@ export function buildAgentRunnerEvaluationPrompt({
     JSON.stringify(
       {
         goal: normalizedGoal,
+        goalContract: asRecord(goalContract) || null,
         finishReason: normalizedFinishReason,
         stepCount: Math.max(0, Number(stepCount) || 0),
         lastPlanSummary,

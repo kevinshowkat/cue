@@ -14,6 +14,23 @@ import {
 test("agent runner context summary keeps the visible canvas compact and action-oriented", () => {
   const summary = buildAgentRunnerContextSummary({
     goal: "Remove the background clutter and keep the subject intact before export.",
+    goalContract: {
+      schemaVersion: "juggernaut.agent_runner_goal_contract.v1",
+      goalSummary: "Keep the subject visible while removing background clutter.",
+      goalType: "general_visual_transform",
+      hardRequirements: {
+        entities: [{ name: "subject", minVisibleCount: 1, requiredVisible: true }],
+        objects: [],
+        interactions: [],
+        sceneCues: [],
+        preserve: ["subject intact"],
+      },
+      softIntents: ["cleaner background"],
+      forbiddenShortcuts: ["subject_removal"],
+      unknownPhrases: [],
+      stopRules: ["The subject must remain visible."],
+      compileConfidence: 0.88,
+    },
     shellSnapshot: {
       activeTabId: "tab-1",
       runDir: "/tmp/run-1",
@@ -88,6 +105,7 @@ test("agent runner context summary keeps the visible canvas compact and action-o
   });
 
   assert.equal(summary.goal, "Remove the background clutter and keep the subject intact before export.");
+  assert.equal(summary.goalContract.raw.hardRequirements.entities[0].name, "subject");
   assert.equal(summary.canvas.visibleImages[0].rectCss.left, 112);
   assert.equal(summary.canvas.marks[0].id, "mark-1");
   assert.equal(summary.canvas.subjectSelections.activeImageHasRegionSelection, false);
@@ -100,6 +118,23 @@ test("agent runner context summary keeps the visible canvas compact and action-o
 test("agent runner planner prompt carries the single-step JSON contract and compact context", () => {
   const prompt = buildAgentRunnerPlannerPrompt({
     goal: "Make room on the right for copy.",
+    goalContract: {
+      schemaVersion: "juggernaut.agent_runner_goal_contract.v1",
+      goalSummary: "Create visible open space on the right side for copy.",
+      goalType: "placement",
+      hardRequirements: {
+        entities: [],
+        objects: [],
+        interactions: [],
+        sceneCues: ["open room on the right"],
+        preserve: [],
+      },
+      softIntents: [],
+      forbiddenShortcuts: ["minor_crop_only"],
+      unknownPhrases: [],
+      stopRules: ["The right side must visibly have room for copy."],
+      compileConfidence: 0.93,
+    },
     shellSnapshot: {
       singleImageRail: {
         visibleJobs: [
@@ -137,6 +172,7 @@ test("agent runner planner prompt carries the single-step JSON contract and comp
   assert.match(prompt, /Return JSON only\./);
   assert.match(prompt, /The first visual input is the current rendered visible canvas view, including visible marks and overlays\./);
   assert.match(prompt, /Any additional visual inputs are visible source images for detail only; use the rendered canvas view to reason about the next step\./);
+  assert.match(prompt, /A compiled goal contract may appear in Context JSON\. Treat hard requirements there as completion constraints, not optional style cues\./);
   assert.match(prompt, /"type": "set_active_image" \| "set_selected_images" \| "marker_stroke"/);
   assert.match(prompt, /Only choose invoke_seeded_tool when toolId is listed in availableActions\.seededTools\./);
   assert.match(prompt, /For cut_out, first create a real subject region on the active source image/);
@@ -148,7 +184,10 @@ test("agent runner planner prompt carries the single-step JSON contract and comp
   assert.match(prompt, /Before request_design_review, use marks and\/or Magic Select when composition, placement, interaction, pose, or source-vs-target intent needs to be made explicit on-canvas\./);
   assert.match(prompt, /For cross-image composites, mark the source subject and the destination area before request_design_review when placement matters\./);
   assert.match(prompt, /For request_design_review summaries, do not restate the user goal, inferred scene, or hidden intent\./);
+  assert.match(prompt, /If goalContract\.hardRequirements exist, do not treat palette shifts, props, uniforms, or single-subject styling as sufficient/);
+  assert.match(prompt, /Export or stop only when the visible canvas satisfies the hard requirements in goalContract/);
   assert.match(prompt, /"goal":\s*"Make room on the right for copy\."/);
+  assert.match(prompt, /"goalContract":\s*\{/);
 });
 
 test("agent runner context summary only exposes enabled seeded tools from the shell affordance snapshot", () => {

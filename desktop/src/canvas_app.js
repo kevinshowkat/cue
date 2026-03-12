@@ -68,6 +68,10 @@ import {
   summarizeAgentRunnerAction,
 } from "./agent_runner_runtime.js";
 import {
+  createAgentRunnerGoalContractCompiler,
+  summarizeAgentRunnerGoalContract,
+} from "./agent_runner_goal_contract.js";
+import {
   classifyIntentIconsRouting as classifyIntentIconsRoutingUtil,
   intentIconsPayloadChecksum as intentIconsPayloadChecksumUtil,
   intentIconsPayloadSafeSnippet as intentIconsPayloadSafeSnippetUtil,
@@ -827,9 +831,18 @@ const agentRunnerPlanner = createAgentRunnerPlanner({
   getKeyStatus: () => invoke("get_key_status"),
 });
 
+const agentRunnerGoalContractCompiler = createAgentRunnerGoalContractCompiler({
+  getKeyStatus: () => invoke("get_key_status"),
+});
+
 function createFreshAgentRunnerState() {
   return {
     goal: "",
+    goalContract: null,
+    goalContractRawText: "",
+    goalContractSourceGoal: "",
+    goalContractStatus: "idle",
+    lastStopCheck: null,
     plannerMode: "auto",
     maxSteps: AGENT_RUNNER_DEFAULT_MAX_STEPS,
     log: [],
@@ -26799,6 +26812,10 @@ function resolveAgentRunnerActivitySummary(runner = null) {
   const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
   const evaluation = asRecord(record?.finalEvaluation);
   const evaluationStatus = readFirstString(evaluation?.status).toLowerCase();
+  const stopCheck = asRecord(record?.lastStopCheck);
+  if (stopCheck?.status === "ready" && stopCheck.allowStop === false) {
+    return clampText(readFirstString(stopCheck.summary) || "Visible hard requirements are still missing.", 160);
+  }
   if (evaluationStatus === "pending") return "Scoring the visible result against the goal.";
   if (record.stopRequested) return "Stopping after the current step finishes.";
   if (evaluationStatus === "ready" && Number.isFinite(Number(evaluation?.score))) {
@@ -26844,8 +26861,12 @@ function resolveAgentRunnerBannerStepLabel(runner = null) {
 function resolveAgentRunnerBannerDetail(runner = null) {
   const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
   const actionLabel = summarizeAgentRunnerAction(record?.lastPlan?.action || null);
+  const stopCheck = asRecord(record?.lastStopCheck);
   const evaluation = asRecord(record?.finalEvaluation);
   const evaluationStatus = readFirstString(evaluation?.status).toLowerCase();
+  if (stopCheck?.status === "ready" && stopCheck.allowStop === false) {
+    return readFirstString(stopCheck.summary) || "Visible hard requirements are still missing.";
+  }
   if (evaluationStatus === "pending") {
     return "Comparing the visible canvas against the goal with the shared vision planner.";
   }
@@ -26954,6 +26975,10 @@ function buildAgentRunnerBridgeSnapshot() {
   const runner = asRecord(state.agentRunner) || createFreshAgentRunnerState();
   return {
     goal: String(runner.goal || ""),
+    goalContract: cloneToolRuntimeValue(runner.goalContract),
+    goalContractStatus: readFirstString(runner.goalContractStatus) || "idle",
+    goalContractSourceGoal: String(runner.goalContractSourceGoal || ""),
+    lastStopCheck: cloneToolRuntimeValue(runner.lastStopCheck),
     plannerMode: String(runner.plannerMode || "auto"),
     maxSteps: Math.max(1, Math.min(AGENT_RUNNER_MAX_STEPS_LIMIT, Number(runner.maxSteps) || AGENT_RUNNER_DEFAULT_MAX_STEPS)),
     stepCount: Math.max(0, Number(runner.stepCount) || 0),
@@ -27005,7 +27030,16 @@ function normalizeAgentRunnerMaxSteps(value) {
 
 function captureAgentRunnerDraftFromUi() {
   const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
-  runner.goal = String(els.agentRunnerGoal?.value || runner.goal || "").trim();
+  const nextGoal = String(els.agentRunnerGoal?.value || runner.goal || "").trim();
+  const goalChanged = nextGoal !== String(runner.goal || "");
+  runner.goal = nextGoal;
+  if (goalChanged) {
+    runner.goalContract = null;
+    runner.goalContractRawText = "";
+    runner.goalContractSourceGoal = "";
+    runner.goalContractStatus = "idle";
+    runner.lastStopCheck = null;
+  }
   runner.plannerMode = readFirstString(els.agentRunnerPlanner?.value, runner.plannerMode, "auto") || "auto";
   runner.maxSteps = normalizeAgentRunnerMaxSteps(els.agentRunnerMaxSteps?.value ?? runner.maxSteps);
   return runner;
@@ -27044,6 +27078,7 @@ function clearAgentRunnerLog() {
   runner.lastPlan = null;
   runner.lastPlanRawText = "";
   runner.lastContextSummary = null;
+  runner.lastStopCheck = null;
   runner.finalEvaluation = null;
   runner.stepCount = 0;
   renderAgentRunnerPanel();
@@ -27055,12 +27090,20 @@ function buildAgentRunnerClipboardText() {
   const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
   const sections = [];
   const goal = String(runner.goal || "").trim();
+  const goalContract = asRecord(runner.goalContract);
   const lastPlan = runner.lastPlan ? JSON.stringify(runner.lastPlan, null, 2) : "No step yet.";
   const finalEvaluation = asRecord(runner.finalEvaluation);
   const log = Array.isArray(runner.log) ? runner.log : [];
 
   sections.push("Goal");
   sections.push(goal || "(empty)");
+  sections.push("");
+  sections.push("Goal Contract");
+  if (!goalContract) {
+    sections.push(readFirstString(runner.goalContractStatus) === "failed" ? "Goal contract unavailable." : "No goal contract yet.");
+  } else {
+    sections.push(JSON.stringify(goalContract, null, 2));
+  }
   sections.push("");
   sections.push("Last Plan");
   sections.push(lastPlan);
@@ -27239,11 +27282,14 @@ function renderAgentRunnerPanel() {
     const imageCount = Array.isArray(state.images) ? state.images.length : 0;
     const selectedCount = getSelectedIds().length;
     const evaluationStatus = readFirstString(runner?.finalEvaluation?.status).toLowerCase();
+    const stopCheck = asRecord(runner?.lastStopCheck);
     let text = "Give the agent a goal, then step it or let it run.";
     if (!String(runner.goal || "").trim()) {
       text = "Describe the goal first. The runner will use the visible canvas, markings, design review, and current tool runtime.";
     } else if (evaluationStatus === "pending") {
       text = `Scoring the final visible result against the goal on ${imageCount} image${imageCount === 1 ? "" : "s"}.`;
+    } else if (stopCheck?.status === "ready" && stopCheck.allowStop === false) {
+      text = stopCheck.summary || "Visible hard requirements are still missing.";
     } else if (runner.stopRequested) {
       text = "Stopping after the current step finishes.";
     } else if (runner.autoRunning) {
@@ -27842,6 +27888,129 @@ function createAgentRunnerEvaluationProviderRouter() {
   });
 }
 
+async function ensureAgentRunnerGoalContract({ runner = null, shellSnapshot = null } = {}) {
+  const record = asRecord(runner) || state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  const goal = String(record.goal || "").trim();
+  if (!goal) {
+    record.goalContract = null;
+    record.goalContractRawText = "";
+    record.goalContractSourceGoal = "";
+    record.goalContractStatus = "idle";
+    return null;
+  }
+  if (record.goalContract && readFirstString(record.goalContractSourceGoal) === goal && readFirstString(record.goalContractStatus) === "ready") {
+    return record.goalContract;
+  }
+  record.goalContractStatus = "pending";
+  record.goalContractRawText = "";
+  record.lastStopCheck = null;
+  appendAgentRunnerLog("info", "Compiling goal contract from the goal text.");
+  renderAgentRunnerPanel();
+  try {
+    const result = await agentRunnerGoalContractCompiler.compile({
+      goal,
+      shellSnapshot,
+      requestId: `agent-runner-goal-contract-${Date.now()}`,
+    });
+    record.goalContract = cloneToolRuntimeValue(result.goalContract);
+    record.goalContractRawText = String(result.rawText || "");
+    record.goalContractSourceGoal = goal;
+    record.goalContractStatus = "ready";
+    appendAgentRunnerLog("success", `Goal contract ready: ${summarizeAgentRunnerGoalContract(record.goalContract)}`, {
+      goalContract: record.goalContract,
+    });
+    renderAgentRunnerPanel();
+    return record.goalContract;
+  } catch (error) {
+    const message = normalizeErrorMessage(error, "Goal contract compilation failed.");
+    record.goalContract = null;
+    record.goalContractRawText = "";
+    record.goalContractSourceGoal = goal;
+    record.goalContractStatus = "failed";
+    appendAgentRunnerLog("error", `Goal contract unavailable: ${message}`, error?.debugInfo || error?.stack || null);
+    renderAgentRunnerPanel();
+    return null;
+  }
+}
+
+async function maybeRunAgentRunnerStopCheck({
+  runner = null,
+  shellSnapshot = null,
+  plannedAction = null,
+  plannerResult = null,
+} = {}) {
+  const record = asRecord(runner) || state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  const actionType = readFirstString(plannedAction?.type).toLowerCase();
+  if (!["stop", "export_psd"].includes(actionType)) {
+    return { allowStop: true, skipped: true, reason: "non_terminal_action" };
+  }
+  const goal = String(record.goal || "").trim();
+  if (!goal) {
+    return { allowStop: true, skipped: true, reason: "missing_goal" };
+  }
+  const goalContract = await ensureAgentRunnerGoalContract({
+    runner: record,
+    shellSnapshot,
+  });
+  if (!goalContract) {
+    return { allowStop: true, skipped: true, reason: "goal_contract_unavailable" };
+  }
+  const runDir = readFirstString(state.runDir, shellSnapshot?.runDir, shellSnapshot?.communicationReview?.runDir);
+  if (!runDir) {
+    return { allowStop: true, skipped: true, reason: "missing_run_dir" };
+  }
+  const visibleCanvasRef = await captureAgentRunnerVisibleCanvasRef(runDir);
+  if (!visibleCanvasRef) {
+    return { allowStop: true, skipped: true, reason: "missing_visible_canvas" };
+  }
+  try {
+    const result = await agentRunnerGoalContractCompiler.checkStop({
+      goal,
+      goalContract,
+      lastPlan: plannerResult?.plan || null,
+      visibleImages: agentRunnerVisibleImages(shellSnapshot),
+      recentLog: record.log,
+      image: visibleCanvasRef,
+      requestId: `agent-runner-goal-check-${Date.now()}`,
+    });
+    record.lastStopCheck = {
+      status: "ready",
+      actionType,
+      visibleCanvasRef,
+      ...cloneToolRuntimeValue(result.verdict),
+      completedAt: new Date().toISOString(),
+    };
+    if (!result.verdict.allowStop) {
+      const label = actionType === "export_psd" ? "Export" : "Stop";
+      appendAgentRunnerLog("info", `${label} blocked: ${result.verdict.summary}`, result.verdict, {
+        actionType,
+        ok: false,
+      });
+      renderAgentRunnerPanel();
+    }
+    return result.verdict;
+  } catch (error) {
+    const message = normalizeErrorMessage(error, "Goal contract stop check failed.");
+    record.lastStopCheck = {
+      status: "failed",
+      actionType,
+      error: message,
+      completedAt: new Date().toISOString(),
+    };
+    appendAgentRunnerLog("error", `Goal check unavailable: ${message}`, error?.debugInfo || error?.stack || null, {
+      actionType,
+      ok: false,
+    });
+    renderAgentRunnerPanel();
+    return {
+      allowStop: true,
+      skipped: true,
+      reason: "goal_check_failed",
+      error: message,
+    };
+  }
+}
+
 async function captureAgentRunnerVisibleCanvasRef(runDir = "") {
   const normalizedRunDir = String(runDir || "").trim();
   if (!normalizedRunDir) return null;
@@ -27917,6 +28086,7 @@ async function maybeRunAgentRunnerFinalEvaluation({
     const providerRouter = createAgentRunnerEvaluationProviderRouter();
     const prompt = buildAgentRunnerEvaluationPrompt({
       goal,
+      goalContract: record.goalContract,
       finishReason,
       stepCount: record.stepCount,
       lastPlan: record.lastPlan,
@@ -27999,8 +28169,13 @@ async function runAgentRunnerStepInternal({ source = "agent_runner_panel" } = {}
   const reviewState =
     (typeof window !== "undefined" ? window.__JUGGERNAUT_REVIEW__?.getState?.() : null) ||
     null;
+  const goalContract = await ensureAgentRunnerGoalContract({
+    runner,
+    shellSnapshot,
+  });
   const contextSummary = buildAgentRunnerContextSummary({
     goal,
+    goalContract,
     shellSnapshot,
     reviewState,
     sessionTools: state.sessionTools,
@@ -28011,6 +28186,7 @@ async function runAgentRunnerStepInternal({ source = "agent_runner_panel" } = {}
 
   const plannerResult = await agentRunnerPlanner.plan({
     goal,
+    goalContract,
     shellSnapshot,
     reviewState,
     sessionTools: state.sessionTools,
@@ -28033,6 +28209,27 @@ async function runAgentRunnerStepInternal({ source = "agent_runner_panel" } = {}
       actionType: plannedAction?.type || null,
     }
   );
+
+  if (plannedAction && (plannedAction.type === "stop" || plannedAction.type === "export_psd")) {
+    const stopCheck = await maybeRunAgentRunnerStopCheck({
+      runner,
+      shellSnapshot,
+      plannedAction,
+      plannerResult,
+    });
+    if (stopCheck && stopCheck.allowStop === false) {
+      const blockedMessage = readFirstString(stopCheck.summary) || "Visible hard requirements are still missing.";
+      setStatus(`Agent Run: ${blockedMessage}`);
+      return {
+        ok: true,
+        terminal: false,
+        status: "continue",
+        action: plannedAction,
+        message: blockedMessage,
+        stopCheck,
+      };
+    }
+  }
 
   if (!plannedAction || plannedAction.type === "stop") {
     const stopMessage =

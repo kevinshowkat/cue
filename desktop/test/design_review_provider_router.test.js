@@ -59,6 +59,36 @@ test("design review provider router sends planner requests with the shared gpt-5
   assert.equal(requests[0].model, DESIGN_REVIEW_PLANNER_MODEL);
 });
 
+test("design review provider router exposes first-class goal-contract requests on the shared planner transport", async () => {
+  const requests = [];
+  const router = createDesignReviewProviderRouter({
+    keyStatus: {
+      openai: true,
+      openrouter: true,
+    },
+    requestProvider: async (request) => {
+      requests.push(request);
+      return { ok: true };
+    },
+  });
+
+  await router.runGoalContract({
+    request: { requestId: "goal-contract-1" },
+    prompt: "Compile the goal",
+  });
+
+  await router.runGoalCheck({
+    request: { requestId: "goal-check-1" },
+    prompt: "Check the goal",
+    images: [{ path: "/tmp/visible.png" }],
+  });
+
+  assert.equal(requests[0].kind, "goal_contract");
+  assert.equal(requests[0].model, DESIGN_REVIEW_PLANNER_MODEL);
+  assert.equal(requests[1].kind, "goal_check");
+  assert.deepEqual(requests[1].images, [{ path: "/tmp/visible.png" }]);
+});
+
 test("design review provider router fails clearly when no planner credentials are configured", async () => {
   const router = createDesignReviewProviderRouter({
     keyStatus: {

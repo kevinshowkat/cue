@@ -4598,7 +4598,9 @@ fn run_design_review_provider_request_sync(
     }
     let vars = collect_brood_env_snapshot();
     match kind.as_str() {
-        "planner" | "upload_analysis" => run_design_review_planner_request(&request, &vars),
+        "planner" | "upload_analysis" | "goal_contract" | "goal_check" => {
+            run_design_review_planner_request(&request, &vars)
+        }
         "apply" => run_design_review_apply_request(&request, &vars),
         "preview" => run_design_review_preview_request(&request, &vars),
         other => Err(format!(

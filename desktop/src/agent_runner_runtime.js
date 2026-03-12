@@ -1,6 +1,7 @@
 import { DESIGN_REVIEW_PLANNER_MODEL } from "./design_review_contract.js";
 import { invokeDesignReviewProviderRequest } from "./design_review_backend.js";
 import { createDesignReviewProviderRouter } from "./design_review_provider_router.js";
+import { summarizeAgentRunnerGoalContract } from "./agent_runner_goal_contract.js";
 
 export const AGENT_RUNNER_PLANNER_OPTIONS = Object.freeze([
   Object.freeze({
@@ -390,6 +391,7 @@ function summarizeSeededToolStates(singleImageRail = null) {
 
 export function buildAgentRunnerContextSummary({
   goal = "",
+  goalContract = null,
   shellSnapshot = null,
   reviewState = null,
   sessionTools = [],
@@ -411,6 +413,12 @@ export function buildAgentRunnerContextSummary({
   });
   return {
     goal: clampText(goal, 400),
+    goalContract: goalContract
+      ? {
+          summary: summarizeAgentRunnerGoalContract(goalContract),
+          raw: cloneJson(goalContract),
+        }
+      : null,
     shell: {
       activeTabId: readFirstString(shell.activeTabId) || null,
       runDir: readFirstString(shell.runDir) || null,
@@ -502,6 +510,7 @@ export function buildAgentRunnerPlannerPrompt(input = {}) {
     "Return JSON only. Do not include markdown fences or prose outside the JSON.",
     "The first visual input is the current rendered visible canvas view, including visible marks and overlays.",
     "Any additional visual inputs are visible source images for detail only; use the rendered canvas view to reason about the next step.",
+    "A compiled goal contract may appear in Context JSON. Treat hard requirements there as completion constraints, not optional style cues.",
     "",
     "Priorities:",
     "1. Make visible, reversible progress toward the goal.",
@@ -517,10 +526,12 @@ export function buildAgentRunnerPlannerPrompt(input = {}) {
     "11. Before request_design_review, use marks and/or Magic Select when composition, placement, interaction, pose, or source-vs-target intent needs to be made explicit on-canvas.",
     "12. For cross-image composites, mark the source subject and the destination area before request_design_review when placement matters.",
     "13. For request_design_review summaries, do not restate the user goal, inferred scene, or hidden intent. Describe only the visible canvas state and visible prep signals.",
-    "14. Use request_design_review when the goal is aesthetic, ambiguous, or multi-step and no direct single-image action can complete it.",
-    "15. Use accept_review_proposal only if review status is ready and a proposal is available.",
-    "16. Use create_tool only when a reusable local pattern is clearly warranted.",
-    "17. Export only when the goal appears satisfied.",
+    "14. If goalContract.hardRequirements exist, do not treat palette shifts, props, uniforms, or single-subject styling as sufficient when a required named entity, object, scene cue, or interaction is still missing.",
+    "15. Use request_design_review when the goal is aesthetic, ambiguous, or multi-step and no direct single-image action can complete it.",
+    "16. Use accept_review_proposal only if review status is ready and a proposal is available.",
+    "17. If review proposals only improve soft style cues while hard requirements remain unmet, continue planning instead of stopping.",
+    "18. Use create_tool only when a reusable local pattern is clearly warranted.",
+    "19. Export or stop only when the visible canvas satisfies the hard requirements in goalContract or, if no hard requirements were extracted, the goal appears visibly satisfied.",
     "",
     "Action schema:",
     '{',
@@ -787,6 +798,7 @@ export function createAgentRunnerPlanner({
     plannerOptions: AGENT_RUNNER_PLANNER_OPTIONS.map((option) => ({ ...option })),
     async plan({
       goal = "",
+      goalContract = null,
       shellSnapshot = null,
       reviewState = null,
       sessionTools = [],
@@ -797,6 +809,7 @@ export function createAgentRunnerPlanner({
     } = {}) {
       const prompt = buildAgentRunnerPlannerPrompt({
         goal,
+        goalContract,
         shellSnapshot,
         reviewState,
         sessionTools,
