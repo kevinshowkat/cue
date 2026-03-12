@@ -4286,7 +4286,7 @@ fn run_design_review_planner_request(
         .filter(|value| !value.trim().is_empty())
         .collect();
     let http_only_openai = kind == "goal_contract" || kind == "goal_check";
-    let planner_reasoning_effort = if http_only_openai { "medium" } else { "xhigh" };
+    let planner_reasoning_effort = "medium";
     let planner_http_timeout = if http_only_openai {
         REVIEW_FAST_PLANNER_HTTP_TIMEOUT
     } else {
@@ -5406,7 +5406,7 @@ mod tests {
     }
 
     #[test]
-    fn openai_planner_payload_uses_low_text_verbosity_xhigh_reasoning_and_high_detail_images() {
+    fn openai_planner_payload_uses_low_text_verbosity_medium_reasoning_and_high_detail_images() {
         let payload = review_build_openai_planner_payload(
             "Plan the next edit.",
             &[
@@ -5414,7 +5414,7 @@ mod tests {
                 "https://example.com/ref.png".to_string(),
             ],
             DESIGN_REVIEW_PLANNER_MODEL,
-            "xhigh",
+            "medium",
         );
 
         assert_eq!(
@@ -5431,7 +5431,7 @@ mod tests {
             payload
                 .pointer("/reasoning/effort")
                 .and_then(|value| value.as_str()),
-            Some("xhigh")
+            Some("medium")
         );
         assert_eq!(
             payload
@@ -5448,12 +5448,12 @@ mod tests {
     }
 
     #[test]
-    fn openai_planner_ws_event_uses_response_create_low_text_verbosity_and_previous_response_id() {
+    fn openai_planner_ws_event_uses_response_create_medium_reasoning_and_previous_response_id() {
         let event = review_build_openai_planner_ws_event(
             "Plan the next edit.",
             &["data:image/png;base64,AAAA".to_string()],
             DESIGN_REVIEW_PLANNER_MODEL,
-            "xhigh",
+            "medium",
             Some("resp_prev_123"),
         );
 
@@ -5475,7 +5475,7 @@ mod tests {
             event
                 .pointer("/reasoning/effort")
                 .and_then(|value| value.as_str()),
-            Some("xhigh")
+            Some("medium")
         );
         assert_eq!(
             event
