@@ -1259,6 +1259,7 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
     "Make previewBrief and applyBrief specific, positive, and verb-first.",
     "Use concise effect statements, not rationale essays.",
     "Use the whole visible canvas as context, not just the local annotation area.",
+    "Treat off-image and between-image annotations as valid relationship cues for linkage, movement, spacing, and placement between visible images.",
     "Treat annotations and the chosen region candidate as focus hints, not crop-only constraints.",
     "Use image identity hints when they exist so subjects are named concretely; do not say second image or reference image generically.",
     "Prefer edits that can plausibly route through the normal execution layer later.",

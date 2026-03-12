@@ -336,7 +336,7 @@ function buildAnchorButtons({
       selected: String(activeToolId || "").trim() === "select",
       toggleable: true,
       running: false,
-      iconSvg: railIconSvg("select_subject"),
+      iconSvg: railIconSvg("select_region"),
       title: hasImage ? "Select a region on the active image" : "Upload an image before selecting",
       ariaLabel: hasImage ? "Select region" : "Upload an image before selecting",
     },

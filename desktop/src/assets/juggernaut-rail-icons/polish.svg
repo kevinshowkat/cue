@@ -1,27 +1,6 @@
 <svg class="tool-icon tool-icon-polish" viewBox="0 0 24 24" fill="none" aria-hidden="true">
   <path fill="currentColor" fill-opacity="0.16" d="M12 4.7 13.6 8.45l3.75 1.6-3.75 1.6L12 15.4l-1.6-3.75-3.75-1.6 3.75-1.6z" />
-  <path
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.85"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    d="M12 4.7 13.6 8.45l3.75 1.6-3.75 1.6L12 15.4l-1.6-3.75-3.75-1.6 3.75-1.6z"
-  />
-  <path
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.85"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    d="M17.55 14.6l.72 1.62 1.63.72-1.63.72-.72 1.63-.72-1.63-1.62-.72 1.62-.72z"
-  />
-  <path
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.85"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    d="M7.15 15.25l.52 1.18 1.18.52-1.18.52-.52 1.18-.52-1.18-1.18-.52 1.18-.52z"
-  />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M12 4.7 13.6 8.45l3.75 1.6-3.75 1.6L12 15.4l-1.6-3.75-3.75-1.6 3.75-1.6z" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M17.55 14.6l.72 1.62 1.63.72-1.63.72-.72 1.63-.72-1.63-1.62-.72 1.62-.72z" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M7.15 15.25l.52 1.18 1.18.52-1.18.52-.52 1.18-.52-1.18-1.18-.52 1.18-.52z" />
 </svg>

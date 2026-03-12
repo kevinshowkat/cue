@@ -39,6 +39,13 @@
       "asset": "./select_subject.svg"
     },
     {
+      "tool_id": "select_region",
+      "label": "Select region",
+      "semantic_role": "region-selection",
+      "notes": "Marquee selection frame with an inset capture tile so region selection stays distinct from subject extraction.",
+      "asset": "./select_region.svg"
+    },
+    {
       "tool_id": "background_swap",
       "label": "Background swap",
       "semantic_role": "scene-replace",
