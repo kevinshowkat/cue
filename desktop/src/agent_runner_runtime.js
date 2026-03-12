@@ -1,6 +1,7 @@
 import { DESIGN_REVIEW_PLANNER_MODEL } from "./design_review_contract.js";
 import { invokeDesignReviewProviderRequest } from "./design_review_backend.js";
 import { createDesignReviewProviderRouter } from "./design_review_provider_router.js";
+import { summarizeAgentRunnerGoalContract } from "./agent_runner_goal_contract.js";
 
 export const AGENT_RUNNER_PLANNER_OPTIONS = Object.freeze([
   Object.freeze({
@@ -388,12 +389,51 @@ function summarizeSeededToolStates(singleImageRail = null) {
   return states;
 }
 
+function summarizeRunState(runState = null) {
+  const record = asRecord(runState);
+  if (!record) return null;
+  const actionBudget = asRecord(record.actionBudget);
+  return {
+    stepCount: Math.max(0, Number(record.stepCount) || 0),
+    maxSteps: Math.max(1, Number(record.maxSteps) || AGENT_RUNNER_DEFAULT_MAX_STEPS),
+    actionBudget: actionBudget
+      ? {
+          limit: Math.max(1, Number(actionBudget.limit) || AGENT_RUNNER_DEFAULT_MAX_STEPS),
+          used: Math.max(0, Number(actionBudget.used) || 0),
+          remaining: Math.max(0, Number(actionBudget.remaining) || 0),
+          discountedActionTypes: normalizeImageIdList(actionBudget.discountedActionTypes || [], {
+            min: 0,
+            max: 8,
+            label: "discountedActionTypes",
+          }),
+        }
+      : null,
+  };
+}
+
+function summarizeReviewReuse(reviewReuse = null) {
+  const record = asRecord(reviewReuse);
+  if (!record) return null;
+  return {
+    requestId: readFirstString(record.requestId) || null,
+    goalMatchesCurrentGoal: Boolean(record.goalMatchesCurrentGoal),
+    contextMatchesVisiblePrep: Boolean(record.contextMatchesVisiblePrep),
+    hasReadyProposals: Boolean(record.hasReadyProposals),
+    plausibleReadyProposal: Boolean(record.plausibleReadyProposal),
+    canReuseReadyReview: Boolean(record.canReuseReadyReview),
+    reason: readFirstString(record.reason) || null,
+  };
+}
+
 export function buildAgentRunnerContextSummary({
   goal = "",
+  goalContract = null,
   shellSnapshot = null,
   reviewState = null,
   sessionTools = [],
   recentLog = [],
+  runState = null,
+  reviewReuse = null,
 } = {}) {
   const shell = asRecord(shellSnapshot) || {};
   const communication = asRecord(shell.communicationReview) || {};
@@ -411,6 +451,12 @@ export function buildAgentRunnerContextSummary({
   });
   return {
     goal: clampText(goal, 400),
+    goalContract: goalContract
+      ? {
+          summary: summarizeAgentRunnerGoalContract(goalContract),
+          raw: cloneJson(goalContract),
+        }
+      : null,
     shell: {
       activeTabId: readFirstString(shell.activeTabId) || null,
       runDir: readFirstString(shell.runDir) || null,
@@ -437,7 +483,11 @@ export function buildAgentRunnerContextSummary({
       subjectSelections,
       activeTool: readFirstString(communicationData.tool) || null,
     },
-    review: summarizeReviewState(reviewState),
+    review: {
+      ...summarizeReviewState(reviewState),
+      reuse: summarizeReviewReuse(reviewReuse),
+    },
+    runState: summarizeRunState(runState),
     sessionTools: summarizeSessionTools(sessionTools),
     recentActivity: summarizeRecentLog(recentLog),
     availableActions: {
@@ -503,6 +553,7 @@ export function buildAgentRunnerPlannerPrompt(input = {}) {
     "Return JSON only. Do not include markdown fences or prose outside the JSON.",
     "The first visual input is the current rendered visible canvas view, including visible marks and overlays.",
     "Any additional visual inputs are visible source images for detail only; use the rendered canvas view to reason about the next step.",
+    "A compiled goal contract may appear in Context JSON. Treat hard requirements there as completion constraints, not optional style cues.",
     "",
     "Priorities:",
     "1. Make visible, reversible progress toward the goal.",
@@ -518,11 +569,17 @@ export function buildAgentRunnerPlannerPrompt(input = {}) {
     "11. Before request_design_review, use marks and/or Magic Select when composition, placement, interaction, pose, or source-vs-target intent needs to be made explicit on-canvas.",
     "12. Off-image and between-image marks are valid visible cues. Use them to show linkage, movement, handoff, spacing, or placement relationships between visible images.",
     "13. For cross-image composites, mark the source subject and the destination area before request_design_review when placement matters.",
-    "14. For request_design_review summaries, do not restate the user goal, inferred scene, or hidden intent. Describe only the visible canvas state and visible prep signals.",
-    "15. Use request_design_review when the goal is aesthetic, ambiguous, or multi-step and no direct single-image action can complete it.",
-    "16. Use accept_review_proposal only if review status is ready and a proposal is available.",
-    "17. Use create_tool only when a reusable local pattern is clearly warranted.",
-    "18. Export only when the goal appears satisfied.",
+    "14. It is okay to sketch missing scene elements or motion cues with marks before review, such as a hoop, dunk path, landing area, or subject destination, when that helps communicate the intended edit.",
+    "15. Those marks are temporary instruction overlays, not completed edits. A drawn hoop, arrow, or outline does not satisfy a hard requirement until the edited image visibly renders it.",
+    "16. For request_design_review summaries, do not restate the user goal, inferred scene, or hidden intent. Describe only the visible canvas state and visible prep signals.",
+    "17. If goalContract.hardRequirements exist, do not treat palette shifts, props, uniforms, or single-subject styling as sufficient when a required named entity, object, scene cue, or interaction is still missing.",
+    "18. Use request_design_review when the goal is aesthetic, ambiguous, or multi-step and no direct single-image action can complete it.",
+    "19. Use accept_review_proposal only if review status is ready and a proposal is available.",
+    "20. If review proposals only improve soft style cues while hard requirements remain unmet, continue planning instead of stopping.",
+    "21. If review.reuse.canReuseReadyReview is true, do not request_design_review again until the canvas, marks, regions, selection, or goal changes.",
+    "22. runState.actionBudget is a weighted runway, not a raw step counter. set_active_image, set_selected_images, marker_stroke, magic_select_click, and eraser_stroke are discounted prep actions, but they still consume some budget.",
+    "23. Use create_tool only when a reusable local pattern is clearly warranted.",
+    "24. Export or stop only when the visible canvas satisfies the hard requirements in goalContract or, if no hard requirements were extracted, the goal appears visibly satisfied.",
     "",
     "Action schema:",
     '{',
@@ -551,7 +608,8 @@ export function buildAgentRunnerPlannerPrompt(input = {}) {
     "- pointsPct and pointPct are normalized 0..1 coordinates inside imageId.rectCss and are preferred when image bounds are available.",
     "- marker_stroke requires at least 2 points.",
     "- eraser_stroke requires at least 1 point.",
-    "- Marker, Magic Select, and Eraser are focus-setting actions; they do not change pixels.",
+    "- Marker, Magic Select, and Eraser are focus-setting actions; they do not directly change the underlying image pixels.",
+    "- Their visible overlays can still be used as temporary planning cues for later edits or review proposals.",
     "- invoke_seeded_tool and invoke_direct_affordance apply to exactly one active image.",
     "- cut_out requires a real Magic Select or lasso region on that active image before it can run.",
     "- remove deletes the selected content from that active image and must not be used to extract a reusable subject.",
@@ -789,6 +847,7 @@ export function createAgentRunnerPlanner({
     plannerOptions: AGENT_RUNNER_PLANNER_OPTIONS.map((option) => ({ ...option })),
     async plan({
       goal = "",
+      goalContract = null,
       shellSnapshot = null,
       reviewState = null,
       sessionTools = [],
@@ -799,6 +858,7 @@ export function createAgentRunnerPlanner({
     } = {}) {
       const prompt = buildAgentRunnerPlannerPrompt({
         goal,
+        goalContract,
         shellSnapshot,
         reviewState,
         sessionTools,

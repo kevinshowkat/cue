@@ -9,6 +9,33 @@ import {
 test("agent runner evaluation prompt emphasizes visible outcome over setup effort", () => {
   const prompt = buildAgentRunnerEvaluationPrompt({
     goal: "make aragorn and lebron locked in combat",
+    goalContract: {
+      schemaVersion: "juggernaut.agent_runner_goal_contract.v1",
+      goalSummary: "Aragorn and LeBron visibly locked in combat.",
+      goalType: "directed_action",
+      hardRequirements: {
+        entities: [
+          { name: "Aragorn", minVisibleCount: 1, requiredVisible: true },
+          { name: "LeBron James", minVisibleCount: 1, requiredVisible: true },
+        ],
+        interactions: [
+          {
+            type: "combat",
+            description: "Aragorn and LeBron are visibly locked in combat.",
+            participants: ["Aragorn", "LeBron James"],
+            mustBeVisible: true,
+          },
+        ],
+        objects: [],
+        sceneCues: [],
+        preserve: [],
+      },
+      softIntents: [],
+      forbiddenShortcuts: ["single_subject_only"],
+      unknownPhrases: [],
+      stopRules: ["Both named people must be visible."],
+      compileConfidence: 0.94,
+    },
     finishReason: "max_steps_reached",
     stepCount: 8,
     lastPlan: {
@@ -29,12 +56,15 @@ test("agent runner evaluation prompt emphasizes visible outcome over setup effor
   });
 
   assert.match(prompt, /Judge only what is visibly present on the canvas image\./);
+  assert.match(prompt, /When a compiled goalContract is present, treat its hardRequirements as the visible completion contract\./);
   assert.match(prompt, /Do not give credit for setup work, hidden intent, apparent effort, or reasonable intermediate steps\./);
   assert.match(prompt, /If the requested interaction, composition, pose, or placement is still missing, penalize heavily\./);
+  assert.match(prompt, /Soft intents in goalContract are non-blocking quality signals\./);
   assert.match(prompt, /Do not suggest direct image edits or next visual fixes\./);
   assert.match(prompt, /uxSuggestions are for clarifying the app UX, controls, feedback, or visible workflow\./);
   assert.match(prompt, /agentSuggestions are for clarifying tool labels, tool descriptions, disabled reasons, planner guidance, or agent affordances\./);
   assert.match(prompt, /"goal": "make aragorn and lebron locked in combat"/);
+  assert.match(prompt, /"goalContract": \{/);
   assert.match(prompt, /"finishReason": "max_steps_reached"/);
   assert.match(prompt, /"label": "lebron\.png"/);
   assert.match(prompt, /"recentActivity": \[/);

@@ -21,7 +21,35 @@ Important:
 6. Set:
    - `Planner`: `Auto`
    - `Max Steps`: `4` for step-by-step testing or `6` for short auto runs
+     - this now acts as a weighted action budget, not a strict raw step cap
+     - `set_active_image`, `set_selected_images`, `marker_stroke`, `magic_select_click`, and `eraser_stroke` count at a discounted rate so visible prep does not consume the whole run too quickly
 7. Start with `Step`, not `Auto`.
+
+## Goal Contract Flow
+
+Agent Run now starts compiling the typed goal into a first-class goal contract with `gpt-5.4` as soon as the run begins, but that compile runs in the background instead of blocking the first plan.
+
+- `hard requirements`
+  - visually checkable obligations like named people, required objects, interactions, scene/domain cues, and explicit preserve rules
+- `soft intents`
+  - style, tone, humor, or vibe directions that guide planning but do not block stop
+- `forbidden shortcuts`
+  - weak proxies like `style_only`, `palette_only`, `prop_only`, or `single_subject_only` when the goal would be falsely satisfied by them
+
+Marks and Magic Select regions remain valid prep for Agent Run:
+
+- it is okay for the runner to sketch a temporary hoop, motion arc, landing area, or destination box with marker strokes before review if that helps communicate the intended composition
+- those overlays are planning instructions only and do not themselves satisfy hard requirements until the edited image actually renders the hoop, motion, or placement
+
+Important:
+
+- Agent Run now checks the visible canvas against that goal contract before allowing `stop` or `Export PSD`.
+- If a required named person or interaction is still missing, the run should continue instead of stopping cleanly.
+- If the current goal and visible prep state already match a ready design-review request, Agent Run should reuse that review instead of asking for the same review again.
+- Goal contract compile and stop-check requests use a bounded 45-second HTTP planner path rather than the slower websocket-first planner path.
+- OpenAI Agent Run planning, goal-contract compile, and goal-check requests use a medium reasoning profile instead of the heavier planner profile that was causing slow step planning.
+- If the goal contract is still pending or unavailable, Agent Run fails open and keeps moving with the raw goal instead of stalling the run.
+- Weird or vibe-heavy goals should compile to sparse hard requirements and richer soft intents rather than becoming over-constrained.
 
 ## Current Limitation
 
@@ -39,6 +67,11 @@ The current Agent Run planner can directly plan:
 - `export_psd`
 
 It does not yet plan `protect` or `make_space` directly. If you want to test those, pre-place them yourself, then let Agent Run continue from that scoped state.
+
+Also note:
+
+- Design Review remains goal-blind and sees only the visible canvas plus visible marks and selections.
+- Multi-image interaction goals can still outrun the current single-target review/apply path, so the goal contract mainly improves routing, proposal judgment, and stop behavior rather than magically adding full compositing capability.
 
 ## Test Cases
 
