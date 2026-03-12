@@ -855,6 +855,10 @@ function createFreshAgentRunnerState() {
     lastContextSummary: null,
     finalEvaluation: null,
     stepCount: 0,
+    budgetUsed: 0,
+    reviewRequestId: null,
+    reviewContextSignature: "",
+    reviewSourceGoal: "",
     running: false,
     autoRunning: false,
     stopRequested: false,
@@ -26855,18 +26859,17 @@ function resolveAgentRunnerBannerStepLabel(runner = null) {
   const evaluationStatus = readFirstString(record?.finalEvaluation?.status).toLowerCase();
   if (evaluationStatus === "pending") return "Scoring";
   if (record.stopRequested) return stepCount > 0 ? `Finishing step ${stepCount}` : "Finishing";
-  if (record.autoRunning) {
-    return stepCount > 0
-      ? `Step ${stepCount} / ${normalizeAgentRunnerMaxSteps(record.maxSteps)}`
-      : `Preparing / ${normalizeAgentRunnerMaxSteps(record.maxSteps)}`;
-  }
+  if (record.autoRunning) return stepCount > 0 ? `Step ${stepCount}` : "Preparing";
   if (record.running) return stepCount > 0 ? `Step ${stepCount}` : "Preparing";
   return "Idle";
 }
 
 function resolveAgentRunnerBannerDetail(runner = null) {
-  void runner;
-  return "";
+  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
+  const limit = resolveAgentRunnerActionBudgetLimit(record);
+  const used = roundAgentRunnerBudgetValue(record.budgetUsed);
+  if (!(used > 0) && !(record.autoRunning || record.running)) return "";
+  return `Budget ${formatAgentRunnerBudgetValue(used)} / ${formatAgentRunnerBudgetValue(limit)}`;
 }
 
 function renderAgentRunnerBanner() {
@@ -26961,6 +26964,10 @@ function buildAgentRunnerBridgeSnapshot() {
     plannerMode: String(runner.plannerMode || "auto"),
     maxSteps: Math.max(1, Math.min(AGENT_RUNNER_MAX_STEPS_LIMIT, Number(runner.maxSteps) || AGENT_RUNNER_DEFAULT_MAX_STEPS)),
     stepCount: Math.max(0, Number(runner.stepCount) || 0),
+    budgetUsed: roundAgentRunnerBudgetValue(runner.budgetUsed),
+    budgetLimit: resolveAgentRunnerActionBudgetLimit(runner),
+    budgetRemaining: agentRunnerBudgetRemaining(runner),
+    reviewRequestId: readFirstString(runner.reviewRequestId) || null,
     running: Boolean(runner.running),
     autoRunning: Boolean(runner.autoRunning),
     stopRequested: Boolean(runner.stopRequested),
@@ -27007,18 +27014,353 @@ function normalizeAgentRunnerMaxSteps(value) {
   return Math.max(1, Math.min(AGENT_RUNNER_MAX_STEPS_LIMIT, Number(value) || AGENT_RUNNER_DEFAULT_MAX_STEPS));
 }
 
+const AGENT_RUNNER_ACTION_BUDGET_COSTS = Object.freeze({
+  set_active_image: 0.25,
+  set_selected_images: 0.25,
+  marker_stroke: 0.5,
+  magic_select_click: 0.5,
+  eraser_stroke: 0.5,
+});
+
+const AGENT_RUNNER_MIN_ACTION_BUDGET_COST = Math.min(
+  ...Object.values(AGENT_RUNNER_ACTION_BUDGET_COSTS).filter((value) => Number(value) > 0)
+);
+
+const AGENT_RUNNER_REVIEW_PROPOSAL_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "both",
+  "clearly",
+  "context",
+  "depicted",
+  "do",
+  "for",
+  "from",
+  "he",
+  "her",
+  "him",
+  "his",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "james",
+  "lebron",
+  "must",
+  "of",
+  "on",
+  "or",
+  "over",
+  "past",
+  "performing",
+  "player",
+  "shown",
+  "that",
+  "the",
+  "their",
+  "them",
+  "they",
+  "this",
+  "to",
+  "visible",
+  "visibly",
+  "with",
+]);
+
+const AGENT_RUNNER_REVIEW_WEAK_SHORTCUT_PATTERN =
+  /\b(face|faces|likeness|look like|looks like|restyle|restyled|recolor|recolored|palette|uniform|jersey|colorway)\b/i;
+
+function roundAgentRunnerBudgetValue(value = 0) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function formatAgentRunnerBudgetValue(value = 0) {
+  const rounded = roundAgentRunnerBudgetValue(value);
+  return Number.isInteger(rounded)
+    ? String(rounded)
+    : rounded.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function resolveAgentRunnerActionBudgetCost(action = null) {
+  const actionType = readFirstString(action?.type).toLowerCase();
+  if (!actionType || actionType === "stop" || actionType === "export_psd") return 0;
+  return Number(AGENT_RUNNER_ACTION_BUDGET_COSTS[actionType]) || 1;
+}
+
+function resolveAgentRunnerActionBudgetLimit(runner = null) {
+  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
+  return normalizeAgentRunnerMaxSteps(record.maxSteps);
+}
+
+function agentRunnerBudgetRemaining(runner = null) {
+  const limit = resolveAgentRunnerActionBudgetLimit(runner);
+  const used = roundAgentRunnerBudgetValue(asRecord(runner)?.budgetUsed ?? state.agentRunner?.budgetUsed ?? 0);
+  return Math.max(0, roundAgentRunnerBudgetValue(limit - used));
+}
+
+function buildAgentRunnerRunStateSummary(runner = null) {
+  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
+  const limit = resolveAgentRunnerActionBudgetLimit(record);
+  const used = roundAgentRunnerBudgetValue(record.budgetUsed);
+  return {
+    stepCount: Math.max(0, Number(record.stepCount) || 0),
+    maxSteps: limit,
+    actionBudget: {
+      limit,
+      used,
+      remaining: Math.max(0, roundAgentRunnerBudgetValue(limit - used)),
+      discountedActionTypes: Object.keys(AGENT_RUNNER_ACTION_BUDGET_COSTS),
+    },
+  };
+}
+
+function clearAgentRunnerReviewReuseState(runner = null) {
+  const record = asRecord(runner) || state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  record.reviewRequestId = null;
+  record.reviewContextSignature = "";
+  record.reviewSourceGoal = "";
+  return record;
+}
+
+function rememberAgentRunnerReviewReuseState(runner = null, { requestId = null, contextSignature = "", goal = "" } = {}) {
+  const record = asRecord(runner) || state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
+  record.reviewRequestId = readFirstString(requestId) || null;
+  record.reviewContextSignature = readFirstString(contextSignature) || "";
+  record.reviewSourceGoal = String(goal || "").trim();
+  return record;
+}
+
+function agentRunnerActionInvalidatesReviewReuse(action = null) {
+  const actionType = readFirstString(action?.type).toLowerCase();
+  return [
+    "accept_review_proposal",
+    "invoke_seeded_tool",
+    "invoke_direct_affordance",
+    "invoke_custom_tool",
+  ].includes(actionType);
+}
+
+function resolveAgentRunnerReviewReuseState({
+  runner = null,
+  goal = "",
+  goalContract = null,
+  reviewState = null,
+  reviewPayload = null,
+} = {}) {
+  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
+  const nextGoal = String(goal || "").trim();
+  const currentRequestId =
+    readFirstString(reviewState?.request?.requestId, reviewState?.requestId, record.reviewRequestId) || null;
+  const contextSignature = buildAgentRunnerReviewContextSignatureFromPayload(reviewPayload);
+  const currentSignature = buildAgentRunnerReviewContextSignatureFromState(reviewState);
+  const goalMatchesCurrentGoal = Boolean(nextGoal) && readFirstString(record.reviewSourceGoal) === nextGoal;
+  const runnerContextMatches = Boolean(contextSignature) && readFirstString(record.reviewContextSignature) === contextSignature;
+  const reviewStateContextMatches = Boolean(contextSignature) && currentSignature === contextSignature;
+  const contextMatchesVisiblePrep = runnerContextMatches && reviewStateContextMatches;
+  const reviewStatus = readFirstString(reviewState?.status).toLowerCase();
+  const proposals = Array.isArray(reviewState?.proposals) ? reviewState.proposals : [];
+  const hasReadyProposals = reviewStatus === "ready" && proposals.length > 0;
+  const plausibleReadyProposal = hasReadyProposals
+    ? agentRunnerReviewHasPlausibleReadyProposal(reviewState, goalContract)
+    : false;
+  const canReuseReadyReview = Boolean(goalMatchesCurrentGoal && contextMatchesVisiblePrep && reviewStatus === "ready" && currentRequestId);
+  let reason = "review_unavailable";
+  if (!goalMatchesCurrentGoal) {
+    reason = nextGoal ? "goal_changed" : "missing_goal";
+  } else if (!contextSignature) {
+    reason = "review_context_unavailable";
+  } else if (!runnerContextMatches) {
+    reason = "runner_context_changed";
+  } else if (!reviewStateContextMatches) {
+    reason = "review_state_mismatch";
+  } else if (canReuseReadyReview) {
+    reason = "same_goal_same_canvas_ready_review";
+  } else if (reviewStatus) {
+    reason = `review_${reviewStatus}`;
+  }
+  return {
+    requestId: currentRequestId,
+    contextSignature,
+    reviewStatus,
+    goalMatchesCurrentGoal,
+    contextMatchesVisiblePrep,
+    hasReadyProposals,
+    plausibleReadyProposal,
+    canReuseReadyReview,
+    reason,
+  };
+}
+
+function buildAgentRunnerReviewContextSnapshotFromPayload(reviewPayload = null) {
+  const payload = asRecord(reviewPayload) || {};
+  const canvas = asRecord(payload.canvas) || {};
+  const communication = asRecord(payload.communication) || {};
+  const visibleImages = Array.isArray(canvas.visibleImages) ? canvas.visibleImages : [];
+  const marks = Array.isArray(communication.marks) ? communication.marks : [];
+  const regionSelections = Array.isArray(communication.regionSelections) ? communication.regionSelections : [];
+  return {
+    activeImageId: readFirstString(canvas.activeImageId) || null,
+    selectedImageIds: (Array.isArray(canvas.selectedImageIds) ? canvas.selectedImageIds : [])
+      .map((value) => readFirstString(value))
+      .filter(Boolean),
+    visibleImageIds: visibleImages
+      .map((image) => readFirstString(image?.id))
+      .filter(Boolean),
+    markIds: marks.map((mark) => readFirstString(mark?.id)).filter(Boolean),
+    regionCandidateIds: regionSelections
+      .map((group) => readFirstString(group?.chosenCandidateId))
+      .filter(Boolean),
+    reviewTool: readFirstString(communication.tool) || null,
+  };
+}
+
+function buildAgentRunnerReviewContextSnapshotFromState(reviewState = null) {
+  const request = asRecord(reviewState?.request) || asRecord(reviewState) || {};
+  return {
+    activeImageId: readFirstString(request?.primaryImageId, request?.activeImageId) || null,
+    selectedImageIds: (Array.isArray(request?.selectedImageIds) ? request.selectedImageIds : [])
+      .map((value) => readFirstString(value))
+      .filter(Boolean),
+    visibleImageIds: (Array.isArray(request?.imageIdsInView) ? request.imageIdsInView : [])
+      .map((value) => readFirstString(value))
+      .filter(Boolean),
+    markIds: (Array.isArray(request?.markIds) ? request.markIds : [])
+      .map((value) => readFirstString(value))
+      .filter(Boolean),
+    regionCandidateIds: [readFirstString(request?.activeRegionCandidateId)].filter(Boolean),
+    reviewTool: readFirstString(request?.reviewTool) || null,
+  };
+}
+
+function sortAgentRunnerSignatureValue(value = null) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sortAgentRunnerSignatureValue(entry));
+  }
+  if (!value || typeof value !== "object") return value;
+  return Object.keys(value)
+    .sort()
+    .reduce((acc, key) => {
+      acc[key] = sortAgentRunnerSignatureValue(value[key]);
+      return acc;
+    }, {});
+}
+
+function buildAgentRunnerReviewContextSignatureFromPayload(reviewPayload = null) {
+  const snapshot = buildAgentRunnerReviewContextSnapshotFromPayload(reviewPayload);
+  return JSON.stringify(sortAgentRunnerSignatureValue(snapshot));
+}
+
+function buildAgentRunnerReviewContextSignatureFromState(reviewState = null) {
+  const snapshot = buildAgentRunnerReviewContextSnapshotFromState(reviewState);
+  return JSON.stringify(sortAgentRunnerSignatureValue(snapshot));
+}
+
+function tokenizeAgentRunnerReviewProposalText(text = "") {
+  return String(text || "")
+    .toLowerCase()
+    .match(/[a-z0-9]+/g) || [];
+}
+
+function collectAgentRunnerProposalGoalTokens(goalContract = null) {
+  const contract = asRecord(goalContract) || {};
+  const hardRequirements = asRecord(contract.hardRequirements) || {};
+  const entityTokens = new Set();
+  for (const entity of Array.isArray(hardRequirements.entities) ? hardRequirements.entities : []) {
+    for (const token of tokenizeAgentRunnerReviewProposalText(readFirstString(entity?.name))) {
+      if (token.length >= 3) entityTokens.add(token);
+    }
+  }
+  const sources = [];
+  for (const interaction of Array.isArray(hardRequirements.interactions) ? hardRequirements.interactions : []) {
+    sources.push(readFirstString(interaction?.type));
+    sources.push(readFirstString(interaction?.description));
+    sources.push(readFirstString(interaction?.sport));
+  }
+  for (const objectEntry of Array.isArray(hardRequirements.objects) ? hardRequirements.objects : []) {
+    sources.push(readFirstString(objectEntry?.name));
+  }
+  for (const cue of Array.isArray(hardRequirements.sceneCues) ? hardRequirements.sceneCues : []) {
+    sources.push(readFirstString(cue));
+  }
+  const tokens = new Set();
+  for (const source of sources) {
+    for (const token of tokenizeAgentRunnerReviewProposalText(source)) {
+      if (token.length < 4) continue;
+      if (entityTokens.has(token) || AGENT_RUNNER_REVIEW_PROPOSAL_STOP_WORDS.has(token)) continue;
+      tokens.add(token);
+    }
+  }
+  return Array.from(tokens);
+}
+
+function countAgentRunnerProposalGoalTokenHits(text = "", tokens = []) {
+  const normalizedText = ` ${String(text || "").toLowerCase()} `;
+  let hits = 0;
+  for (const token of Array.isArray(tokens) ? tokens : []) {
+    if (!token) continue;
+    if (normalizedText.includes(` ${String(token).toLowerCase()} `)) hits += 1;
+  }
+  return hits;
+}
+
+function agentRunnerReviewHasPlausibleReadyProposal(reviewState = null, goalContract = null) {
+  const proposals = Array.isArray(reviewState?.proposals) ? reviewState.proposals : [];
+  if (!proposals.length) return false;
+  const contract = asRecord(goalContract);
+  if (!contract) return true;
+  const goalType = readFirstString(contract?.goalType).toLowerCase();
+  const hardRequirements = asRecord(contract?.hardRequirements) || {};
+  const interactionGoal =
+    goalType === "directed_action" ||
+    goalType === "competition" ||
+    (Array.isArray(hardRequirements.interactions) && hardRequirements.interactions.length > 0);
+  const goalTokens = collectAgentRunnerProposalGoalTokens(contract);
+  return proposals.some((proposal) => {
+    const text = [
+      readFirstString(proposal?.label),
+      readFirstString(proposal?.title),
+      readFirstString(proposal?.actionType, proposal?.actionIntent),
+      readFirstString(proposal?.why),
+      readFirstString(proposal?.previewBrief),
+      readFirstString(proposal?.applyBrief),
+      ...(Array.isArray(proposal?.negativeConstraints) ? proposal.negativeConstraints : []).map((entry) =>
+        readFirstString(entry)
+      ),
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const tokenHits = countAgentRunnerProposalGoalTokenHits(text, goalTokens);
+    const weakShortcut = AGENT_RUNNER_REVIEW_WEAK_SHORTCUT_PATTERN.test(text);
+    if (interactionGoal) {
+      return tokenHits >= 2 && !weakShortcut;
+    }
+    if (goalTokens.length) {
+      return tokenHits >= 1 || !weakShortcut;
+    }
+    return !weakShortcut;
+  });
+}
+
 function captureAgentRunnerDraftFromUi() {
   const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
   const nextGoal = String(els.agentRunnerGoal?.value || runner.goal || "").trim();
   const goalChanged = nextGoal !== String(runner.goal || "");
   runner.goal = nextGoal;
   if (goalChanged) {
+    runner.budgetUsed = 0;
     runner.goalContract = null;
     runner.goalContractRawText = "";
     runner.goalContractSourceGoal = "";
     runner.goalContractStatus = "idle";
     runner.goalContractPromise = null;
     runner.lastStopCheck = null;
+    clearAgentRunnerReviewReuseState(runner);
   }
   runner.plannerMode = readFirstString(els.agentRunnerPlanner?.value, runner.plannerMode, "auto") || "auto";
   runner.maxSteps = normalizeAgentRunnerMaxSteps(els.agentRunnerMaxSteps?.value ?? runner.maxSteps);
@@ -27061,6 +27403,8 @@ function clearAgentRunnerLog() {
   runner.lastStopCheck = null;
   runner.finalEvaluation = null;
   runner.stepCount = 0;
+  runner.budgetUsed = 0;
+  clearAgentRunnerReviewReuseState(runner);
   renderAgentRunnerPanel();
   publishAgentRunnerStateEvent();
   return buildAgentRunnerBridgeSnapshot();
@@ -27284,6 +27628,9 @@ function renderAgentRunnerPanel() {
     const selectedCount = getSelectedIds().length;
     const evaluationStatus = readFirstString(runner?.finalEvaluation?.status).toLowerCase();
     const stopCheck = asRecord(runner?.lastStopCheck);
+    const budgetLimit = resolveAgentRunnerActionBudgetLimit(runner);
+    const budgetUsed = roundAgentRunnerBudgetValue(runner.budgetUsed);
+    const budgetSuffix = budgetUsed > 0 ? ` Budget ${formatAgentRunnerBudgetValue(budgetUsed)} / ${formatAgentRunnerBudgetValue(budgetLimit)}.` : "";
     let text = "Give the agent a goal, then step it or let it run.";
     if (!String(runner.goal || "").trim()) {
       text = "Describe the goal first. The runner will use the visible canvas, markings, design review, and current tool runtime.";
@@ -27294,13 +27641,13 @@ function renderAgentRunnerPanel() {
     } else if (runner.stopRequested) {
       text = "Stopping after the current step finishes.";
     } else if (runner.autoRunning) {
-      text = `Auto running step ${Math.max(0, Number(runner.stepCount) || 0)} / ${normalizeAgentRunnerMaxSteps(runner.maxSteps)} on ${imageCount} image${imageCount === 1 ? "" : "s"}.`;
+      text = `Auto running step ${Math.max(0, Number(runner.stepCount) || 0)} on ${imageCount} image${imageCount === 1 ? "" : "s"}.${budgetSuffix}`;
     } else if (runner.running) {
-      text = `Executing step ${Math.max(0, Number(runner.stepCount) || 0)} with ${selectedCount} selected image${selectedCount === 1 ? "" : "s"}.`;
+      text = `Executing step ${Math.max(0, Number(runner.stepCount) || 0)} with ${selectedCount} selected image${selectedCount === 1 ? "" : "s"}.${budgetSuffix}`;
     } else if (!imageCount) {
       text = "Goal ready. Import an image or let the agent use Create Tool / export paths on an empty canvas.";
     } else {
-      text = `${imageCount} image${imageCount === 1 ? "" : "s"} on canvas · ${selectedCount || 1} active focus target${selectedCount === 1 ? "" : "s"}.`;
+      text = `${imageCount} image${imageCount === 1 ? "" : "s"} on canvas · ${selectedCount || 1} active focus target${selectedCount === 1 ? "" : "s"}.${budgetSuffix}`;
     }
     els.agentRunnerMeta.textContent = text;
   }
@@ -27576,7 +27923,7 @@ function agentRunnerSummarySuggestsSubjectExtraction(goal = "", plannerSummary =
   );
 }
 
-async function executeAgentRunnerAction(action = null, { goal = "", plannerSummary = "", shellSnapshot = null } = {}) {
+async function executeAgentRunnerAction(action = null, { goal = "", goalContract = null, plannerSummary = "", shellSnapshot = null } = {}) {
   const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
   const requestId = `agent-runner-${Date.now()}-${Math.max(1, Number(runner.stepCount) || 0)}`;
   const actionLabel = summarizeAgentRunnerAction(action);
@@ -27704,6 +28051,62 @@ async function executeAgentRunnerAction(action = null, { goal = "", plannerSumma
 
   if (action.type === "request_design_review") {
     if (!reviewBridge?.startReviewFromShell) throw new Error("Design review bridge is unavailable.");
+    const reviewPayload = buildCommunicationReviewPayload({ source: "agent_runner" });
+    const existingReviewState = reviewBridge.getState?.() || null;
+    const reuseState = resolveAgentRunnerReviewReuseState({
+      runner,
+      goal,
+      goalContract,
+      reviewState: existingReviewState,
+      reviewPayload,
+    });
+    if (reuseState.goalMatchesCurrentGoal && reuseState.contextMatchesVisiblePrep && reuseState.requestId) {
+      const currentStatus = reuseState.reviewStatus;
+      if (currentStatus === "ready") {
+        rememberAgentRunnerReviewReuseState(runner, {
+          requestId: reuseState.requestId,
+          contextSignature: reuseState.contextSignature,
+          goal,
+        });
+        return {
+          ok: true,
+          message: `Reused ready design review with ${Array.isArray(existingReviewState?.proposals) ? existingReviewState.proposals.length : 0} proposal${Array.isArray(existingReviewState?.proposals) && existingReviewState.proposals.length === 1 ? "" : "s"}.`,
+          detail: {
+            ...cloneToolRuntimeValue(existingReviewState),
+            reused: true,
+            plausibleReadyProposal: reuseState.plausibleReadyProposal,
+            reason: reuseState.reason,
+          },
+          budgetCostOverride: 0,
+        };
+      }
+      if (["planning", "previewing", "preparing"].includes(currentStatus)) {
+        const pendingReviewState = await waitForAgentRunnerReviewState({
+          requestId: reuseState.requestId,
+          terminalStatuses: ["ready", "failed"],
+          timeoutMs: AGENT_RUNNER_REVIEW_TIMEOUT_MS,
+        });
+        if (readFirstString(pendingReviewState?.status).toLowerCase() === "failed") {
+          throw new Error(readFirstString(pendingReviewState?.errors?.[0], pendingReviewState?.slots?.[0]?.error, "Design review failed."));
+        }
+        rememberAgentRunnerReviewReuseState(runner, {
+          requestId: reuseState.requestId,
+          contextSignature: reuseState.contextSignature,
+          goal,
+        });
+        return {
+          ok: true,
+          message: `Design review ready with ${Array.isArray(pendingReviewState?.proposals) ? pendingReviewState.proposals.length : 0} proposal${Array.isArray(pendingReviewState?.proposals) && pendingReviewState.proposals.length === 1 ? "" : "s"}.`,
+          detail: {
+            ...cloneToolRuntimeValue(pendingReviewState),
+            reused: true,
+            waitedForExistingRequest: true,
+            reason: reuseState.reason,
+          },
+          budgetCostOverride: 0,
+        };
+      }
+    }
     const start = await reviewBridge.startReviewFromShell({ source: "agent_runner" });
     if (start?.ok === false) {
       if (start?.reason === "missing_anchor") {
@@ -27719,10 +28122,19 @@ async function executeAgentRunnerAction(action = null, { goal = "", plannerSumma
     if (readFirstString(reviewState?.status).toLowerCase() === "failed") {
       throw new Error(readFirstString(reviewState?.errors?.[0], reviewState?.slots?.[0]?.error, "Design review failed."));
     }
+    rememberAgentRunnerReviewReuseState(runner, {
+      requestId: readFirstString(reviewState?.request?.requestId, reviewState?.requestId, start?.requestId),
+      contextSignature: reuseState.contextSignature,
+      goal,
+    });
     return {
       ok: true,
       message: `Design review ready with ${Array.isArray(reviewState?.proposals) ? reviewState.proposals.length : 0} proposal${Array.isArray(reviewState?.proposals) && reviewState.proposals.length === 1 ? "" : "s"}.`,
-      detail: reviewState,
+      detail: {
+        ...cloneToolRuntimeValue(reviewState),
+        deduped: Boolean(start?.deduped),
+      },
+      budgetCostOverride: start?.deduped ? 0 : null,
     };
   }
 
@@ -28222,11 +28634,22 @@ async function runAgentRunnerStepInternal({ source = "agent_runner_panel" } = {}
     runner,
     shellSnapshot,
   });
+  const reviewPayload = buildCommunicationReviewPayload({ source: "agent_runner" });
+  const reviewReuse = resolveAgentRunnerReviewReuseState({
+    runner,
+    goal,
+    goalContract,
+    reviewState,
+    reviewPayload,
+  });
+  const runState = buildAgentRunnerRunStateSummary(runner);
   const contextSummary = buildAgentRunnerContextSummary({
     goal,
     goalContract,
     shellSnapshot,
     reviewState,
+    runState,
+    reviewReuse,
     sessionTools: state.sessionTools,
     recentLog: runner.log,
   });
@@ -28238,6 +28661,8 @@ async function runAgentRunnerStepInternal({ source = "agent_runner_panel" } = {}
     goalContract,
     shellSnapshot,
     reviewState,
+    runState,
+    reviewReuse,
     sessionTools: state.sessionTools,
     recentLog: runner.log,
     plannerMode: runner.plannerMode,
@@ -28293,11 +28718,49 @@ async function runAgentRunnerStepInternal({ source = "agent_runner_panel" } = {}
     };
   }
 
+  const actionBudgetCost = resolveAgentRunnerActionBudgetCost(plannedAction);
+  const budgetLimit = resolveAgentRunnerActionBudgetLimit(runner);
+  const budgetUsed = roundAgentRunnerBudgetValue(runner.budgetUsed);
+  if (actionBudgetCost > 0 && budgetUsed + actionBudgetCost > budgetLimit + 1e-9) {
+    const blockedMessage = `Weighted action budget exhausted at ${formatAgentRunnerBudgetValue(budgetUsed)} / ${formatAgentRunnerBudgetValue(budgetLimit)}. Stop, export, or change the canvas before continuing.`;
+    appendAgentRunnerLog("info", blockedMessage, {
+      actionType: plannedAction?.type || null,
+      budgetUsed,
+      budgetLimit,
+      attemptedCost: actionBudgetCost,
+    }, {
+      actionType: plannedAction?.type || null,
+      ok: false,
+    });
+    setStatus(`Agent Run: ${blockedMessage}`);
+    return {
+      ok: true,
+      terminal: false,
+      status: "budget_exhausted",
+      action: plannedAction,
+      message: blockedMessage,
+      budgetUsed,
+      budgetLimit,
+      attemptedCost: actionBudgetCost,
+    };
+  }
+
   const actionResult = await executeAgentRunnerAction(plannedAction, {
     goal,
+    goalContract,
     plannerSummary: plannerResult?.plan?.summary || "",
     shellSnapshot,
   });
+  const appliedBudgetCost =
+    actionResult?.budgetCostOverride == null
+      ? actionBudgetCost
+      : Math.max(0, Number(actionResult.budgetCostOverride) || 0);
+  if (actionResult?.ok !== false && appliedBudgetCost > 0) {
+    runner.budgetUsed = roundAgentRunnerBudgetValue((Number(runner.budgetUsed) || 0) + appliedBudgetCost);
+  }
+  if (actionResult?.ok !== false && agentRunnerActionInvalidatesReviewReuse(plannedAction)) {
+    clearAgentRunnerReviewReuseState(runner);
+  }
   appendAgentRunnerLog(actionResult?.ok ? "success" : "error", actionResult?.message || summarizeAgentRunnerAction(plannedAction), actionResult?.detail, {
     actionType: plannedAction?.type || null,
     ok: actionResult?.ok !== false,
@@ -28357,7 +28820,13 @@ async function runAgentRunnerStep({ source = "agent_runner_panel" } = {}) {
     runner.running = false;
     renderAgentRunnerPanel();
   }
-  if (outcome?.terminal || outcome?.status === "complete" || outcome?.status === "blocked" || outcome?.ok === false) {
+  if (
+    outcome?.terminal ||
+    outcome?.status === "complete" ||
+    outcome?.status === "blocked" ||
+    outcome?.status === "budget_exhausted" ||
+    outcome?.ok === false
+  ) {
     await maybeRunAgentRunnerFinalEvaluation({ runner, outcome });
   }
   return outcome;
@@ -28403,8 +28872,10 @@ async function runAgentRunnerAuto({ source = "agent_runner_panel" } = {}) {
   let finalOutcome = null;
   let stoppedByUser = false;
   let maxStepsReached = false;
+  const budgetLimit = resolveAgentRunnerActionBudgetLimit(runner);
+  const maxAutoIterations = Math.max(1, Math.ceil(budgetLimit / AGENT_RUNNER_MIN_ACTION_BUDGET_COST) + 1);
   try {
-    for (let index = 0; index < normalizeAgentRunnerMaxSteps(runner.maxSteps); index += 1) {
+    for (let index = 0; index < maxAutoIterations; index += 1) {
       if (runner.stopRequested) {
         appendAgentRunnerLog("info", "Auto run stopped by user.");
         stoppedByUser = true;
@@ -28433,7 +28904,13 @@ async function runAgentRunnerAuto({ source = "agent_runner_panel" } = {}) {
         runner.running = false;
         renderAgentRunnerPanel();
       }
-      if (!outcome?.ok || outcome?.terminal || outcome?.status === "blocked" || outcome?.status === "complete") {
+      if (
+        !outcome?.ok ||
+        outcome?.terminal ||
+        outcome?.status === "blocked" ||
+        outcome?.status === "complete" ||
+        outcome?.status === "budget_exhausted"
+      ) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 180));
@@ -28442,10 +28919,17 @@ async function runAgentRunnerAuto({ source = "agent_runner_panel" } = {}) {
     if (
       !stoppedByUser &&
       !maxStepsReached &&
-      Math.max(0, Number(runner.stepCount) || 0) >= normalizeAgentRunnerMaxSteps(runner.maxSteps) &&
+      (
+        finalOutcome?.status === "budget_exhausted" ||
+        agentRunnerBudgetRemaining(runner) <= 1e-9
+      ) &&
       !(finalOutcome?.terminal || finalOutcome?.status === "complete" || finalOutcome?.status === "blocked" || finalOutcome?.ok === false)
     ) {
       maxStepsReached = true;
+      appendAgentRunnerLog(
+        "info",
+        `Auto run hit the weighted action budget (${formatAgentRunnerBudgetValue(roundAgentRunnerBudgetValue(runner.budgetUsed))} / ${formatAgentRunnerBudgetValue(budgetLimit)}).`
+      );
     }
     if (!runner.stopRequested) {
       appendAgentRunnerLog("info", "Auto run finished.");

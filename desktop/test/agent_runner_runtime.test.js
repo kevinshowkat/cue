@@ -84,6 +84,25 @@ test("agent runner context summary keeps the visible canvas compact and action-o
         },
       ],
     },
+    runState: {
+      stepCount: 3,
+      maxSteps: 8,
+      actionBudget: {
+        limit: 8,
+        used: 1.25,
+        remaining: 6.75,
+        discountedActionTypes: ["set_active_image", "marker_stroke"],
+      },
+    },
+    reviewReuse: {
+      requestId: "design-review-1",
+      goalMatchesCurrentGoal: true,
+      contextMatchesVisiblePrep: true,
+      hasReadyProposals: true,
+      plausibleReadyProposal: true,
+      canReuseReadyReview: true,
+      reason: "same_goal_same_canvas_ready_review",
+    },
     sessionTools: [
       {
         toolId: "soft-contrast",
@@ -113,6 +132,9 @@ test("agent runner context summary keeps the visible canvas compact and action-o
   assert.equal(summary.availableActions.seededToolGuidance.cut_out.requiresSubjectRegion, true);
   assert.ok(summary.availableActions.reviewGuidance.markBeforeReviewFor.includes("cross_image_linkage"));
   assert.equal(summary.review.proposals[0].proposalId, "prop-1");
+  assert.equal(summary.review.reuse.canReuseReadyReview, true);
+  assert.equal(summary.runState.actionBudget.used, 1.25);
+  assert.deepEqual(summary.runState.actionBudget.discountedActionTypes, ["set_active_image", "marker_stroke"]);
   assert.equal(summary.sessionTools[0].toolId, "soft-contrast");
 });
 
@@ -167,6 +189,31 @@ test("agent runner planner prompt carries the single-step JSON contract and comp
         },
       },
     },
+    runState: {
+      stepCount: 4,
+      maxSteps: 8,
+      actionBudget: {
+        limit: 8,
+        used: 2,
+        remaining: 6,
+        discountedActionTypes: [
+          "set_active_image",
+          "set_selected_images",
+          "marker_stroke",
+          "magic_select_click",
+          "eraser_stroke",
+        ],
+      },
+    },
+    reviewReuse: {
+      requestId: "design-review-7",
+      goalMatchesCurrentGoal: true,
+      contextMatchesVisiblePrep: true,
+      hasReadyProposals: true,
+      plausibleReadyProposal: true,
+      canReuseReadyReview: true,
+      reason: "same_goal_same_canvas_ready_review",
+    },
   });
 
   assert.match(prompt, /You are the planner for Juggernaut Agent Run\./);
@@ -185,11 +232,20 @@ test("agent runner planner prompt carries the single-step JSON contract and comp
   assert.match(prompt, /Before request_design_review, use marks and\/or Magic Select when composition, placement, interaction, pose, or source-vs-target intent needs to be made explicit on-canvas\./);
   assert.match(prompt, /Off-image and between-image marks are valid visible cues\. Use them to show linkage, movement, handoff, spacing, or placement relationships between visible images\./);
   assert.match(prompt, /For cross-image composites, mark the source subject and the destination area before request_design_review when placement matters\./);
+  assert.match(prompt, /It is okay to sketch missing scene elements or motion cues with marks before review, such as a hoop, dunk path, landing area, or subject destination, when that helps communicate the intended edit\./);
+  assert.match(prompt, /Those marks are temporary instruction overlays, not completed edits\. A drawn hoop, arrow, or outline does not satisfy a hard requirement until the edited image visibly renders it\./);
   assert.match(prompt, /For request_design_review summaries, do not restate the user goal, inferred scene, or hidden intent\./);
   assert.match(prompt, /If goalContract\.hardRequirements exist, do not treat palette shifts, props, uniforms, or single-subject styling as sufficient/);
+  assert.match(prompt, /If review\.reuse\.canReuseReadyReview is true, do not request_design_review again until the canvas, marks, regions, selection, or goal changes\./);
+  assert.match(prompt, /runState\.actionBudget is a weighted runway, not a raw step counter\./);
+  assert.match(prompt, /set_active_image, set_selected_images, marker_stroke, magic_select_click, and eraser_stroke are discounted prep actions/);
   assert.match(prompt, /Export or stop only when the visible canvas satisfies the hard requirements in goalContract/);
+  assert.match(prompt, /Marker, Magic Select, and Eraser are focus-setting actions; they do not directly change the underlying image pixels\./);
+  assert.match(prompt, /Their visible overlays can still be used as temporary planning cues for later edits or review proposals\./);
   assert.match(prompt, /"goal":\s*"Make room on the right for copy\."/);
   assert.match(prompt, /"goalContract":\s*\{/);
+  assert.match(prompt, /"canReuseReadyReview":\s*true/);
+  assert.match(prompt, /"discountedActionTypes":\s*\[/);
 });
 
 test("agent runner context summary only exposes enabled seeded tools from the shell affordance snapshot", () => {

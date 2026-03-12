@@ -256,6 +256,7 @@ test("design review planner prompt stays compact, restores canvas-scope constrai
   assert.match(prompt, /Use the whole visible canvas as context, not just the local annotation area\./);
   assert.match(prompt, /Treat off-image and between-image annotations as valid relationship cues for linkage, movement, spacing, and placement between visible images\./);
   assert.match(prompt, /Treat annotations and the chosen region candidate as focus hints, not crop-only constraints\./);
+  assert.match(prompt, /If annotations sketch missing scene elements or motion cues such as a hoop, arrow, dunk path, or destination box, treat them as instruction overlays for what the edited image should render, not as the finished result\./);
   assert.match(prompt, /Protect focus inputs mean do not change that region\./);
   assert.match(prompt, /Make Space focus inputs mean reserve or create room there\./);
   assert.match(prompt, /Use image identity hints when they exist so subjects are named concretely/);
