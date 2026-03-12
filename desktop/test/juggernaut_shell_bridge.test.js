@@ -81,6 +81,7 @@ test("Agent Run panel surfaces a final vision score after the run", () => {
   assert.match(app, /finalEvaluation:\s*null/);
   assert.match(app, /goalContract:\s*null/);
   assert.match(app, /goalContractStatus:\s*"idle"/);
+  assert.match(app, /goalContractPromise:\s*null/);
   assert.match(app, /Final score/);
   assert.match(app, /Scoring the final result against the goal\./);
   assert.match(app, /providerRouter\.runPlanner\(\{/);
@@ -100,6 +101,8 @@ test("Agent Run planning captures the visible canvas for live next-step vision r
   assert.match(app, /async function maybeRunAgentRunnerStopCheck\(/);
   assert.match(app, /Compiling goal contract from the goal text\./);
   assert.match(app, /Goal contract ready:/);
+  assert.match(app, /Goal contract is still compiling in the background\./);
+  assert.match(app, /readFirstString\(record\.goalContractStatus\) === "failed"\)\s*\{\s*return null;/);
   assert.match(app, /blocked: \$\{result\.verdict\.summary\}/);
   assert.match(app, /const plannerImages = await buildAgentRunnerPlannerImages\(shellSnapshot\)/);
   assert.match(app, /images:\s*plannerImages,/);

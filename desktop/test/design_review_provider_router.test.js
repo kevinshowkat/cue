@@ -89,6 +89,31 @@ test("design review provider router exposes first-class goal-contract requests o
   assert.deepEqual(requests[1].images, [{ path: "/tmp/visible.png" }]);
 });
 
+test("design review provider router uses fast HTTP planner transport metadata for goal-contract requests", async () => {
+  const router = createDesignReviewProviderRouter({
+    keyStatus: {
+      openai: true,
+      openrouter: false,
+      gemini: false,
+    },
+    requestProvider: async (request) => ({
+      provider: request.provider,
+      model: request.model,
+      transport: "responses_http",
+      text: "{\"goalType\":\"general_visual_transform\"}",
+    }),
+  });
+
+  const result = await router.runGoalContract({
+    request: { requestId: "goal-contract-http" },
+    prompt: "Compile the goal",
+  });
+
+  assert.equal(result.debugInfo?.route?.kind, "goal_contract");
+  assert.equal(result.debugInfo?.route?.provider, "openai");
+  assert.equal(result.debugInfo?.route?.apiPlan?.primaryTransport, "responses_http");
+});
+
 test("design review provider router fails clearly when no planner credentials are configured", async () => {
   const router = createDesignReviewProviderRouter({
     keyStatus: {

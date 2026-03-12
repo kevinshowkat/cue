@@ -56,7 +56,12 @@ function normalizeImagePathRecord(value) {
 function resolveProviderApiPlan(request = {}) {
   const kind = readFirstString(request?.kind) || "unknown";
   const provider = readFirstString(request?.provider) || "unknown";
-  if ((kind === "planner" || kind === "goal_contract" || kind === "goal_check") && provider === "openai") {
+  if ((kind === "goal_contract" || kind === "goal_check") && provider === "openai") {
+    return {
+      primaryTransport: "responses_http",
+    };
+  }
+  if (kind === "planner" && provider === "openai") {
     return {
       primaryTransport: "responses_websocket",
       fallbackTransport: "responses_http_fallback_on_transport_error",

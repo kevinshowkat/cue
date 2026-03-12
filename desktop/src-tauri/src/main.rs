@@ -52,6 +52,7 @@ const DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL: &str = "openai/gpt-5.4";
 // Provider-facing Gemini model id for the final apply path (marketed as Nano Banana 2).
 const DESIGN_REVIEW_APPLY_MODEL: &str = "gemini-3.1-flash-image-preview";
 const REVIEW_OPENAI_RESPONSES_WS_TRANSPORT: &str = "responses_websocket";
+const REVIEW_OPENAI_RESPONSES_HTTP_TRANSPORT: &str = "responses_http";
 const REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT: &str = "responses_http_fallback";
 const REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT: &str = "chat_completions";
 const REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT: &str = "generate_content";
@@ -62,6 +63,8 @@ const REVIEW_OPENROUTER_RESPONSES_TRANSPORT: &str = "responses";
 const REVIEW_OPENAI_RESPONSES_WS_IO_TIMEOUT: Duration = Duration::from_secs(45);
 const REVIEW_OPENAI_RESPONSES_WS_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(45);
 const REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT: Duration = Duration::from_secs(90);
+const REVIEW_FAST_PLANNER_HTTP_TIMEOUT: Duration = Duration::from_secs(20);
+const REVIEW_STANDARD_PLANNER_HTTP_TIMEOUT: Duration = Duration::from_secs(90);
 
 fn build_app_menu(app_name: &str) -> Menu {
     let import = CustomMenuItem::new(MENU_CANVAS_IMPORT.to_string(), "Import Photos")
@@ -2900,6 +2903,9 @@ fn review_openai_planner_http_fallback(
     prompt: &str,
     image_urls: &[String],
     normalized_model: &str,
+    transport: &str,
+    request_timeout: Duration,
+    timeout_detail: &str,
 ) -> Result<serde_json::Value, String> {
     let payload = review_build_openai_planner_payload(prompt, image_urls, normalized_model);
     let response = client
@@ -2913,16 +2919,16 @@ fn review_openai_planner_http_fallback(
                 return review_format_planner_transport_timeout(
                     "openai",
                     normalized_model,
-                    REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT,
+                    transport,
                     "request",
-                    Duration::from_secs(90),
-                    "OpenAI planner HTTP fallback request exceeded the bounded wait.",
+                    request_timeout,
+                    timeout_detail,
                 );
             }
             review_format_planner_transport_failure(
                 "openai",
                 normalized_model,
-                REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT,
+                transport,
                 "request",
                 &error.to_string(),
             )
@@ -2932,7 +2938,7 @@ fn review_openai_planner_http_fallback(
         review_format_planner_transport_failure(
             "openai",
             normalized_model,
-            REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT,
+            transport,
             "read_body",
             &e.to_string(),
         )
@@ -2941,7 +2947,7 @@ fn review_openai_planner_http_fallback(
         return Err(review_format_planner_http_error_for_transport(
             "openai",
             normalized_model,
-            REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT,
+            transport,
             status.as_u16(),
             &body,
         ));
@@ -2951,7 +2957,7 @@ fn review_openai_planner_http_fallback(
     Ok(serde_json::json!({
         "provider": "openai",
         "model": normalized_model,
-        "transport": REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT,
+        "transport": transport,
         "text": review_extract_openai_output_text(&parsed),
         "response_id": review_extract_openai_ws_response_id(&parsed),
         "raw": parsed,
@@ -4232,6 +4238,12 @@ fn run_design_review_planner_request(
     request: &serde_json::Value,
     vars: &HashMap<String, String>,
 ) -> Result<serde_json::Value, String> {
+    let kind = request
+        .get("kind")
+        .and_then(|value| value.as_str())
+        .unwrap_or("planner")
+        .trim()
+        .to_ascii_lowercase();
     let provider_pref = request
         .get("provider")
         .and_then(|value| value.as_str())
@@ -4265,8 +4277,14 @@ fn run_design_review_planner_request(
         })
         .filter(|value| !value.trim().is_empty())
         .collect();
+    let http_only_openai = kind == "goal_contract" || kind == "goal_check";
+    let planner_http_timeout = if http_only_openai {
+        REVIEW_FAST_PLANNER_HTTP_TIMEOUT
+    } else {
+        REVIEW_STANDARD_PLANNER_HTTP_TIMEOUT
+    };
     let client = Client::builder()
-        .timeout(Duration::from_secs(90))
+        .timeout(planner_http_timeout)
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -4287,6 +4305,18 @@ fn run_design_review_planner_request(
                         .get("previousResponseId")
                         .and_then(|value| value.as_str())
                 });
+            if http_only_openai {
+                return review_openai_planner_http_fallback(
+                    &client,
+                    &api_key,
+                    &prompt,
+                    &image_urls,
+                    &normalized_model,
+                    REVIEW_OPENAI_RESPONSES_HTTP_TRANSPORT,
+                    planner_http_timeout,
+                    "OpenAI planner HTTP request exceeded the bounded wait.",
+                );
+            }
             let session_lock = review_responses_ws_session()
                 .lock()
                 .map_err(|_| "OpenAI planner websocket session lock is poisoned.".to_string())?;
@@ -4310,6 +4340,9 @@ fn run_design_review_planner_request(
                         &prompt,
                         &image_urls,
                         &normalized_model,
+                        REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT,
+                        planner_http_timeout,
+                        "OpenAI planner HTTP fallback request exceeded the bounded wait.",
                     )
                     .map_err(|http_error| {
                         format!(

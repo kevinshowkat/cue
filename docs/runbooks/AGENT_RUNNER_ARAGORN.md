@@ -25,7 +25,7 @@ Important:
 
 ## Goal Contract Flow
 
-Agent Run now compiles the typed goal into a first-class goal contract with `gpt-5.4` before it plans the first step.
+Agent Run now starts compiling the typed goal into a first-class goal contract with `gpt-5.4` as soon as the run begins, but that compile runs in the background instead of blocking the first plan.
 
 - `hard requirements`
   - visually checkable obligations like named people, required objects, interactions, scene/domain cues, and explicit preserve rules
@@ -38,6 +38,8 @@ Important:
 
 - Agent Run now checks the visible canvas against that goal contract before allowing `stop` or `Export PSD`.
 - If a required named person or interaction is still missing, the run should continue instead of stopping cleanly.
+- Goal contract compile and stop-check requests use a fast HTTP planner path rather than the slower websocket-first planner path.
+- If the goal contract is still pending or unavailable, Agent Run fails open and keeps moving with the raw goal instead of stalling the run.
 - Weird or vibe-heavy goals should compile to sparse hard requirements and richer soft intents rather than becoming over-constrained.
 
 ## Current Limitation

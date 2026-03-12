@@ -844,6 +844,7 @@ function createFreshAgentRunnerState() {
     goalContractRawText: "",
     goalContractSourceGoal: "",
     goalContractStatus: "idle",
+    goalContractPromise: null,
     lastStopCheck: null,
     panelExpanded: false,
     plannerMode: "auto",
@@ -27046,6 +27047,7 @@ function captureAgentRunnerDraftFromUi() {
     runner.goalContractRawText = "";
     runner.goalContractSourceGoal = "";
     runner.goalContractStatus = "idle";
+    runner.goalContractPromise = null;
     runner.lastStopCheck = null;
   }
   runner.plannerMode = readFirstString(els.agentRunnerPlanner?.value, runner.plannerMode, "auto") || "auto";
@@ -27108,7 +27110,14 @@ function buildAgentRunnerClipboardText() {
   sections.push("");
   sections.push("Goal Contract");
   if (!goalContract) {
-    sections.push(readFirstString(runner.goalContractStatus) === "failed" ? "Goal contract unavailable." : "No goal contract yet.");
+    const goalContractStatus = readFirstString(runner.goalContractStatus).toLowerCase();
+    if (goalContractStatus === "failed") {
+      sections.push("Goal contract unavailable.");
+    } else if (goalContractStatus === "pending") {
+      sections.push("Goal contract is still compiling in the background.");
+    } else {
+      sections.push("No goal contract yet.");
+    }
   } else {
     sections.push(JSON.stringify(goalContract, null, 2));
   }
@@ -27936,41 +27945,66 @@ async function ensureAgentRunnerGoalContract({ runner = null, shellSnapshot = nu
     record.goalContractRawText = "";
     record.goalContractSourceGoal = "";
     record.goalContractStatus = "idle";
+    record.goalContractPromise = null;
     return null;
   }
   if (record.goalContract && readFirstString(record.goalContractSourceGoal) === goal && readFirstString(record.goalContractStatus) === "ready") {
     return record.goalContract;
   }
-  record.goalContractStatus = "pending";
+  if (readFirstString(record.goalContractSourceGoal) === goal && readFirstString(record.goalContractStatus) === "failed") {
+    return null;
+  }
+  if (record.goalContractPromise && readFirstString(record.goalContractSourceGoal) === goal && readFirstString(record.goalContractStatus) === "pending") {
+    return null;
+  }
+  record.goalContract = null;
   record.goalContractRawText = "";
+  record.goalContractSourceGoal = goal;
+  record.goalContractStatus = "pending";
   record.lastStopCheck = null;
   appendAgentRunnerLog("info", "Compiling goal contract from the goal text.");
   renderAgentRunnerPanel();
-  try {
-    const result = await agentRunnerGoalContractCompiler.compile({
+  const pendingGoal = goal;
+  const compilePromise = agentRunnerGoalContractCompiler
+    .compile({
       goal,
       shellSnapshot,
       requestId: `agent-runner-goal-contract-${Date.now()}`,
+    })
+    .then((result) => {
+      if (record.goalContractPromise !== compilePromise || String(record.goal || "").trim() !== pendingGoal) {
+        return null;
+      }
+      record.goalContract = cloneToolRuntimeValue(result.goalContract);
+      record.goalContractRawText = String(result.rawText || "");
+      record.goalContractSourceGoal = pendingGoal;
+      record.goalContractStatus = "ready";
+      appendAgentRunnerLog("success", `Goal contract ready: ${summarizeAgentRunnerGoalContract(record.goalContract)}`, {
+        goalContract: record.goalContract,
+      });
+      renderAgentRunnerPanel();
+      return record.goalContract;
+    })
+    .catch((error) => {
+      if (record.goalContractPromise !== compilePromise || String(record.goal || "").trim() !== pendingGoal) {
+        return null;
+      }
+      const message = normalizeErrorMessage(error, "Goal contract compilation failed.");
+      record.goalContract = null;
+      record.goalContractRawText = "";
+      record.goalContractSourceGoal = pendingGoal;
+      record.goalContractStatus = "failed";
+      appendAgentRunnerLog("error", `Goal contract unavailable: ${message}`, error?.debugInfo || error?.stack || null);
+      renderAgentRunnerPanel();
+      return null;
+    })
+    .finally(() => {
+      if (record.goalContractPromise === compilePromise) {
+        record.goalContractPromise = null;
+      }
     });
-    record.goalContract = cloneToolRuntimeValue(result.goalContract);
-    record.goalContractRawText = String(result.rawText || "");
-    record.goalContractSourceGoal = goal;
-    record.goalContractStatus = "ready";
-    appendAgentRunnerLog("success", `Goal contract ready: ${summarizeAgentRunnerGoalContract(record.goalContract)}`, {
-      goalContract: record.goalContract,
-    });
-    renderAgentRunnerPanel();
-    return record.goalContract;
-  } catch (error) {
-    const message = normalizeErrorMessage(error, "Goal contract compilation failed.");
-    record.goalContract = null;
-    record.goalContractRawText = "";
-    record.goalContractSourceGoal = goal;
-    record.goalContractStatus = "failed";
-    appendAgentRunnerLog("error", `Goal contract unavailable: ${message}`, error?.debugInfo || error?.stack || null);
-    renderAgentRunnerPanel();
-    return null;
-  }
+  record.goalContractPromise = compilePromise;
+  return null;
 }
 
 async function maybeRunAgentRunnerStopCheck({
@@ -27993,7 +28027,12 @@ async function maybeRunAgentRunnerStopCheck({
     shellSnapshot,
   });
   if (!goalContract) {
-    return { allowStop: true, skipped: true, reason: "goal_contract_unavailable" };
+    const goalContractStatus = readFirstString(record.goalContractStatus).toLowerCase();
+    return {
+      allowStop: true,
+      skipped: true,
+      reason: goalContractStatus === "pending" ? "goal_contract_pending" : "goal_contract_unavailable",
+    };
   }
   const runDir = readFirstString(state.runDir, shellSnapshot?.runDir, shellSnapshot?.communicationReview?.runDir);
   if (!runDir) {
