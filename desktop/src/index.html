@@ -4,9 +4,30 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Juggernaut</title>
+    <style>
+      html,
+      body {
+        background: #000;
+      }
+    </style>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body class="juggernaut-shell">
+    <div id="boot-video-overlay" class="boot-video-overlay">
+      <video
+        id="boot-video-player"
+        class="boot-video-player"
+        playsinline
+        preload="auto"
+        muted
+        aria-hidden="true"
+      ></video>
+      <div class="boot-video-scrim" aria-hidden="true"></div>
+      <div class="boot-video-copy" aria-hidden="true">
+        <div class="boot-video-mark">Juggernaut</div>
+        <div id="boot-video-status" class="boot-video-status">Loading startup video…</div>
+      </div>
+    </div>
     <div id="app">
       <div id="boot-error" class="boot-error hidden">
         Juggernaut failed to initialize. Check the terminal for errors.
@@ -1239,21 +1260,143 @@
       </div>
     </div>
     <script type="module">
+      import { readBinaryFile } from "@tauri-apps/api/fs";
+      import { appWindow, LogicalSize } from "@tauri-apps/api/window";
+
       window.__brood_booted = false;
       window.__juggernaut_booted = false;
+      const LOCAL_BOOT_VIDEO_PATH = "/Users/mainframe/Desktop/load.mp4";
+      const LOCAL_BOOT_VIDEO_SESSION_KEY = "juggernaut.localBootVideoShown";
+      const BOOT_VIDEO_MAX_HOLD_MS = 20000;
+      const SPLASH_WINDOW_SIZE = 620;
+      const APP_WINDOW_WIDTH = 1400;
+      const APP_WINDOW_HEIGHT = 900;
       const bootEl = document.getElementById("boot-error");
+      const bootOverlayEl = document.getElementById("boot-video-overlay");
+      const bootVideoEl = document.getElementById("boot-video-player");
+      const bootStatusEl = document.getElementById("boot-video-status");
+      let bootReady = false;
+      let bootFailed = false;
+      let bootVideoDone = false;
+      let bootRevealStarted = false;
+      let bootVideoObjectUrl = null;
+
+      function setBootStatus(message = "") {
+        if (!bootStatusEl) return;
+        bootStatusEl.textContent = String(message || "").trim() || "Loading Juggernaut…";
+      }
+
+      function cleanupBootVideoSource() {
+        if (bootVideoEl) {
+          bootVideoEl.pause();
+          bootVideoEl.removeAttribute("src");
+          bootVideoEl.load();
+        }
+        if (bootVideoObjectUrl) {
+          URL.revokeObjectURL(bootVideoObjectUrl);
+          bootVideoObjectUrl = null;
+        }
+      }
+
+      function hideBootOverlay() {
+        if (!bootOverlayEl) return;
+        bootOverlayEl.classList.add("is-dismissed");
+        window.setTimeout(() => {
+          bootOverlayEl.classList.add("hidden");
+          cleanupBootVideoSource();
+        }, 260);
+      }
+
+      async function resizeWindow(width = APP_WINDOW_WIDTH, height = APP_WINDOW_HEIGHT) {
+        try {
+          await appWindow.setSize(new LogicalSize(width, height));
+          await appWindow.center();
+        } catch (error) {
+          console.warn("Could not resize startup window:", error);
+        }
+      }
+
+      async function enterSplashWindowMode() {
+        await resizeWindow(SPLASH_WINDOW_SIZE, SPLASH_WINDOW_SIZE);
+      }
+
+      async function expandWindowForApp() {
+        await resizeWindow(APP_WINDOW_WIDTH, APP_WINDOW_HEIGHT);
+      }
+
+      function maybeRevealApp() {
+        if (bootFailed || !bootReady || !bootVideoDone) return;
+        if (bootRevealStarted) return;
+        bootRevealStarted = true;
+        expandWindowForApp()
+          .catch(() => {})
+          .finally(() => {
+            hideBootOverlay();
+          });
+      }
+
+      async function runLocalBootVideo() {
+        const alreadyShown = window.sessionStorage?.getItem(LOCAL_BOOT_VIDEO_SESSION_KEY) === "1";
+        if (alreadyShown || !bootOverlayEl || !bootVideoEl) {
+          bootVideoDone = true;
+          maybeRevealApp();
+          return;
+        }
+        window.sessionStorage?.setItem(LOCAL_BOOT_VIDEO_SESSION_KEY, "1");
+        setBootStatus("Loading startup video…");
+        let holdTimer = 0;
+        try {
+          const bytes = await readBinaryFile(LOCAL_BOOT_VIDEO_PATH);
+          bootVideoObjectUrl = URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }));
+          bootVideoEl.src = bootVideoObjectUrl;
+          setBootStatus("Playing startup video…");
+          await new Promise((resolve) => {
+            let finished = false;
+            const complete = () => {
+              if (finished) return;
+              finished = true;
+              bootVideoEl.removeEventListener("ended", complete);
+              bootVideoEl.removeEventListener("error", complete);
+              window.clearTimeout(holdTimer);
+              resolve();
+            };
+            holdTimer = window.setTimeout(complete, BOOT_VIDEO_MAX_HOLD_MS);
+            bootVideoEl.addEventListener("ended", complete, { once: true });
+            bootVideoEl.addEventListener("error", complete, { once: true });
+            bootVideoEl.play().catch(() => complete());
+          });
+        } catch (error) {
+          console.warn("Local boot video unavailable:", error);
+        } finally {
+          bootVideoDone = true;
+          maybeRevealApp();
+        }
+      }
+
+      enterSplashWindowMode();
+      runLocalBootVideo();
+
       Promise.all([import("./design_review_bootstrap.js"), import("./canvas_app.js")])
         .then(() => {
           window.__brood_booted = true;
           window.__juggernaut_booted = true;
+          bootReady = true;
           if (bootEl) bootEl.classList.add("hidden");
+          if (!bootVideoDone) setBootStatus("Preparing workspace…");
+          maybeRevealApp();
         })
         .catch((err) => {
+          bootFailed = true;
           console.error(err);
           if (bootEl) {
             bootEl.classList.remove("hidden");
             bootEl.textContent = `Juggernaut failed to initialize: ${err?.message || err}`;
           }
+          expandWindowForApp()
+            .catch(() => {})
+            .finally(() => {
+              hideBootOverlay();
+            });
         });
     </script>
   </body>
