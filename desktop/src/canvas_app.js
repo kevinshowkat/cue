@@ -26865,38 +26865,8 @@ function resolveAgentRunnerBannerStepLabel(runner = null) {
 }
 
 function resolveAgentRunnerBannerDetail(runner = null) {
-  const record = asRecord(runner) || state.agentRunner || createFreshAgentRunnerState();
-  const actionLabel = summarizeAgentRunnerAction(record?.lastPlan?.action || null);
-  const stopCheck = asRecord(record?.lastStopCheck);
-  const evaluation = asRecord(record?.finalEvaluation);
-  const evaluationStatus = readFirstString(evaluation?.status).toLowerCase();
-  if (stopCheck?.status === "ready" && stopCheck.allowStop === false) {
-    return readFirstString(stopCheck.summary) || "Visible hard requirements are still missing.";
-  }
-  if (evaluationStatus === "pending") {
-    return "";
-  }
-  if (record.stopRequested) {
-    return "The current runtime action is finishing before control returns to you.";
-  }
-  if (record.autoRunning) {
-    return actionLabel
-      ? `Watching the canvas and running ${actionLabel.toLowerCase()} through the normal runtime.`
-      : "Watching the canvas, planning the next move, and applying edits through the normal runtime.";
-  }
-  if (record.running) {
-    return actionLabel
-      ? `Executing ${actionLabel.toLowerCase()} on the visible canvas.`
-      : "Planning the current step on the visible canvas.";
-  }
-  if (evaluationStatus === "ready" && Number.isFinite(Number(evaluation?.score))) {
-    return readFirstString(evaluation?.verdict) || `Final score ${Math.round(Number(evaluation.score))} / 100.`;
-  }
-  if (evaluationStatus === "failed") {
-    return readFirstString(evaluation?.error) || "Final scoring was unavailable.";
-  }
-  const lastMessage = readFirstString(latestAgentRunnerLogEntry(record)?.message);
-  return lastMessage || "Agent Run is idle.";
+  void runner;
+  return "";
 }
 
 function renderAgentRunnerBanner() {
