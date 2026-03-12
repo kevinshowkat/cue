@@ -116,7 +116,7 @@ test("Collapsed Agent Run banner uses the shared liquid-glass material treatment
   assert.match(styles, /\.agent-runner-banner\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(248,\s*251,\s*255,\s*0\.8\)/);
   assert.match(styles, /\.agent-runner-banner::before\s*\{/);
   assert.match(styles, /\.agent-runner-banner-actions button\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(255,\s*255,\s*255,\s*0\.44\)/);
-  assert.match(app, /function resolveAgentRunnerBannerDetail\(runner = null\)\s*\{\s*void runner;\s*return "";\s*\}/);
+  assert.match(app, /function resolveAgentRunnerBannerDetail\(runner = null\)\s*\{[\s\S]*const limit = resolveAgentRunnerActionBudgetLimit\(record\);[\s\S]*const used = roundAgentRunnerBudgetValue\(record\.budgetUsed\);[\s\S]*return `Budget \$\{formatAgentRunnerBudgetValue\(used\)\} \/ \$\{formatAgentRunnerBudgetValue\(limit\)\}`;[\s\S]*\}/);
   assert.match(app, /els\.agentRunnerBannerDetail\.classList\.toggle\("hidden", !detailText\)/);
 });
 
