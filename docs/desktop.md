@@ -2,6 +2,10 @@
 
 Supported platform: **macOS only** (Desktop app). There is no web app, and Windows/Linux builds are not supported yet.
 
+Local launch note:
+- When the app is launched through the local Tauri shell, it now opens in a smaller square splash stage first, tries to play `/Users/mainframe/Desktop/load.mp4` once per app window, and then expands into the normal workspace when boot finishes.
+- If that file cannot be read, startup falls back to the normal boot path without blocking the app.
+
 Category claim:
 - Promptless, reference-first AI image generation and editing desktop for developers (multi-provider + reproducible runs).
 
