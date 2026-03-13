@@ -161,7 +161,8 @@ const DESIGN_REVIEW_APPLY_SOURCE = "design_review_apply";
 const DESIGN_REVIEW_TRAY_DISMISS_MS = 180;
 const DESIGN_REVIEW_APPLY_SHIMMER_LOOP_MS = 1350;
 const EDIT_PROPOSALS_LABEL = "Design Review";
-const COMMUNICATION_MARK_STROKE = "rgba(235, 76, 52, 0.94)";
+const COMMUNICATION_MARK_STROKE = "rgba(220, 28, 28, 0.96)";
+const COMMUNICATION_PROTECT_STROKE = "rgba(0, 0, 0, 0.92)";
 const COMMUNICATION_REGION_ACTIVE = "rgba(100, 210, 255, 0.94)";
 const COMMUNICATION_REGION_IDLE = "rgba(100, 210, 255, 0.34)";
 const IMAGE_SELECTION_INACTIVE_STROKE = "rgba(118, 211, 255, 0.56)";
@@ -21881,8 +21882,11 @@ function trySetOverlayPointerCapture(pointerId) {
   }
 }
 
-function beginCommunicationMarkerStroke(event, p, pCss, communicationImageId = null) {
-  const imageId = communicationImageId ? String(communicationImageId || "") : null;
+function beginCommunicationMarkerStroke(event, p, pCss, communicationImageId = null, markKind = "freehand_marker") {
+  const imageId = String(communicationImageId || "").trim() || null;
+  const kind = String(markKind || "").trim().toLowerCase() === "freehand_protect"
+    ? "freehand_protect"
+    : "freehand_marker";
   if (typeof event?.preventDefault === "function") event.preventDefault();
   if (typeof event?.stopPropagation === "function") event.stopPropagation();
   bumpInteraction({ semantic: false });
@@ -21900,6 +21904,7 @@ function beginCommunicationMarkerStroke(event, p, pCss, communicationImageId = n
   state.pointer.moved = false;
   state.communication.markDraft = {
     imageId,
+    kind,
     coordinateSpace: "canvas_overlay",
     screenPoints: [
       {
@@ -22046,6 +22051,16 @@ function handleCommunicationCanvasPointerDown(event, p, pCss) {
   const communicationTool = communicationToolId();
   const behaviorTool = communicationBehaviorToolId(communicationTool);
   if (event.button !== 0 || !communicationTool) return false;
+  const resolveCommunicationImageId = () => {
+    let imageId = hitTestVisibleCanvasImage(p);
+    if (imageId || state.canvasMode !== "multi") return imageId;
+    const canvas = els.workCanvas;
+    if (canvas && (!state.multiRects || state.multiRects.size === 0)) {
+      state.multiRects = computeFreeformRectsPx(canvas.width, canvas.height);
+      imageId = hitTestVisibleCanvasImage(p);
+    }
+    return imageId;
+  };
   if (behaviorTool === "eraser") {
     const erased = eraseCommunicationAtCanvasPoint(p);
     if (erased) {
@@ -22058,15 +22073,21 @@ function handleCommunicationCanvasPointerDown(event, p, pCss) {
       requestRender();
       return true;
     }
-    const targetImageId = hitTestVisibleCanvasImage(p);
+    const targetImageId = resolveCommunicationImageId();
     if (targetImageId) {
       return beginCommunicationImageEraseStroke(event, p, pCss, targetImageId);
     }
     return false;
   }
-  const communicationImageId = hitTestVisibleCanvasImage(p);
+  const communicationImageId = resolveCommunicationImageId();
   if (behaviorTool === "marker") {
-    beginCommunicationMarkerStroke(event, p, pCss, communicationImageId);
+    beginCommunicationMarkerStroke(
+      event,
+      p,
+      pCss,
+      communicationImageId,
+      communicationTool === "protect" ? "freehand_protect" : "freehand_marker"
+    );
     return true;
   }
   const imagePoint = communicationImageId ? canvasToImageForImageId(p, communicationImageId) : null;
@@ -22212,6 +22233,10 @@ function commitCommunicationMarkDraft() {
     state.communication.markDraft = null;
     return null;
   }
+  const markKind = String(draft?.kind || "").trim().toLowerCase() === "freehand_protect"
+    ? "freehand_protect"
+    : "freehand_marker";
+  const markColor = markKind === "freehand_protect" ? COMMUNICATION_PROTECT_STROKE : COMMUNICATION_MARK_STROKE;
   const imageId = String(draft.imageId || "").trim();
   const sourceImageId = imageId || null;
   const nextId = `mark-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
@@ -22245,9 +22270,9 @@ function commitCommunicationMarkDraft() {
           id: nextId,
           imageId,
           sourceImageId,
-          kind: "freehand_marker",
+          kind: markKind,
           coordinateSpace: "image",
-          color: COMMUNICATION_MARK_STROKE,
+          color: markColor,
           points: imagePoints.slice(0, COMMUNICATION_MARK_MAX_POINTS),
           createdAt: Date.now(),
         },
@@ -22259,9 +22284,9 @@ function commitCommunicationMarkDraft() {
     id: nextId,
     imageId: null,
     sourceImageId,
-    kind: "freehand_marker",
+    kind: markKind,
     coordinateSpace: "canvas_world",
-    color: COMMUNICATION_MARK_STROKE,
+    color: markColor,
     points: committedPoints
       .slice(0, COMMUNICATION_MARK_MAX_POINTS)
       .map((point) => canvasScreenCssToWorldCss(point))
@@ -22857,7 +22882,13 @@ async function performObservableCommunicationMarkerStroke(
   const startCanvas = communicationScreenCssPointToCanvas(startCss);
   const targetImageId = resolveObservableCommunicationImageId(startCanvas, request?.image_id);
   const pointerEvent = buildObservableCommunicationPointerEvent(startCss);
-  beginCommunicationMarkerStroke(pointerEvent, startCanvas, startCss, targetImageId);
+  beginCommunicationMarkerStroke(
+    pointerEvent,
+    startCanvas,
+    startCss,
+    targetImageId,
+    toolId === "protect" ? "freehand_protect" : "freehand_marker"
+  );
   await appendObservableCommunicationStrokeSamplesWithPacing(
     COMMUNICATION_POINTER_KINDS.MARKER,
     pointsCss.slice(1),
@@ -23787,7 +23818,12 @@ function renderCommunicationOverlay(octx) {
   const drawMark = (mark, { draft = false } = {}) => {
     const points = draft ? communicationDraftPointsToCanvas(mark) : communicationMarkPointsToCanvas(mark);
     if (points.length < 2) return;
-    const markerColor = String(mark?.color || COMMUNICATION_MARK_STROKE);
+    const markKind = String(mark?.kind || "").trim().toLowerCase() === "freehand_protect"
+      ? "freehand_protect"
+      : "freehand_marker";
+    const markerColor = String(
+      mark?.color || (markKind === "freehand_protect" ? COMMUNICATION_PROTECT_STROKE : COMMUNICATION_MARK_STROKE)
+    );
     const markerShoulderColor = markerStrokeVariant(markerColor, draft ? 0.26 : 0.16);
     const markerCoreColor = markerStrokeVariant(markerColor, draft ? 0.68 : 0.94);
     const viewportScale =
@@ -23800,6 +23836,13 @@ function renderCommunicationOverlay(octx) {
     octx.globalAlpha = 1;
     octx.shadowColor = "transparent";
     octx.shadowBlur = 0;
+    if (markKind === "freehand_protect") {
+      octx.lineWidth = Math.max(1, Math.round((draft ? 3 : 2) * dpr * viewportScale));
+      octx.strokeStyle = draft ? markerStrokeVariant(markerColor, 0.68) : markerColor;
+      if (traceCommunicationMarkPath(octx, points)) octx.stroke();
+      octx.restore();
+      return;
+    }
     octx.lineWidth = Math.max(1, Math.round((draft ? 8.5 : 11.5) * dpr * viewportScale));
     octx.strokeStyle = markerShoulderColor;
     if (traceCommunicationMarkPath(octx, points)) octx.stroke();
