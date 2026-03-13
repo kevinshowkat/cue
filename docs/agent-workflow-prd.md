@@ -1,7 +1,7 @@
 # Juggernaut Agent Workflow PRD
 
 Status: Draft v0.1  
-Last updated: 2026-03-10  
+Last updated: 2026-03-13  
 Document owner: Product / founding team
 
 ## Purpose
@@ -140,7 +140,7 @@ Minimum mutate primitives:
 Agent Workflow should support an explicit `observable agent mode` for research, demos, and automated manual testing.
 
 In this mode:
-- agents must express focus and communication through visible canvas tools such as `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser`
+- agents must express focus and communication through visible canvas tools such as `Marker`, `Protect`, `Magic Select`, and `Eraser`
 - these actions must render real marks, region candidates, and tray anchors on the canvas
 - tool use must flow through the same runtime state a human session would mutate
 - the system should use stable tool-driver APIs instead of brittle raw OS-level pointer automation
@@ -149,8 +149,10 @@ Example observable tool-driver calls:
 - `marker.stroke(points, brushSpec)`
 - `protect.stroke(points, brushSpec)`
 - `magic_select.click(x, y)`
-- `make_space.click(x, y)`
 - `eraser.stroke(points, brushSpec)`
+
+Dormant runtime-only compatibility to preserve for now:
+- `make_space.click(x, y)`
 
 If the runtime also supports higher-level semantic focus specs, observable mode should compile those specs into visible tool actions instead of bypassing the canvas.
 
@@ -178,10 +180,11 @@ Initial focus affordances map to the current bottom communication rail:
 - `Marker`
 - `Protect`
 - `Magic Select`
-- `Make Space`
 - `Eraser`
 
 These do not commit image edits by themselves. They define focus and scope for review or later execution.
+
+`Make Space` remains a dormant runtime affordance in this phase, but it is not part of the current visible communication rail.
 
 ### Design Review
 Initial proposal generation uses the current `Design review` flow:
@@ -427,18 +430,19 @@ V1 Agent Workflow should support:
 - single active tab observation
 - branch tabs for speculative work
 - direct invocation of current single-image affordances
-- observable canvas-tool driving for `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser`
+- observable canvas-tool driving for `Marker`, `Protect`, `Magic Select`, and `Eraser`
 - design review request and proposal acceptance
 - checkpoint creation and revert
 - goal evaluation and tab comparison
 - workflow-prior retrieval over past successful receipts
 - export with receipt bundle
 - route-policy preferences
+- dormant runtime compatibility for `make_space` without advertising it in the visible rail
 
 ## V1 Acceptance Criteria
 - An agent can inspect the current tab without mutating state.
 - An agent can call one current direct affordance on a target tab.
-- An agent can drive visible `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` interactions through a stable tool-driver API.
+- An agent can drive visible `Marker`, `Protect`, `Magic Select`, and `Eraser` interactions through a stable tool-driver API.
 - An agent can create spatial focus and request design review.
 - An agent can receive structured proposals and choose one.
 - An agent can accept a proposal in place or in a branch tab.
@@ -459,7 +463,7 @@ V1 Agent Workflow should support:
 1. Add `goal packet` and `focusSpec` contracts.
 2. Expose observe-only runtime state for tabs, canvas items, history, review, and receipts.
 3. Wrap current seeded affordances and review apply behind agent-safe mutate calls.
-4. Add observable tool-driver APIs for `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` plus replay traces.
+4. Add observable tool-driver APIs for `Marker`, `Protect`, `Magic Select`, and `Eraser` plus replay traces, while preserving dormant `make_space` runtime compatibility.
 5. Add checkpoints and branch-tab compare/promote flows.
 6. Add preflight cost estimation and post-run usage accounting.
 7. Add evaluator packets for goal progress.

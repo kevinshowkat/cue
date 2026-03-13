@@ -1,7 +1,7 @@
 # Juggernaut Agent Runtime Guide
 
 Status: Draft v0.1  
-Last updated: 2026-03-10
+Last updated: 2026-03-13
 
 ## Purpose
 This document explains how an LLM or agent should use Juggernaut as a constrained visual runtime. It is a companion to [agent-workflow-prd.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-workflow-prd.md) and [agent-affordances.json](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-affordances.json).
@@ -23,7 +23,8 @@ An agent should prefer the loop:
 
 ## Working Rules
 - Prefer `observe` before every expensive or destructive mutation.
-- Treat `Marker`, `Protect`, `Magic Select`, and `Make Space` as focus-setting tools, not final edits.
+- Treat `Marker`, `Protect`, `Magic Select`, and `Eraser` as the current visible focus-setting tools, not final edits.
+- Keep dormant `make_space` semantics available at the runtime layer, but do not advertise them as a current visible rail control.
 - Use direct affordances when the desired edit class is already obvious.
 - Use `Design review` when the goal is ambiguous, aesthetic, or multi-step.
 - Use isolated tabs for speculative work when comparing options matters.
@@ -77,10 +78,11 @@ Current focus affordances correspond to the bottom communication rail:
 - `Marker`
 - `Protect`
 - `Magic Select`
-- `Make Space`
 - `Eraser`
 
 These are non-destructive communication operations.
+
+`Make Space` remains a dormant runtime affordance for compatibility, but it is not currently exposed in the visible communication rail.
 
 Use them when:
 - the target area is unclear
@@ -207,7 +209,7 @@ The result should be advisory guidance such as:
 Good examples:
 - `Protect -> Design Review -> Accept Proposal -> Export PSD`
 - `Remove People -> Polish -> Export PSD`
-- `Make Space -> Relight -> Export PSD`
+- `make_space` (runtime-only, currently hidden) -> Relight -> Export PSD
 
 These priors should help an agent choose a starting path faster, but they should not eliminate exploration when the current task differs materially from historical winners.
 

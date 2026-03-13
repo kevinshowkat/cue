@@ -7782,13 +7782,6 @@ button.ghost:hover {
   --communication-tool-saturation: 1.02;
 }
 
-.communication-tool.communication-tool-make-space {
-  --communication-tool-tilt: 6deg;
-  --communication-tool-scale: 1.17;
-  --communication-tool-accent: rgba(255, 182, 102, 0.22);
-  --communication-tool-saturation: 0.94;
-}
-
 .communication-tool.communication-tool-eraser {
   --communication-tool-tilt: 10deg;
   --communication-tool-scale: 1.28;
