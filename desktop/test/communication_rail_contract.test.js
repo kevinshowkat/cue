@@ -71,7 +71,10 @@ test("communication input layer retains semantic protect and dormant make-space 
   assert.equal((app.match(/handleCommunicationCanvasPointerDown\(event, p, pCss\)/g) || []).length, 3);
   assert.match(app, /const behaviorTool = communicationBehaviorToolId\(communicationTool\);/);
   assert.match(app, /if \(behaviorTool === "eraser"\) \{/);
-  assert.match(app, /function beginCommunicationMarkerStroke\(event, p, pCss, communicationImageId = null\) \{/);
+  assert.match(
+    app,
+    /function beginCommunicationMarkerStroke\(event, p, pCss, communicationImageId = null(?:, markKind = "freehand_marker")?\) \{/
+  );
   assert.match(app, /state\.pointer\.kind = COMMUNICATION_POINTER_KINDS\.MARKER;/);
   assert.match(app, /function beginCommunicationMagicSelectStroke\(event, p, pCss, communicationImageId = null\) \{/);
   assert.match(app, /state\.pointer\.kind = COMMUNICATION_POINTER_KINDS\.MAGIC_SELECT;/);
@@ -91,7 +94,11 @@ test("communication marker keeps the draft in screen space, commits viewport-awa
   assert.match(app, /state\.communication\.marksByImageId\.set\(imageBucketId, existing\.concat\(mark\)\);/);
   assert.match(app, /coordinateSpace:\s*"canvas_world"/);
   assert.match(app, /state\.communication\.canvasMarks = communicationCanvasMarks\(\)\.concat\(mark\);/);
-  assert.match(app, /kind:\s*"freehand_marker"/);
+  assert.match(
+    app,
+    /const markKind = String\(draft\?\.kind \|\| ""\)\.trim\(\)\.toLowerCase\(\) === "freehand_protect"[\s\S]*"freehand_marker";/
+  );
+  assert.match(app, /kind:\s*markKind/);
   assert.match(app, /function traceCommunicationMarkPath\(octx, points = \[\]\) \{/);
   assert.match(app, /octx\.quadraticCurveTo\(/);
   assert.doesNotMatch(app, /Math\.PI \/ 7/);
