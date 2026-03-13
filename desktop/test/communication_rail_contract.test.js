@@ -19,18 +19,16 @@ test("communication rail markup exposes bottom rail tools and proposal tray scaf
   assert.match(html, /id="communication-tool-marker"[\s\S]*class="communication-tool communication-tool-marker"/);
   assert.match(html, /id="communication-tool-protect"[\s\S]*class="communication-tool communication-tool-protect"/);
   assert.match(html, /id="communication-tool-magic-select"[\s\S]*class="communication-tool communication-tool-magic-select"/);
-  assert.match(html, /id="communication-tool-make-space"[\s\S]*class="communication-tool communication-tool-make-space"/);
   assert.match(html, /id="communication-tool-eraser"[\s\S]*class="communication-tool communication-tool-eraser"/);
   assert.match(html, /id="communication-tool-marker"[\s\S]*class="communication-icon communication-icon-marker"/);
   assert.match(html, /id="communication-tool-protect"[\s\S]*class="communication-icon communication-icon-protect"/);
   assert.match(html, /id="communication-tool-magic-select"[\s\S]*class="communication-icon communication-icon-magic-select"/);
-  assert.match(html, /id="communication-tool-make-space"[\s\S]*class="communication-icon communication-icon-make-space"/);
   assert.match(html, /id="communication-tool-eraser"[\s\S]*class="communication-icon communication-icon-eraser"/);
   assert.match(html, /id="communication-tool-marker"[\s\S]*viewBox="0 0 24 48"/);
   assert.match(html, /id="communication-tool-protect"[\s\S]*viewBox="0 0 24 48"/);
   assert.match(html, /id="communication-tool-magic-select"[\s\S]*viewBox="0 0 24 48"/);
-  assert.match(html, /id="communication-tool-make-space"[\s\S]*viewBox="0 0 24 48"/);
   assert.match(html, /id="communication-tool-eraser"[\s\S]*viewBox="0 0 24 48"/);
+  assert.doesNotMatch(html, /id="communication-tool-make-space"/);
 });
 
 test("communication rail css anchors a partially submerged pouch rail at the bottom and keeps the proposal tray floating", () => {
@@ -46,6 +44,7 @@ test("communication rail css anchors a partially submerged pouch rail at the bot
   assert.match(css, /\.communication-tool\s*\{[\s\S]*min-height:\s*188px/);
   assert.match(css, /\.communication-tool svg\s*\{[\s\S]*width:\s*60px[\s\S]*height:\s*352px/);
   assert.match(css, /\.communication-tool-label\s*\{[\s\S]*position:\s*absolute[\s\S]*bottom:\s*70px/);
+  assert.doesNotMatch(css, /\.communication-tool\.communication-tool-make-space/);
   assert.match(css, /\.communication-proposal-tray\s*\{/);
   assert.match(css, /\.communication-proposal-slot\.is-skeleton::before\s*\{/);
 });
@@ -64,7 +63,7 @@ test("communication state is tab-local and design review is exposed through the 
   assert.match(app, /resolvedTarget:\s*resolveCommunicationReviewTarget\(\)/);
 });
 
-test("communication input layer supports semantic protect and make-space tools while reusing marker and magic-select behavior", () => {
+test("communication input layer retains semantic protect and dormant make-space behavior while reusing marker and magic-select behavior", () => {
   assert.match(app, /COMMUNICATION_TOOL_IDS = Object\.freeze\(\["marker", "protect", "magic_select", "make_space", "eraser"\]\)/);
   assert.match(app, /COMMUNICATION_TOOL_BEHAVIOR = Object\.freeze\(\{/);
   assert.match(app, /COMMUNICATION_POINTER_KINDS = Object\.freeze\(\{/);
