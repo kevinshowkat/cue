@@ -57,6 +57,7 @@ function instantiateFunction(name, deps = {}) {
 test("marker pointer down consumes blank-canvas drags and seeds a screen-space draft", () => {
   const calls = [];
   const state = {
+    canvasMode: "single",
     pointer: {},
     communication: {
       markDraft: null,
@@ -84,6 +85,7 @@ test("marker pointer down consumes blank-canvas drags and seeds a screen-space d
     requestRender,
   });
   const handleCommunicationCanvasPointerDown = instantiateFunction("handleCommunicationCanvasPointerDown", {
+    state,
     communicationToolId: () => "marker",
     communicationBehaviorToolId: (tool) => tool,
     eraseCommunicationAtCanvasPoint: () => null,
@@ -117,6 +119,7 @@ test("marker pointer down consumes blank-canvas drags and seeds a screen-space d
   assert.equal(consumed, true);
   assert.equal(state.pointer.kind, COMMUNICATION_POINTER_KINDS.MARKER);
   assert.equal(state.pointer.imageId, null);
+  assert.equal(state.communication.markDraft.kind, "freehand_marker");
   assert.equal(state.communication.markDraft.coordinateSpace, "canvas_overlay");
   assert.deepEqual(state.communication.markDraft.screenPoints, [{ x: 20, y: 30 }]);
   assert.equal(calls.filter(([name]) => name === "dispatch").length, 0);
@@ -125,9 +128,78 @@ test("marker pointer down consumes blank-canvas drags and seeds a screen-space d
   assert.equal(calls.filter(([name]) => name === "stop").length, 1);
 });
 
-test("eraser pointer down on an image starts a real image-erase stroke instead of clearing annotations wholesale", () => {
+test("protect pointer down preserves a distinct draft kind for downstream commit/render", () => {
   const calls = [];
   const state = {
+    canvasMode: "single",
+    pointer: {},
+    communication: {
+      markDraft: null,
+    },
+  };
+  const COMMUNICATION_POINTER_KINDS = {
+    MARKER: "communication_marker",
+    MAGIC_SELECT: "communication_magic_select",
+  };
+  const els = {
+    overlayCanvas: {
+      setPointerCapture(pointerId) {
+        calls.push(["capture", pointerId]);
+      },
+    },
+  };
+  const requestRender = () => calls.push(["render"]);
+  const bumpInteraction = (meta) => calls.push(["bump", meta]);
+  const beginCommunicationMarkerStroke = instantiateFunction("beginCommunicationMarkerStroke", {
+    bumpInteraction,
+    els,
+    state,
+    trySetOverlayPointerCapture: (pointerId) => els.overlayCanvas.setPointerCapture(pointerId),
+    COMMUNICATION_POINTER_KINDS,
+    requestRender,
+  });
+  const handleCommunicationCanvasPointerDown = instantiateFunction("handleCommunicationCanvasPointerDown", {
+    state,
+    communicationToolId: () => "protect",
+    communicationBehaviorToolId: (tool) => (tool === "protect" ? "marker" : tool),
+    eraseCommunicationAtCanvasPoint: () => null,
+    dispatchJuggernautShellEvent: () => calls.push(["dispatch"]),
+    COMMUNICATION_STATE_CHANGED_EVENT: "juggernaut:communication-state-changed",
+    buildCommunicationBridgeSnapshot: () => ({}),
+    buildJuggernautShellContext: () => ({}),
+    requestRender,
+    hitTestVisibleCanvasImage: () => null,
+    beginCommunicationMarkerStroke,
+    canvasToImageForImageId: () => null,
+    beginCommunicationMagicSelectStroke: () => false,
+  });
+
+  const consumed = handleCommunicationCanvasPointerDown(
+    {
+      button: 0,
+      pointerId: 17,
+      preventDefault() {
+        calls.push(["prevent"]);
+      },
+      stopPropagation() {
+        calls.push(["stop"]);
+      },
+    },
+    { x: 36, y: 52 },
+    { x: 18, y: 26 }
+  );
+
+  assert.equal(consumed, true);
+  assert.equal(state.pointer.kind, COMMUNICATION_POINTER_KINDS.MARKER);
+  assert.equal(state.communication.markDraft.kind, "freehand_protect");
+  assert.deepEqual(state.communication.markDraft.screenPoints, [{ x: 18, y: 26 }]);
+});
+
+test("eraser pointer down on an image bootstraps multi-image hit testing before starting a real image erase", () => {
+  const calls = [];
+  const state = {
+    canvasMode: "multi",
+    multiRects: new Map(),
     pointer: {},
     communication: {
       eraseDraft: null,
@@ -144,6 +216,10 @@ test("eraser pointer down on an image starts a real image-erase stroke instead o
         calls.push(["capture", pointerId]);
       },
     },
+    workCanvas: {
+      width: 1280,
+      height: 720,
+    },
   };
   const requestRender = () => calls.push(["render"]);
   const bumpInteraction = (meta) => calls.push(["bump", meta]);
@@ -157,6 +233,12 @@ test("eraser pointer down on an image starts a real image-erase stroke instead o
     requestRender,
   });
   const handleCommunicationCanvasPointerDown = instantiateFunction("handleCommunicationCanvasPointerDown", {
+    state,
+    els,
+    computeFreeformRectsPx: (canvasWidth, canvasHeight) => {
+      calls.push(["computeFreeformRectsPx", canvasWidth, canvasHeight]);
+      return new Map([["img-hero", { x: 0, y: 0, w: canvasWidth, h: canvasHeight }]]);
+    },
     communicationToolId: () => "eraser",
     communicationBehaviorToolId: (tool) => tool,
     eraseCommunicationAtCanvasPoint: () => null,
@@ -166,7 +248,7 @@ test("eraser pointer down on an image starts a real image-erase stroke instead o
     buildCommunicationBridgeSnapshot: () => ({}),
     buildJuggernautShellContext: () => ({}),
     requestRender,
-    hitTestVisibleCanvasImage: () => "img-hero",
+    hitTestVisibleCanvasImage: () => (state.multiRects.size ? "img-hero" : null),
     beginCommunicationImageEraseStroke,
     beginCommunicationMarkerStroke: () => false,
     canvasToImageForImageId: () => ({ x: 10, y: 12 }),
@@ -188,8 +270,45 @@ test("eraser pointer down on an image starts a real image-erase stroke instead o
   assert.equal(state.pointer.imageId, "img-hero");
   assert.equal(state.communication.eraseDraft.imageId, "img-hero");
   assert.deepEqual(state.communication.eraseDraft.screenPoints, [{ x: 42, y: 63 }]);
+  assert.equal(calls.filter(([name]) => name === "computeFreeformRectsPx").length, 1);
   assert.equal(calls.filter(([name]) => name === "dispatch").length, 0);
   assert.equal(calls.filter(([name]) => name === "capture").length, 1);
+});
+
+test("eraser click still removes an existing annotation before any image erase begins", () => {
+  const calls = [];
+  const handleCommunicationCanvasPointerDown = instantiateFunction("handleCommunicationCanvasPointerDown", {
+    communicationToolId: () => "eraser",
+    communicationBehaviorToolId: (tool) => tool,
+    eraseCommunicationAtCanvasPoint: () => ({ kind: "mark", imageId: "img-hero" }),
+    invalidateActiveTabPreview: (reason) => calls.push(["invalidate", reason]),
+    dispatchJuggernautShellEvent: (type, detail) => calls.push(["dispatch", type, detail?.source || null]),
+    COMMUNICATION_STATE_CHANGED_EVENT: "juggernaut:communication-state-changed",
+    buildCommunicationBridgeSnapshot: () => ({ marks: [] }),
+    buildJuggernautShellContext: () => ({ activeId: "img-hero" }),
+    requestRender: () => calls.push(["render"]),
+    hitTestVisibleCanvasImage: () => {
+      calls.push(["hitTestVisibleCanvasImage"]);
+      return "img-hero";
+    },
+    beginCommunicationImageEraseStroke: () => {
+      calls.push(["beginImageErase"]);
+      return true;
+    },
+  });
+
+  const consumed = handleCommunicationCanvasPointerDown(
+    { button: 0 },
+    { x: 64, y: 92 },
+    { x: 32, y: 46 }
+  );
+
+  assert.equal(consumed, true);
+  assert.deepEqual(calls, [
+    ["invalidate", "selection_overlay_change"],
+    ["dispatch", "juggernaut:communication-state-changed", "canvas_eraser"],
+    ["render"],
+  ]);
 });
 
 test("marker drag samples include coalesced pointer events when available", () => {
@@ -223,6 +342,7 @@ test("blank-canvas marker commits stay in the canvas mark bucket in viewport-awa
     communication: {
       markDraft: {
         imageId: null,
+        kind: "freehand_marker",
         coordinateSpace: "canvas_overlay",
         screenPoints: [
           { x: 12, y: 18 },
@@ -266,6 +386,50 @@ test("blank-canvas marker commits stay in the canvas mark bucket in viewport-awa
   assert.equal(state.communication.canvasMarks.length, 1);
   assert.equal(state.communication.markDraft, null);
   assert.equal(state.communication.lastAnchor?.markId, mark.id);
+});
+
+test("protect commits keep a distinct semantic kind and black stroke color", () => {
+  const state = {
+    communication: {
+      markDraft: {
+        imageId: null,
+        kind: "freehand_protect",
+        coordinateSpace: "canvas_overlay",
+        screenPoints: [
+          { x: 14, y: 20 },
+          { x: 34, y: 44 },
+        ],
+      },
+      marksByImageId: new Map(),
+      canvasMarks: [],
+      lastAnchor: null,
+    },
+  };
+  const commitCommunicationMarkDraft = instantiateFunction("commitCommunicationMarkDraft", {
+    state,
+    communicationDraftScreenPoints: (draft) => draft.screenPoints,
+    communicationPolylineLength: () => 32,
+    COMMUNICATION_MARK_MIN_DRAG_PX: 6,
+    communicationCommittedPointsFromDraft: (draft) => draft.screenPoints,
+    COMMUNICATION_MARK_STROKE: "rgba(220, 28, 28, 0.96)",
+    COMMUNICATION_PROTECT_STROKE: "rgba(0, 0, 0, 0.92)",
+    COMMUNICATION_MARK_MAX_POINTS: 240,
+    communicationMarksForImage: () => [],
+    communicationCanvasMarks: () => state.communication.canvasMarks,
+    canvasScreenCssToWorldCss: (point) => point,
+    communicationAnchorFromMark: (mark) => ({
+      kind: "mark",
+      imageId: mark.imageId,
+      markId: mark.id,
+    }),
+  });
+
+  const mark = commitCommunicationMarkDraft();
+
+  assert.equal(mark.kind, "freehand_protect");
+  assert.equal(mark.color, "rgba(0, 0, 0, 0.92)");
+  assert.equal(state.communication.canvasMarks.length, 1);
+  assert.equal(state.communication.canvasMarks[0]?.id, mark.id);
 });
 
 test("move tool clears the active communication marker before returning to pan", async () => {
@@ -431,20 +595,34 @@ test("image-hit marker commits into the image mark bucket so zoom keeps the stro
   assert.equal(state.communication.marksByImageId.get("img-1")?.[0]?.id, mark.id);
 });
 
-test("communication overlay renders each annotation with a felt-tip shoulder and core stroke", () => {
+test("communication overlay renders marker as a thick red stroke and protect as a thin black line", () => {
   const rendered = [];
-  const marks = Array.from({ length: 15 }, (_, index) => ({
-    id: `mark-${index + 1}`,
-    points: [
-      { x: index, y: index },
-      { x: index + 10, y: index + 10 },
-    ],
-  }));
   const state = {
     communication: {
       regionProposalsByImageId: new Map(),
-      marksByImageId: new Map([["img-1", marks.slice(0, 8)]]),
-      canvasMarks: marks.slice(8),
+      marksByImageId: new Map([[
+        "img-1",
+        [
+          {
+            id: "marker-1",
+            kind: "freehand_marker",
+            points: [
+              { x: 0, y: 0 },
+              { x: 10, y: 10 },
+            ],
+          },
+          {
+            id: "protect-1",
+            kind: "freehand_protect",
+            color: "rgba(0, 0, 0, 0.92)",
+            points: [
+              { x: 20, y: 20 },
+              { x: 30, y: 30 },
+            ],
+          },
+        ],
+      ]]),
+      canvasMarks: [],
       markDraft: null,
     },
   };
@@ -468,7 +646,8 @@ test("communication overlay renders each annotation with a felt-tip shoulder and
     drawPolygonPath: () => false,
     communicationDraftPointsToCanvas: () => [],
     communicationMarkPointsToCanvas: (mark) => mark.points,
-    COMMUNICATION_MARK_STROKE: "rgba(255, 94, 190, 0.96)",
+    COMMUNICATION_MARK_STROKE: "rgba(220, 28, 28, 0.96)",
+    COMMUNICATION_PROTECT_STROKE: "rgba(0, 0, 0, 0.92)",
     traceCommunicationMarkPath: () => true,
     communicationCanvasMarks: () => state.communication.canvasMarks,
     communicationCanvasCssScaleForImageId: () => 1,
@@ -477,17 +656,23 @@ test("communication overlay renders each annotation with a felt-tip shoulder and
 
   renderCommunicationOverlay(octx);
 
-  assert.equal(rendered.length, 30);
-  assert.deepEqual(rendered[0], {
-    lineWidth: 12,
-    strokeStyle: "rgba(255, 94, 190, 0.16)",
-    globalAlpha: 1,
-  });
-  assert.deepEqual(rendered[1], {
-    lineWidth: 8,
-    strokeStyle: "rgba(255, 94, 190, 0.94)",
-    globalAlpha: 1,
-  });
+  assert.deepEqual(rendered, [
+    {
+      lineWidth: 12,
+      strokeStyle: "rgba(220, 28, 28, 0.16)",
+      globalAlpha: 1,
+    },
+    {
+      lineWidth: 8,
+      strokeStyle: "rgba(220, 28, 28, 0.94)",
+      globalAlpha: 1,
+    },
+    {
+      lineWidth: 2,
+      strokeStyle: "rgba(0, 0, 0, 0.92)",
+      globalAlpha: 1,
+    },
+  ]);
 });
 
 test("communication overlay scales image-space annotations with the viewport zoom", () => {
