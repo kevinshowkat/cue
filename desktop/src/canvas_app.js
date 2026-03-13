@@ -9970,14 +9970,7 @@ function singleImageRailMagicSelectSelectionForImage(imageId = "") {
     candidates[activeCandidateIndex] ||
     candidates.find((entry) => entry?.active) ||
     null;
-  const polygon = Array.isArray(candidate?.polygon)
-    ? candidate.polygon
-        .map((point) => ({
-          x: Number(point?.x) || 0,
-          y: Number(point?.y) || 0,
-        }))
-        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
-    : [];
+  const polygon = communicationRegionCandidateImagePoints(candidate);
   if (polygon.length < 3) return null;
   const bounds = candidate?.bounds
     ? {
@@ -9993,12 +9986,30 @@ function singleImageRailMagicSelectSelectionForImage(imageId = "") {
   return {
     kind: "magic_select_region",
     imageId: normalizedImageId,
+    contourPoints: Array.isArray(candidate?.contourPoints)
+      ? candidate.contourPoints.map((point) => ({
+          x: Number(point?.x) || 0,
+          y: Number(point?.y) || 0,
+        }))
+      : [],
+    maskRef: candidate?.maskRef ? String(candidate.maskRef) : null,
+    source: candidate?.source ? String(candidate.source) : "magic_select",
+    confidence: Number(candidate?.confidence) || 0,
     polygon,
     bounds,
     regionCandidateId: String(candidate?.id || "").trim() || null,
     chosenRegionCandidate: {
       id: String(candidate?.id || "").trim() || null,
       imageId: normalizedImageId,
+      maskRef: candidate?.maskRef ? String(candidate.maskRef) : null,
+      source: candidate?.source ? String(candidate.source) : "magic_select",
+      confidence: Number(candidate?.confidence) || 0,
+      contourPoints: Array.isArray(candidate?.contourPoints)
+        ? candidate.contourPoints.map((point) => ({
+            x: Number(point?.x) || 0,
+            y: Number(point?.y) || 0,
+          }))
+        : [],
       bounds: {
         x: Number(bounds.x0) || 0,
         y: Number(bounds.y0) || 0,
@@ -21592,6 +21603,121 @@ function communicationPointsBounds(points = []) {
   };
 }
 
+function communicationRegionCandidateImagePoints(candidate = null) {
+  if (!candidate || typeof candidate !== "object") return [];
+  const rawPoints = Array.isArray(candidate?.contourPoints)
+    ? candidate.contourPoints
+    : Array.isArray(candidate?.polygon)
+      ? candidate.polygon
+      : [];
+  const contourPoints = rawPoints
+    .map((point) => ({
+      x: Number(point?.x),
+      y: Number(point?.y),
+    }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  if (contourPoints.length >= 3) return contourPoints;
+  const bounds = candidate?.bounds && typeof candidate.bounds === "object" ? candidate.bounds : null;
+  if (!bounds) return [];
+  const x = Number(bounds.x) || 0;
+  const y = Number(bounds.y) || 0;
+  const w = Math.max(1, Number(bounds.w) || Number(bounds.width) || 1);
+  const h = Math.max(1, Number(bounds.h) || Number(bounds.height) || 1);
+  return [
+    { x, y },
+    { x: x + w, y },
+    { x: x + w, y: y + h },
+    { x, y: y + h },
+  ];
+}
+
+function normalizeCommunicationRegionBounds(bounds = null, points = [], dims = null) {
+  const raw = bounds && typeof bounds === "object" ? bounds : null;
+  let x = raw ? Number(raw.x ?? raw.left ?? raw.x0) : Number.NaN;
+  let y = raw ? Number(raw.y ?? raw.top ?? raw.y0) : Number.NaN;
+  let w = raw ? Number(raw.w ?? raw.width) : Number.NaN;
+  let h = raw ? Number(raw.h ?? raw.height) : Number.NaN;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) {
+    const computed = communicationPointsBounds(points);
+    if (computed) {
+      x = Number(computed.x0) || 0;
+      y = Number(computed.y0) || 0;
+      w = Math.max(1, Number(computed.w) || 1);
+      h = Math.max(1, Number(computed.h) || 1);
+    }
+  }
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return null;
+  const maxW = Math.max(1, Number(dims?.w) || 1);
+  const maxH = Math.max(1, Number(dims?.h) || 1);
+  const clampedX = clamp(x, 0, Math.max(0, maxW - 1));
+  const clampedY = clamp(y, 0, Math.max(0, maxH - 1));
+  const clampedW = clamp(w, 1, Math.max(1, maxW - clampedX));
+  const clampedH = clamp(h, 1, Math.max(1, maxH - clampedY));
+  return {
+    x: clampedX,
+    y: clampedY,
+    w: clampedW,
+    h: clampedH,
+  };
+}
+
+function normalizeCommunicationRegionContourPoints(points = [], dims = null) {
+  const maxW = Math.max(1, Number(dims?.w) || 1);
+  const maxH = Math.max(1, Number(dims?.h) || 1);
+  const normalized = Array.isArray(points)
+    ? points
+        .map((point) => ({
+          x: clamp(Number(point?.x) || 0, 0, maxW),
+          y: clamp(Number(point?.y) || 0, 0, maxH),
+        }))
+        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    : [];
+  return normalized.length >= 3 ? normalized : [];
+}
+
+function normalizeCommunicationRegionCandidate(imageId, anchor, dims, candidate = null, index = 0) {
+  const raw = candidate && typeof candidate === "object" ? candidate : null;
+  if (!raw) return null;
+  const contourPoints = normalizeCommunicationRegionContourPoints(
+    raw.contourPoints ?? raw.contour_points ?? raw.polygon ?? [],
+    dims
+  );
+  const bounds = normalizeCommunicationRegionBounds(raw.bounds, contourPoints, dims);
+  if (!bounds) return null;
+  const polygon = contourPoints.length >= 3 ? contourPoints : communicationRegionCandidateImagePoints({ bounds });
+  return {
+    id: String(raw.id || raw.candidateId || raw.candidate_id || `region-${Date.now()}-${index + 1}-${Math.random().toString(16).slice(2, 7)}`),
+    label: String(raw.label || `Candidate ${index + 1}`),
+    confidence: Number.isFinite(Number(raw.confidence)) ? clamp(Number(raw.confidence), 0, 1) : 0,
+    bounds,
+    contourPoints,
+    maskRef: raw.maskRef ? String(raw.maskRef) : raw.mask_ref ? String(raw.mask_ref) : null,
+    source: String(raw.source || "magic_select"),
+    polygon,
+    clickPoint: anchor
+      ? {
+          x: Number(anchor.x) || 0,
+          y: Number(anchor.y) || 0,
+        }
+      : null,
+  };
+}
+
+function resolveCommunicationMagicSelectCandidates(imageId, anchor, dims, deterministicResult = null) {
+  const rawCandidates = Array.isArray(deterministicResult)
+    ? deterministicResult
+    : Array.isArray(deterministicResult?.candidates)
+      ? deterministicResult.candidates
+      : [];
+  const normalized = rawCandidates
+    .map((candidate, index) => normalizeCommunicationRegionCandidate(imageId, anchor, dims, candidate, index))
+    .filter(Boolean);
+  if (normalized.length) return normalized;
+  return Array.from({ length: COMMUNICATION_REGION_CANDIDATE_COUNT }, (_, index) =>
+    buildCommunicationFallbackRegionCandidate(imageId, anchor, dims, ["tight", "medium", "loose"][index] || "medium", index)
+  );
+}
+
 function communicationPolylineLength(points = []) {
   if (!Array.isArray(points) || points.length < 2) return 0;
   let total = 0;
@@ -22123,6 +22249,32 @@ function communicationRegionBoundsCssPolygon(visibleImage = null, bounds = null)
   );
 }
 
+function communicationRegionCandidateCssPolygon(visibleImage = null, candidate = null) {
+  const image = visibleImage && typeof visibleImage === "object" ? visibleImage : null;
+  const rect = image?.rectCss && typeof image.rectCss === "object" ? image.rectCss : null;
+  const points = communicationRegionCandidateImagePoints(candidate);
+  const width = Math.max(1, Number(image?.width) || 1);
+  const height = Math.max(1, Number(image?.height) || 1);
+  if (!rect || points.length < 3) return communicationRegionBoundsCssPolygon(visibleImage, candidate?.bounds);
+  const transform = {
+    x: Number(rect.left) || 0,
+    y: Number(rect.top) || 0,
+    w: Math.max(1, Number(rect.width) || 1),
+    h: Math.max(1, Number(rect.height) || 1),
+    rotateDeg: Number(rect.rotateDeg) || 0,
+    skewXDeg: Number(rect.skewXDeg) || 0,
+  };
+  return points.map((point) =>
+    transformPointForRect(
+      {
+        x: (Number(rect.left) || 0) + ((Number(point?.x) || 0) * Math.max(1, Number(rect.width) || 1)) / width,
+        y: (Number(rect.top) || 0) + ((Number(point?.y) || 0) * Math.max(1, Number(rect.height) || 1)) / height,
+      },
+      transform
+    )
+  );
+}
+
 function communicationPointInPolygon(point = null, polygon = []) {
   const px = Number(point?.x);
   const py = Number(point?.y);
@@ -22227,7 +22379,7 @@ function resolveCommunicationMarkOverlapTarget(mark = null) {
     if (!visibleImage?.rectCss) continue;
     const candidates = Array.isArray(region?.candidates) ? region.candidates : [];
     for (const candidate of candidates) {
-      const polygon = communicationRegionBoundsCssPolygon(visibleImage, candidate?.bounds);
+      const polygon = communicationRegionCandidateCssPolygon(visibleImage, candidate);
       const score = communicationPolylinePolygonOverlapScore(points, polygon);
       if (score <= 0) continue;
       if (score > bestRegionScore) {
@@ -22376,6 +22528,21 @@ function hitTestCommunicationRegionCandidate(ptCanvas) {
     const candidates = Array.isArray(group?.candidates) ? group.candidates : [];
     for (let i = candidates.length - 1; i >= 0; i -= 1) {
       const candidate = candidates[i];
+      const polygon = communicationRegionCandidateImagePoints(candidate)
+        .map((point) => imageToCanvasForImageId(imageId, point))
+        .filter(Boolean);
+      if (polygon.length >= 3) {
+        if (communicationPointInPolygon(ptCanvas, polygon)) {
+          return { imageId: String(imageId || ""), group, candidate };
+        }
+        for (let j = 0; j < polygon.length; j += 1) {
+          const edgeStart = polygon[j];
+          const edgeEnd = polygon[(j + 1) % polygon.length];
+          if (communicationSegmentDistancePx(ptCanvas, edgeStart, edgeEnd) <= tolerance) {
+            return { imageId: String(imageId || ""), group, candidate };
+          }
+        }
+      }
       const bounds = candidate?.bounds;
       if (!bounds) continue;
       const center = imageToCanvasForImageId(imageId, {
@@ -22678,7 +22845,7 @@ function renderCommunicationRail() {
   }
 }
 
-function buildCommunicationRegionCandidate(imageId, anchor, dims, scale, index) {
+function buildCommunicationFallbackRegionCandidate(imageId, anchor, dims, scale, index) {
   const shortEdge = Math.max(24, Math.min(Number(dims.w) || 0, Number(dims.h) || 0));
   const factor = index === 0 ? 0.18 : index === 1 ? 0.26 : 0.34;
   const w = clamp(Math.round(shortEdge * (index === 1 ? factor * 1.22 : factor)), 24, Math.max(36, Math.round((Number(dims.w) || 1) * 0.68)));
@@ -22698,12 +22865,15 @@ function buildCommunicationRegionCandidate(imageId, anchor, dims, scale, index) 
     label: `Candidate ${index + 1}`,
     confidence: clamp(0.94 - index * 0.12, 0.36, 0.98),
     bounds: { x, y, w, h },
+    contourPoints: polygon,
+    maskRef: null,
+    source: "coarse_fallback",
     polygon,
     scale,
   };
 }
 
-function applyCommunicationMagicSelectAtPoint(imageId, imagePoint) {
+function applyCommunicationMagicSelectAtPoint(imageId, imagePoint, deterministicResult = null) {
   const id = String(imageId || "").trim();
   const item = state.imagesById.get(id) || null;
   if (!id || !item || !imagePoint) return null;
@@ -22734,9 +22904,7 @@ function applyCommunicationMagicSelectAtPoint(imageId, imagePoint) {
       updatedAt: Date.now(),
     };
   } else {
-    const candidates = Array.from({ length: COMMUNICATION_REGION_CANDIDATE_COUNT }, (_, index) =>
-      buildCommunicationRegionCandidate(id, nextAnchor, dims, ["tight", "medium", "loose"][index] || "medium", index)
-    );
+    const candidates = resolveCommunicationMagicSelectCandidates(id, nextAnchor, dims, deterministicResult);
     group = {
       imageId: id,
       anchor: nextAnchor,
@@ -22958,26 +23126,32 @@ function buildCommunicationRegionsPayload() {
         : null,
       activeCandidateIndex,
       chosenCandidateId: group?.chosenCandidateId ? String(group.chosenCandidateId) : null,
-      candidates: candidates.map((candidate, index) => ({
-        id: String(candidate?.id || `candidate-${index + 1}`),
-        label: String(candidate?.label || `Candidate ${index + 1}`),
-        confidence: Number(candidate?.confidence) || 0,
-        bounds: candidate?.bounds
-          ? {
-              x: Number(candidate.bounds.x) || 0,
-              y: Number(candidate.bounds.y) || 0,
-              w: Math.max(1, Number(candidate.bounds.w) || 1),
-              h: Math.max(1, Number(candidate.bounds.h) || 1),
-            }
-          : null,
-        polygon: Array.isArray(candidate?.polygon)
-          ? candidate.polygon.map((point) => ({
-              x: Number(point?.x) || 0,
-              y: Number(point?.y) || 0,
-            }))
-          : [],
-        active: index === activeCandidateIndex,
-      })),
+      candidates: candidates.map((candidate, index) => {
+        const polygon = communicationRegionCandidateImagePoints(candidate);
+        return {
+          id: String(candidate?.id || `candidate-${index + 1}`),
+          label: String(candidate?.label || `Candidate ${index + 1}`),
+          confidence: Number(candidate?.confidence) || 0,
+          source: candidate?.source ? String(candidate.source) : "magic_select",
+          maskRef: candidate?.maskRef ? String(candidate.maskRef) : null,
+          bounds: candidate?.bounds
+            ? {
+                x: Number(candidate.bounds.x) || 0,
+                y: Number(candidate.bounds.y) || 0,
+                w: Math.max(1, Number(candidate.bounds.w) || 1),
+                h: Math.max(1, Number(candidate.bounds.h) || 1),
+              }
+            : null,
+          contourPoints: Array.isArray(candidate?.contourPoints)
+            ? candidate.contourPoints.map((point) => ({
+                x: Number(point?.x) || 0,
+                y: Number(point?.y) || 0,
+              }))
+            : [],
+          polygon,
+          active: index === activeCandidateIndex,
+        };
+      }),
     });
   }
   return out;
@@ -24885,16 +25059,33 @@ function renderCommunicationOverlay(octx) {
     const activeIndex = Math.max(0, Number(group?.activeCandidateIndex) || 0);
     const viewportScale = communicationCanvasCssScaleForImageId(imageId);
     candidates.forEach((candidate, index) => {
-      const polygon = Array.isArray(candidate?.polygon)
-        ? candidate.polygon
-            .map((point) => imageToCanvasForImageId(imageId, point))
-            .filter(Boolean)
-        : [];
+      const imagePolygon = Array.isArray(candidate?.contourPoints) && candidate.contourPoints.length >= 3
+        ? candidate.contourPoints
+        : Array.isArray(candidate?.polygon) && candidate.polygon.length >= 3
+          ? candidate.polygon
+          : candidate?.bounds
+            ? [
+                { x: Number(candidate.bounds.x) || 0, y: Number(candidate.bounds.y) || 0 },
+                {
+                  x: (Number(candidate.bounds.x) || 0) + Math.max(1, Number(candidate.bounds.w) || 1),
+                  y: Number(candidate.bounds.y) || 0,
+                },
+                {
+                  x: (Number(candidate.bounds.x) || 0) + Math.max(1, Number(candidate.bounds.w) || 1),
+                  y: (Number(candidate.bounds.y) || 0) + Math.max(1, Number(candidate.bounds.h) || 1),
+                },
+                {
+                  x: Number(candidate.bounds.x) || 0,
+                  y: (Number(candidate.bounds.y) || 0) + Math.max(1, Number(candidate.bounds.h) || 1),
+                },
+              ]
+            : [];
+      const polygon = imagePolygon.map((point) => imageToCanvasForImageId(imageId, point)).filter(Boolean);
       if (polygon.length < 3) return;
       octx.save();
       octx.lineWidth = Math.max(1, Math.round((index === activeIndex ? 2.5 : 1.5) * dpr * viewportScale));
       octx.strokeStyle = index === activeIndex ? COMMUNICATION_REGION_ACTIVE : COMMUNICATION_REGION_IDLE;
-      octx.fillStyle = index === activeIndex ? "rgba(100, 210, 255, 0.14)" : "rgba(100, 210, 255, 0.05)";
+      octx.fillStyle = index === activeIndex ? "rgba(100, 210, 255, 0.18)" : "rgba(100, 210, 255, 0.06)";
       if (index !== activeIndex) {
         octx.setLineDash([
           Math.max(2, Math.round(8 * dpr * viewportScale)),
