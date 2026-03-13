@@ -108,7 +108,13 @@ test("magic select normalization keeps contour, mask, source, and derived bounds
         { x: 58, y: 74 },
         { x: 14, y: 78 },
       ],
-      maskRef: "mask://subject-1",
+      maskRef: {
+        path: "/tmp/run/mask-subject-1.png",
+        sha256: "abc123",
+        width: 96,
+        height: 112,
+        format: "png",
+      },
       confidence: 0.87,
       source: "local_mask_worker",
     },
@@ -127,7 +133,13 @@ test("magic select normalization keeps contour, mask, source, and derived bounds
     { x: 58, y: 74 },
     { x: 14, y: 78 },
   ]);
-  assert.equal(candidate?.maskRef, "mask://subject-1");
+  assert.deepEqual(candidate?.maskRef, {
+    path: "/tmp/run/mask-subject-1.png",
+    sha256: "abc123",
+    width: 96,
+    height: 112,
+    format: "png",
+  });
   assert.equal(candidate?.source, "local_mask_worker");
   assert.equal(candidate?.confidence, 0.87);
   assert.deepEqual(candidate?.polygon, candidate?.contourPoints);
@@ -150,6 +162,7 @@ test("magic select candidate resolution falls back to coarse local diamonds only
 
 test("magic select re-click near the same anchor cycles existing candidates without recomputing", () => {
   let resolveCalls = 0;
+  const readFirstString = instantiateFunction("readFirstString");
   const state = {
     imagesById: new Map([
       ["img-hero", { id: "img-hero", width: 400, height: 300 }],
@@ -176,6 +189,7 @@ test("magic select re-click near the same anchor cycles existing candidates with
   const applyCommunicationMagicSelectAtPoint = instantiateFunction("applyCommunicationMagicSelectAtPoint", {
     state,
     clamp,
+    readFirstString,
     communicationRegionGroupForImage: (imageId = "") =>
       state.communication.regionProposalsByImageId.get(String(imageId || "").trim()) || null,
     resolveCommunicationMagicSelectCandidates: () => {
@@ -244,7 +258,13 @@ test("single-image rail magic select selection prefers contour points and carrie
                   { x: 90, y: 112 },
                   { x: 28, y: 118 },
                 ],
-                maskRef: "mask://subject-1",
+                maskRef: {
+                  path: "/tmp/run/mask-subject-1.png",
+                  sha256: "abc123",
+                  width: 96,
+                  height: 112,
+                  format: "png",
+                },
                 source: "local_mask_worker",
                 confidence: 0.91,
               },
@@ -273,12 +293,252 @@ test("single-image rail magic select selection prefers contour points and carrie
     { x: 90, y: 112 },
     { x: 28, y: 118 },
   ]);
-  assert.equal(selection?.maskRef, "mask://subject-1");
+  assert.deepEqual(selection?.maskRef, {
+    path: "/tmp/run/mask-subject-1.png",
+    sha256: "abc123",
+    width: 96,
+    height: 112,
+    format: "png",
+  });
   assert.equal(selection?.source, "local_mask_worker");
   assert.equal(selection?.confidence, 0.91);
-  assert.equal(selection?.chosenRegionCandidate?.maskRef, "mask://subject-1");
+  assert.deepEqual(selection?.chosenRegionCandidate?.maskRef, {
+    path: "/tmp/run/mask-subject-1.png",
+    sha256: "abc123",
+    width: 96,
+    height: 112,
+    format: "png",
+  });
   assert.equal(selection?.chosenRegionCandidate?.source, "local_mask_worker");
   assert.equal(selection?.chosenRegionCandidate?.confidence, 0.91);
+});
+
+test("local communication magic select writes runtime-backed groups into communication state", async () => {
+  const {
+    resolveCommunicationMagicSelectCandidates,
+  } = createMagicSelectHelpers();
+  const readFirstString = instantiateFunction("readFirstString");
+  const calls = [];
+  const state = {
+    runDir: "/tmp/run-hero",
+    imagesById: new Map([
+      [
+        "img-hero",
+        {
+          id: "img-hero",
+          path: "/tmp/source.png",
+          width: 320,
+          height: 240,
+          receiptPath: "/tmp/source-receipt.json",
+        },
+      ],
+    ]),
+    communication: {
+      regionProposalsByImageId: new Map(),
+      lastAnchor: null,
+      proposalTray: {
+        visible: false,
+        anchor: null,
+      },
+    },
+  };
+  const communicationRegionGroupForImage = (imageId = "") =>
+    state.communication.regionProposalsByImageId.get(String(imageId || "").trim()) || null;
+  const communicationAnchorFromRegionGroup = (group = null) =>
+    group
+      ? {
+          kind: "region",
+          imageId: group.imageId,
+          regionId: group.chosenCandidateId,
+        }
+      : null;
+  const applyCommunicationMagicSelectAtPoint = instantiateFunction("applyCommunicationMagicSelectAtPoint", {
+    state,
+    clamp,
+    readFirstString,
+    communicationRegionGroupForImage,
+    communicationAnchorFromRegionGroup,
+    resolveCommunicationMagicSelectCandidates,
+  });
+  const runLocalCommunicationMagicSelectAtPoint = instantiateFunction("runLocalCommunicationMagicSelectAtPoint", {
+    state,
+    clamp,
+    readFirstString,
+    ensureRun: async () => {
+      calls.push(["ensureRun"]);
+    },
+    setStatus: (message) => {
+      calls.push(["status", message]);
+    },
+    runLocalMagicSelectClick: async (request) => {
+      calls.push(["runtime", request]);
+      return {
+        ok: true,
+        contract: "juggernaut.magic_select.local.v1",
+        action: "magic_select_click",
+        imageId: "img-hero",
+        group: {
+          chosenCandidateId: "candidate-runtime",
+          reproducibility: {
+            modelId: "mobile_sam_vit_t",
+          },
+          candidates: [
+            {
+              id: "candidate-runtime",
+              bounds: { x: 24, y: 30, w: 84, h: 96 },
+              contourPoints: [
+                { x: 24, y: 30 },
+                { x: 106, y: 28 },
+                { x: 108, y: 124 },
+                { x: 28, y: 126 },
+              ],
+              maskRef: {
+                path: "/tmp/run-hero/mask.png",
+                sha256: "def456",
+                width: 120,
+                height: 144,
+                format: "png",
+              },
+              confidence: 0.93,
+              source: "local_model:mobile_sam_vit_t",
+            },
+          ],
+        },
+        receipt: {
+          path: "/tmp/run-hero/receipt-magic-select.json",
+          reproducibility: {
+            modelId: "mobile_sam_vit_t",
+          },
+        },
+        warnings: ["native contour simplified"],
+      };
+    },
+    applyCommunicationMagicSelectAtPoint,
+    communicationRegionGroupForImage,
+    communicationTrayAnchorPinnedToTitlebar: () => false,
+    invalidateActiveTabPreview: (reason) => {
+      calls.push(["invalidate", reason]);
+    },
+    dispatchJuggernautShellEvent: (name, detail) => {
+      calls.push(["dispatch", name, detail]);
+    },
+    COMMUNICATION_STATE_CHANGED_EVENT: "juggernaut:communication-state-changed",
+    buildCommunicationBridgeSnapshot: () => ({ regionSelections: [] }),
+    buildJuggernautShellContext: () => ({ activeImageId: "img-hero" }),
+    requestRender: () => {
+      calls.push(["render"]);
+    },
+  });
+
+  const response = await runLocalCommunicationMagicSelectAtPoint("img-hero", { x: 48, y: 52 }, {
+    source: "communication_magic_select",
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.fallback, false);
+  assert.equal(response.group?.chosenCandidateId, "candidate-runtime");
+  assert.equal(response.receipt?.path, "/tmp/run-hero/receipt-magic-select.json");
+  assert.deepEqual(response.warnings, ["native contour simplified"]);
+  assert.deepEqual(state.communication.regionProposalsByImageId.get("img-hero")?.reproducibility, {
+    modelId: "mobile_sam_vit_t",
+  });
+  assert.deepEqual(state.communication.regionProposalsByImageId.get("img-hero")?.warnings, ["native contour simplified"]);
+  assert.deepEqual(state.communication.regionProposalsByImageId.get("img-hero")?.receipt, {
+    path: "/tmp/run-hero/receipt-magic-select.json",
+    reproducibility: {
+      modelId: "mobile_sam_vit_t",
+    },
+  });
+  assert.equal(calls[0][0], "ensureRun");
+  assert.deepEqual(calls.find(([name]) => name === "runtime"), [
+    "runtime",
+    {
+      imageId: "img-hero",
+      imagePath: "/tmp/source.png",
+      runDir: "/tmp/run-hero",
+      stableSourceRef: "/tmp/source-receipt.json",
+      clickAnchor: { x: 48, y: 52 },
+      source: "communication_magic_select",
+    },
+  ]);
+});
+
+test("local communication magic select falls back to coarse candidates when the runtime fails", async () => {
+  const {
+    resolveCommunicationMagicSelectCandidates,
+  } = createMagicSelectHelpers();
+  const readFirstString = instantiateFunction("readFirstString");
+  const state = {
+    runDir: "/tmp/run-hero",
+    imagesById: new Map([
+      [
+        "img-hero",
+        {
+          id: "img-hero",
+          path: "/tmp/source.png",
+          width: 320,
+          height: 240,
+        },
+      ],
+    ]),
+    communication: {
+      regionProposalsByImageId: new Map(),
+      lastAnchor: null,
+      proposalTray: {
+        visible: false,
+        anchor: null,
+      },
+    },
+  };
+  const communicationRegionGroupForImage = (imageId = "") =>
+    state.communication.regionProposalsByImageId.get(String(imageId || "").trim()) || null;
+  const communicationAnchorFromRegionGroup = (group = null) =>
+    group
+      ? {
+          kind: "region",
+          imageId: group.imageId,
+          regionId: group.chosenCandidateId,
+        }
+      : null;
+  const applyCommunicationMagicSelectAtPoint = instantiateFunction("applyCommunicationMagicSelectAtPoint", {
+    state,
+    clamp,
+    readFirstString,
+    communicationRegionGroupForImage,
+    communicationAnchorFromRegionGroup,
+    resolveCommunicationMagicSelectCandidates,
+  });
+  const runLocalCommunicationMagicSelectAtPoint = instantiateFunction("runLocalCommunicationMagicSelectAtPoint", {
+    state,
+    clamp,
+    readFirstString,
+    ensureRun: async () => {},
+    setStatus: () => {},
+    runLocalMagicSelectClick: async () => {
+      throw new Error("missing local weights");
+    },
+    applyCommunicationMagicSelectAtPoint,
+    communicationRegionGroupForImage,
+    communicationTrayAnchorPinnedToTitlebar: () => false,
+    invalidateActiveTabPreview: () => {},
+    dispatchJuggernautShellEvent: () => {},
+    COMMUNICATION_STATE_CHANGED_EVENT: "juggernaut:communication-state-changed",
+    buildCommunicationBridgeSnapshot: () => ({ regionSelections: [] }),
+    buildJuggernautShellContext: () => ({ activeImageId: "img-hero" }),
+    requestRender: () => {},
+  });
+
+  const response = await runLocalCommunicationMagicSelectAtPoint("img-hero", { x: 60, y: 72 }, {
+    source: "communication_magic_select",
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.fallback, true);
+  assert.equal(response.receipt, null);
+  assert.ok(Array.isArray(response.group?.candidates));
+  assert.equal(response.group?.candidates?.length, 3);
+  assert.ok(response.group?.candidates?.every((candidate) => candidate.source === "coarse_fallback"));
+  assert.deepEqual(response.warnings, ["missing local weights"]);
 });
 
 test("communication overlay renders the active magic select candidate from contour points instead of bounds geometry", () => {

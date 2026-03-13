@@ -67,6 +67,7 @@ import {
   installAgentObservableDriverBridge,
 } from "./agent_observable_driver.js";
 import { createAgentTraceLog } from "./agent_trace_log.js";
+import { runLocalMagicSelectClick } from "./magic_select_runtime.js";
 import {
   AGENT_RUNNER_DEFAULT_MAX_STEPS,
   AGENT_RUNNER_MAX_STEPS_LIMIT,
@@ -9992,8 +9993,18 @@ function singleImageRailMagicSelectSelectionForImage(imageId = "") {
           y: Number(point?.y) || 0,
         }))
       : [],
-    maskRef: candidate?.maskRef ? String(candidate.maskRef) : null,
-    source: candidate?.source ? String(candidate.source) : "magic_select",
+    maskRef:
+      candidate?.maskRef && typeof candidate.maskRef === "object"
+        ? JSON.parse(JSON.stringify(candidate.maskRef))
+        : candidate?.maskRef
+          ? String(candidate.maskRef)
+          : null,
+    source:
+      candidate?.source && typeof candidate.source === "object"
+        ? JSON.parse(JSON.stringify(candidate.source))
+        : candidate?.source
+          ? String(candidate.source)
+          : "magic_select",
     confidence: Number(candidate?.confidence) || 0,
     polygon,
     bounds,
@@ -10001,8 +10012,18 @@ function singleImageRailMagicSelectSelectionForImage(imageId = "") {
     chosenRegionCandidate: {
       id: String(candidate?.id || "").trim() || null,
       imageId: normalizedImageId,
-      maskRef: candidate?.maskRef ? String(candidate.maskRef) : null,
-      source: candidate?.source ? String(candidate.source) : "magic_select",
+      maskRef:
+        candidate?.maskRef && typeof candidate.maskRef === "object"
+          ? JSON.parse(JSON.stringify(candidate.maskRef))
+          : candidate?.maskRef
+            ? String(candidate.maskRef)
+            : null,
+      source:
+        candidate?.source && typeof candidate.source === "object"
+          ? JSON.parse(JSON.stringify(candidate.source))
+          : candidate?.source
+            ? String(candidate.source)
+            : "magic_select",
       confidence: Number(candidate?.confidence) || 0,
       contourPoints: Array.isArray(candidate?.contourPoints)
         ? candidate.contourPoints.map((point) => ({
@@ -21685,14 +21706,32 @@ function normalizeCommunicationRegionCandidate(imageId, anchor, dims, candidate 
   const bounds = normalizeCommunicationRegionBounds(raw.bounds, contourPoints, dims);
   if (!bounds) return null;
   const polygon = contourPoints.length >= 3 ? contourPoints : communicationRegionCandidateImagePoints({ bounds });
+  const maskRef =
+    raw.maskRef && typeof raw.maskRef === "object"
+      ? {
+          path: String(raw.maskRef.path || "").trim() || null,
+          sha256: String(raw.maskRef.sha256 || "").trim() || null,
+          width: Math.max(1, Number(raw.maskRef.width) || 1),
+          height: Math.max(1, Number(raw.maskRef.height) || 1),
+          format: String(raw.maskRef.format || "png").trim() || "png",
+        }
+      : raw.maskRef
+        ? String(raw.maskRef)
+        : raw.mask_ref
+          ? String(raw.mask_ref)
+          : null;
+  const source =
+    raw.source && typeof raw.source === "object"
+      ? JSON.parse(JSON.stringify(raw.source))
+      : String(raw.source || "magic_select");
   return {
     id: String(raw.id || raw.candidateId || raw.candidate_id || `region-${Date.now()}-${index + 1}-${Math.random().toString(16).slice(2, 7)}`),
     label: String(raw.label || `Candidate ${index + 1}`),
     confidence: Number.isFinite(Number(raw.confidence)) ? clamp(Number(raw.confidence), 0, 1) : 0,
     bounds,
     contourPoints,
-    maskRef: raw.maskRef ? String(raw.maskRef) : raw.mask_ref ? String(raw.mask_ref) : null,
-    source: String(raw.source || "magic_select"),
+    maskRef,
+    source,
     polygon,
     clickPoint: anchor
       ? {
@@ -22905,18 +22944,135 @@ function applyCommunicationMagicSelectAtPoint(imageId, imagePoint, deterministic
     };
   } else {
     const candidates = resolveCommunicationMagicSelectCandidates(id, nextAnchor, dims, deterministicResult);
+    const requestedChosenCandidateId = readFirstString(deterministicResult?.chosenCandidateId) || null;
+    const requestedActiveCandidateIndex = requestedChosenCandidateId
+      ? candidates.findIndex((candidate) => String(candidate?.id || "").trim() === requestedChosenCandidateId)
+      : Math.max(0, Number(deterministicResult?.activeCandidateIndex) || 0);
+    const activeCandidateIndex = clamp(
+      requestedActiveCandidateIndex >= 0 ? requestedActiveCandidateIndex : 0,
+      0,
+      Math.max(0, candidates.length - 1)
+    );
     group = {
       imageId: id,
       anchor: nextAnchor,
       candidates,
-      activeCandidateIndex: 0,
-      chosenCandidateId: candidates[0]?.id || null,
+      activeCandidateIndex,
+      chosenCandidateId: candidates[activeCandidateIndex]?.id || candidates[0]?.id || null,
+      reproducibility:
+        deterministicResult?.reproducibility && typeof deterministicResult.reproducibility === "object"
+          ? JSON.parse(JSON.stringify(deterministicResult.reproducibility))
+          : null,
+      receipt:
+        deterministicResult?.receipt && typeof deterministicResult.receipt === "object"
+          ? JSON.parse(JSON.stringify(deterministicResult.receipt))
+          : null,
+      warnings: Array.isArray(deterministicResult?.warnings)
+        ? deterministicResult.warnings.map((value) => String(value))
+        : [],
       updatedAt: Date.now(),
     };
   }
   state.communication.regionProposalsByImageId.set(id, group);
   state.communication.lastAnchor = communicationAnchorFromRegionGroup(group);
   return group;
+}
+
+async function runLocalCommunicationMagicSelectAtPoint(
+  imageId,
+  imagePoint,
+  { source = "communication_magic_select" } = {}
+) {
+  const id = String(imageId || "").trim();
+  const item = state.imagesById.get(id) || null;
+  if (!id || !item || !imagePoint) {
+    throw new Error("Magic Select requires a visible target image.");
+  }
+  if (!item?.path) {
+    throw new Error("Magic Select target image does not have a local source path.");
+  }
+  const dims = {
+    w: Math.max(1, Number(item?.img?.naturalWidth || item?.width) || 1),
+    h: Math.max(1, Number(item?.img?.naturalHeight || item?.height) || 1),
+  };
+  const anchor = {
+    x: clamp(Math.round(Number(imagePoint?.x) || 0), 0, Math.max(0, dims.w - 1)),
+    y: clamp(Math.round(Number(imagePoint?.y) || 0), 0, Math.max(0, dims.h - 1)),
+  };
+  const existing = communicationRegionGroupForImage(id);
+  const shouldCycleExisting = Boolean(
+    existing?.anchor &&
+      Math.hypot((Number(existing.anchor.x) || 0) - anchor.x, (Number(existing.anchor.y) || 0) - anchor.y) <=
+        Math.max(24, Math.round(Math.min(dims.w, dims.h) * 0.08))
+  );
+
+  let response = null;
+  let fallbackWarning = "";
+  let group = null;
+  if (shouldCycleExisting) {
+    group = applyCommunicationMagicSelectAtPoint(id, anchor);
+  } else {
+    await ensureRun();
+    setStatus("Engine: running local Magic Select...");
+    try {
+      response = await runLocalMagicSelectClick({
+        imageId: id,
+        imagePath: String(item.path),
+        runDir: state.runDir || null,
+        stableSourceRef: readFirstString(item?.receiptPath, item?.path) || null,
+        clickAnchor: anchor,
+        source,
+      });
+      group = applyCommunicationMagicSelectAtPoint(id, anchor, {
+        ...(response?.group && typeof response.group === "object" ? response.group : {}),
+        receipt: response?.receipt || null,
+        reproducibility: response?.group?.reproducibility ?? response?.receipt?.reproducibility ?? null,
+        warnings: Array.isArray(response?.warnings) ? response.warnings : [],
+      });
+    } catch (error) {
+      fallbackWarning = readFirstString(error?.message, "Magic Select local runtime failed.");
+      group = applyCommunicationMagicSelectAtPoint(id, anchor, {
+        warnings: [fallbackWarning],
+      });
+    } finally {
+      setStatus("Engine: ready");
+    }
+  }
+
+  if (!group) {
+    throw new Error("Magic Select failed to create a region group.");
+  }
+  if (
+    state.communication?.proposalTray?.visible &&
+    !communicationTrayAnchorPinnedToTitlebar(state.communication?.proposalTray?.anchor)
+  ) {
+    state.communication.proposalTray.anchor = state.communication.lastAnchor;
+  }
+  invalidateActiveTabPreview("selection_overlay_change");
+  dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
+    source,
+    communication: buildCommunicationBridgeSnapshot(),
+    context: buildJuggernautShellContext(),
+  });
+  requestRender();
+  const warnings = Array.isArray(group?.warnings) ? group.warnings.map((value) => String(value)) : [];
+  const candidate =
+    (Array.isArray(group?.candidates) && String(group?.chosenCandidateId || "").trim()
+      ? group.candidates.find((entry) => String(entry?.id || "").trim() === String(group.chosenCandidateId || "").trim())
+      : null) ||
+    group?.candidates?.[Math.max(0, Number(group?.activeCandidateIndex) || 0)] ||
+    null;
+  return {
+    ok: true,
+    contract: response?.contract || null,
+    action: response?.action || "magic_select_click",
+    imageId: id,
+    candidate,
+    group,
+    receipt: response?.receipt || group?.receipt || null,
+    warnings,
+    fallback: Boolean(fallbackWarning),
+  };
 }
 
 function commitCommunicationMarkDraft() {
@@ -23126,14 +23282,39 @@ function buildCommunicationRegionsPayload() {
         : null,
       activeCandidateIndex,
       chosenCandidateId: group?.chosenCandidateId ? String(group.chosenCandidateId) : null,
+      reproducibility:
+        group?.reproducibility && typeof group.reproducibility === "object"
+          ? JSON.parse(JSON.stringify(group.reproducibility))
+          : null,
+      receipt:
+        group?.receipt && typeof group.receipt === "object"
+          ? JSON.parse(JSON.stringify(group.receipt))
+          : null,
+      warnings: Array.isArray(group?.warnings) ? group.warnings.map((value) => String(value)) : [],
       candidates: candidates.map((candidate, index) => {
         const polygon = communicationRegionCandidateImagePoints(candidate);
         return {
           id: String(candidate?.id || `candidate-${index + 1}`),
           label: String(candidate?.label || `Candidate ${index + 1}`),
           confidence: Number(candidate?.confidence) || 0,
-          source: candidate?.source ? String(candidate.source) : "magic_select",
-          maskRef: candidate?.maskRef ? String(candidate.maskRef) : null,
+          source:
+            candidate?.source && typeof candidate.source === "object"
+              ? JSON.parse(JSON.stringify(candidate.source))
+              : candidate?.source
+                ? String(candidate.source)
+                : "magic_select",
+          maskRef:
+            candidate?.maskRef && typeof candidate.maskRef === "object"
+              ? {
+                  path: readFirstString(candidate.maskRef.path) || null,
+                  sha256: readFirstString(candidate.maskRef.sha256) || null,
+                  width: Math.max(1, Number(candidate.maskRef.width) || 1),
+                  height: Math.max(1, Number(candidate.maskRef.height) || 1),
+                  format: readFirstString(candidate.maskRef.format, "png"),
+                }
+              : candidate?.maskRef
+                ? String(candidate.maskRef)
+                : null,
           bounds: candidate?.bounds
             ? {
                 x: Number(candidate.bounds.x) || 0,
@@ -23470,32 +23651,13 @@ function finishObservableCommunicationMarkerStroke(
   };
 }
 
-function finishObservableCommunicationMagicSelectClick(
+async function finishObservableCommunicationMagicSelectClick(
   pointerEvent = null,
   { source = "agent_observable_magic_select" } = {}
 ) {
   const targetImageId = String(state.pointer.imageId || "").trim();
   const moved = Boolean(state.pointer.moved);
   const imagePoint = !moved && targetImageId ? canvasToImageForImageId(canvasPointFromEvent(pointerEvent), targetImageId) : null;
-  let group = null;
-  if (targetImageId && imagePoint) {
-    group = applyCommunicationMagicSelectAtPoint(targetImageId, imagePoint);
-    if (
-      group &&
-      state.communication?.proposalTray?.visible &&
-      !communicationTrayAnchorPinnedToTitlebar(state.communication?.proposalTray?.anchor)
-    ) {
-      state.communication.proposalTray.anchor = state.communication.lastAnchor;
-    }
-    if (group) {
-      invalidateActiveTabPreview("selection_overlay_change");
-      dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
-        source,
-        communication: buildCommunicationBridgeSnapshot(),
-        context: buildJuggernautShellContext(),
-      });
-    }
-  }
   clearObservableCommunicationPointerState();
   requestRender();
   try {
@@ -23503,12 +23665,18 @@ function finishObservableCommunicationMagicSelectClick(
   } catch {
     // ignore
   }
+  const response = targetImageId && imagePoint
+    ? await runLocalCommunicationMagicSelectAtPoint(targetImageId, imagePoint, { source })
+    : null;
+  const group = response?.group || null;
   return {
     ok: Boolean(group),
     tool: "magic_select",
     image_id: targetImageId || null,
     active_candidate_id: group?.chosenCandidateId ? String(group.chosenCandidateId) : null,
     candidate_count: Array.isArray(group?.candidates) ? group.candidates.length : 0,
+    receipt: response?.receipt || null,
+    warnings: Array.isArray(response?.warnings) ? response.warnings.map((value) => String(value)) : [],
     communication: buildCommunicationBridgeSnapshot(),
   };
 }
@@ -44626,38 +44794,25 @@ function installCanvasHandlers() {
           if (kind === COMMUNICATION_POINTER_KINDS.MAGIC_SELECT) {
             const targetImageId = String(imageId || "").trim();
             const imagePoint = !moved && targetImageId ? canvasToImageForImageId(canvasPointFromEvent(event), targetImageId) : null;
-            if (targetImageId && imagePoint) {
-              const group = applyCommunicationMagicSelectAtPoint(targetImageId, imagePoint);
-              if (
-                group &&
-                state.communication?.proposalTray?.visible &&
-                !communicationTrayAnchorPinnedToTitlebar(state.communication?.proposalTray?.anchor)
-              ) {
-                state.communication.proposalTray.anchor = state.communication.lastAnchor;
-              }
-              if (group) {
-                recordTimelineNode({
-                  imageId: targetImageId,
-                  action: "Magic Select",
-                  kind: "annotation",
-                  visualMode: "icon",
-                  label: state.imagesById.get(targetImageId)?.label || "Magic Select",
-                  previewImageId: targetImageId,
-                  previewPath: state.imagesById.get(targetImageId)?.path || null,
-                });
-              }
-              invalidateActiveTabPreview("selection_overlay_change");
-              dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
-                source: "communication_magic_select",
-                communication: buildCommunicationBridgeSnapshot(),
-                context: buildJuggernautShellContext(),
-              });
-            }
+            clearObservableCommunicationPointerState();
             requestRender();
             try {
               els.overlayCanvas.releasePointerCapture(event.pointerId);
             } catch {
               // ignore
+            }
+            if (targetImageId && imagePoint) {
+              void runLocalCommunicationMagicSelectAtPoint(targetImageId, imagePoint, {
+                source: "communication_magic_select",
+              }).then((response) => {
+                if (response?.fallback) {
+                  showToast("Local Magic Select failed. Using fallback region.", "error", 2600);
+                }
+              }).catch((error) => {
+                console.error("Failed to run local Magic Select:", error);
+                showToast(error?.message || "Magic Select failed.", "error", 2600);
+                requestRender();
+              });
             }
             return;
           }
