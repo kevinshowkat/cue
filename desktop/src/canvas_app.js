@@ -122,6 +122,15 @@ import {
   TABBED_SESSIONS_CHANGED_EVENT,
   createTabbedSessionsStore,
 } from "./tabbed_sessions.js";
+import {
+  deserializeSessionSnapshot,
+  serializeSessionSnapshot,
+} from "./session_snapshot.js";
+import {
+  buildNativeSystemMenuPayload,
+  NATIVE_SHORTCUT_SLOT_COUNT,
+  NATIVE_TOOLS_SLOT_COUNT,
+} from "./system_menu_state.js";
 
 const SINGLE_IMAGE_RAIL_REGISTERED_ADAPTER = Object.freeze({
   id: "single-image-rail-intent-runtime-v1",
@@ -140,6 +149,13 @@ const SINGLE_IMAGE_RAIL_CAPABILITY_SUPPORT = Object.freeze({
 const SINGLE_IMAGE_RAIL_SUBJECT_ISOLATION_MODEL = "Gemini Nano Banana 2";
 const COMMUNICATION_REVIEW_SCHEMA_VERSION = "juggernaut.communication-review.v1";
 const COMMUNICATION_TOOL_IDS = Object.freeze(["marker", "protect", "magic_select", "make_space", "eraser"]);
+const NATIVE_MENU_COMMUNICATION_TOOLS = Object.freeze([
+  { toolId: "marker", label: "Marker" },
+  { toolId: "protect", label: "Protect" },
+  { toolId: "magic_select", label: "Magic Select" },
+  { toolId: "make_space", label: "Make Space" },
+  { toolId: "eraser", label: "Eraser" },
+]);
 const COMMUNICATION_TOOL_BEHAVIOR = Object.freeze({
   marker: "marker",
   protect: "marker",
@@ -176,6 +192,7 @@ const COMMUNICATION_REGION_IDLE = "rgba(100, 210, 255, 0.34)";
 const IMAGE_SELECTION_INACTIVE_STROKE = "rgba(118, 211, 255, 0.56)";
 const DEFAULT_UNTITLED_TAB_TITLE = "Untitled Canvas";
 const SESSION_TAB_TITLE_MAX_LENGTH = 40;
+const SESSION_SNAPSHOT_FILENAME = "juggernaut-session.json";
 const AGENT_RUNNER_BRIDGE_KEY = "__JUGGERNAUT_AGENT_RUNNER__";
 const AGENT_RUNNER_STATE_EVENT = "juggernaut:agent-runner-state";
 const AGENT_RUNNER_LOG_EVENT = "juggernaut:agent-runner-log";
@@ -2470,6 +2487,13 @@ const state = {
     loadErrorToastShown: false,
     lastResolveError: null, // string|null (debug aid shown in Settings readout)
   },
+};
+
+const nativeMenuBridge = {
+  syncTimer: null,
+  lastSignature: "",
+  shortcutSlots: [],
+  toolSlots: [],
 };
 
 function createTabTopMetricsState() {
@@ -24830,6 +24854,7 @@ function syncJuggernautShellState() {
       };
     }
   }
+  queueNativeSystemMenuSync();
 }
 
 function getSelectedIds() {
@@ -31915,8 +31940,8 @@ function customToolDockRenderSignature(tools = []) {
 
 function renderCustomToolDock() {
   const root = els.customToolDock;
-  if (!root) return false;
   const tools = sessionToolRegistry.visible({ limit: 3 });
+  if (!root) return false;
   const nextKey = customToolDockRenderSignature(tools);
   if (state.lastRenderedCustomToolDockKey === nextKey) return false;
   state.lastRenderedCustomToolDockKey = nextKey;
@@ -32008,6 +32033,7 @@ function renderActionGrid() {
   state.juggernautShell.singleImageRail.visibleJobs = railState.visibleDynamicJobs.map((job) => ({ ...job }));
   state.juggernautShell.singleImageRail.mock = Boolean(rankResult.mock);
   state.juggernautShell.visibleToolIds = railState.buttons.map((button) => button.toolId);
+  cacheNativeShortcutSlots(railState.buttons);
   renderJuggernautRail(root, {
     buttons: railState.buttons,
     onPress: (button) => {
@@ -35782,6 +35808,177 @@ function tabLabelForRunDir(runDir, fallback = DEFAULT_UNTITLED_TAB_TITLE) {
   });
 }
 
+async function sessionSnapshotPathForRunDir(runDir = "") {
+  const targetRunDir = String(runDir || "").trim();
+  if (!targetRunDir) return "";
+  try {
+    return await join(targetRunDir, SESSION_SNAPSHOT_FILENAME);
+  } catch {
+    return `${targetRunDir}/${SESSION_SNAPSHOT_FILENAME}`;
+  }
+}
+
+function buildNativeMenuFileState() {
+  const blockReason = currentTabSwitchBlockReason();
+  const hasActiveTab = Boolean(String(state.activeTabId || "").trim());
+  const hasVisibleImages = getVisibleCanvasImages().length > 0;
+  return {
+    canNewSession: !blockReason,
+    canOpenSession: !blockReason,
+    canSaveSession: hasActiveTab && !blockReason,
+    canCloseSession: hasActiveTab && tabbedSessions.tabsOrder.length > 1 && !blockReason,
+    canExportSession: hasVisibleImages && !blockReason,
+    canImportPhotos: true,
+    canOpenSettings: true,
+  };
+}
+
+function buildNativeShortcutSlots() {
+  return nativeMenuBridge.shortcutSlots
+    .slice(0, NATIVE_SHORTCUT_SLOT_COUNT)
+    .map((slot) => ({
+      label: String(slot?.label || "").trim() || "Shortcut",
+      enabled: Boolean(slot?.enabled),
+    }));
+}
+
+function buildNativeToolSlots() {
+  const customToolLimit = Math.max(0, NATIVE_TOOLS_SLOT_COUNT - NATIVE_MENU_COMMUNICATION_TOOLS.length);
+  const visibleCustomTools = sessionToolRegistry.visible({ limit: customToolLimit });
+  const customToolSlots = Array.from({ length: customToolLimit }, (_, index) => {
+    const tool = visibleCustomTools[index] || null;
+    if (!tool) {
+      return {
+        kind: "custom_tool_placeholder",
+        label: `Custom Tool Slot ${index + 1}`,
+        enabled: false,
+        toolId: null,
+      };
+    }
+    return {
+      kind: "custom_tool",
+      label: String(tool?.label || tool?.shortLabel || tool?.toolId || "").trim() || "Custom Tool",
+      enabled: Boolean(tool?.toolId),
+      toolId: String(tool?.toolId || "").trim() || null,
+    };
+  });
+  nativeMenuBridge.toolSlots = NATIVE_MENU_COMMUNICATION_TOOLS
+    .map((tool) => ({
+      kind: "communication_tool",
+      label: tool.label,
+      enabled: true,
+      toolId: tool.toolId,
+    }))
+    .concat(customToolSlots)
+    .slice(0, NATIVE_TOOLS_SLOT_COUNT)
+    .map((slot) => ({
+      kind: String(slot?.kind || "").trim() || "tool",
+      label: String(slot?.label || "").trim() || "Tool",
+      enabled: Boolean(slot?.enabled),
+      toolId: String(slot?.toolId || "").trim() || null,
+    }));
+  return nativeMenuBridge.toolSlots.map((slot) => ({
+    label: slot.label,
+    enabled: slot.enabled,
+  }));
+}
+
+async function syncNativeSystemMenu() {
+  const payload = buildNativeSystemMenuPayload({
+    file: buildNativeMenuFileState(),
+    tools: buildNativeToolSlots(),
+    shortcuts: buildNativeShortcutSlots(),
+  });
+  const signature = JSON.stringify(payload);
+  if (nativeMenuBridge.lastSignature === signature) return;
+  nativeMenuBridge.lastSignature = signature;
+  await invoke("sync_native_menu_state", { payload }).catch((error) => {
+    nativeMenuBridge.lastSignature = "";
+    console.warn("native system menu sync failed", error);
+  });
+}
+
+function queueNativeSystemMenuSync() {
+  if (nativeMenuBridge.syncTimer) return;
+  nativeMenuBridge.syncTimer = setTimeout(() => {
+    nativeMenuBridge.syncTimer = null;
+    void syncNativeSystemMenu();
+  }, 0);
+}
+
+function cacheNativeShortcutSlots(buttons = []) {
+  nativeMenuBridge.shortcutSlots = Array.isArray(buttons)
+    ? buttons.slice(0, NATIVE_SHORTCUT_SLOT_COUNT).map((button) => ({
+        label: String(button?.label || button?.toolId || "").trim() || "Shortcut",
+        enabled: !Boolean(button?.disabled),
+        toolId: String(button?.toolId || "").trim() || null,
+      }))
+    : [];
+  queueNativeSystemMenuSync();
+}
+
+function parseNativeSlotIndex(action = "", prefix = "") {
+  const normalized = String(action || "").trim();
+  if (!normalized.startsWith(prefix)) return -1;
+  const index = Number(normalized.slice(prefix.length));
+  if (!Number.isInteger(index) || index < 0) return -1;
+  return index;
+}
+
+async function runNativeShortcutSlot(index = -1) {
+  const slot = nativeMenuBridge.shortcutSlots[index] || null;
+  const toolId = String(slot?.toolId || "").trim();
+  if (!toolId || !slot?.enabled) return false;
+  return applyJuggernautTool(toolId);
+}
+
+async function runNativeToolSlot(index = -1) {
+  const slot = nativeMenuBridge.toolSlots[index] || null;
+  const toolId = String(slot?.toolId || "").trim();
+  if (!toolId || !slot?.enabled) return false;
+  if (slot.kind === "communication_tool") {
+    return setCommunicationTool(toolId, { source: "native_menu" });
+  }
+  return invokeRegisteredTool(toolId, {
+    source: "native_menu",
+    trigger: "menu",
+  });
+}
+
+async function saveActiveSessionSnapshot({ source = "menu" } = {}) {
+  void source;
+  const blockReason = currentTabSwitchBlockReason();
+  if (blockReason) {
+    showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
+    return { ok: false, reason: blockReason };
+  }
+  const activeTabId = String(state.activeTabId || "").trim();
+  if (!activeTabId) return { ok: false, reason: "missing_tab" };
+  await ensureRun();
+  const record = tabbedSessions.getTab(activeTabId) || null;
+  if (!record) return { ok: false, reason: "missing_tab" };
+  syncSessionToolsFromRegistry();
+  syncActiveTabRecord({ capture: true, publish: true });
+  const session = record.session && typeof record.session === "object" ? record.session : captureActiveTabSession();
+  const outPath = await sessionSnapshotPathForRunDir(session.runDir || state.runDir || "");
+  if (!outPath) return { ok: false, reason: "missing_run_dir" };
+  const payload = serializeSessionSnapshot({
+    session,
+    label: sessionTabDisplayLabel(record, DEFAULT_UNTITLED_TAB_TITLE),
+  });
+  await writeTextFile(outPath, JSON.stringify(payload, null, 2));
+  showToast(`Saved session to ${basename(outPath)}.`, "tip", 2200);
+  queueNativeSystemMenuSync();
+  return { ok: true, outPath };
+}
+
+async function loadSessionSnapshotFromPath(path = "") {
+  const targetPath = String(path || "").trim();
+  if (!targetPath) return null;
+  const raw = await readTextFile(targetPath);
+  return deserializeSessionSnapshot(JSON.parse(raw));
+}
+
 function currentTabSwitchBlockReason({ allowReviewApply = false } = {}) {
   if (state.pointer?.active || state.gestureZoom?.active) return "manipulating_canvas";
   if (!allowReviewApply && state.designReviewApply?.status === "running") return "review_apply";
@@ -36618,16 +36815,39 @@ async function openExistingRun() {
   if (!selected) return { ok: false, reason: "cancelled" };
   setStatus("Engine: opening run tab…");
   const tabId = createTabId();
-  const session = createFreshTabSession({
+  const defaultEventsPath = `${selected}/events.jsonl`;
+  let session = createFreshTabSession({
     runDir: selected,
-    eventsPath: `${selected}/events.jsonl`,
+    eventsPath: defaultEventsPath,
   });
+  let restoredSnapshot = null;
+  const snapshotPath = await sessionSnapshotPathForRunDir(selected);
+  if (snapshotPath && (await exists(snapshotPath).catch(() => false))) {
+    try {
+      restoredSnapshot = await loadSessionSnapshotFromPath(snapshotPath);
+      if (restoredSnapshot?.session) {
+        session = restoredSnapshot.session;
+        session.runDir = selected;
+        session.eventsPath = session.eventsPath || defaultEventsPath;
+        if (!session.label && restoredSnapshot.label) {
+          session.label = String(restoredSnapshot.label);
+        }
+      }
+    } catch (error) {
+      console.warn("run session snapshot restore failed", error);
+      showToast("Saved session snapshot could not be restored. Falling back to run artifacts.", "tip", 3200);
+    }
+  }
+  const tabLabel =
+    normalizeSessionTabTitleInput(readFirstString(restoredSnapshot?.label, session.label), SESSION_TAB_TITLE_MAX_LENGTH) ||
+    tabLabelForRunDir(selected, `Run ${tabbedSessions.tabsOrder.length + 1}`);
   tabbedSessions.upsertTab(
     {
       tabId,
-      label: tabLabelForRunDir(selected, `Run ${tabbedSessions.tabsOrder.length + 1}`),
-      runDir: selected,
-      eventsPath: `${selected}/events.jsonl`,
+      label: tabLabel,
+      labelManual: Boolean(session.labelManual),
+      runDir: session.runDir || selected,
+      eventsPath: session.eventsPath || defaultEventsPath,
       session,
       busy: false,
       tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
@@ -36638,13 +36858,13 @@ async function openExistingRun() {
   const activation = await activateTab(tabId, { spawnEngine: false, reason: "open_run_tab" });
   if (!activation?.ok) return activation;
   if (activation?.hydration) await activation.hydration;
+  if (restoredSnapshot?.session) {
+    showToast(`Opened ${tabLabel} from the saved session snapshot.`, "tip", 3200);
+    return { ok: true, tabId, activeTabId: state.activeTabId || null, restoredSnapshot: true };
+  }
   await restoreIntentStateFromRunDir().catch(() => {});
   const restoredArtifacts = await loadExistingArtifacts();
-  showToast(
-    `Opened ${tabLabelForRunDir(selected)} in a new tab${restoredArtifacts ? ` (${restoredArtifacts} artifacts)` : ""}.`,
-    "tip",
-    3200
-  );
+  showToast(`Opened ${tabLabel} in a new tab${restoredArtifacts ? ` (${restoredArtifacts} artifacts)` : ""}.`, "tip", 3200);
   return { ok: true, tabId, activeTabId: state.activeTabId || null };
 }
 
@@ -44988,24 +45208,66 @@ async function boot() {
         : payload && typeof payload === "object"
           ? String(payload.action || "").trim()
           : "";
-    if (action === "import_photos") {
+    const nativeToolSlotIndex = parseNativeSlotIndex(action, "tools_slot_");
+    if (nativeToolSlotIndex >= 0) {
       bumpInteraction();
-      runWithUserError("Import photos", () => importPhotos(), {
-        retryHint: "Choose supported image files and retry.",
+      void runWithUserError("Tool", () => runNativeToolSlot(nativeToolSlotIndex), {
+        retryHint: "Adjust the canvas state and retry.",
       });
       return;
     }
-    if (action === "export_psd") {
+    const nativeShortcutSlotIndex = parseNativeSlotIndex(action, "shortcuts_slot_");
+    if (nativeShortcutSlotIndex >= 0) {
       bumpInteraction();
-      void runWithUserError("Export PSD", () => requestJuggernautExport({ format: "psd", source: "native_menu" }), {
+      void runWithUserError("Shortcut", () => runNativeShortcutSlot(nativeShortcutSlotIndex), {
+        retryHint: "Pick a visible image or selection and retry.",
+      });
+      return;
+    }
+    if (action === "new_session") {
+      bumpInteraction();
+      void runWithUserError("New session", () => createRun(), {
+        retryHint: "Check permissions and try again.",
+      });
+      return;
+    }
+    if (action === "open_session") {
+      bumpInteraction();
+      void runWithUserError("Open session", () => openExistingRun(), {
+        retryHint: "Choose a valid run folder and retry.",
+      });
+      return;
+    }
+    if (action === "save_session") {
+      bumpInteraction();
+      void runWithUserError("Save session", () => saveActiveSessionSnapshot({ source: "native_menu" }), {
+        retryHint: "Wait for the current action to settle and retry.",
+      });
+      return;
+    }
+    if (action === "close_session") {
+      bumpInteraction();
+      void runWithUserError("Close session", () => closeTab(state.activeTabId), {
+        retryHint: "Wait for the current action to finish and retry.",
+      });
+      return;
+    }
+    if (action === "export_session" || action === "export_psd") {
+      bumpInteraction();
+      void runWithUserError("Export session", () => requestJuggernautExport({ format: "psd", source: "native_menu" }), {
         retryHint: juggernautExportRetryHint("psd"),
       });
       return;
     }
-    if (action === "export_png") {
+    if (action === "open_create_tool") {
       bumpInteraction();
-      void runWithUserError("Export PNG", () => requestJuggernautExport({ format: "png", source: "native_menu" }), {
-        retryHint: juggernautExportRetryHint("png"),
+      showCreateToolPanel();
+      return;
+    }
+    if (action === "import_photos") {
+      bumpInteraction();
+      runWithUserError("Import photos", () => importPhotos(), {
+        retryHint: "Choose supported image files and retry.",
       });
       return;
     }

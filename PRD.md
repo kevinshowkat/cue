@@ -1,7 +1,7 @@
 # Juggernaut
 
 Status: Draft v0.2  
-Last updated: 2026-03-10  
+Last updated: 2026-03-25  
 Document owner: Product / founding team
 
 ## Purpose
@@ -117,22 +117,23 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 1. The user launches the app from the dock and lands on a single-window shell with a shared canvas surface and an in-app session tab strip.
 2. `New Run` creates a new run in a new tab instead of wiping the current one, and `Open Run` opens an existing run in a new tab.
 3. The user switches tabs to swap the selected run/session into the shared canvas surface.
-4. The user drags one image onto the active session canvas.
-5. After first-use cloud-analysis consent, the system may opportunistically analyze the uploaded image through the design-review upload-analysis path, cache that analysis by image hash, and use it to improve future suggestions without blocking editing or design review.
-6. The left rail keeps two stable icon-only anchors: `Upload` and `Select`.
-7. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the deterministic precomputed action library, while any action that may incur model cost shows a top-right sapphire-blue dot.
-8. The bottom rail exposes `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` as the communication layer for complex or non-prebaked changes.
-9. `Marker` lets the user place transient Photoshop-style freehand highlighter marks that are raw and pointer-faithful, without arrowheads, without prior image selection, and without requiring an image under the pointer.
-10. `Protect` uses the same visible freehand marking behavior as `Marker`, but its semantics are "do not change this area" when review or apply consumes the focus contract.
-11. `Magic Select` lets the user click an image and cycle through 2-3 proposed candidate regions for communication and review.
-12. `Make Space` uses region-candidate selection semantics to say "preserve or create room here" for review and later execution.
-13. `Eraser` clears communication marks and region proposals only; it does not delete image pixels or committed edits.
-14. The user triggers `Design review` explicitly with the existing `Design review` button.
-15. Review analyzes the whole visible canvas plus the marked region or active region candidate, can infer the relevant image or region from mark overlap and intersection at review time, and immediately opens a floating proposal tray near that area with 2-3 proposal skeleton slots.
-16. The planner/reviewer uses `GPT-5.4 vision`, and accepting a proposal routes through the normal execution layer to produce a real single-image replacement edit in the active tab.
-17. If the active tab is busy, tab switching is blocked or deferred until the session reaches a safe boundary.
-18. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
-19. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
+4. The native system menu mirrors the session shell: `File` exposes new/open/save/close/export session actions, `Tools` mirrors the bottom communication tools plus visible custom tools, and `Shortcuts` mirrors the left rail actions.
+5. The user drags one image onto the active session canvas.
+6. After first-use cloud-analysis consent, the system may opportunistically analyze the uploaded image through the design-review upload-analysis path, cache that analysis by image hash, and use it to improve future suggestions without blocking editing or design review.
+7. The left rail keeps two stable icon-only anchors: `Upload` and `Select`.
+8. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the deterministic precomputed action library, while any action that may incur model cost shows a top-right sapphire-blue dot.
+9. The bottom rail exposes `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` as the communication layer for complex or non-prebaked changes.
+10. `Marker` lets the user place transient Photoshop-style freehand highlighter marks that are raw and pointer-faithful, without arrowheads, without prior image selection, and without requiring an image under the pointer.
+11. `Protect` uses the same visible freehand marking behavior as `Marker`, but its semantics are "do not change this area" when review or apply consumes the focus contract.
+12. `Magic Select` lets the user click an image and cycle through 2-3 proposed candidate regions for communication and review.
+13. `Make Space` uses region-candidate selection semantics to say "preserve or create room here" for review and later execution.
+14. `Eraser` clears communication marks and region proposals only; it does not delete image pixels or committed edits.
+15. The user triggers `Design review` explicitly with the existing `Design review` button.
+16. Review analyzes the whole visible canvas plus the marked region or active region candidate, can infer the relevant image or region from mark overlap and intersection at review time, and immediately opens a floating proposal tray near that area with 2-3 proposal skeleton slots.
+17. The planner/reviewer uses `GPT-5.4 vision`, and accepting a proposal routes through the normal execution layer to produce a real single-image replacement edit in the active tab.
+18. If the active tab is busy, tab switching is blocked or deferred until the session reaches a safe boundary.
+19. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
+20. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
 
 ## V1 Feature Scope
 ### 1. Single-Image Canvas And Editing
@@ -153,10 +154,12 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 - Run-local state is tab-local, including the source image, selection state, transform state, undo/redo history, pending edits, receipts in progress, thumbnail, and dirty state.
 - `New Run` creates a fresh run/session in a new tab and leaves the current tab intact.
 - `Open Run` opens the chosen existing run in a new tab and leaves the current tab intact.
+- `Save Session` writes the tab-local canvas/session snapshot into the run directory so reopening that run restores the saved shell state instead of only raw artifacts.
 - Closing a tab closes only the shell session for that tab; it does not delete the underlying run directory.
 - Inactive tabs do not keep a live engine attachment, live event stream, or background live generation loop in v1.
 - Only the active tab is attached to engine/events in v1.
 - If the active tab is busy, tab switching must be blocked or explicitly deferred until the session reaches a safe boundary.
+- The native system menu mirrors session and shell actions: `File` owns tab/session lifecycle commands, `Tools` mirrors the bottom communication tools plus visible custom tools, and `Shortcuts` mirrors the left rail actions.
 - V1 excludes drag-reorder, native macOS window tab bar integration, and background live generation on inactive tabs.
 
 Tab contract:

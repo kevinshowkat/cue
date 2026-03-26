@@ -37,16 +37,24 @@ use std::process;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::{CustomMenuItem, Manager, Menu, MenuItem, State, Submenu};
+use tauri::{AboutMetadata, CustomMenuItem, Manager, Menu, MenuItem, State, Submenu};
 use tungstenite::client::IntoClientRequest;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
 use url::Url;
 
-const MENU_CANVAS_IMPORT: &str = "canvas_import_photos";
-const MENU_CANVAS_EXPORT_PSD: &str = "canvas_export_psd";
-const MENU_CANVAS_EXPORT_PNG: &str = "canvas_export_png";
-const MENU_CANVAS_SETTINGS: &str = "canvas_settings";
+const MENU_FILE_NEW_SESSION: &str = "file_new_session";
+const MENU_FILE_OPEN_SESSION: &str = "file_open_session";
+const MENU_FILE_SAVE_SESSION: &str = "file_save_session";
+const MENU_FILE_CLOSE_SESSION: &str = "file_close_session";
+const MENU_FILE_IMPORT_PHOTOS: &str = "file_import_photos";
+const MENU_FILE_EXPORT_SESSION: &str = "file_export_session";
+const MENU_FILE_SETTINGS: &str = "file_settings";
+const MENU_TOOLS_CREATE_TOOL: &str = "tools_create_tool";
+const MENU_TOOLS_SLOT_PREFIX: &str = "tools_slot_";
+const MENU_SHORTCUTS_SLOT_PREFIX: &str = "shortcuts_slot_";
+const NATIVE_TOOLS_SLOT_COUNT: usize = 8;
+const NATIVE_SHORTCUTS_SLOT_COUNT: usize = 9;
 const NATIVE_MENU_ACTION_EVENT: &str = "native-menu-action";
 const DESIGN_REVIEW_PLANNER_MODEL: &str = "gpt-5.4";
 const DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL: &str = "openai/gpt-5.4";
@@ -67,28 +75,321 @@ const REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT: Duration = Duration::from_s
 const REVIEW_FAST_PLANNER_HTTP_TIMEOUT: Duration = Duration::from_secs(45);
 const REVIEW_STANDARD_PLANNER_HTTP_TIMEOUT: Duration = Duration::from_secs(90);
 
-fn build_app_menu(app_name: &str) -> Menu {
-    let import = CustomMenuItem::new(MENU_CANVAS_IMPORT.to_string(), "Import Photos")
-        .accelerator("CmdOrCtrl+O");
-    let export_psd = CustomMenuItem::new(MENU_CANVAS_EXPORT_PSD.to_string(), "PSD")
-        .accelerator("CmdOrCtrl+Shift+E");
-    let export_png = CustomMenuItem::new(MENU_CANVAS_EXPORT_PNG.to_string(), "PNG");
-    let settings = CustomMenuItem::new(MENU_CANVAS_SETTINGS.to_string(), "Settings…")
-        .accelerator("CmdOrCtrl+,");
-    let export_menu = Submenu::new("Export", Menu::new().add_item(export_psd).add_item(export_png));
+fn build_placeholder_menu(prefix: &str, slot_count: usize, label_prefix: &str) -> Menu {
+    let mut menu = Menu::new();
+    for index in 0..slot_count {
+        menu = menu.add_item(
+            CustomMenuItem::new(
+                format!("{prefix}{index}"),
+                format!("{label_prefix} {}", index + 1),
+            )
+            .disabled(),
+        );
+    }
+    menu
+}
 
-    let canvas_menu = Menu::new()
-        .add_item(import)
-        .add_submenu(export_menu)
+fn build_file_menu() -> Menu {
+    let new_session =
+        CustomMenuItem::new(MENU_FILE_NEW_SESSION.to_string(), "New Session")
+            .accelerator("CmdOrCtrl+N");
+    let open_session =
+        CustomMenuItem::new(MENU_FILE_OPEN_SESSION.to_string(), "Open Session…")
+            .accelerator("CmdOrCtrl+O");
+    let save_session =
+        CustomMenuItem::new(MENU_FILE_SAVE_SESSION.to_string(), "Save Session")
+            .accelerator("CmdOrCtrl+S");
+    let close_session =
+        CustomMenuItem::new(MENU_FILE_CLOSE_SESSION.to_string(), "Close Session")
+            .accelerator("CmdOrCtrl+Shift+W");
+    let import_photos = CustomMenuItem::new(
+        MENU_FILE_IMPORT_PHOTOS.to_string(),
+        "Import Photos…",
+    );
+    let export_session = CustomMenuItem::new(
+        MENU_FILE_EXPORT_SESSION.to_string(),
+        "Export Session…",
+    )
+    .accelerator("CmdOrCtrl+Shift+E");
+    let settings =
+        CustomMenuItem::new(MENU_FILE_SETTINGS.to_string(), "Settings…")
+            .accelerator("CmdOrCtrl+,");
+
+    #[allow(unused_mut)]
+    let mut file_menu = Menu::new()
+        .add_item(new_session)
+        .add_item(open_session)
+        .add_item(save_session)
+        .add_item(close_session)
         .add_native_item(MenuItem::Separator)
-        .add_item(settings);
+        .add_item(import_photos)
+        .add_item(export_session)
+        .add_native_item(MenuItem::Separator)
+        .add_item(settings)
+        .add_native_item(MenuItem::Separator)
+        .add_native_item(MenuItem::CloseWindow);
 
-    Menu::os_default(app_name).add_submenu(Submenu::new("Canvas", canvas_menu))
+    #[cfg(not(target_os = "macos"))]
+    {
+        file_menu = file_menu.add_native_item(MenuItem::Quit);
+    }
+
+    file_menu
+}
+
+fn build_tools_menu() -> Menu {
+    let create_tool =
+        CustomMenuItem::new(MENU_TOOLS_CREATE_TOOL.to_string(), "Create Tool");
+    let slot_labels = [
+        "Marker",
+        "Protect",
+        "Magic Select",
+        "Make Space",
+        "Eraser",
+        "Custom Tool Slot 1",
+        "Custom Tool Slot 2",
+        "Custom Tool Slot 3",
+    ];
+    let mut menu = Menu::new()
+        .add_item(create_tool)
+        .add_native_item(MenuItem::Separator);
+    for index in 0..NATIVE_TOOLS_SLOT_COUNT {
+        menu = menu.add_item(
+            CustomMenuItem::new(
+                format!("{MENU_TOOLS_SLOT_PREFIX}{index}"),
+                slot_labels
+                    .get(index)
+                    .copied()
+                    .unwrap_or("Tool Slot")
+                    .to_string(),
+            )
+            .disabled(),
+        );
+    }
+    menu
+}
+
+fn build_shortcuts_menu() -> Menu {
+    build_placeholder_menu(
+        MENU_SHORTCUTS_SLOT_PREFIX,
+        NATIVE_SHORTCUTS_SLOT_COUNT,
+        "Shortcut Slot",
+    )
+}
+
+fn build_app_menu(app_name: &str) -> Menu {
+    let mut menu = Menu::new();
+
+    #[cfg(target_os = "macos")]
+    {
+        menu = menu.add_submenu(Submenu::new(
+            app_name,
+            Menu::new()
+                .add_native_item(MenuItem::About(
+                    app_name.to_string(),
+                    AboutMetadata::default(),
+                ))
+                .add_native_item(MenuItem::Separator)
+                .add_native_item(MenuItem::Services)
+                .add_native_item(MenuItem::Separator)
+                .add_native_item(MenuItem::Hide)
+                .add_native_item(MenuItem::HideOthers)
+                .add_native_item(MenuItem::ShowAll)
+                .add_native_item(MenuItem::Separator)
+                .add_native_item(MenuItem::Quit),
+        ));
+    }
+
+    menu = menu.add_submenu(Submenu::new("File", build_file_menu()));
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let mut edit_menu = Menu::new();
+        #[cfg(target_os = "macos")]
+        {
+            edit_menu = edit_menu.add_native_item(MenuItem::Undo);
+            edit_menu = edit_menu.add_native_item(MenuItem::Redo);
+            edit_menu = edit_menu.add_native_item(MenuItem::Separator);
+        }
+        edit_menu = edit_menu.add_native_item(MenuItem::Cut);
+        edit_menu = edit_menu.add_native_item(MenuItem::Copy);
+        edit_menu = edit_menu.add_native_item(MenuItem::Paste);
+        #[cfg(target_os = "macos")]
+        {
+            edit_menu = edit_menu.add_native_item(MenuItem::SelectAll);
+        }
+        menu = menu.add_submenu(Submenu::new("Edit", edit_menu));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        menu = menu.add_submenu(Submenu::new(
+            "View",
+            Menu::new().add_native_item(MenuItem::EnterFullScreen),
+        ));
+    }
+
+    menu = menu.add_submenu(Submenu::new("Tools", build_tools_menu()));
+    menu = menu.add_submenu(Submenu::new("Shortcuts", build_shortcuts_menu()));
+
+    let mut window_menu = Menu::new().add_native_item(MenuItem::Minimize);
+    #[cfg(target_os = "macos")]
+    {
+        window_menu = window_menu.add_native_item(MenuItem::Zoom);
+        window_menu = window_menu.add_native_item(MenuItem::Separator);
+    }
+    window_menu = window_menu.add_native_item(MenuItem::CloseWindow);
+    menu.add_submenu(Submenu::new("Window", window_menu))
 }
 
 fn emit_native_menu_action(window: &tauri::Window, action: &str) {
     let payload = serde_json::json!({ "action": action });
     let _ = window.emit(NATIVE_MENU_ACTION_EVENT, payload);
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeMenuSlotPayload {
+    #[serde(default)]
+    label: String,
+    #[serde(default)]
+    enabled: bool,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeMenuFileStatePayload {
+    #[serde(default)]
+    can_new_session: bool,
+    #[serde(default)]
+    can_open_session: bool,
+    #[serde(default)]
+    can_save_session: bool,
+    #[serde(default)]
+    can_close_session: bool,
+    #[serde(default)]
+    can_export_session: bool,
+    #[serde(default)]
+    can_import_photos: bool,
+    #[serde(default)]
+    can_open_settings: bool,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeMenuStatePayload {
+    #[serde(default)]
+    file: NativeMenuFileStatePayload,
+    #[serde(default)]
+    tools: Vec<NativeMenuSlotPayload>,
+    #[serde(default)]
+    shortcuts: Vec<NativeMenuSlotPayload>,
+}
+
+fn update_native_menu_item(
+    window: &tauri::Window,
+    id: &str,
+    title: Option<&str>,
+    enabled: Option<bool>,
+) {
+    let handle = window.menu_handle();
+    let Some(item) = handle.try_get_item(id) else {
+        return;
+    };
+    if let Some(title) = title {
+        let _ = item.set_title(title.to_string());
+    }
+    if let Some(enabled) = enabled {
+        let _ = item.set_enabled(enabled);
+    }
+}
+
+fn sync_native_menu_slots(
+    window: &tauri::Window,
+    prefix: &str,
+    slot_count: usize,
+    fallback_prefix: &str,
+    entries: &[NativeMenuSlotPayload],
+) {
+    for index in 0..slot_count {
+        let entry = entries.get(index);
+        let label = entry
+            .map(|entry| entry.label.trim())
+            .filter(|label| !label.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{fallback_prefix} {}", index + 1));
+        let enabled = entry.map(|entry| entry.enabled).unwrap_or(false);
+        update_native_menu_item(
+            window,
+            &format!("{prefix}{index}"),
+            Some(&label),
+            Some(enabled),
+        );
+    }
+}
+
+#[tauri::command]
+fn sync_native_menu_state(
+    window: tauri::Window,
+    payload: NativeMenuStatePayload,
+) -> Result<(), String> {
+    update_native_menu_item(
+        &window,
+        MENU_FILE_NEW_SESSION,
+        None,
+        Some(payload.file.can_new_session),
+    );
+    update_native_menu_item(
+        &window,
+        MENU_FILE_OPEN_SESSION,
+        None,
+        Some(payload.file.can_open_session),
+    );
+    update_native_menu_item(
+        &window,
+        MENU_FILE_SAVE_SESSION,
+        None,
+        Some(payload.file.can_save_session),
+    );
+    update_native_menu_item(
+        &window,
+        MENU_FILE_CLOSE_SESSION,
+        None,
+        Some(payload.file.can_close_session),
+    );
+    update_native_menu_item(
+        &window,
+        MENU_FILE_IMPORT_PHOTOS,
+        None,
+        Some(payload.file.can_import_photos),
+    );
+    update_native_menu_item(
+        &window,
+        MENU_FILE_EXPORT_SESSION,
+        None,
+        Some(payload.file.can_export_session),
+    );
+    update_native_menu_item(
+        &window,
+        MENU_FILE_SETTINGS,
+        None,
+        Some(payload.file.can_open_settings),
+    );
+    sync_native_menu_slots(
+        &window,
+        MENU_TOOLS_SLOT_PREFIX,
+        NATIVE_TOOLS_SLOT_COUNT,
+        "Tool Slot",
+        &payload.tools,
+    );
+    sync_native_menu_slots(
+        &window,
+        MENU_SHORTCUTS_SLOT_PREFIX,
+        NATIVE_SHORTCUTS_SLOT_COUNT,
+        "Shortcut Slot",
+        &payload.shortcuts,
+    );
+    Ok(())
 }
 
 fn find_repo_root(start: &Path) -> Option<PathBuf> {
@@ -5090,15 +5391,53 @@ fn main() {
     let menu = build_app_menu(&context.package_info().name);
     tauri::Builder::default()
         .menu(menu)
-        .on_menu_event(|event| match event.menu_item_id() {
-            MENU_CANVAS_IMPORT => emit_native_menu_action(&event.window(), "import_photos"),
-            MENU_CANVAS_EXPORT_PSD => emit_native_menu_action(&event.window(), "export_psd"),
-            MENU_CANVAS_EXPORT_PNG => emit_native_menu_action(&event.window(), "export_png"),
-            MENU_CANVAS_SETTINGS => emit_native_menu_action(&event.window(), "open_settings"),
-            _ => {}
+        .on_menu_event(|event| {
+            let menu_id = event.menu_item_id();
+            match menu_id {
+                MENU_FILE_NEW_SESSION => {
+                    emit_native_menu_action(&event.window(), "new_session")
+                }
+                MENU_FILE_OPEN_SESSION => {
+                    emit_native_menu_action(&event.window(), "open_session")
+                }
+                MENU_FILE_SAVE_SESSION => {
+                    emit_native_menu_action(&event.window(), "save_session")
+                }
+                MENU_FILE_CLOSE_SESSION => {
+                    emit_native_menu_action(&event.window(), "close_session")
+                }
+                MENU_FILE_IMPORT_PHOTOS => {
+                    emit_native_menu_action(&event.window(), "import_photos")
+                }
+                MENU_FILE_EXPORT_SESSION => {
+                    emit_native_menu_action(&event.window(), "export_session")
+                }
+                MENU_FILE_SETTINGS => {
+                    emit_native_menu_action(&event.window(), "open_settings")
+                }
+                MENU_TOOLS_CREATE_TOOL => {
+                    emit_native_menu_action(&event.window(), "open_create_tool")
+                }
+                _ => {
+                    if let Some(index) = menu_id.strip_prefix(MENU_TOOLS_SLOT_PREFIX) {
+                        emit_native_menu_action(
+                            &event.window(),
+                            &format!("tools_slot_{index}"),
+                        );
+                    } else if let Some(index) =
+                        menu_id.strip_prefix(MENU_SHORTCUTS_SLOT_PREFIX)
+                    {
+                        emit_native_menu_action(
+                            &event.window(),
+                            &format!("shortcuts_slot_{index}"),
+                        );
+                    }
+                }
+            }
         })
         .manage(pty_state)
         .invoke_handler(tauri::generate_handler![
+            sync_native_menu_state,
             report_automation_result,
             report_automation_frontend_ready,
             spawn_pty,
