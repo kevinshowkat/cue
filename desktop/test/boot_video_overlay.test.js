@@ -16,7 +16,8 @@ test("startup boot overlay points at the local Desktop MP4 and gates reveal unti
   assert.match(html, /class="boot-video-status-label">Loading</);
   assert.match(html, /id="boot-video-progress-bar"/);
   assert.match(html, /<body class="juggernaut-shell boot-pending">/);
-  assert.match(html, /html,\s*body\s*\{\s*background: #e9e4d3;/);
+  assert.match(html, /html,\s*body\s*\{\s*background: #e9e4d3 url\("\.\/assets\/boot_video_bg_tile\.png"\) repeat;/);
+  assert.match(html, /background-size: 180px 180px;/);
   assert.match(html, /const LOCAL_BOOT_VIDEO_PATH = "\/Users\/mainframe\/Desktop\/load\.mp4";/);
   assert.match(html, /const LOCAL_BOOT_VIDEO_SESSION_KEY = "juggernaut\.localBootVideoShown";/);
   assert.match(html, /const BOOT_VIDEO_MAX_HOLD_MS = 20000;/);
@@ -68,7 +69,8 @@ test("startup boot overlay keeps a restrained centered boot video and fade-out d
   assert.match(css, /\.boot-video-overlay\s*\{/);
   assert.match(css, /position: fixed;/);
   assert.match(css, /z-index: 20000;/);
-  assert.match(css, /background:\s*#e9e4d3;/);
+  assert.match(css, /background:\s*#e9e4d3 url\("\.\/assets\/boot_video_bg_tile\.png"\) repeat;/);
+  assert.match(css, /background-size:\s*180px 180px;/);
   assert.match(css, /opacity:\s*1;/);
   assert.match(css, /transform:\s*none;/);
   assert.match(css, /\.boot-video-overlay\.is-shell-visible\s*\{/);
@@ -78,7 +80,7 @@ test("startup boot overlay keeps a restrained centered boot video and fade-out d
   assert.match(css, /height: auto;/);
   assert.match(css, /max-width:\s*25%;/);
   assert.match(css, /max-height:\s*25%;/);
-  assert.match(css, /background:\s*#e9e4d3;/);
+  assert.match(css, /background:\s*#e9e4d3 url\("\.\/assets\/boot_video_bg_tile\.png"\) repeat;/);
   assert.match(css, /object-fit:\s*contain;/);
   assert.match(css, /\.boot-video-overlay\.is-video-ready \.boot-video-player,\s*\.boot-video-player\.is-visible\s*\{/);
   assert.match(css, /\.boot-video-copy\s*\{/);
