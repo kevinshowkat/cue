@@ -2794,7 +2794,7 @@ button.ghost:hover {
   letter-spacing: 0.01em;
   text-align: center;
   padding: 24px;
-  /* Visual-only hint; canvas interactions handle click-to-upload. */
+  /* Visual-only empty-canvas hint; uploads come from explicit import affordances or drag/drop. */
   pointer-events: none;
   cursor: default;
 }
@@ -10578,7 +10578,7 @@ button.ghost:hover {
   min-width: 0;
   flex: 1 1 auto;
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 6px;
 }
 
@@ -11799,8 +11799,8 @@ body.juggernaut-shell .brand-strip {
 }
 
 .drop-hint {
-  pointer-events: auto;
-  cursor: pointer;
+  pointer-events: none;
+  cursor: default;
   padding: 0;
   background: transparent;
 }
@@ -12057,6 +12057,7 @@ body.juggernaut-shell .brand-strip .session-tab-strip {
 
 body.juggernaut-shell .brand-strip .session-tab-run {
   min-width: 0;
+  align-items: center;
   gap: 8px;
 }
 

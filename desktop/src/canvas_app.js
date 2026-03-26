@@ -4438,17 +4438,16 @@ function syncIntentRealtimeClass() {
 }
 
 function updateEmptyCanvasHint() {
-  // Hint is a keyboard-accessible fallback for click-to-upload when no images exist.
+  // Keep the empty-canvas overlay visible for drag/drop guidance only.
   showDropHint((state.images?.length || 0) === 0);
 }
 
 function syncDropHintInteractivity() {
   if (!els.dropHint) return;
-  const interactive = (state.images?.length || 0) === 0 && !communicationToolArmed();
-  els.dropHint.dataset.interactive = interactive ? "1" : "0";
-  els.dropHint.tabIndex = interactive ? 0 : -1;
-  els.dropHint.style.pointerEvents = interactive ? "auto" : "none";
-  els.dropHint.style.cursor = interactive ? "pointer" : "default";
+  els.dropHint.dataset.interactive = "0";
+  els.dropHint.tabIndex = -1;
+  els.dropHint.style.pointerEvents = "none";
+  els.dropHint.style.cursor = "default";
 }
 
 function ensureIntentTicker() {
@@ -45256,25 +45255,6 @@ function installUi() {
       motherV2HideHints({ immediate: true });
     }
   });
-
-  if (els.dropHint) {
-    const openPicker = (event) => {
-      if (els.dropHint.classList.contains("hidden")) return;
-      event?.preventDefault?.();
-      event?.stopPropagation?.();
-      bumpInteraction();
-      runWithUserError("Import photos", () => importPhotos(), {
-        retryHint: "Choose supported image files and retry.",
-      });
-    };
-    els.dropHint.addEventListener("click", openPicker);
-    els.dropHint.addEventListener("keydown", (event) => {
-      const key = String(event?.key || "");
-      if (key === "Enter" || key === " ") {
-        openPicker(event);
-      }
-    });
-  }
 
   if (els.settingsToggle && els.settingsDrawer) {
     els.settingsToggle.addEventListener("click", () => {

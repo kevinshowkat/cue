@@ -34,6 +34,8 @@ test("Juggernaut shell chrome exposes selection status, export button, rail root
   assert.match(html, /id=\"juggernaut-export-format-png\"/);
   assert.match(html, /id=\"action-grid\"[^>]*aria-label=\"Juggernaut left rail\"/);
   assert.match(html, /id=\"drop-hint\"/);
+  assert.match(html, /id=\"drop-hint\"[^>]*aria-hidden=\"true\"/);
+  assert.doesNotMatch(html, /id=\"drop-hint\"[^>]*role=\"button\"/);
 });
 
 test("Juggernaut shell bridge exposes tool/export registration and request methods", () => {
@@ -71,6 +73,9 @@ test("Juggernaut shell bridge exposes tool/export registration and request metho
   assert.match(app, /getRuntimeVisibility\(\)/);
   assert.match(app, /setRuntimeVisibility\(next\s*=\s*\{\}\)/);
   assert.match(app, /getCanvasSnapshot\(\)/);
+  assert.match(app, /function syncDropHintInteractivity\(\)\s*\{[\s\S]*tabIndex = -1;[\s\S]*pointerEvents = "none";[\s\S]*cursor = "default";[\s\S]*\}/);
+  assert.doesNotMatch(app, /els\.dropHint\.addEventListener\("click",/);
+  assert.doesNotMatch(app, /els\.dropHint\.addEventListener\("keydown",/);
 });
 
 test("Agent Run panel exposes a copy-logs control and clipboard handler", () => {
