@@ -438,7 +438,8 @@
                 </div>
               </div>
             </div>
-            <div id="communication-rail" class="communication-rail" role="toolbar" aria-label="Communication rail">
+            <div id="communication-shell" class="communication-shell">
+              <div id="communication-rail" class="communication-rail" role="toolbar" aria-label="Communication rail">
               <button
                 id="communication-tool-marker"
                 class="communication-tool communication-tool-marker"
@@ -588,6 +589,7 @@
                 </svg>
                 <span class="communication-tool-label">Eraser</span>
               </button>
+              </div>
             </div>
             <div id="image-menu" class="canvas-menu hidden image-menu" role="menu" aria-label="Image menu">
               <button type="button" data-action="remove">Remove from canvas</button>
@@ -1039,7 +1041,7 @@
                 <div class="canvas-bumper canvas-bumper--right" aria-hidden="true"></div>
               </div>
             <div id="spawnbar" class="spawnbar hidden" aria-live="polite"></div>
-            <div id="toast" class="toast hidden" aria-live="polite"></div>
+            <div id="toast" class="toast" data-state="hidden" aria-live="polite" aria-hidden="true"></div>
           </div>
 		          <div id="filmstrip" class="filmstrip hidden" aria-label="Filmstrip"></div>
 	        </section>

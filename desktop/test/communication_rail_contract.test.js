@@ -15,7 +15,7 @@ test("communication rail markup exposes bottom rail tools and proposal tray scaf
   assert.match(html, /class="communication-proposal-tray-title">Design Review</);
   assert.match(html, /id="communication-proposal-slot-list"/);
   assert.match(html, /id="communication-proposal-tray-close"/);
-  assert.match(html, /id="communication-rail"[^>]*aria-label="Communication rail"/);
+  assert.match(html, /id="communication-shell"[\s\S]*id="communication-rail"[^>]*aria-label="Communication rail"/);
   assert.match(html, /id="communication-tool-marker"[\s\S]*class="communication-tool communication-tool-marker"/);
   assert.match(html, /id="communication-tool-protect"[\s\S]*class="communication-tool communication-tool-protect"/);
   assert.match(html, /id="communication-tool-magic-select"[\s\S]*class="communication-tool communication-tool-magic-select"/);
@@ -32,8 +32,10 @@ test("communication rail markup exposes bottom rail tools and proposal tray scaf
 });
 
 test("communication rail css anchors a partially submerged pouch rail at the bottom and keeps the proposal tray floating", () => {
+  assert.match(css, /\.communication-shell\s*\{/);
+  assert.match(css, /\.communication-shell\s*\{[\s\S]*bottom:\s*-56px/);
+  assert.match(css, /\.communication-shell\s*\{[\s\S]*width:\s*min\(620px,\s*calc\(100vw - 48px\)\)/);
   assert.match(css, /\.communication-rail\s*\{/);
-  assert.match(css, /\.communication-rail\s*\{[\s\S]*bottom:\s*-56px/);
   assert.match(css, /\.communication-rail\s*\{[\s\S]*height:\s*214px/);
   assert.match(css, /\.communication-rail\s*\{[\s\S]*align-items:\s*flex-start/);
   assert.match(css, /\.communication-rail::before\s*\{/);

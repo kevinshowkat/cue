@@ -9650,19 +9650,70 @@ function bumpSessionApiCalls({ n = 1 } = {}) {
 }
 
 let toastTimer = null;
+let toastSwapTimer = null;
 let juggernautExportMenuHideTimer = null;
 let topMetricsTickTimer = null;
+const TOAST_TRANSITION_MS = 180;
+
+function finishToastHide() {
+  if (!els.toast) return;
+  els.toast.dataset.state = "hidden";
+  els.toast.setAttribute("aria-hidden", "true");
+}
+
+function hideToast({ immediate = false } = {}) {
+  if (!els.toast) return;
+  clearTimeout(toastTimer);
+  toastTimer = null;
+  clearTimeout(toastSwapTimer);
+  toastSwapTimer = null;
+  if (immediate) {
+    finishToastHide();
+    return;
+  }
+  els.toast.dataset.state = "exiting";
+  toastSwapTimer = setTimeout(() => {
+    toastSwapTimer = null;
+    finishToastHide();
+  }, TOAST_TRANSITION_MS);
+}
+
 function showToast(message, kind = "info", timeoutMs = 2400) {
   if (shouldSuppressToastInReelMode(message, kind)) return;
   if (!els.toast) return;
-  els.toast.textContent = String(message || "");
-  els.toast.dataset.kind = kind;
-  els.toast.classList.remove("hidden");
+  const nextMessage = String(message || "").trim();
+  if (!nextMessage) {
+    hideToast({ immediate: true });
+    return;
+  }
   clearTimeout(toastTimer);
+  toastTimer = null;
+  clearTimeout(toastSwapTimer);
+  toastSwapTimer = null;
+  const commitToast = () => {
+    if (!els.toast) return;
+    els.toast.textContent = String(message || "");
+    els.toast.dataset.kind = kind;
+    els.toast.dataset.state = "visible";
+    els.toast.setAttribute("aria-hidden", "false");
+  };
+  if (els.toast.dataset.state === "visible" && String(els.toast.textContent || "").trim() && String(els.toast.textContent || "").trim() !== nextMessage) {
+    els.toast.dataset.state = "refreshing";
+    toastSwapTimer = setTimeout(() => {
+      toastSwapTimer = null;
+      commitToast();
+      if (timeoutMs > 0) {
+        toastTimer = setTimeout(() => {
+          hideToast();
+        }, timeoutMs);
+      }
+    }, TOAST_TRANSITION_MS);
+    return;
+  }
+  commitToast();
   if (timeoutMs > 0) {
     toastTimer = setTimeout(() => {
-      if (!els.toast) return;
-      els.toast.classList.add("hidden");
+      hideToast();
     }, timeoutMs);
   }
 }
