@@ -22,4 +22,5 @@ These are the multi-agent execution documents created during the launch/design/p
 - Most `TODAY_*` files are historical wave instructions. Copy and adapt them rather than following their dates, paths, or branch names literally.
 - `AGENT_RUNNER_ARAGORN.md` and `agent_runner_aragorn_goals.json` are still useful as current manual verification assets for the Agent Run path.
 - These are useful for repeatable multi-agent execution, but they are operational history, not product documentation.
+- Design Review planner runs now persist `design-review-planner-*.json` traces into the active run directory so request, prompt, provider routing, and raw planner output can be inspected after the fact.
 - Keep new runbooks here instead of adding them back to the repository root.

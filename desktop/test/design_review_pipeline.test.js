@@ -889,3 +889,104 @@ test("design review pipeline local apply debug info carries Protect and Make Spa
   assert.deepEqual(applyResult.debugInfo?.reservedSpaceAreaIds, ["space-debug"]);
   assert.equal(applyResult.debugInfo?.reservedSpaceIntent?.areas?.length, 1);
 });
+
+test("design review pipeline emits planner trace events for successful planner calls", async () => {
+  const plannerEvents = [];
+  const pipeline = createDesignReviewPipeline({
+    providerRouter: {
+      async runPlanner() {
+        return {
+          text: JSON.stringify({
+            proposals: [
+              {
+                label: "Retouch glow",
+                imageId: "img-1",
+                actionType: "targeted_remove",
+                why: "Clean up the bright area.",
+                previewBrief: "Preview a tightened glow.",
+                applyBrief: "Retouch the glow only.",
+              },
+            ],
+          }),
+          debugInfo: {
+            route: {
+              kind: "planner",
+              provider: "openai",
+            },
+          },
+        };
+      },
+    },
+    onPlannerEvent: async (event) => {
+      plannerEvents.push(event);
+    },
+  });
+
+  const result = await pipeline.startReview({
+    request: {
+      requestId: "review-planner-trace-success",
+      primaryImageId: "img-1",
+      visibleCanvasRef: "/tmp/review-visible.png",
+      visibleCanvasContext: {
+        runDir: "/tmp/review-run",
+        images: [{ id: "img-1", path: "/tmp/primary.png" }],
+      },
+    },
+  });
+
+  assert.equal(result.status, "ready");
+  assert.equal(plannerEvents.length, 2);
+  assert.equal(plannerEvents[0].phase, "started");
+  assert.equal(plannerEvents[0].requestId, "review-planner-trace-success");
+  assert.deepEqual(plannerEvents[0].images, ["/tmp/review-visible.png"]);
+  assert.equal(plannerEvents[1].phase, "succeeded");
+  assert.equal(plannerEvents[1].attemptId, plannerEvents[0].attemptId);
+  assert.equal(plannerEvents[1].plannerDebugInfo?.route?.provider, "openai");
+  assert.equal(plannerEvents[1].rankedProposals.length, 1);
+  assert.equal(plannerEvents[1].rankedProposals[0].label, "Retouch glow");
+  assert.match(plannerEvents[1].rawText || "", /Retouch glow/);
+});
+
+test("design review pipeline emits failed planner trace events when the planner call errors", async () => {
+  const plannerEvents = [];
+  const plannerError = new Error("OpenAI planner transport timed out.");
+  plannerError.debugInfo = {
+    route: {
+      kind: "planner",
+      provider: "openai",
+    },
+    transport: "responses_websocket",
+  };
+  const pipeline = createDesignReviewPipeline({
+    providerRouter: {
+      async runPlanner() {
+        throw plannerError;
+      },
+    },
+    onPlannerEvent: async (event) => {
+      plannerEvents.push(event);
+    },
+  });
+
+  await assert.rejects(
+    pipeline.startReview({
+      request: {
+        requestId: "review-planner-trace-failure",
+        primaryImageId: "img-1",
+        visibleCanvasRef: "/tmp/review-visible.png",
+        visibleCanvasContext: {
+          runDir: "/tmp/review-run",
+          images: [{ id: "img-1", path: "/tmp/primary.png" }],
+        },
+      },
+    }),
+    /timed out/i
+  );
+
+  assert.equal(plannerEvents.length, 2);
+  assert.equal(plannerEvents[0].phase, "started");
+  assert.equal(plannerEvents[1].phase, "failed");
+  assert.equal(plannerEvents[1].attemptId, plannerEvents[0].attemptId);
+  assert.equal(plannerEvents[1].plannerDebugInfo?.route?.provider, "openai");
+  assert.match(plannerEvents[1].failure?.message || "", /timed out/i);
+});

@@ -344,6 +344,7 @@ export function createDesignReviewPipeline({
   slotCount = 3,
   runApply = null,
   onApplyEvent = null,
+  onPlannerEvent = null,
 } = {}) {
   let state = freshState();
   let activeRunToken = 0;
@@ -379,6 +380,17 @@ export function createDesignReviewPipeline({
       onApplyEvent(eventPayload);
     } catch (error) {
       console.error("Design-review apply listener failed:", error);
+    }
+    return eventPayload;
+  };
+
+  const emitPlannerEvent = async (payload = null) => {
+    const eventPayload = cloneJson(payload);
+    if (typeof onPlannerEvent !== "function" || !eventPayload) return eventPayload;
+    try {
+      await onPlannerEvent(eventPayload);
+    } catch (error) {
+      console.error("Design-review planner listener failed:", error);
     }
     return eventPayload;
   };
@@ -468,21 +480,66 @@ export function createDesignReviewPipeline({
         ...request,
         accountMemorySummary,
       });
-      const plannerResult = await providerRouter.runPlanner({
-        request,
+      const plannerImages = [request.visibleCanvasRef].filter(Boolean);
+      const plannerAttemptId = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+      const plannerStartedAt = new Date().toISOString();
+      const plannerEventBase = {
+        attemptId: plannerAttemptId,
+        requestId: readFirstString(request?.requestId) || null,
+        startedAt: plannerStartedAt,
+        request: cloneJson(request),
         prompt: plannerPrompt,
-        images: [request.visibleCanvasRef].filter(Boolean),
+        images: cloneJson(plannerImages),
+      };
+      await emitPlannerEvent({
+        ...plannerEventBase,
+        phase: "started",
       });
-      const plannerDebugInfo = cloneJson(plannerResult?.debugInfo || null);
+      let plannerResult = null;
+      let plannerDebugInfo = null;
+      let plannerRawText = "";
+      let parsed = null;
+      let rankedProposals = [];
+      try {
+        plannerResult = await providerRouter.runPlanner({
+          request,
+          prompt: plannerPrompt,
+          images: plannerImages,
+        });
+        plannerDebugInfo = cloneJson(plannerResult?.debugInfo || null);
+        plannerRawText = plannerResult?.text || plannerResult?.outputText || plannerResult?.rawText || "";
+        parsed = parseDesignReviewPlannerResponse(plannerRawText, request);
+        rankedProposals = applyDesignReviewAccountMemoryBias(parsed.proposals, accountMemorySummary).slice(
+          0,
+          normalizedSlotCount
+        );
+        await emitPlannerEvent({
+          ...plannerEventBase,
+          phase: "succeeded",
+          completedAt: new Date().toISOString(),
+          rawText: plannerRawText || null,
+          parsedResponse: cloneJson(parsed),
+          rankedProposals: cloneJson(rankedProposals),
+          plannerResult: cloneJson(plannerResult),
+          plannerDebugInfo,
+        });
+      } catch (error) {
+        const failureDebugInfo = plannerDebugInfo || cloneJson(error?.debugInfo || null);
+        await emitPlannerEvent({
+          ...plannerEventBase,
+          phase: "failed",
+          completedAt: new Date().toISOString(),
+          rawText: plannerRawText || null,
+          plannerResult: cloneJson(plannerResult),
+          plannerDebugInfo: failureDebugInfo,
+          failure: {
+            name: readFirstString(error?.name) || null,
+            message: readFirstString(error?.message, error) || "Edit proposals request failed.",
+          },
+        });
+        throw error;
+      }
       if (!isCurrentRun()) return cloneJson(state);
-      const parsed = parseDesignReviewPlannerResponse(
-        plannerResult?.text || plannerResult?.outputText || plannerResult?.rawText || "",
-        request
-      );
-      const rankedProposals = applyDesignReviewAccountMemoryBias(parsed.proposals, accountMemorySummary).slice(
-        0,
-        normalizedSlotCount
-      );
       let nextSlots = initialSlots.slice(0, normalizedSlotCount).map((slot, index) => ({
         ...slot,
         status: rankedProposals[index] ? "ready" : "failed",

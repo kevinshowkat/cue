@@ -11,7 +11,12 @@ const bootstrapPath = join(here, "..", "src", "design_review_bootstrap.js");
 const bootstrap = readFileSync(bootstrapPath, "utf8");
 
 function extractFunctionSource(name) {
-  const markers = [`export function ${name}(`, `function ${name}(`];
+  const markers = [
+    `export async function ${name}(`,
+    `async function ${name}(`,
+    `export function ${name}(`,
+    `function ${name}(`,
+  ];
   const start = markers
     .map((marker) => bootstrap.indexOf(marker))
     .find((index) => index >= 0);
@@ -776,4 +781,62 @@ test("review bootstrap tray payload exposes Protect and Make Space runtime count
   assert.equal(tray.slots[0].reservedSpaceAreaCount, 1);
   assert.equal(tray.slots[0].preserveProtectedRegions, true);
   assert.equal(tray.slots[0].preserveReservedSpace, true);
+});
+
+test("review bootstrap writes planner traces into the run directory", async () => {
+  const asRecord = instantiateFunction("asRecord");
+  const cloneJson = instantiateFunction("cloneJson");
+  const readFirstString = instantiateFunction("readFirstString");
+  const sanitizePlannerTraceSegment = instantiateFunction("sanitizePlannerTraceSegment", {
+    readFirstString,
+  });
+  const designReviewPlannerTraceFilename = instantiateFunction("designReviewPlannerTraceFilename", {
+    asRecord,
+    readFirstString,
+    sanitizePlannerTraceSegment,
+  });
+  const writes = [];
+  const writeDesignReviewPlannerTrace = instantiateFunction("writeDesignReviewPlannerTrace", {
+    asRecord,
+    cloneJson,
+    readFirstString,
+    designReviewPlannerTraceFilename,
+    join: async (...parts) => parts.join("/"),
+    writeTextFile: async (path, text) => {
+      writes.push({ path, text });
+    },
+  });
+
+  const outPath = await writeDesignReviewPlannerTrace({
+    requestId: "review planner 1",
+    attemptId: "attempt:42",
+    phase: "succeeded",
+    startedAt: "2026-03-26T15:08:00.000Z",
+    completedAt: "2026-03-26T15:08:02.000Z",
+    request: {
+      requestId: "review planner 1",
+      visibleCanvasContext: {
+        runDir: "/tmp/review-run",
+      },
+    },
+    prompt: "Plan the next edit.",
+    images: ["/tmp/review-visible.png"],
+    rawText: "{\"proposals\":[]}",
+    rankedProposals: [],
+    plannerDebugInfo: {
+      route: {
+        provider: "openai",
+      },
+    },
+  });
+
+  assert.equal(outPath, "/tmp/review-run/design-review-planner-review_planner_1-attempt_42.json");
+  assert.equal(writes.length, 1);
+  const payload = JSON.parse(writes[0].text);
+  assert.equal(payload.schemaVersion, "cue.design_review_planner_trace.v1");
+  assert.equal(payload.phase, "succeeded");
+  assert.equal(payload.prompt, "Plan the next edit.");
+  assert.deepEqual(payload.images, ["/tmp/review-visible.png"]);
+  assert.equal(payload.plannerDebugInfo?.route?.provider, "openai");
+  assert.equal(payload.request?.visibleCanvasContext?.runDir, "/tmp/review-run");
 });

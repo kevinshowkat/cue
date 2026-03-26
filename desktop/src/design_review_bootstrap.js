@@ -1,4 +1,4 @@
-import { readBinaryFile, writeBinaryFile } from "@tauri-apps/api/fs";
+import { readBinaryFile, writeBinaryFile, writeTextFile } from "@tauri-apps/api/fs";
 import { join } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/tauri";
 
@@ -50,6 +50,10 @@ function browserStorage() {
 function asRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value;
+}
+
+function cloneJson(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
 function readFirstString(...values) {
@@ -156,6 +160,54 @@ async function captureVisibleCanvasRef(runDir = "") {
   const buffer = await blob.arrayBuffer();
   const outputPath = await join(normalizedRunDir, `design-review-visible-${Date.now()}.png`);
   await writeBinaryFile(outputPath, new Uint8Array(buffer));
+  return outputPath;
+}
+
+function sanitizePlannerTraceSegment(value = "", fallback = "entry") {
+  const normalized = readFirstString(value).replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "");
+  return normalized || fallback;
+}
+
+function designReviewPlannerTraceFilename(detail = {}) {
+  const record = asRecord(detail) || {};
+  const request = asRecord(record.request) || {};
+  const requestId = sanitizePlannerTraceSegment(
+    readFirstString(record.requestId, request?.requestId),
+    "request"
+  );
+  const attemptId = sanitizePlannerTraceSegment(readFirstString(record.attemptId), "attempt");
+  return `design-review-planner-${requestId}-${attemptId}.json`;
+}
+
+async function writeDesignReviewPlannerTrace(detail = {}) {
+  const record = asRecord(detail) || {};
+  const request = asRecord(record.request) || {};
+  const runDir = readFirstString(record?.runDir, request?.visibleCanvasContext?.runDir, request?.runDir);
+  if (!runDir) return null;
+  const outputPath =
+    (await join(runDir, designReviewPlannerTraceFilename(record)).catch(() => "")) ||
+    `${runDir}/${designReviewPlannerTraceFilename(record)}`;
+  const payload = {
+    schemaVersion: "cue.design_review_planner_trace.v1",
+    kind: "design_review_planner_trace",
+    requestId: readFirstString(record.requestId, request?.requestId) || null,
+    attemptId: readFirstString(record.attemptId) || null,
+    phase: readFirstString(record.phase) || null,
+    startedAt: readFirstString(record.startedAt) || null,
+    completedAt: readFirstString(record.completedAt) || null,
+    capturedAt: new Date().toISOString(),
+    runDir,
+    request: cloneJson(request),
+    prompt: readFirstString(record.prompt) || null,
+    images: Array.isArray(record.images) ? cloneJson(record.images) : [],
+    rawText: readFirstString(record.rawText) || null,
+    parsedResponse: cloneJson(record.parsedResponse),
+    rankedProposals: Array.isArray(record.rankedProposals) ? cloneJson(record.rankedProposals) : [],
+    plannerResult: cloneJson(record.plannerResult),
+    plannerDebugInfo: cloneJson(record.plannerDebugInfo),
+    failure: cloneJson(record.failure),
+  };
+  await writeTextFile(outputPath, JSON.stringify(payload, null, 2));
   return outputPath;
 }
 
@@ -1526,6 +1578,7 @@ export async function installDesignReviewBootstrap() {
     memoryStore,
     uploadAnalysisCache,
     hashImage: (image) => hashImageRecord(image, pathHashCache),
+    onPlannerEvent: (detail) => writeDesignReviewPlannerTrace(detail),
     runApply: runDesignReviewApply,
     onApplyEvent: (detail) => {
       window.dispatchEvent(
