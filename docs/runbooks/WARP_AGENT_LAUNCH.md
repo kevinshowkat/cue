@@ -1,4 +1,4 @@
-# Warp Multi-Agent Launch Runbook (Juggernaut)
+# Warp Multi-Agent Launch Runbook (Cue)
 
 Use this when running Codex implementation agents in Warp with multiple tabs and separate git worktrees.
 
@@ -12,7 +12,7 @@ Rule: one implementation agent per worktree.
 Exception: if you initiate Codex `/review` for an in-flight task, keep the review and any follow-up fixes in that task's existing worktree and branch. Do not create a second review-only worktree.
 
 ## 2. Create Worktrees
-Run once from the main Juggernaut repo:
+Run once from the main Cue repo:
 
 ```bash
 ./scripts/create_juggernaut_worktrees.sh

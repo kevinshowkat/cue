@@ -149,6 +149,16 @@ body {
   backdrop-filter: blur(8px);
 }
 
+.boot-video-logo {
+  width: clamp(72px, 10vw, 96px);
+  height: auto;
+  display: block;
+  border-radius: 24px;
+  box-shadow:
+    0 24px 40px rgba(0, 0, 0, 0.28),
+    0 8px 18px rgba(0, 0, 0, 0.2);
+}
+
 .boot-video-mark {
   font-family: "Space Grotesk", sans-serif;
   font-size: clamp(22px, 3vw, 36px);
@@ -2983,23 +2993,9 @@ button.ghost:hover {
   transform: rotate(-45deg);
 }
 
-.toast[data-kind="error"] {
-  --toast-accent: rgba(255, 124, 132, 0.96);
-}
-
-.toast[data-kind="tip"] {
-  --toast-accent: rgba(255, 190, 92, 0.96);
-}
-
-.toast[data-kind="info"] {
-  --toast-accent: rgba(100, 210, 255, 0.94);
-}
-
 .toast[data-state="visible"] {
   opacity: 1;
   visibility: visible;
-  filter: saturate(1);
-  transform: translateY(0);
   transition-delay: 0s;
   transform: translateX(-50%) scale(1);
 }
@@ -3008,7 +3004,6 @@ button.ghost:hover {
 .toast[data-state="exiting"] {
   opacity: 0;
   visibility: visible;
-  transform: translateY(6px);
   transition-delay: 0s;
   transform: translateX(-50%) scale(0.9);
 }
@@ -8080,10 +8075,10 @@ button.ghost:hover {
 }
 
 .communication-tool.communication-tool-protect {
-  --communication-tool-tilt: -10deg;
-  --communication-tool-scale: 1.19;
-  --communication-tool-accent: rgba(255, 223, 74, 0.34);
-  --communication-tool-saturation: 1.12;
+  --communication-tool-tilt: 4deg;
+  --communication-tool-scale: 1.14;
+  --communication-tool-accent: rgba(122, 225, 255, 0.22);
+  --communication-tool-saturation: 0.98;
 }
 
 .communication-tool.communication-tool-magic-select {
@@ -10029,8 +10024,8 @@ button.ghost:hover {
   color: rgba(64, 108, 172, 0.96);
 }
 
-.timeline-card-glyph--highlight {
-  color: rgba(192, 152, 32, 0.98);
+.timeline-card-glyph--protect {
+  color: rgba(47, 129, 96, 0.96);
 }
 
 .timeline-card-glyph--magic {
@@ -10540,7 +10535,7 @@ button.ghost:hover {
   padding: 0;
 }
 
-/* Juggernaut launch-slice shell */
+/* Cue launch-slice shell */
 
 #top-metrics {
   display: none;
@@ -10549,10 +10544,10 @@ button.ghost:hover {
 .brand-strip {
   position: fixed;
   inset: 0 0 auto 0;
-  grid-template-columns: 1px minmax(0, 1fr) auto;
-  align-items: stretch;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
   min-height: var(--brand-strip-h);
-  padding: 0;
+  padding: 8px 14px 0;
   background: transparent;
   border-bottom: 0;
   backdrop-filter: none;
@@ -10564,54 +10559,50 @@ button.ghost:hover {
 }
 
 .juggernaut-brand {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  position: relative;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(30, 35, 44, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.74),
+    0 10px 24px rgba(30, 35, 44, 0.08);
   white-space: nowrap;
-  border: 0;
+  pointer-events: auto;
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  backdrop-filter: blur(18px) saturate(120%);
 }
 
 .juggernaut-brand-mark {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   position: relative;
-  display: grid;
-  place-items: center;
-}
-
-.juggernaut-brand-mark span {
-  position: absolute;
   display: block;
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(100, 210, 255, 0.62));
+  flex: 0 0 auto;
+}
+
+.juggernaut-brand-mark-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 9px;
   box-shadow:
-    0 0 18px rgba(100, 210, 255, 0.22),
-    0 10px 18px rgba(0, 0, 0, 0.26);
-}
-
-.juggernaut-brand-mark span:nth-child(1) {
-  width: 24px;
-  height: 8px;
-  transform: rotate(45deg);
-}
-
-.juggernaut-brand-mark span:nth-child(2) {
-  width: 24px;
-  height: 8px;
-  transform: rotate(-45deg);
-}
-
-.juggernaut-brand-mark span:nth-child(3) {
-  width: 8px;
-  height: 24px;
+    0 6px 14px rgba(30, 35, 44, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .juggernaut-brand-wordmark {
-  display: none;
+  display: block;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(25, 31, 40, 0.9);
+  text-transform: uppercase;
 }
 
 .stage {
@@ -12986,695 +12977,4 @@ body.juggernaut-shell .brand-strip .session-tab-strip-fork:active {
     max-width: 110px;
     font-size: 12px;
   }
-}
-
-/* Icon pack color themes */
-
-:root {
-  /* Defaults follow the default Cuphead pack so first launch is on-theme before persisted settings load. */
-  --jg-pack-body-bg:
-    radial-gradient(820px 420px at 12% 0%, rgba(255, 244, 220, 0.96), transparent 62%),
-    linear-gradient(180deg, #f6ebd2 0%, #ecddbf 48%, #e2cfa9 100%);
-  --jg-pack-shell-backdrop:
-    radial-gradient(1080px 720px at 14% 0%, rgba(255, 246, 224, 0.94), transparent 60%),
-    radial-gradient(860px 540px at 88% 8%, rgba(200, 122, 86, 0.16), transparent 62%),
-    linear-gradient(180deg, #f6ecd6 0%, #eddfc2 48%, #e5d3ae 100%);
-  --jg-pack-ink: #2d241b;
-  --jg-pack-ink-muted: rgba(111, 88, 63, 0.82);
-  --jg-pack-paper-soft: rgba(243, 231, 211, 0.94);
-  --jg-pack-surface: rgba(245, 232, 208, 0.72);
-  --jg-pack-surface-strong: rgba(251, 244, 231, 0.88);
-  --jg-pack-surface-deep: rgba(229, 212, 181, 0.96);
-  --jg-pack-border: rgba(86, 67, 47, 0.16);
-  --jg-pack-border-strong: rgba(86, 67, 47, 0.24);
-  --jg-pack-accent: #9d4e38;
-  --jg-pack-accent-soft: rgba(157, 78, 56, 0.18);
-  --jg-pack-accent-strong: rgba(179, 92, 64, 0.94);
-  --jg-pack-secondary: #74573a;
-  --jg-pack-secondary-soft: rgba(116, 87, 58, 0.18);
-  --jg-pack-danger: rgba(176, 86, 74, 0.92);
-  --jg-pack-danger-soft: rgba(176, 86, 74, 0.16);
-  --jg-pack-shadow: rgba(70, 48, 29, 0.16);
-}
-
-:root[data-rail-icon-pack="industrial_mono"] {
-  --jg-pack-body-bg:
-    radial-gradient(860px 440px at 14% 0%, rgba(255, 255, 255, 0.96), transparent 62%),
-    linear-gradient(180deg, #f8fafc 0%, #eef2f5 48%, #e6ebf0 100%);
-  --jg-pack-shell-backdrop:
-    radial-gradient(1120px 720px at 10% 0%, rgba(255, 255, 255, 0.92), transparent 60%),
-    radial-gradient(920px 600px at 86% 8%, rgba(194, 210, 226, 0.18), transparent 62%),
-    linear-gradient(180deg, #fafbfd 0%, #f0f3f7 46%, #e8edf3 100%);
-  --jg-pack-ink: #20262f;
-  --jg-pack-ink-muted: rgba(94, 105, 121, 0.82);
-  --jg-pack-paper-soft: rgba(246, 248, 251, 0.94);
-  --jg-pack-surface: rgba(244, 247, 250, 0.74);
-  --jg-pack-surface-strong: rgba(255, 255, 255, 0.88);
-  --jg-pack-surface-deep: rgba(231, 236, 242, 0.96);
-  --jg-pack-border: rgba(38, 46, 57, 0.1);
-  --jg-pack-border-strong: rgba(38, 46, 57, 0.16);
-  --jg-pack-accent: #6f8fa9;
-  --jg-pack-accent-soft: rgba(111, 143, 169, 0.16);
-  --jg-pack-accent-strong: rgba(90, 125, 155, 0.92);
-  --jg-pack-secondary: #8ea0b7;
-  --jg-pack-secondary-soft: rgba(142, 160, 183, 0.16);
-  --jg-pack-danger: rgba(181, 112, 101, 0.88);
-  --jg-pack-danger-soft: rgba(181, 112, 101, 0.14);
-  --jg-pack-shadow: rgba(30, 35, 44, 0.1);
-}
-
-:root[data-rail-icon-pack="painterly_folk"] {
-  --jg-pack-body-bg:
-    radial-gradient(840px 420px at 12% 0%, rgba(255, 237, 202, 0.96), transparent 60%),
-    radial-gradient(720px 420px at 88% 10%, rgba(47, 122, 106, 0.12), transparent 64%),
-    linear-gradient(180deg, #f8ecd7 0%, #efdec2 46%, #e4cfa9 100%);
-  --jg-pack-shell-backdrop:
-    radial-gradient(1020px 680px at 12% 0%, rgba(255, 239, 208, 0.94), transparent 60%),
-    radial-gradient(860px 520px at 86% 8%, rgba(47, 122, 106, 0.16), transparent 62%),
-    linear-gradient(180deg, #f8edd9 0%, #efdfc2 48%, #e3cfaa 100%);
-  --jg-pack-ink: #39271e;
-  --jg-pack-ink-muted: rgba(105, 76, 58, 0.84);
-  --jg-pack-paper-soft: rgba(245, 235, 216, 0.94);
-  --jg-pack-surface: rgba(247, 233, 210, 0.76);
-  --jg-pack-surface-strong: rgba(253, 245, 232, 0.9);
-  --jg-pack-surface-deep: rgba(227, 205, 176, 0.96);
-  --jg-pack-border: rgba(88, 62, 45, 0.16);
-  --jg-pack-border-strong: rgba(88, 62, 45, 0.24);
-  --jg-pack-accent: #c05b3d;
-  --jg-pack-accent-soft: rgba(192, 91, 61, 0.18);
-  --jg-pack-accent-strong: rgba(202, 99, 55, 0.92);
-  --jg-pack-secondary: #2f7a6a;
-  --jg-pack-secondary-soft: rgba(47, 122, 106, 0.16);
-  --jg-pack-danger: rgba(171, 73, 73, 0.9);
-  --jg-pack-danger-soft: rgba(171, 73, 73, 0.14);
-  --jg-pack-shadow: rgba(78, 50, 28, 0.14);
-}
-
-:root[data-rail-icon-pack="kinetic_marker"] {
-  --jg-pack-body-bg:
-    radial-gradient(840px 420px at 12% 0%, rgba(255, 245, 237, 0.96), transparent 60%),
-    radial-gradient(760px 440px at 88% 12%, rgba(198, 54, 46, 0.12), transparent 64%),
-    linear-gradient(180deg, #f7ede4 0%, #ecddd0 46%, #dfcdbd 100%);
-  --jg-pack-shell-backdrop:
-    radial-gradient(1040px 680px at 10% 0%, rgba(255, 247, 240, 0.94), transparent 60%),
-    radial-gradient(880px 520px at 88% 8%, rgba(198, 54, 46, 0.14), transparent 62%),
-    linear-gradient(180deg, #f8eee6 0%, #eedfd3 48%, #e3d0c0 100%);
-  --jg-pack-ink: #241d1b;
-  --jg-pack-ink-muted: rgba(93, 73, 69, 0.84);
-  --jg-pack-paper-soft: rgba(244, 235, 227, 0.94);
-  --jg-pack-surface: rgba(242, 231, 222, 0.76);
-  --jg-pack-surface-strong: rgba(252, 247, 243, 0.9);
-  --jg-pack-surface-deep: rgba(222, 206, 196, 0.96);
-  --jg-pack-border: rgba(58, 44, 42, 0.16);
-  --jg-pack-border-strong: rgba(58, 44, 42, 0.24);
-  --jg-pack-accent: #c6362e;
-  --jg-pack-accent-soft: rgba(198, 54, 46, 0.16);
-  --jg-pack-accent-strong: rgba(214, 59, 48, 0.92);
-  --jg-pack-secondary: #b98a3d;
-  --jg-pack-secondary-soft: rgba(185, 138, 61, 0.16);
-  --jg-pack-danger: rgba(184, 55, 45, 0.9);
-  --jg-pack-danger-soft: rgba(184, 55, 45, 0.16);
-  --jg-pack-shadow: rgba(34, 24, 22, 0.16);
-}
-
-body {
-  color: var(--jg-pack-ink);
-  background: var(--jg-pack-body-bg);
-  transition: background 180ms ease, color 180ms ease;
-}
-
-body.juggernaut-shell {
-  background: var(--jg-pack-shell-backdrop);
-}
-
-.brand-strip,
-body.juggernaut-shell .brand-strip {
-  border-bottom-color: var(--jg-pack-border);
-  background:
-    radial-gradient(320px 120px at 18% 50%, var(--jg-pack-accent-soft), transparent 74%),
-    linear-gradient(180deg, var(--jg-pack-surface-strong), var(--jg-pack-surface)),
-    var(--jg-pack-paper-soft);
-  box-shadow:
-    inset 0 -1px 0 var(--jg-pack-border),
-    0 10px 24px var(--jg-pack-shadow);
-}
-
-.app-menu,
-body.juggernaut-shell .app-menu,
-body.juggernaut-shell .brand-strip .session-tab-action-menu-panel {
-  border-color: var(--jg-pack-border-strong);
-  background:
-    radial-gradient(320px 140px at 18% 0%, var(--jg-pack-secondary-soft), transparent 62%),
-    radial-gradient(380px 180px at 88% 0%, var(--jg-pack-accent-soft), transparent 68%),
-    linear-gradient(180deg, var(--jg-pack-surface-strong), var(--jg-pack-surface)),
-    var(--jg-pack-paper-soft);
-  box-shadow:
-    0 24px 54px var(--jg-pack-shadow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.54);
-}
-
-.menu-toggle-icon {
-  filter:
-    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.56))
-    drop-shadow(0 0 10px var(--jg-pack-accent-soft));
-}
-
-.app-menu-divider,
-body.juggernaut-shell .app-menu-divider {
-  background: linear-gradient(90deg, transparent, var(--jg-pack-border-strong), transparent);
-}
-
-.app-menu button,
-body.juggernaut-shell .menu-toggle,
-body.juggernaut-shell .app-menu button,
-body.juggernaut-shell .annotate-panel button,
-body.juggernaut-shell .brand-strip .session-tab-action-menu-item {
-  border-color: var(--jg-pack-border);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.62), transparent 58%),
-    var(--jg-pack-surface);
-  color: var(--jg-pack-ink);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.74),
-    0 8px 18px var(--jg-pack-shadow);
-}
-
-.app-menu button:hover,
-body.juggernaut-shell .menu-toggle:hover,
-body.juggernaut-shell .app-menu button:hover,
-body.juggernaut-shell .annotate-panel button:hover,
-body.juggernaut-shell .brand-strip .session-tab-action-menu-item:hover:not(:disabled),
-body.juggernaut-shell .brand-strip .session-tab-action-menu-item:focus-visible {
-  border-color: var(--jg-pack-border-strong);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.76), transparent 58%),
-    var(--jg-pack-surface-strong);
-  color: var(--jg-pack-ink);
-}
-
-.app-menu-toggle-label,
-.field-label,
-.drawer-footnote,
-body.juggernaut-shell .app-menu-toggle-label,
-body.juggernaut-shell .panel-title-toggle-text,
-body.juggernaut-shell .annotate-label,
-body.juggernaut-shell .brand-strip .session-tab-action-menu-item-meta {
-  color: var(--jg-pack-ink-muted);
-}
-
-.drawer {
-  border-left-color: var(--jg-pack-border);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 24%),
-    var(--jg-pack-paper-soft);
-  box-shadow: -24px 0 48px var(--jg-pack-shadow);
-}
-
-.field,
-body.juggernaut-shell .panel,
-body.juggernaut-shell .annotate-panel,
-body.juggernaut-shell .juggernaut-shell-brand,
-body.juggernaut-shell .juggernaut-tool-rail,
-body.juggernaut-shell .juggernaut-shell-chrome .custom-tool-dock,
-body.juggernaut-shell .juggernaut-shell-action,
-body.juggernaut-shell .drop-hint-inner {
-  border-color: var(--jg-pack-border);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.46), transparent 48%),
-    var(--jg-pack-surface);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.74),
-    0 14px 34px var(--jg-pack-shadow);
-}
-
-body.juggernaut-shell .juggernaut-shell-brand::before,
-body.juggernaut-shell .juggernaut-tool-rail::before,
-body.juggernaut-shell .juggernaut-shell-chrome .custom-tool-dock::before,
-body.juggernaut-shell .juggernaut-shell-action::before,
-body.juggernaut-shell .drop-hint-inner::before {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.58), transparent 46%);
-}
-
-.field select,
-body.juggernaut-shell .annotate-field select {
-  border-color: var(--jg-pack-border);
-  background: var(--jg-pack-surface-strong);
-  color: var(--jg-pack-ink);
-}
-
-.stage,
-body.juggernaut-shell .stage {
-  border-color: var(--jg-pack-border);
-  background:
-    radial-gradient(980px 520px at 18% 10%, rgba(255, 255, 255, 0.68), transparent 62%),
-    radial-gradient(720px 420px at 86% 14%, var(--jg-pack-secondary-soft), transparent 60%),
-    linear-gradient(180deg, var(--jg-pack-surface-strong), var(--jg-pack-surface-deep));
-  box-shadow: 0 20px 48px var(--jg-pack-shadow);
-}
-
-body.juggernaut-shell .stage::before {
-  background:
-    radial-gradient(400px 220px at 18% 10%, rgba(255, 255, 255, 0.52), transparent 72%),
-    linear-gradient(180deg, var(--jg-pack-accent-soft), transparent 32%);
-}
-
-.canvas-wrap,
-body.juggernaut-shell .canvas-wrap {
-  border-color: var(--jg-pack-border);
-  background:
-    radial-gradient(circle at 18% 26%, var(--jg-pack-secondary-soft), transparent 52%),
-    radial-gradient(circle at 72% 18%, var(--jg-pack-accent-soft), transparent 50%),
-    linear-gradient(180deg, var(--jg-pack-surface), var(--jg-pack-surface-deep));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.86),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.22),
-    0 24px 56px var(--jg-pack-shadow);
-}
-
-.canvas-wrap.is-browser-drag-over,
-body.juggernaut-shell .canvas-wrap.is-browser-drag-over {
-  border-color: var(--jg-pack-accent-strong);
-  box-shadow:
-    inset 0 0 0 2px var(--jg-pack-accent-soft),
-    0 0 0 1px var(--jg-pack-accent-soft),
-    0 24px 56px var(--jg-pack-shadow);
-}
-
-.reel-size-button {
-  border-color: var(--jg-pack-accent-strong);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 58%),
-    var(--jg-pack-surface-strong);
-  color: var(--jg-pack-ink);
-  box-shadow: 0 10px 26px var(--jg-pack-shadow);
-}
-
-.reel-size-button:hover {
-  border-color: var(--jg-pack-accent);
-  color: var(--jg-pack-ink);
-}
-
-.reel-size-button.is-active {
-  border-color: var(--jg-pack-secondary);
-  color: var(--jg-pack-secondary);
-}
-
-.tool {
-  border-color: var(--jg-pack-border);
-  border-top-color: rgba(255, 255, 255, 0.46);
-  border-left-color: rgba(255, 255, 255, 0.38);
-  background:
-    radial-gradient(64px 44px at 50% 24%, var(--jg-pack-accent-soft), transparent 70%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 46%),
-    linear-gradient(180deg, var(--jg-pack-surface-strong), var(--jg-pack-surface-deep));
-  color: var(--jg-pack-ink);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.62),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
-    inset 0 -10px 18px rgba(0, 0, 0, 0.08),
-    0 7px 0 rgba(0, 0, 0, 0.12),
-    0 18px 28px var(--jg-pack-shadow);
-}
-
-.tool:hover {
-  border-color: var(--jg-pack-border-strong);
-  border-top-color: rgba(255, 255, 255, 0.54);
-  border-left-color: rgba(255, 255, 255, 0.44);
-}
-
-.tool.selected {
-  border-color: var(--jg-pack-accent-strong);
-  background:
-    radial-gradient(72px 48px at 50% 24%, var(--jg-pack-accent-soft), transparent 72%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 46%),
-    linear-gradient(180deg, var(--jg-pack-surface-strong), var(--jg-pack-paper-soft));
-  color: var(--jg-pack-accent);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.68),
-    inset 0 0 0 1px var(--jg-pack-accent-soft),
-    inset 0 -10px 18px rgba(0, 0, 0, 0.08),
-    0 0 0 1px var(--jg-pack-accent-soft),
-    0 0 24px var(--jg-pack-accent-soft),
-    0 12px 24px var(--jg-pack-shadow);
-}
-
-.tool.tool-danger {
-  color: var(--jg-pack-danger);
-  border-color: var(--jg-pack-danger-soft);
-  border-top-color: rgba(255, 255, 255, 0.46);
-  border-left-color: rgba(255, 255, 255, 0.38);
-  background:
-    radial-gradient(72px 48px at 50% 24%, var(--jg-pack-danger-soft), transparent 72%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 46%),
-    linear-gradient(180deg, var(--jg-pack-surface-strong), var(--jg-pack-surface-deep));
-}
-
-.tool-icon {
-  filter:
-    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.48))
-    drop-shadow(0 0 8px var(--jg-pack-accent-soft));
-}
-
-.tool.selected .tool-icon {
-  filter:
-    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.54))
-    drop-shadow(0 0 14px var(--jg-pack-accent-soft))
-    drop-shadow(0 0 30px var(--jg-pack-accent-soft));
-}
-
-.tool.tool-danger .tool-icon {
-  filter:
-    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.42))
-    drop-shadow(0 0 10px var(--jg-pack-danger-soft));
-}
-
-.tool-hint {
-  color: var(--jg-pack-accent);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.82), 0 0 12px var(--jg-pack-accent-soft);
-}
-
-.tool.selected .tool-hint {
-  color: var(--jg-pack-accent-strong);
-}
-
-.tool.tool-danger .tool-hint {
-  color: var(--jg-pack-danger);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.82), 0 0 12px var(--jg-pack-danger-soft);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-list {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.48), transparent 56%),
-    var(--jg-pack-surface);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    inset 0 0 0 1px var(--jg-pack-border);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-item {
-  border-color: var(--jg-pack-border);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.68), transparent 58%),
-    var(--jg-pack-surface-strong);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.88),
-    0 1px 1px rgba(0, 0, 0, 0.04);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-item:hover {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.78), transparent 58%),
-    var(--jg-pack-paper-soft);
-  border-color: var(--jg-pack-border-strong);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    0 2px 6px var(--jg-pack-shadow);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-item.is-active {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.84), transparent 58%),
-    var(--jg-pack-paper-soft);
-  border-color: var(--jg-pack-accent-strong);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.94),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.04),
-    0 0 0 1px rgba(255, 255, 255, 0.48),
-    0 4px 12px var(--jg-pack-shadow);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-item.is-active::after {
-  background: linear-gradient(90deg, var(--jg-pack-accent-strong), var(--jg-pack-accent));
-  box-shadow: 0 0 12px var(--jg-pack-accent-soft);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-item.is-placeholder {
-  border-color: var(--jg-pack-border);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.54), transparent 58%),
-    var(--jg-pack-surface);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-placeholder-label {
-  color: var(--jg-pack-ink-muted);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-placeholder-label::before {
-  background: var(--jg-pack-accent);
-  box-shadow: 0 0 0 4px var(--jg-pack-accent-soft);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-title {
-  color: var(--jg-pack-ink-muted);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-item.is-active .session-tab-title {
-  color: var(--jg-pack-ink);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-fork-indicator {
-  background: linear-gradient(180deg, var(--jg-pack-secondary), var(--jg-pack-accent));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    0 1px 2px var(--jg-pack-shadow);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-item.is-active .session-tab-fork-indicator {
-  background: linear-gradient(180deg, var(--jg-pack-secondary), var(--jg-pack-accent-strong));
-}
-
-body.juggernaut-shell .brand-strip .session-tab-title-input {
-  border-color: var(--jg-pack-border);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), transparent 58%),
-    var(--jg-pack-surface-strong);
-  color: var(--jg-pack-ink);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-title-input:focus {
-  border-color: var(--jg-pack-accent-strong);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    0 0 0 3px var(--jg-pack-accent-soft);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-item:has(.session-tab-hit:focus-visible) {
-  border-color: var(--jg-pack-accent-strong);
-  box-shadow:
-    inset 0 0 0 1px var(--jg-pack-accent-soft),
-    0 0 0 1px rgba(255, 255, 255, 0.4);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-strip-actions {
-  border-left-color: var(--jg-pack-border);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-strip-action,
-body.juggernaut-shell .tool.has-action-provenance,
-body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance {
-  border-color: var(--jg-pack-border);
-  border-top-color: rgba(255, 255, 255, 0.68);
-  border-left-color: rgba(255, 255, 255, 0.54);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.68), transparent 58%),
-    var(--jg-pack-surface);
-  color: var(--jg-pack-ink);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.84),
-    0 1px 2px var(--jg-pack-shadow);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-strip-action:hover,
-body.juggernaut-shell .brand-strip .session-tab-strip-action:focus-visible,
-body.juggernaut-shell .tool.has-action-provenance:hover,
-body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:hover,
-body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:focus-visible {
-  border-color: var(--jg-pack-border-strong);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.78), transparent 58%),
-    var(--jg-pack-surface-strong);
-  color: var(--jg-pack-ink);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-strip-new,
-body.juggernaut-shell .brand-strip .session-tab-strip-fork {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.82), transparent 48%),
-    radial-gradient(90px 64px at 30% 18%, var(--jg-pack-accent-soft), transparent 70%),
-    var(--jg-pack-paper-soft);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    inset 0 -10px 18px var(--jg-pack-secondary-soft),
-    0 12px 22px var(--jg-pack-shadow);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-strip-new:hover,
-body.juggernaut-shell .brand-strip .session-tab-strip-new:focus-visible,
-body.juggernaut-shell .brand-strip .session-tab-strip-fork:hover,
-body.juggernaut-shell .brand-strip .session-tab-strip-fork:focus-visible {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), transparent 48%),
-    radial-gradient(90px 64px at 30% 18%, var(--jg-pack-accent-soft), transparent 70%),
-    var(--jg-pack-surface-strong);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.96),
-    inset 0 -10px 18px var(--jg-pack-secondary-soft),
-    0 12px 22px var(--jg-pack-shadow);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-strip-new:active,
-body.juggernaut-shell .brand-strip .session-tab-strip-fork:active {
-  border-color: var(--jg-pack-border-strong);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), transparent 48%),
-    radial-gradient(92px 68px at 30% 16%, var(--jg-pack-accent-soft), transparent 72%),
-    var(--jg-pack-surface);
-  box-shadow:
-    inset 0 2px 6px var(--jg-pack-secondary-soft),
-    inset 0 1px 0 rgba(255, 255, 255, 0.84),
-    0 6px 12px var(--jg-pack-shadow);
-}
-
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool),
-body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"],
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"],
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"],
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"].is-ready {
-  border-color: var(--jg-pack-border);
-  border-top-color: rgba(255, 255, 255, 0.68);
-  border-left-color: rgba(255, 255, 255, 0.54);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.68), transparent 58%),
-    var(--jg-pack-surface);
-  color: var(--jg-pack-ink);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.84),
-    0 1px 2px var(--jg-pack-shadow);
-}
-
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool):hover,
-body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"]:hover,
-body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"]:focus-visible,
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"]:hover,
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"]:focus-visible,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:hover,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:focus-visible {
-  border-color: var(--jg-pack-border-strong);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.78), transparent 58%),
-    var(--jg-pack-surface-strong);
-  color: var(--jg-pack-ink);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.88),
-    0 1px 2px var(--jg-pack-shadow);
-}
-
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool).selected,
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool).selected:hover,
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool):active,
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool).is-active-request,
-body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"]:active,
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"]:active,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:active,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"].is-active-request,
-body.juggernaut-shell .tool.has-action-provenance.selected,
-body.juggernaut-shell .tool.has-action-provenance.selected:hover,
-body.juggernaut-shell .tool.has-action-provenance:active,
-body.juggernaut-shell .juggernaut-tool-rail .tool.has-action-provenance.is-active-request,
-body.juggernaut-shell .juggernaut-tool-rail .tool.has-action-provenance.is-active-request:hover,
-body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:active,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:active,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance.is-active-request {
-  border-color: var(--jg-pack-accent-strong);
-  border-top-color: rgba(255, 255, 255, 0.5);
-  border-left-color: rgba(255, 255, 255, 0.38);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.54), transparent 58%),
-    var(--jg-pack-paper-soft);
-  color: var(--jg-pack-ink);
-  box-shadow:
-    inset 0 4px 12px var(--jg-pack-accent-soft),
-    inset 0 1px 0 rgba(255, 255, 255, 0.54);
-}
-
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool).depressed,
-body.juggernaut-shell .tool.has-action-provenance.depressed {
-  border-color: var(--jg-pack-accent);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.44), transparent 58%),
-    var(--jg-pack-surface);
-  box-shadow:
-    inset 0 4px 12px var(--jg-pack-accent-soft),
-    inset 0 1px 0 rgba(255, 255, 255, 0.42);
-}
-
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"][aria-pressed="true"],
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"][aria-pressed="true"]:hover,
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"][aria-pressed="true"]:focus-visible {
-  border-color: var(--jg-pack-accent-strong);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.62), transparent 58%),
-    var(--jg-pack-paper-soft);
-  color: var(--jg-pack-ink);
-  box-shadow:
-    inset 0 3px 10px var(--jg-pack-accent-soft),
-    inset 0 1px 0 rgba(255, 255, 255, 0.68);
-}
-
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool):disabled,
-body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"]:disabled,
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"]:disabled,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:disabled,
-body.juggernaut-shell .tool.has-action-provenance:disabled,
-body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:disabled,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled {
-  border-color: var(--jg-pack-border);
-  border-top-color: rgba(255, 255, 255, 0.42);
-  border-left-color: rgba(255, 255, 255, 0.32);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.48), transparent 58%),
-    var(--jg-pack-surface);
-  color: var(--jg-pack-ink-muted);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62);
-}
-
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool) .tool-icon,
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool) .tool-hint,
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool) .tool-label,
-body.juggernaut-shell .tool.has-action-provenance .tool-hint,
-body.juggernaut-shell .tool.has-action-provenance .tool-label,
-body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"] span,
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"] span,
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"] .session-tab-action-icon .tool-icon,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"] span,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"] .session-tab-action-icon .tool-icon,
-body.juggernaut-shell .brand-strip .session-tab-strip-review[data-provenance="local_only"] .session-tab-action-icon .tool-icon,
-body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance span {
-  color: var(--jg-pack-ink);
-}
-
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool):disabled .tool-icon,
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool):disabled .tool-hint,
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool):disabled .tool-label,
-body.juggernaut-shell .tool.has-action-provenance:disabled .tool-hint,
-body.juggernaut-shell .tool.has-action-provenance:disabled .tool-label,
-body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"]:disabled span,
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"]:disabled span,
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"]:disabled .session-tab-action-icon .tool-icon,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:disabled span,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:disabled .session-tab-action-icon .tool-icon,
-body.juggernaut-shell .brand-strip .session-tab-strip-review[data-provenance="local_only"]:disabled .session-tab-action-icon .tool-icon,
-body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:disabled span,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled span,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled svg {
-  color: var(--jg-pack-ink-muted);
-}
-
-body.juggernaut-shell .action-provenance-model-dot {
-  background: var(--jg-pack-accent-strong);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.9),
-    0 0 0 3px var(--jg-pack-accent-soft),
-    0 3px 8px var(--jg-pack-shadow);
 }

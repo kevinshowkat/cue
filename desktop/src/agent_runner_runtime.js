@@ -548,7 +548,7 @@ export function buildAgentRunnerContextSummary({
 export function buildAgentRunnerPlannerPrompt(input = {}) {
   const context = buildAgentRunnerContextSummary(input);
   return [
-    "You are the planner for Juggernaut Agent Run.",
+    "You are the planner for Cue Agent Run.",
     "Choose exactly one next action that best advances the visual goal.",
     "Return JSON only. Do not include markdown fences or prose outside the JSON.",
     "The first visual input is the current rendered visible canvas view, including visible marks and overlays.",

@@ -1,6 +1,6 @@
 # PSD Export Slice
 
-This document defines the current PSD export contract for Juggernaut's desktop shell.
+This document defines the current PSD export contract for Cue's desktop shell.
 
 ## Contract
 
@@ -35,7 +35,7 @@ This document defines the current PSD export contract for Juggernaut's desktop s
 
 - PSD output is flattened into a single bitmap composite rather than editable per-image PSD layers.
 - Effect-token state, mask semantics, and tool semantics are not reified as editable PSD structures in this slice.
-- Export dimensions follow Juggernaut canvas world geometry in CSS pixels, not source DPI metadata.
+- Export dimensions follow Cue canvas world geometry in CSS pixels, not source DPI metadata.
 
 ## Follow-Up
 

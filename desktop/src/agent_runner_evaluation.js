@@ -101,7 +101,7 @@ export function buildAgentRunnerEvaluationPrompt({
   const normalizedFinishReason = readFirstString(finishReason) || "unknown";
   const lastPlanSummary = readFirstString(lastPlan?.summary) || null;
   return [
-    "You are evaluating the final visible canvas result for Juggernaut Agent Run.",
+    "You are evaluating the final visible canvas result for Cue Agent Run.",
     "Judge only what is visibly present on the canvas image.",
     "Compare the visible result against the user goal.",
     "When a compiled goalContract is present, treat its hardRequirements as the visible completion contract.",

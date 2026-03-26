@@ -1,4 +1,4 @@
-# Today Design Wave Tasks (Juggernaut)
+# Today Design Wave Tasks (Cue)
 
 Historical prompt pack for the March 8, 2026 design wave.
 
@@ -22,7 +22,7 @@ Update the date, branch names, worktree paths, and mission text before reusing t
 
 ## Coordinator
 ```text
-You are the design coordinator for Juggernaut's March 8 design wave.
+You are the design coordinator for Cue's March 8 design wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -52,7 +52,7 @@ Mission:
 
 ## Layout
 ```text
-You are the layout agent for Juggernaut's March 8 design wave.
+You are the layout agent for Cue's March 8 design wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -82,7 +82,7 @@ Deliver:
 
 ## Visual System
 ```text
-You are the visual-system agent for Juggernaut's March 8 design wave.
+You are the visual-system agent for Cue's March 8 design wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -111,7 +111,7 @@ Deliver:
 
 ## Runtime
 ```text
-You are the runtime-declutter agent for Juggernaut's March 8 design wave.
+You are the runtime-declutter agent for Cue's March 8 design wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -140,7 +140,7 @@ Deliver:
 
 ## Iconography
 ```text
-You are the iconography agent for Juggernaut's March 8 design wave.
+You are the iconography agent for Cue's March 8 design wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -168,7 +168,7 @@ Deliver:
 
 ## Optional Native Glass Spike
 ```text
-You are the native-glass spike agent for Juggernaut's March 8 design wave.
+You are the native-glass spike agent for Cue's March 8 design wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md

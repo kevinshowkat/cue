@@ -1,6 +1,6 @@
-# Juggernaut
+# Cue
 
-Juggernaut is an image-first desktop design workstation built around a text-free-first editing loop. The current app centers on session tabs, a shared canvas, design review/apply, in-session tool creation, reproducible receipts, and exportable results.
+Cue is an image-first desktop design workstation built around a text-free-first editing loop. The current app centers on session tabs, a shared canvas, design review/apply, in-session tool creation, reproducible receipts, and exportable results.
 
 ## Current Product State
 
@@ -13,7 +13,7 @@ The repo currently supports this Mac-verified workflow:
 5. preview or create reusable tools in-session
 6. inspect tab-local history and export PSD or flattened PNG with receipts
 
-Brood-derived multi-image and token workflows still exist in the runtime, but the main Juggernaut slice remains single-image-first.
+Brood-derived multi-image and token workflows still exist in the runtime, but the main Cue slice remains single-image-first.
 
 ## Status
 

@@ -23,7 +23,7 @@ test("agent runner goal contract prompt separates hard requirements from soft in
     },
   });
 
-  assert.match(prompt, /compiling a user's Juggernaut Agent Run goal into a compact visual goal contract/i);
+  assert.match(prompt, /compiling a user's Cue Agent Run goal into a compact visual goal contract/i);
   assert.match(prompt, /Hard requirements must be objectively checkable on the visible canvas\./);
   assert.match(prompt, /Soft intents are style, tone, humor, era, or vibe instructions/);
   assert.match(prompt, /Prefer sparse contracts\. If the goal is mostly vibes, keep hardRequirements light\./);

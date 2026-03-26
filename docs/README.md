@@ -1,6 +1,6 @@
 # Docs
 
-This tree mixes current Juggernaut product docs, active implementation notes, historical wave runbooks, and older Brood reference material that has not been fully renamed yet.
+This tree mixes current Cue product docs, active implementation notes, historical wave runbooks, and older Brood reference material that has not been fully renamed yet.
 
 ## Start Here
 
@@ -14,7 +14,7 @@ This tree mixes current Juggernaut product docs, active implementation notes, hi
 
 ## Product And Architecture
 
-- [agent-workflow-prd.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-workflow-prd.md): separate PRD for agent-operated Juggernaut workflows
+- [agent-workflow-prd.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-workflow-prd.md): separate PRD for agent-operated Cue workflows
 - [macos-local-private-image-editing.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/macos-local-private-image-editing.md)
 - [benchmark-playbook.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/benchmark-playbook.md)
 - [visual_prompting_v0.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/visual_prompting_v0.md)
@@ -22,7 +22,7 @@ This tree mixes current Juggernaut product docs, active implementation notes, hi
 
 ## Agent And Intake Notes
 
-- [agent-runtime.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-runtime.md): human-readable guide for agents using Juggernaut as a runtime
+- [agent-runtime.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-runtime.md): human-readable guide for agents using Cue as a runtime
 - [agent-affordances.json](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-affordances.json): machine-readable affordance, execution-type, and route-profile catalog
 - [agent_intake_status.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent_intake_status.md)
 - [agent_intake_roundtrip.sample.json](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent_intake_roundtrip.sample.json)

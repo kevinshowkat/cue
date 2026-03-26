@@ -1,4 +1,4 @@
-# Warp Apple Polish Runbook (Juggernaut)
+# Warp Apple Polish Runbook (Cue)
 
 Use this after `feature/design-wave-integration` when the UI still feels too sci-fi, HUD-heavy, or game-like.
 
@@ -7,7 +7,7 @@ Use this after `feature/design-wave-integration` when the UI still feels too sci
 - Do not reuse earlier launch or design branches for this wave.
 
 ## 2. Create And Warm Worktrees
-Run once from the main Juggernaut repo:
+Run once from the main Cue repo:
 
 ```bash
 ./scripts/create_juggernaut_apple_worktrees.sh

@@ -1,4 +1,4 @@
-# Today Apple Polish Tasks (Juggernaut)
+# Today Apple Polish Tasks (Cue)
 
 Historical prompt pack for the Apple-polish wave that followed `feature/design-wave-integration`.
 
@@ -26,7 +26,7 @@ The goal is not "more glass." The goal is a calmer, more premium macOS-first fee
 
 ## Coordinator
 ```text
-You are the coordinator for Juggernaut's Apple polish wave.
+You are the coordinator for Cue's Apple polish wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -53,7 +53,7 @@ Mission:
 
 ## Chrome Structure
 ```text
-You are the chrome-structure agent for Juggernaut's Apple polish wave.
+You are the chrome-structure agent for Cue's Apple polish wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -76,7 +76,7 @@ Build:
 
 ## Surface Reset
 ```text
-You are the surface-reset agent for Juggernaut's Apple polish wave.
+You are the surface-reset agent for Cue's Apple polish wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -101,7 +101,7 @@ Build:
 
 ## Rail Controls
 ```text
-You are the rail-controls agent for Juggernaut's Apple polish wave.
+You are the rail-controls agent for Cue's Apple polish wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -125,7 +125,7 @@ Build:
 
 ## Runtime Minimalism
 ```text
-You are the runtime-minimalism agent for Juggernaut's Apple polish wave.
+You are the runtime-minimalism agent for Cue's Apple polish wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -147,7 +147,7 @@ Build:
 
 ## Optional Native Window Polish
 ```text
-You are the native-window-polish agent for Juggernaut's Apple polish wave.
+You are the native-window-polish agent for Cue's Apple polish wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md

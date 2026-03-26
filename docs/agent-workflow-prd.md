@@ -1,14 +1,14 @@
-# Juggernaut Agent Workflow PRD
+# Cue Agent Workflow PRD
 
 Status: Draft v0.1  
 Last updated: 2026-03-13  
 Document owner: Product / founding team
 
 ## Purpose
-Define a separate Juggernaut workflow where an LLM or agent uses the app runtime to help a user achieve a visual goal. This document does not replace the source-of-truth product definition in `PRD.md`. It defines an additional machine-operable workflow that must remain compatible with the primary image-first human workflow.
+Define a separate Cue workflow where an LLM or agent uses the app runtime to help a user achieve a visual goal. This document does not replace the source-of-truth product definition in `PRD.md`. It defines an additional machine-operable workflow that must remain compatible with the primary image-first human workflow.
 
 ## Product Statement
-Juggernaut Agent Workflow lets a user delegate a visual task to an LLM or agent that can inspect canvas state, request and evaluate design-review proposals, execute bounded edits, branch work in isolated tabs, compare outcomes against an explicit goal, and export final artifacts with reproducible receipts.
+Cue Agent Workflow lets a user delegate a visual task to an LLM or agent that can inspect canvas state, request and evaluate design-review proposals, execute bounded edits, branch work in isolated tabs, compare outcomes against an explicit goal, and export final artifacts with reproducible receipts.
 
 ## Relationship To The Main PRD
 - The main visible editing loop remains image-first and text-free-first for humans.
@@ -17,7 +17,7 @@ Juggernaut Agent Workflow lets a user delegate a visual task to an LLM or agent 
 - Provider and model names remain out of the main editing loop even when agent mode records them in receipts.
 
 ## Problem
-Juggernaut already has a strong proposal-and-apply shape for human-driven editing, but it lacks a dedicated workflow for agents to:
+Cue already has a strong proposal-and-apply shape for human-driven editing, but it lacks a dedicated workflow for agents to:
 - inspect state without mutating it
 - operate against explicit user goals and constraints
 - branch safely before committing edits
@@ -25,13 +25,13 @@ Juggernaut already has a strong proposal-and-apply shape for human-driven editin
 - account for budget, latency, privacy mode, and provider routing
 - quantify progress toward a target outcome
 
-Without that workflow, an agent either behaves like a brittle UI clicker or bypasses core Juggernaut product surfaces such as design review, tabs, receipts, and export.
+Without that workflow, an agent either behaves like a brittle UI clicker or bypasses core Cue product surfaces such as design review, tabs, receipts, and export.
 
 ## Thesis
-An agent should use Juggernaut as a constrained visual runtime, not as a generic chat wrapper and not as a raw bag of model endpoints. The runtime should expose observable state, bounded mutations, review/planning surfaces, route policies, checkpoints, and receipts so the agent can iteratively improve an outcome while preserving reproducibility and user control.
+An agent should use Cue as a constrained visual runtime, not as a generic chat wrapper and not as a raw bag of model endpoints. The runtime should expose observable state, bounded mutations, review/planning surfaces, route policies, checkpoints, and receipts so the agent can iteratively improve an outcome while preserving reproducibility and user control.
 
 ## Primary Outcome
-Users can hand Juggernaut a goal such as "make this product shot feel premium and ready for a landing page" and let an agent:
+Users can hand Cue a goal such as "make this product shot feel premium and ready for a landing page" and let an agent:
 1. inspect the current tab and goal packet
 2. create focus hints if needed
 3. invoke direct capabilities or request design review
@@ -140,14 +140,14 @@ Minimum mutate primitives:
 Agent Workflow should support an explicit `observable agent mode` for research, demos, and automated manual testing.
 
 In this mode:
-- agents must express focus and communication through visible canvas tools such as `Marker`, `Highlight`, `Magic Select`, and `Eraser`
+- agents must express focus and communication through visible canvas tools such as `Marker`, `Protect`, `Magic Select`, and `Eraser`
 - these actions must render real marks, region candidates, and tray anchors on the canvas
 - tool use must flow through the same runtime state a human session would mutate
 - the system should use stable tool-driver APIs instead of brittle raw OS-level pointer automation
 
 Example observable tool-driver calls:
 - `marker.stroke(points, brushSpec)`
-- `highlight.stroke(points, brushSpec)`
+- `protect.stroke(points, brushSpec)`
 - `magic_select.click(x, y)`
 - `eraser.stroke(points, brushSpec)`
 
@@ -163,7 +163,7 @@ Primary reasons for observable mode:
 - verify that review targeting, tray anchoring, undo, and apply flows still work from visible inputs
 
 ## Initial Agent-Operable Workflow Using The Current App
-Before new agent-native tools exist, the workflow should operate over current Juggernaut surfaces.
+Before new agent-native tools exist, the workflow should operate over current Cue surfaces.
 
 ### Direct Execution Affordances
 Initial direct affordances map to the current seeded single-image jobs:
@@ -178,7 +178,7 @@ These should be exposed to agents primarily by behavioral descriptions, not only
 ### Focus And Scoping Affordances
 Initial focus affordances map to the current right-side communication rail:
 - `Marker`
-- `Highlight`
+- `Protect`
 - `Magic Select`
 - `Eraser`
 
@@ -198,7 +198,7 @@ Initial tool creation should use the existing `Create Tool` runtime surface rath
 
 Required behavior:
 - the agent can preview a generated tool manifest before registering it
-- the generated manifest resolves through the normal Juggernaut tool runtime
+- the generated manifest resolves through the normal Cue tool runtime
 - the created tool appears in the current session tool dock
 - receipts capture the draft, generated manifest, and local manifest-builder version
 
@@ -430,7 +430,7 @@ V1 Agent Workflow should support:
 - single active tab observation
 - branch tabs for speculative work
 - direct invocation of current single-image affordances
-- observable canvas-tool driving for `Marker`, `Highlight`, `Magic Select`, and `Eraser`
+- observable canvas-tool driving for `Marker`, `Protect`, `Magic Select`, and `Eraser`
 - design review request and proposal acceptance
 - checkpoint creation and revert
 - goal evaluation and tab comparison
@@ -442,7 +442,7 @@ V1 Agent Workflow should support:
 ## V1 Acceptance Criteria
 - An agent can inspect the current tab without mutating state.
 - An agent can call one current direct affordance on a target tab.
-- An agent can drive visible `Marker`, `Highlight`, `Magic Select`, and `Eraser` interactions through a stable tool-driver API.
+- An agent can drive visible `Marker`, `Protect`, `Magic Select`, and `Eraser` interactions through a stable tool-driver API.
 - An agent can create spatial focus and request design review.
 - An agent can receive structured proposals and choose one.
 - An agent can accept a proposal in place or in a branch tab.
@@ -463,7 +463,7 @@ V1 Agent Workflow should support:
 1. Add `goal packet` and `focusSpec` contracts.
 2. Expose observe-only runtime state for tabs, canvas items, history, review, and receipts.
 3. Wrap current seeded affordances and review apply behind agent-safe mutate calls.
-4. Add observable tool-driver APIs for `Marker`, `Highlight`, `Magic Select`, and `Eraser` plus replay traces, while preserving dormant `make_space` runtime compatibility.
+4. Add observable tool-driver APIs for `Marker`, `Protect`, `Magic Select`, and `Eraser` plus replay traces, while preserving dormant `make_space` runtime compatibility.
 5. Add checkpoints and branch-tab compare/promote flows.
 6. Add preflight cost estimation and post-run usage accounting.
 7. Add evaluator packets for goal progress.

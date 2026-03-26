@@ -2,10 +2,10 @@
   "schemaVersion": "juggernaut-agent-affordances-v1",
   "lastUpdated": "2026-03-26",
   "notes": [
-    "This manifest is a first-pass machine-readable catalog for agent-operated Juggernaut workflows.",
+    "This manifest is a first-pass machine-readable catalog for agent-operated Cue workflows.",
     "Affordances are agent-facing descriptions of what operations do; execution types remain internal stable runtime identifiers.",
     "Provider and model details belong primarily to route profiles and receipts, not to the semantic identity of an affordance.",
-    "The current visible right-side communication rail exposes Marker, Highlight, Magic Select, and Eraser; make_space remains documented as a dormant runtime affordance."
+    "The current visible right-side communication rail exposes Marker, Protect, Magic Select, and Eraser; make_space remains documented as a dormant runtime affordance."
   ],
   "executionTypes": [
     {
@@ -137,7 +137,7 @@
     {
       "id": "tool_manifest_generation",
       "kind": "tool_creation",
-      "description": "Generate a reusable Juggernaut tool manifest from a short description and register it in the current session.",
+      "description": "Generate a reusable Cue tool manifest from a short description and register it in the current session.",
       "mutatesPixels": false,
       "reversible": true,
       "defaultRouteProfileId": "create_tool_local_manifest_builder_v1",
@@ -461,25 +461,24 @@
     },
     {
       "id": "protect",
-      "label": "Highlight",
+      "label": "Protect",
       "surface": "focus",
       "source": "right_rail",
-      "whatItDoes": "Adds a visible yellow highlighter pass that tells design review to focus on that area and keep review/apply scope inside the circled images.",
+      "whatItDoes": "Adds a visible protected-region mark that says do not edit this area.",
       "whenToUse": [
-        "focusing design review on the most important area",
-        "calling out the exact subject or detail the next edit should center on",
-        "guiding a broader edit without committing pixels"
+        "preserving a face or product detail",
+        "scoping design review with explicit no-edit zones",
+        "protecting content before a broader edit"
       ],
       "whenNotToUse": [
         "committing a final image edit",
-        "requesting expansion or open space",
-        "declaring a hard no-edit zone"
+        "requesting expansion or open space"
       ],
       "requiresImage": false,
       "requiresFocus": false,
       "mutatesPixels": false,
       "reversible": true,
-      "executionType": "communication_highlight",
+      "executionType": "communication_protect",
       "routeProfileId": null,
       "costClass": "none",
       "latencyClass": "instant"
@@ -613,7 +612,7 @@
       "label": "Create Tool",
       "surface": "tool_creation",
       "source": "custom_tool_panel",
-      "whatItDoes": "Builds a reusable Juggernaut tool manifest from a short description and adds it to the current session tool dock.",
+      "whatItDoes": "Builds a reusable Cue tool manifest from a short description and adds it to the current session tool dock.",
       "whenToUse": [
         "a repeated edit pattern keeps showing up",
         "the current goal needs a simple reusable local transform",
@@ -622,7 +621,7 @@
       "whenNotToUse": [
         "a seeded affordance already matches the need",
         "the desired behavior is vague or multi-step enough that design review is a better first move",
-        "the result depends on provider-specific prompts rather than a reusable Juggernaut tool contract"
+        "the result depends on provider-specific prompts rather than a reusable Cue tool contract"
       ],
       "requiresImage": false,
       "requiresFocus": false,

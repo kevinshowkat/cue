@@ -1,4 +1,4 @@
-import { getJuggernautRailIconMarkup } from "./generated/rail_icon_registry.js";
+import { getJuggernautRailIconMarkup } from "./rail_icon_registry.js";
 import { DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID, normalizeJuggernautRailIconPackId } from "./rail_icon_packs.js";
 import { buildSingleImageDirectAffordanceInvocation, buildSingleImageRailInvocation } from "../tool_runtime.js";
 import {
@@ -859,7 +859,7 @@ function ensureRailButton(root, slotKey) {
     const button = toolEl.__juggernautRailButton;
     if (button && !button.disabled && typeof button.invoke === "function") {
       Promise.resolve(button.invoke({ button, event, root })).catch((error) => {
-        console.error("Juggernaut shell affordance failed:", error);
+        console.error("Cue shell affordance failed:", error);
       });
       scheduleRailPressRelease(160);
       return;

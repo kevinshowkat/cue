@@ -1,4 +1,4 @@
-# Today Launch Tasks (Juggernaut)
+# Today Launch Tasks (Cue)
 
 Historical prompt pack for the March 8, 2026 sprint targeting a launchable slice by 5:30 PM America/Los_Angeles.
 
@@ -6,7 +6,7 @@ Update the date, branch names, worktree paths, and mission text before reusing t
 
 ## Coordinator
 ```text
-You are the coordinator for Juggernaut's March 8 launch slice.
+You are the coordinator for Cue's March 8 launch slice.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -34,7 +34,7 @@ Mission:
 
 ## Shell
 ```text
-You are Agent 1 for Juggernaut's March 8 launch slice: Shell and Canvas.
+You are Agent 1 for Cue's March 8 launch slice: Shell and Canvas.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -63,7 +63,7 @@ Deliver:
 
 ## Tools
 ```text
-You are Agent 2 for Juggernaut's March 8 launch slice: Tool Runtime.
+You are Agent 2 for Cue's March 8 launch slice: Tool Runtime.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -92,7 +92,7 @@ Deliver:
 
 ## Edit
 ```text
-You are Agent 3 for Juggernaut's March 8 launch slice: Photo Edit Flow.
+You are Agent 3 for Cue's March 8 launch slice: Photo Edit Flow.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -120,7 +120,7 @@ Deliver:
 
 ## Export
 ```text
-You are Agent 4 for Juggernaut's March 8 launch slice: PSD Export.
+You are Agent 4 for Cue's March 8 launch slice: PSD Export.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -149,7 +149,7 @@ Deliver:
 
 ## Optional Icons
 ```text
-You are Agent 5 for Juggernaut's March 8 launch slice: Iconography.
+You are Agent 5 for Cue's March 8 launch slice: Iconography.
 
 Only start this after coordinator confirms shell basics are stable.
 

@@ -1,4 +1,4 @@
-# Juggernaut
+# Cue
 
 Status: Draft v0.2
 Last updated: 2026-03-26
@@ -8,22 +8,22 @@ Document owner: Product / founding team
 Define a buildable product for a desktop design tool where images, gestures, live model calls, and generated tools replace most prompt writing and most traditional design vocabulary.
 
 ## Product Statement
-Juggernaut is a text-free-first, image-first desktop design workstation for non-designers, developers, and 3D printing hobbyists. Users import images, the system infers intent, proposes edits in real time, lets users generate one-click custom tools, and exports editable 2D assets and printable 3D outputs with reproducible receipts.
+Cue is a text-free-first, image-first desktop design workstation for non-designers, developers, and 3D printing hobbyists. Users import images, the system infers intent, proposes edits in real time, lets users generate one-click custom tools, and exports editable 2D assets and printable 3D outputs with reproducible receipts.
 
 ## Decisions Incorporated On 2026-03-08
-- Product name: `Juggernaut`.
+- Product name: `Cue`.
 - Main editing workflow: text-free to start.
 - V1 primary wedge: single-image-first. The primary loop is one image in, usable asset out.
 - V1 primary rail shape: stable `Move`, `Upload`, and `Select` anchors plus 3 dynamic suggested job slots. The current shell also exposes `Remove People` as a direct single-image affordance outside the dynamic slots.
 - Product split:
   - left rail = deterministic precomputed action library
   - right rail = communication layer for complex or non-prebaked changes
-- V1 right-side communication rail tools: `Marker`, `Highlight`, `Magic Select`, `Make Space`, `Eraser`.
+- V1 right-side communication rail tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
 - V1 shell model: single-window, Warp-style session tabs over one shared canvas surface.
 - `Create Tool` remains core product value, but for the single-image-first wedge it moves to a secondary follow-on surface such as `Save Shortcut`.
 - Icon system: custom iconography generated from the same pipeline family used for Oscillo bookend icon generation, with the starting reference at `../oscillo/scripts/generate_bookend_overlays.py`.
 - Export requirement: native `.psd`, native `.ai`, and native `.fig` are release requirements.
-- Native `.ai` and `.fig` exports must re-import into Juggernaut with high fidelity.
+- Native `.ai` and `.fig` exports must re-import into Cue with high fidelity.
 - Release requirement: macOS, Windows, and Linux parity at first release.
 - Release parity means the same core feature set across macOS, Windows, and Linux, not identical performance or platform polish.
 - 3D scope for v1: printable relief or mesh export only.
@@ -35,7 +35,7 @@ Juggernaut is a text-free-first, image-first desktop design workstation for non-
   - local-only mode defaults to no upload, with explicit user opt-in if they want to send anonymized data
 
 ## Key Clarification
-"No words" and "Create Tool from words" conflict unless scoped carefully. Juggernaut resolves that by making the primary editing workflow text-free, while still allowing text in the following secondary surfaces:
+"No words" and "Create Tool from words" conflict unless scoped carefully. Cue resolves that by making the primary editing workflow text-free, while still allowing text in the following secondary surfaces:
 
 - `Save Shortcut` / `Create Tool`
 - settings
@@ -79,7 +79,7 @@ There is "vibe coding" because code can be shaped through examples, suggestions,
 - Platformized: the action runtime must outlive the desktop shell.
 
 ## Release Goal
-At release, Juggernaut is a cross-platform desktop app for macOS, Windows, and Linux that supports image upload, guided editing, generated custom tools, reproducible receipts, native `.psd`/`.ai`/`.fig` export, high-fidelity re-import of `.ai` and `.fig` assets produced by Juggernaut, and basic printable 3D output.
+At release, Cue is a cross-platform desktop app for macOS, Windows, and Linux that supports image upload, guided editing, generated custom tools, reproducible receipts, native `.psd`/`.ai`/`.fig` export, high-fidelity re-import of `.ai` and `.fig` assets produced by Cue, and basic printable 3D output.
 
 ## Current Operating Focus
 As of **2026-03-26**, the repo focus is to harden and document the launchable Mac slice already present in the codebase:
@@ -113,7 +113,7 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 - No multi-image flows in the primary loop.
 - Left rail shape: stable `Move`, `Upload`, and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library. The current shell may also expose direct single-image affordances outside those 3 dynamic slots.
 - Right rail shape: communication-only rail for complex or non-prebaked changes.
-- Right-side communication rail v1 tools: `Marker`, `Highlight`, `Magic Select`, `Make Space`, `Eraser`.
+- Right-side communication rail v1 tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
 - `Create Tool` remains in the product, but enters as a secondary follow-on capability through `Save Shortcut` or a secondary dialog after useful edits.
 
 ## V1 Non-Goals
@@ -132,9 +132,9 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 6. After first-use cloud-analysis consent, the system may opportunistically analyze the uploaded image through the design-review upload-analysis path, cache that analysis by image hash, and use it to improve future suggestions without blocking editing or design review.
 7. The left rail keeps three stable icon-only anchors: `Move`, `Upload`, and `Select`.
 8. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the deterministic precomputed action library, while any action that may incur model cost shows a top-right sapphire-blue dot. The current shell may also expose `Remove People` as a direct single-image affordance outside those 3 dynamic slots.
-9. The right rail exposes `Marker`, `Highlight`, `Magic Select`, `Make Space`, and `Eraser` as the communication layer for complex or non-prebaked changes.
+9. The right rail exposes `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` as the communication layer for complex or non-prebaked changes.
 10. `Marker` lets the user place transient Photoshop-style freehand highlighter marks that are raw and pointer-faithful, without arrowheads, without prior image selection, and without requiring an image under the pointer.
-11. `Highlight` uses the same visible freehand marking behavior as `Marker`, but renders like a yellow sharpie and tells `Design review` to focus proposals on the highlighted area and the highlighted images only.
+11. `Protect` uses the same visible freehand marking behavior as `Marker`, but its semantics are "do not change this area" when review or apply consumes the focus contract.
 12. `Magic Select` lets the user click an image and cycle through 2-3 proposed candidate regions for communication and review.
 13. `Make Space` uses region-candidate selection semantics to say "preserve or create room here" for review and later execution.
 14. `Eraser` clears communication marks and region proposals only; it does not delete image pixels or committed edits.
@@ -240,12 +240,12 @@ Notes:
 - The right rail is the communication layer for complex or non-prebaked changes that do not map cleanly to a single left-rail action.
 - Right-side communication rail v1 contains exactly 5 tools:
   - `Marker`
-  - `Highlight`
+  - `Protect`
   - `Magic Select`
   - `Make Space`
   - `Eraser`
 - `Marker` creates transient Photoshop-style freehand highlighter annotations that mean "look here" or "change this".
-- `Highlight` creates review-focus input using the same visible freehand marking surface as `Marker`, but with stronger "focus the review here" semantics and image-scoping behavior when it circles specific images.
+- `Protect` creates protected-region focus input using the same visible freehand marking surface as `Marker`, but with "do not edit here" semantics.
 - `Magic Select` proposes 2-3 candidate regions for a clicked image location and lets the user cycle through them before review.
 - `Make Space` creates reserved-space focus input using region candidates to signal "preserve or create room here".
 - `Eraser` removes communication marks and region proposals only.
@@ -552,8 +552,8 @@ Rules:
 ## Export Targets
 ### Required Release Targets
 - Native `.psd` with layered raster output where the edit graph supports layering.
-- Native `.ai` with high-fidelity Juggernaut re-import.
-- Native `.fig` with high-fidelity Juggernaut re-import.
+- Native `.ai` with high-fidelity Cue re-import.
+- Native `.fig` with high-fidelity Cue re-import.
 - `stl` or `3mf` for supported printable outputs.
 
 ### V1 Practical Constraint
@@ -571,7 +571,7 @@ Rules:
 - The main workspace includes a right-side communication rail.
 - The main workspace includes an in-app session tab strip using a single shared canvas surface.
 - The left rail keeps stable `Move`, `Upload`, and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library.
-- The right-side communication rail contains `Marker`, `Highlight`, `Magic Select`, `Make Space`, and `Eraser` in v1.
+- The right-side communication rail contains `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` in v1.
 - The main editing workflow requires no text labels to operate.
 - The primary wedge is one image in and one usable asset out.
 - No multi-image action is required in the primary loop.
@@ -588,7 +588,7 @@ Rules:
 
 ### Communication Rail And Review
 - `Marker` is a transient Photoshop-style freehand highlighter mark in canvas-overlay space, with raw pointer-faithful paths and no arrowheads.
-- `Highlight` is a transient yellow-sharpie focus mark in canvas-overlay space and must steer `Design review` toward the highlighted area without turning it into a no-edit zone; when it circles specific images, unrelated visible images are out of scope.
+- `Protect` is a transient protected-region mark in canvas-overlay space and must preserve "do not edit here" semantics through review and apply.
 - `Magic Select` proposes 2-3 candidate regions per click and lets the user cycle among them.
 - `Make Space` produces reserved-space region candidates that tell review and downstream execution to preserve or create room there.
 - `Eraser` clears communication marks and region proposals only.
@@ -634,15 +634,15 @@ Rules:
 - Users can create an anonymized improvement bundle for upload according to the telemetry policy above.
 
 ### Native Design Format Fidelity
-- Juggernaut can export native `.ai` and `.fig` assets and later re-import those same assets with high fidelity.
+- Cue can export native `.ai` and `.fig` assets and later re-import those same assets with high fidelity.
 - Round-trip support is part of the release bar, not a future enhancement.
 
 ## Delivery Plan
 ### Historical Sprint 0: March 8, 2026 Launch Slice
-- Fork or adapt `../brood` into a Juggernaut desktop shell.
+- Fork or adapt `../brood` into a Cue desktop shell.
 - Achieve launchable single-image upload-to-canvas loop.
 - Land the primary rail contract with stable anchors and 3 dynamic job slots.
-- Land the right-side communication rail contract for `Marker`, `Highlight`, `Magic Select`, `Make Space`, `Eraser`, and explicit `Design review`.
+- Land the right-side communication rail contract for `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`, and explicit `Design review`.
 - Wire at least one working single-image edit path.
 - Expose a follow-on `Save Shortcut` / `Create Tool` surface after a useful edit.
 - Export to PSD.
@@ -679,7 +679,7 @@ Rules:
 - Reusing `../brood` accelerates delivery, but current upstream is macOS-first and 2D-image-first.
 
 ## Resolved Clarifications
-- Native `.ai` and `.fig` must round-trip back into Juggernaut with high fidelity.
+- Native `.ai` and `.fig` must round-trip back into Cue with high fidelity.
 - Release parity across macOS, Windows, and Linux means the same core features.
 - Hidden accessibility labels and screen-reader metadata are allowed even when visible labels are absent.
 - The primary v1 loop is single-image-first; multi-image flows return only after the single-image wedge is stable.

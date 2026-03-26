@@ -1,7 +1,7 @@
 # Visual Timeline
 
 ## Purpose
-Juggernaut's timeline is a first-class, tab-local session history for a run. It records committed visible state changes, lets the user jump to any recorded state in either direction, and persists that state across save/reopen without re-running model work.
+Cue's timeline is a first-class, tab-local session history for a run. It records committed visible state changes, lets the user jump to any recorded state in either direction, and persists that state across save/reopen without re-running model work.
 
 This replaces the earlier lineage-overlay concept that swapped image paths in place.
 

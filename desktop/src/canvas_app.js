@@ -33,7 +33,7 @@ import {
   getJuggernautRailIconPack,
   normalizeJuggernautRailIconPackId,
 } from "./juggernaut_shell/rail_icon_packs.js";
-import { getJuggernautRailIconMarkup } from "./juggernaut_shell/generated/rail_icon_registry.js";
+import { getJuggernautRailIconMarkup } from "./juggernaut_shell/rail_icon_registry.js";
 import {
   mergeAmbientSuggestions,
   placeAmbientSuggestions,
@@ -27806,7 +27806,7 @@ function renderCreateToolPreview() {
     els.createToolPreview.textContent = "Describe a tool to preview the manifest.";
     if (els.createToolMeta) {
       els.createToolMeta.textContent =
-        "Describe the tool you want. Juggernaut will map it to a deterministic local edit manifest for today's slice.";
+        "Describe the tool you want. Cue will map it to a deterministic local edit manifest for today's slice.";
     }
     if (els.createToolSave) els.createToolSave.disabled = true;
     return;
@@ -32387,7 +32387,7 @@ function renderActionGrid() {
         selected_ids: getSelectedIds().slice(0, 3),
       });
       applyJuggernautTool(button.toolId).catch((err) => {
-        console.error("Juggernaut tool failed:", err);
+        console.error("Cue tool failed:", err);
       });
     },
   });
@@ -35195,7 +35195,7 @@ function exportPsdLimitations() {
   return [
     "Same-day PSD export is flattened to a single bitmap layer stack with alpha, not fully editable per-source PSD layers.",
     "Canvas transform fidelity is preserved in the flattened composite, but PSD re-editability for masks, effect tokens, and tool semantics is not included in this slice.",
-    "Export pixel dimensions currently follow Juggernaut canvas world geometry in CSS pixels rather than preserving source DPI metadata.",
+    "Export pixel dimensions currently follow Cue canvas world geometry in CSS pixels rather than preserving source DPI metadata.",
   ];
 }
 

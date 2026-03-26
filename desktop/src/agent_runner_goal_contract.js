@@ -333,7 +333,7 @@ export function summarizeAgentRunnerGoalContract(contract = null) {
 export function buildAgentRunnerGoalContractPrompt({ goal = "", shellSnapshot = null } = {}) {
   const visibleImageHints = summarizeVisibleImageHints(shellSnapshot);
   return [
-    "You are compiling a user's Juggernaut Agent Run goal into a compact visual goal contract.",
+    "You are compiling a user's Cue Agent Run goal into a compact visual goal contract.",
     "Return JSON only.",
     "Extract only what is useful for visual planning, routing, and visible completion checks.",
     "Hard requirements must be objectively checkable on the visible canvas.",
@@ -427,7 +427,7 @@ export function buildAgentRunnerGoalCheckPrompt({
     actionType: readFirstString(entry?.actionType) || null,
   }));
   return [
-    "You are validating whether the current visible canvas satisfies a compiled Juggernaut Agent Run goal contract.",
+    "You are validating whether the current visible canvas satisfies a compiled Cue Agent Run goal contract.",
     "Judge only what is visibly present on the provided canvas image.",
     "Hard requirements are strict. If any hard requirement is missing, only implied, or replaced by a weaker proxy, allowStop must be false.",
     "Soft intents are non-blocking quality signals. They can improve confidence, but they must not override a missing hard requirement.",

@@ -1,4 +1,4 @@
-# Warp Agent Workflow Wave Runbook (Juggernaut)
+# Warp Agent Workflow Wave Runbook (Cue)
 
 Use this when launching the agent-workflow implementation wave for observable agent mode, new focus/review tools, and new direct affordances.
 
@@ -7,7 +7,7 @@ Use this when launching the agent-workflow implementation wave for observable ag
 - This wave is scoped to:
   - observable agent mode
   - replayable visible tool driving
-  - `Highlight`
+  - `Protect`
   - `Make Space`
   - `Remove People`
   - `Polish`
@@ -17,7 +17,7 @@ Use this when launching the agent-workflow implementation wave for observable ag
 ## 2. Goal
 - Let agents use the real visible canvas tools for research and automated manual testing.
 - Add the first new communication/review tools:
-  - `Highlight`
+  - `Protect`
   - `Make Space`
 - Add the first new direct affordances:
   - `Remove People`
@@ -35,7 +35,7 @@ Open 6 Warp tabs total:
 - 5 Codex worker tabs in dedicated worktrees
 
 ## 4. Create And Warm Worktrees
-Run once from the main Juggernaut repo:
+Run once from the main Cue repo:
 
 ```bash
 git fetch origin
@@ -91,7 +91,7 @@ cd /Users/mainframe/Desktop/projects/juggernaut-agent-verify && codex
   - owns `desktop/src/design_review_contract.js`
   - owns `desktop/src/design_review_bootstrap.js`
   - owns `desktop/src/design_review_pipeline.js`
-  - owns `Highlight` and `Make Space` semantics only
+  - owns `Protect` and `Make Space` semantics only
   - does not own `canvas_app.js`
 - `feature/agent-direct-tools`
   - owns `desktop/src/single_image_capability_routing.js`
@@ -115,14 +115,14 @@ cd /Users/mainframe/Desktop/projects/juggernaut-agent-verify && codex
 
 ## 9. First Flows To Ship
 - `Marker -> Design Review -> Accept Proposal -> Export -> PSD`
-- `Highlight -> Remove People -> Export -> PSD`
+- `Protect -> Remove People -> Export -> PSD`
 - `Make Space -> Relight -> Export -> PSD`
 - `Remove People -> Polish -> Export -> PSD`
 
 ## 10. Success Criteria
 - Agents can drive visible `Marker`, `Magic Select`, and `Eraser` actions through stable tool-driver APIs.
 - Observable sessions emit replayable traces suitable for automated manual testing.
-- `Highlight` and `Make Space` become real review/focus semantics.
+- `Protect` and `Make Space` become real review/focus semantics.
 - `Remove People`, `Polish`, and `Relight` are available as direct affordances.
 - The shell exposes the new tools cleanly with correct enabled/disabled states.
 - Verification covers the target flows and receipt generation.
