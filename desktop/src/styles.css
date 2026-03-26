@@ -11091,6 +11091,13 @@ button.ghost:hover {
   padding: 0;
 }
 
+.session-tab-runtime-icon-action {
+  width: 34px;
+  min-width: 34px;
+  gap: 0;
+  padding: 0;
+}
+
 .session-tab-strip-action .action-provenance-model-dot {
   top: 5px;
   right: 5px;
@@ -12413,6 +12420,13 @@ body.juggernaut-shell .brand-strip .session-tab-runtime-action {
 }
 
 body.juggernaut-shell .brand-strip .session-tab-history-action {
+  width: 34px;
+  min-width: 34px;
+  gap: 0;
+  padding: 0;
+}
+
+body.juggernaut-shell .brand-strip .session-tab-runtime-icon-action {
   width: 34px;
   min-width: 34px;
   gap: 0;

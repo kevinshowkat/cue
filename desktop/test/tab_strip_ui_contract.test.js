@@ -48,8 +48,9 @@ test("Session tab strip seeds a visible launch tab and exposes History plus the 
   );
   assert.match(
     html,
-    /id=\"juggernaut-agent-runner-open\"[^>]*class=\"session-tab-strip-action session-tab-runtime-action\"[^>]*title=\"Agent Run\"[\s\S]*<span>Agent Run<\/span>/
+    /id=\"juggernaut-agent-runner-open\"[^>]*class=\"session-tab-strip-action session-tab-runtime-action session-tab-runtime-icon-action\"[^>]*aria-label=\"Agent Run\"[^>]*title=\"Agent Run\"[\s\S]*<svg[\s\S]*<\/svg>/
   );
+  assert.doesNotMatch(html, /id=\"juggernaut-agent-runner-open\"[\s\S]*<span>Agent Run<\/span>/);
   assert.match(
     html,
     /id=\"juggernaut-export-psd\"[^>]*class=\"session-tab-strip-action session-tab-runtime-action session-tab-action-menu-toggle\"[^>]*title=\"Export\"[\s\S]*class=\"session-tab-action-menu-caret\"/
@@ -122,11 +123,13 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-strip-review\s*\{/);
   assert.match(css, /\.session-tab-history-action,\s*\.session-tab-runtime-action\s*\{/);
   assert.match(css, /\.session-tab-history-action\s*\{[\s\S]*width:\s*34px[\s\S]*padding:\s*0;/);
+  assert.match(css, /\.session-tab-runtime-icon-action\s*\{[\s\S]*width:\s*34px[\s\S]*padding:\s*0;/);
   assert.match(css, /\.session-tab-history-action\[data-provenance="local_only"\]\[aria-pressed="true"\],/);
   assert.match(css, /\.session-tab-runtime-action\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*white-space:\s*nowrap/s);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-history-action,\s*body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\s*\{/);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-history-action\s*\{[\s\S]*width:\s*34px[\s\S]*padding:\s*0;/);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-runtime-icon-action\s*\{[\s\S]*width:\s*34px[\s\S]*padding:\s*0;/);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*padding:\s*0 14px/s);
   assert.match(css, /\.session-tab-runtime-action\.is-ready\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\[data-provenance="local_only"\],\s*\.session-tab-runtime-action\[data-provenance="local_only"\]\.is-ready\s*\{/);
