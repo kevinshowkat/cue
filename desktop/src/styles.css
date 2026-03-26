@@ -1772,16 +1772,28 @@ button.ghost:hover {
 
 .tool.has-action-provenance.selected,
 .tool.has-action-provenance.selected:hover,
-.tool.has-action-provenance.depressed,
 .tool.has-action-provenance:active {
-  border-color: rgba(145, 124, 119, 0.82);
-  border-top-color: rgba(232, 223, 220, 0.24);
-  border-left-color: rgba(219, 207, 203, 0.2);
-  background: rgba(177, 157, 152, 0.98);
+  border-color: rgba(136, 114, 108, 0.88);
+  border-top-color: rgba(220, 209, 205, 0.24);
+  border-left-color: rgba(205, 192, 189, 0.2);
+  background: rgba(170, 149, 143, 0.98);
   color: rgba(0, 0, 0, 0.92);
   box-shadow:
-    inset 0 2px 8px rgba(92, 74, 70, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    inset 0 3px 10px rgba(81, 64, 60, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  filter: none;
+}
+
+.tool.has-action-provenance.depressed,
+.tool.has-action-provenance.is-active-request {
+  border-color: rgba(123, 101, 96, 0.9);
+  border-top-color: rgba(211, 199, 195, 0.16);
+  border-left-color: rgba(195, 181, 177, 0.14);
+  background: rgba(154, 132, 126, 0.98);
+  color: rgba(0, 0, 0, 0.92);
+  box-shadow:
+    inset 0 4px 12px rgba(72, 56, 52, 0.54),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
   filter: none;
 }
 
@@ -1798,11 +1810,11 @@ button.ghost:hover {
 .tool.has-action-provenance:disabled,
 .session-tab-strip-action.has-action-provenance:disabled,
 .session-tab-runtime-action.has-action-provenance:disabled {
-  border-color: rgba(169, 149, 144, 0.42);
-  border-top-color: rgba(240, 234, 232, 0.28);
-  border-left-color: rgba(228, 219, 216, 0.22);
-  background: rgba(204, 185, 180, 0.72);
-  color: rgba(0, 0, 0, 0.58);
+  border-color: rgba(187, 171, 167, 0.62);
+  border-top-color: rgba(249, 245, 244, 0.62);
+  border-left-color: rgba(238, 230, 228, 0.54);
+  background: rgba(224, 214, 211, 0.98);
+  color: rgba(0, 0, 0, 0.5);
   box-shadow: none;
   opacity: 1;
   filter: none;
@@ -1814,43 +1826,67 @@ button.ghost:hover {
 .session-tab-strip-action.has-action-provenance:disabled span,
 .session-tab-runtime-action.has-action-provenance:disabled span,
 .session-tab-runtime-action.has-action-provenance:disabled svg {
-  color: rgba(0, 0, 0, 0.58);
+  color: rgba(0, 0, 0, 0.5);
   opacity: 1;
   filter: none;
   text-shadow: none;
 }
 
 .tool[data-provenance="local_only"]:not(.juggernaut-tool) {
-  border-color: rgba(205, 196, 177, 0.58);
-  border-top-color: rgba(251, 248, 241, 0.4);
-  border-left-color: rgba(243, 237, 225, 0.3);
-  background: rgba(235, 230, 216, 0.98);
+  border-color: rgba(208, 216, 226, 0.72);
+  border-top-color: rgba(255, 255, 255, 0.98);
+  border-left-color: rgba(255, 255, 255, 0.9);
+  background:
+    linear-gradient(180deg, rgba(252, 253, 254, 0.99), rgba(241, 244, 248, 0.98)),
+    rgba(244, 247, 250, 0.98);
   color: rgba(0, 0, 0, 0.92);
-  box-shadow: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    0 8px 16px rgba(17, 24, 32, 0.08);
 }
 
 .tool[data-provenance="local_only"]:not(.juggernaut-tool):hover {
   filter: none;
-  border-color: rgba(191, 181, 160, 0.72);
-  border-top-color: rgba(253, 250, 244, 0.46);
-  border-left-color: rgba(246, 240, 228, 0.36);
-  background: rgba(235, 230, 216, 0.98);
+  border-color: rgba(194, 204, 216, 0.84);
+  border-top-color: rgba(255, 255, 255, 1);
+  border-left-color: rgba(252, 253, 255, 0.94);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(244, 247, 250, 0.98)),
+    rgba(247, 249, 252, 0.98);
   color: rgba(0, 0, 0, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    0 10px 18px rgba(17, 24, 32, 0.08);
 }
 
 .tool[data-provenance="local_only"]:not(.juggernaut-tool).selected,
 .tool[data-provenance="local_only"]:not(.juggernaut-tool).selected:hover,
-.tool[data-provenance="local_only"]:not(.juggernaut-tool).depressed,
 .tool[data-provenance="local_only"]:not(.juggernaut-tool):active,
 .tool[data-provenance="local_only"]:not(.juggernaut-tool).is-active-request {
-  border-color: rgba(172, 161, 139, 0.82);
-  border-top-color: rgba(241, 235, 223, 0.34);
-  border-left-color: rgba(230, 222, 208, 0.24);
-  background: rgba(220, 212, 194, 0.98);
+  border-color: rgba(171, 182, 195, 0.86);
+  border-top-color: rgba(245, 248, 251, 0.72);
+  border-left-color: rgba(236, 241, 246, 0.62);
+  background:
+    linear-gradient(180deg, rgba(244, 247, 250, 0.99), rgba(232, 237, 243, 0.97)),
+    rgba(235, 240, 245, 0.97);
   color: rgba(0, 0, 0, 0.92);
   box-shadow:
-    inset 0 2px 8px rgba(124, 113, 89, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    inset 0 3px 10px rgba(167, 176, 187, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
+  filter: none;
+}
+
+.tool[data-provenance="local_only"]:not(.juggernaut-tool).depressed {
+  border-color: rgba(154, 166, 180, 0.88);
+  border-top-color: rgba(235, 240, 245, 0.62);
+  border-left-color: rgba(226, 232, 238, 0.52);
+  background:
+    linear-gradient(180deg, rgba(233, 238, 244, 0.99), rgba(221, 227, 234, 0.98)),
+    rgba(224, 230, 237, 0.98);
+  color: rgba(0, 0, 0, 0.92);
+  box-shadow:
+    inset 0 4px 12px rgba(146, 156, 169, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
   filter: none;
 }
 
@@ -1865,12 +1901,16 @@ button.ghost:hover {
 }
 
 .tool[data-provenance="local_only"]:not(.juggernaut-tool):disabled {
-  border-color: rgba(205, 196, 177, 0.42);
-  border-top-color: rgba(247, 242, 232, 0.3);
-  border-left-color: rgba(239, 232, 220, 0.24);
-  background: rgba(235, 230, 216, 0.72);
-  color: rgba(0, 0, 0, 0.58);
-  box-shadow: none;
+  border-color: rgba(219, 226, 234, 0.88);
+  border-top-color: rgba(255, 255, 255, 0.96);
+  border-left-color: rgba(248, 250, 252, 0.88);
+  background:
+    linear-gradient(180deg, rgba(252, 253, 254, 0.99), rgba(244, 247, 250, 0.98)),
+    rgba(246, 248, 251, 0.98);
+  color: rgba(0, 0, 0, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 1px 2px rgba(17, 24, 32, 0.03);
   opacity: 1;
   filter: none;
 }
@@ -1878,7 +1918,7 @@ button.ghost:hover {
 .tool[data-provenance="local_only"]:not(.juggernaut-tool):disabled .tool-icon,
 .tool[data-provenance="local_only"]:not(.juggernaut-tool):disabled .tool-hint,
 .tool[data-provenance="local_only"]:not(.juggernaut-tool):disabled .tool-label {
-  color: rgba(0, 0, 0, 0.58);
+  color: rgba(0, 0, 0, 0.5);
   opacity: 1;
   filter: none;
   text-shadow: none;
@@ -11006,9 +11046,16 @@ button.ghost:hover {
 .session-tab-strip-action[data-provenance="local_only"],
 .session-tab-runtime-action[data-provenance="local_only"],
 .session-tab-runtime-action[data-provenance="local_only"].is-ready {
-  border-color: rgba(205, 196, 177, 0.52);
-  background: rgba(235, 230, 216, 0.98);
+  border-color: rgba(208, 216, 226, 0.72);
+  border-top-color: rgba(255, 255, 255, 0.98);
+  border-left-color: rgba(255, 255, 255, 0.9);
+  background:
+    linear-gradient(180deg, rgba(252, 253, 254, 0.99), rgba(241, 244, 248, 0.98)),
+    rgba(244, 247, 250, 0.98);
   color: rgba(0, 0, 0, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    0 1px 2px rgba(17, 24, 32, 0.05);
 }
 
 .session-tab-strip-action[data-provenance="local_only"] span,
@@ -11029,24 +11076,30 @@ button.ghost:hover {
 .session-tab-strip-action.has-action-provenance:active,
 .session-tab-runtime-action.has-action-provenance:active,
 .session-tab-runtime-action.has-action-provenance.is-active-request {
-  border-color: rgba(154, 133, 128, 0.62);
-  background: rgba(177, 157, 152, 0.98);
+  border-color: rgba(123, 101, 96, 0.76);
+  background: rgba(154, 132, 126, 0.98);
   color: rgba(0, 0, 0, 0.92);
+  transform: translateY(1px);
   box-shadow:
-    inset 0 2px 8px rgba(92, 74, 70, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    inset 0 4px 12px rgba(72, 56, 52, 0.54),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
   filter: none;
 }
 
 .session-tab-strip-action[data-provenance="local_only"]:active,
 .session-tab-runtime-action[data-provenance="local_only"]:active,
 .session-tab-runtime-action[data-provenance="local_only"].is-active-request {
-  border-color: rgba(172, 161, 139, 0.68);
-  background: rgba(220, 212, 194, 0.98);
+  border-color: rgba(154, 166, 180, 0.88);
+  border-top-color: rgba(235, 240, 245, 0.62);
+  border-left-color: rgba(226, 232, 238, 0.52);
+  background:
+    linear-gradient(180deg, rgba(233, 238, 244, 0.99), rgba(221, 227, 234, 0.98)),
+    rgba(224, 230, 237, 0.98);
   color: rgba(0, 0, 0, 0.92);
+  transform: translateY(1px);
   box-shadow:
-    inset 0 2px 8px rgba(124, 113, 89, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    inset 0 4px 12px rgba(146, 156, 169, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
   filter: none;
 }
 
@@ -11361,34 +11414,45 @@ button.ghost:hover {
 .juggernaut-tool.juggernaut-rail-anchor,
 .juggernaut-tool.is-local-utility {
   color: rgba(0, 0, 0, 0.92);
-  border-color: rgba(205, 196, 177, 0.58);
-  border-top-color: rgba(251, 248, 241, 0.4);
-  border-left-color: rgba(243, 237, 225, 0.3);
-  background: rgba(235, 230, 216, 0.98);
-  box-shadow: none;
+  border-color: rgba(208, 216, 226, 0.72);
+  border-top-color: rgba(255, 255, 255, 0.98);
+  border-left-color: rgba(255, 255, 255, 0.9);
+  background:
+    linear-gradient(180deg, rgba(252, 253, 254, 0.99), rgba(241, 244, 248, 0.98)),
+    rgba(244, 247, 250, 0.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    0 8px 16px rgba(17, 24, 32, 0.08);
 }
 
 .juggernaut-tool.juggernaut-rail-anchor:hover,
 .juggernaut-tool.is-local-utility:hover {
-  border-color: rgba(191, 181, 160, 0.72);
-  border-top-color: rgba(253, 250, 244, 0.46);
-  border-left-color: rgba(246, 240, 228, 0.36);
-  background: rgba(235, 230, 216, 0.98);
+  border-color: rgba(194, 204, 216, 0.84);
+  border-top-color: rgba(255, 255, 255, 1);
+  border-left-color: rgba(252, 253, 255, 0.94);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(244, 247, 250, 0.98)),
+    rgba(247, 249, 252, 0.98);
   color: rgba(0, 0, 0, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    0 10px 18px rgba(17, 24, 32, 0.08);
   filter: none;
 }
 
 .juggernaut-tool.juggernaut-rail-anchor.selected,
 .juggernaut-tool.is-local-utility.selected {
-  border-color: rgba(172, 161, 139, 0.82);
-  border-top-color: rgba(241, 235, 223, 0.34);
-  border-left-color: rgba(230, 222, 208, 0.24);
+  border-color: rgba(171, 182, 195, 0.86);
+  border-top-color: rgba(245, 248, 251, 0.72);
+  border-left-color: rgba(236, 241, 246, 0.62);
   transform: translate3d(0, 2px, 0) scale(0.982);
   filter: none;
-  background: rgba(220, 212, 194, 0.98);
+  background:
+    linear-gradient(180deg, rgba(244, 247, 250, 0.99), rgba(232, 237, 243, 0.97)),
+    rgba(235, 240, 245, 0.97);
   box-shadow:
-    inset 0 2px 8px rgba(124, 113, 89, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    inset 0 3px 10px rgba(167, 176, 187, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
 }
 
 .juggernaut-tool.juggernaut-rail-anchor.selected .tool-icon,
@@ -11403,15 +11467,17 @@ button.ghost:hover {
 .juggernaut-tool.is-local-utility.is-pressing,
 .juggernaut-tool.juggernaut-rail-anchor.selected:hover,
 .juggernaut-tool.is-local-utility.selected:hover {
-  border-color: rgba(172, 161, 139, 0.82);
-  border-top-color: rgba(241, 235, 223, 0.34);
-  border-left-color: rgba(230, 222, 208, 0.24);
+  border-color: rgba(154, 166, 180, 0.88);
+  border-top-color: rgba(235, 240, 245, 0.62);
+  border-left-color: rgba(226, 232, 238, 0.52);
   transform: translate3d(0, 3px, 0) scale(0.976);
   filter: none;
-  background: rgba(220, 212, 194, 0.98);
+  background:
+    linear-gradient(180deg, rgba(233, 238, 244, 0.99), rgba(221, 227, 234, 0.98)),
+    rgba(224, 230, 237, 0.98);
   box-shadow:
-    inset 0 2px 8px rgba(124, 113, 89, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    inset 0 4px 12px rgba(146, 156, 169, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
 }
 
 .juggernaut-tool.juggernaut-rail-anchor:active .tool-icon,
@@ -11463,15 +11529,17 @@ button.ghost:hover {
 .juggernaut-tool.is-local-utility.selected.is-active-request:hover,
 .juggernaut-tool.juggernaut-rail-anchor.is-pressing.is-active-request,
 .juggernaut-tool.is-local-utility.is-pressing.is-active-request {
-  border-color: rgba(172, 161, 139, 0.82);
-  border-top-color: rgba(241, 235, 223, 0.34);
-  border-left-color: rgba(230, 222, 208, 0.24);
+  border-color: rgba(154, 166, 180, 0.88);
+  border-top-color: rgba(235, 240, 245, 0.62);
+  border-left-color: rgba(226, 232, 238, 0.52);
   transform: translate3d(0, 3px, 0) scale(0.976);
   filter: none;
-  background: rgba(220, 212, 194, 0.98);
+  background:
+    linear-gradient(180deg, rgba(233, 238, 244, 0.99), rgba(221, 227, 234, 0.98)),
+    rgba(224, 230, 237, 0.98);
   box-shadow:
-    inset 0 2px 8px rgba(124, 113, 89, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    inset 0 4px 12px rgba(146, 156, 169, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
 }
 
 .juggernaut-tool.juggernaut-rail-anchor.selected.is-active-request .tool-icon,
@@ -11489,6 +11557,33 @@ button.ghost:hover {
 
 .juggernaut-tool.is-selection-empty {
   opacity: 0.72;
+}
+
+.juggernaut-tool.juggernaut-rail-anchor.is-selection-empty,
+.juggernaut-tool.is-local-utility.is-selection-empty {
+  border-color: rgba(219, 226, 234, 0.88);
+  border-top-color: rgba(255, 255, 255, 0.96);
+  border-left-color: rgba(248, 250, 252, 0.88);
+  background:
+    linear-gradient(180deg, rgba(252, 253, 254, 0.99), rgba(244, 247, 250, 0.98)),
+    rgba(246, 248, 251, 0.98);
+  color: rgba(0, 0, 0, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 1px 2px rgba(17, 24, 32, 0.03);
+  opacity: 1;
+  filter: none;
+}
+
+.juggernaut-tool.juggernaut-rail-anchor.is-selection-empty .tool-icon,
+.juggernaut-tool.juggernaut-rail-anchor.is-selection-empty .tool-hint,
+.juggernaut-tool.juggernaut-rail-anchor.is-selection-empty .tool-label,
+.juggernaut-tool.is-local-utility.is-selection-empty .tool-icon,
+.juggernaut-tool.is-local-utility.is-selection-empty .tool-hint,
+.juggernaut-tool.is-local-utility.is-selection-empty .tool-label {
+  color: rgba(0, 0, 0, 0.5);
+  filter: none;
+  text-shadow: none;
 }
 
 .canvas-wrap {
@@ -12155,12 +12250,16 @@ body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool),
 body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"],
 body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"],
 body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"].is-ready {
-  border-color: rgba(205, 196, 177, 0.42);
-  border-top-color: rgba(251, 248, 241, 0.92);
-  border-left-color: rgba(243, 237, 225, 0.82);
-  background: rgba(235, 230, 216, 0.98);
+  border-color: rgba(40, 50, 64, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.98);
+  border-left-color: rgba(255, 255, 255, 0.9);
+  background:
+    linear-gradient(180deg, rgba(252, 253, 254, 0.98), rgba(239, 242, 246, 0.98)),
+    rgba(241, 244, 247, 0.96);
   color: rgba(0, 0, 0, 0.92);
-  box-shadow: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    0 1px 2px rgba(17, 24, 32, 0.05);
 }
 
 body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool):hover,
@@ -12168,43 +12267,78 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="lo
 body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"]:focus-visible,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:hover,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:focus-visible {
-  border-color: rgba(191, 181, 160, 0.48);
-  border-top-color: rgba(253, 250, 244, 0.94);
-  border-left-color: rgba(246, 240, 228, 0.84);
-  background: rgba(235, 230, 216, 0.98);
+  border-color: rgba(40, 50, 64, 0.12);
+  border-top-color: rgba(255, 255, 255, 1);
+  border-left-color: rgba(252, 253, 255, 0.94);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(235, 240, 246, 0.98)),
+    rgba(238, 242, 247, 0.96);
   color: rgba(0, 0, 0, 0.92);
-  box-shadow: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    0 1px 2px rgba(17, 24, 32, 0.05);
   filter: none;
 }
 
 body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool).selected,
 body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool).selected:hover,
-body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool).depressed,
 body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool):active,
 body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool).is-active-request,
 body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"]:active,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:active,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"].is-active-request {
-  border-color: rgba(172, 161, 139, 0.52);
-  border-top-color: rgba(241, 235, 223, 0.82);
-  border-left-color: rgba(230, 222, 208, 0.72);
-  background: rgba(220, 212, 194, 0.98);
+  border-color: rgba(154, 166, 180, 0.88);
+  border-top-color: rgba(235, 240, 245, 0.62);
+  border-left-color: rgba(226, 232, 238, 0.52);
+  background:
+    linear-gradient(180deg, rgba(233, 238, 244, 0.99), rgba(221, 227, 234, 0.98)),
+    rgba(224, 230, 237, 0.98);
   color: rgba(0, 0, 0, 0.92);
+  transform: translateY(1px);
   box-shadow:
-    inset 0 2px 8px rgba(124, 113, 89, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    inset 0 4px 12px rgba(146, 156, 169, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
   filter: none;
+}
+
+body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool).selected,
+body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool).selected:hover {
+  border-color: rgba(171, 182, 195, 0.86);
+  border-top-color: rgba(245, 248, 251, 0.72);
+  border-left-color: rgba(236, 241, 246, 0.62);
+  background:
+    linear-gradient(180deg, rgba(244, 247, 250, 0.99), rgba(232, 237, 243, 0.97)),
+    rgba(235, 240, 245, 0.97);
+  box-shadow:
+    inset 0 3px 10px rgba(167, 176, 187, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
+}
+
+body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool).depressed {
+  border-color: rgba(154, 166, 180, 0.88);
+  border-top-color: rgba(235, 240, 245, 0.62);
+  border-left-color: rgba(226, 232, 238, 0.52);
+  background:
+    linear-gradient(180deg, rgba(233, 238, 244, 0.99), rgba(221, 227, 234, 0.98)),
+    rgba(224, 230, 237, 0.98);
+  box-shadow:
+    inset 0 4px 12px rgba(146, 156, 169, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
 }
 
 body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool):disabled,
 body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"]:disabled,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:disabled {
-  border-color: rgba(205, 196, 177, 0.32);
-  border-top-color: rgba(247, 242, 232, 0.8);
-  border-left-color: rgba(239, 232, 220, 0.7);
-  background: rgba(235, 230, 216, 0.72);
-  color: rgba(0, 0, 0, 0.58);
-  box-shadow: none;
+  border-color: rgba(214, 221, 229, 0.72);
+  border-top-color: rgba(255, 255, 255, 0.94);
+  border-left-color: rgba(248, 250, 252, 0.88);
+  background:
+    linear-gradient(180deg, rgba(249, 250, 252, 0.98), rgba(242, 245, 248, 0.96)),
+    rgba(243, 246, 249, 0.96);
+  color: rgba(0, 0, 0, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 1px 2px rgba(17, 24, 32, 0.03);
   opacity: 1;
   filter: none;
 }
@@ -12226,7 +12360,7 @@ body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool):
 body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"]:disabled span,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:disabled span,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:disabled svg {
-  color: rgba(0, 0, 0, 0.58);
+  color: rgba(0, 0, 0, 0.5);
   text-shadow: none;
   opacity: 1;
   filter: none;
@@ -12262,42 +12396,52 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenan
 
 body.juggernaut-shell .tool.has-action-provenance.selected,
 body.juggernaut-shell .tool.has-action-provenance.selected:hover,
-body.juggernaut-shell .tool.has-action-provenance.depressed,
 body.juggernaut-shell .tool.has-action-provenance:active,
 body.juggernaut-shell .juggernaut-tool-rail .tool.has-action-provenance.is-active-request,
 body.juggernaut-shell .juggernaut-tool-rail .tool.has-action-provenance.is-active-request:hover {
-  border-color: rgba(148, 127, 122, 0.48);
-  border-top-color: rgba(235, 226, 223, 0.76);
-  border-left-color: rgba(223, 212, 208, 0.66);
-  background: rgba(177, 157, 152, 0.98);
+  border-color: rgba(136, 114, 108, 0.82);
+  border-top-color: rgba(220, 209, 205, 0.56);
+  border-left-color: rgba(205, 192, 189, 0.46);
+  background: rgba(170, 149, 143, 0.98);
   color: rgba(0, 0, 0, 0.92);
   box-shadow:
-    inset 0 2px 8px rgba(92, 74, 70, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    inset 0 3px 10px rgba(81, 64, 60, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+body.juggernaut-shell .tool.has-action-provenance.depressed {
+  border-color: rgba(123, 101, 96, 0.86);
+  border-top-color: rgba(211, 199, 195, 0.4);
+  border-left-color: rgba(195, 181, 177, 0.32);
+  background: rgba(154, 132, 126, 0.98);
+  box-shadow:
+    inset 0 4px 12px rgba(72, 56, 52, 0.54),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:active,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:active,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance.is-active-request {
-  border-color: rgba(153, 132, 127, 0.4);
-  border-top-color: rgba(236, 227, 224, 0.74);
-  border-left-color: rgba(225, 214, 210, 0.64);
-  background: rgba(177, 157, 152, 0.98);
+  border-color: rgba(123, 101, 96, 0.76);
+  border-top-color: rgba(211, 199, 195, 0.48);
+  border-left-color: rgba(195, 181, 177, 0.38);
+  background: rgba(154, 132, 126, 0.98);
   color: rgba(0, 0, 0, 0.92);
+  transform: translateY(1px);
   box-shadow:
-    inset 0 2px 8px rgba(92, 74, 70, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    inset 0 4px 12px rgba(72, 56, 52, 0.54),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
   filter: none;
 }
 
 body.juggernaut-shell .tool.has-action-provenance:disabled,
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:disabled,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled {
-  border-color: rgba(161, 141, 136, 0.32);
-  border-top-color: rgba(244, 238, 236, 0.78);
-  border-left-color: rgba(232, 224, 221, 0.68);
-  background: rgba(204, 185, 180, 0.72);
-  color: rgba(0, 0, 0, 0.58);
+  border-color: rgba(187, 171, 167, 0.62);
+  border-top-color: rgba(249, 245, 244, 0.62);
+  border-left-color: rgba(238, 230, 228, 0.54);
+  background: rgba(224, 214, 211, 0.98);
+  color: rgba(0, 0, 0, 0.5);
   box-shadow: none;
   opacity: 1;
   filter: none;
@@ -12315,7 +12459,7 @@ body.juggernaut-shell .tool.has-action-provenance:disabled .tool-label,
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:disabled span,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled span,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled svg {
-  color: rgba(0, 0, 0, 0.58);
+  color: rgba(0, 0, 0, 0.5);
   text-shadow: none;
   opacity: 1;
   filter: none;
