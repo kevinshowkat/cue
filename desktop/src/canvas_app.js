@@ -106,6 +106,14 @@ import { applyToolRuntimeRequest, installToolApplyBridge } from "./tool_apply_ru
 import { invokeDesignReviewProviderRequest } from "./design_review_backend.js";
 import { createDesignReviewProviderRouter } from "./design_review_provider_router.js";
 import {
+  ACTION_PROVENANCE,
+  actionProvenanceHasModelCost,
+  appendActionProvenanceDescription,
+  normalizeActionProvenance,
+  renderActionProvenanceBadge,
+  resolveActionProvenance,
+} from "./action_provenance.js";
+import {
   buildAgentRunnerEvaluationPrompt,
   parseAgentRunnerEvaluationResponse,
 } from "./agent_runner_evaluation.js";
@@ -584,7 +592,6 @@ const REEL_PRESET = Object.freeze({
 const JUGGERNAUT_SHELL_BRIDGE_VERSION = "shell-canvas-v1";
 const JUGGERNAUT_SHELL_RAIL_CONTRACT = SINGLE_IMAGE_RAIL_CONTRACT;
 const JUGGERNAUT_SHELL_RAIL = Object.freeze(SINGLE_IMAGE_RAIL_INVENTORY.map((item) => Object.freeze({ ...item })));
-const JUGGERNAUT_LOCALLY_BACKED_TOOL_KEYS = new Set(["move", "upload", "select"]);
 const JUGGERNAUT_RUNTIME_PIN_ASSISTANT_LS_KEY = "juggernaut.runtime.pinAssistantChrome.v1";
 const JUGGERNAUT_RUNTIME_SHOW_DIAGNOSTICS_LS_KEY = "juggernaut.runtime.showDiagnosticsChrome.v1";
 
@@ -9625,6 +9632,34 @@ function juggernautToolButtons() {
   return Array.from(els.actionGrid?.querySelectorAll?.("button[data-tool-id], button[data-tool-key]") || []);
 }
 
+function actionElementProvenance(button, fallback = ACTION_PROVENANCE.LOCAL_ONLY) {
+  return normalizeActionProvenance(button?.dataset?.provenance || "", fallback);
+}
+
+function syncActionProvenanceBadge(button, provenance) {
+  if (!button) return "";
+  const normalized = normalizeActionProvenance(provenance);
+  const costBearing = actionProvenanceHasModelCost(normalized);
+  button.dataset.provenance = normalized;
+  button.classList.toggle("has-action-provenance", costBearing);
+
+  const existing = typeof button.querySelector === "function" ? button.querySelector(".action-provenance-affordance") : null;
+  const markup = renderActionProvenanceBadge(normalized);
+  if (!markup) {
+    if (existing?.remove) existing.remove();
+    return "";
+  }
+  if (existing && existing.dataset?.provenance === normalized) return normalized;
+  if (existing) {
+    existing.outerHTML = markup;
+    return normalized;
+  }
+  if (typeof button.insertAdjacentHTML === "function") {
+    button.insertAdjacentHTML("beforeend", markup);
+  }
+  return normalized;
+}
+
 function singleImageRailMagicSelectSelectionForImage(imageId = "") {
   const normalizedImageId = String(imageId || "").trim();
   if (!normalizedImageId) return null;
@@ -9960,24 +9995,40 @@ function renderJuggernautShellChrome() {
   const exportHookReady = typeof state.juggernautShell.psdExportHandler === "function" || typeof invoke === "function";
   renderAgentRunnerActivityChrome();
   if (els.juggernautExportPsd) {
-    const exportTitle = emptyCanvas
+    const exportTitleBase = emptyCanvas
       ? "Upload an image before exporting PSD"
       : exportHookReady
         ? "Export PSD"
         : "PSD export hook is scaffolded and waiting for integration";
+    const exportTitle = appendActionProvenanceDescription(exportTitleBase, ACTION_PROVENANCE.LOCAL_ONLY);
+    syncActionProvenanceBadge(els.juggernautExportPsd, ACTION_PROVENANCE.LOCAL_ONLY);
     els.juggernautExportPsd.title = exportTitle;
     els.juggernautExportPsd.setAttribute("aria-label", exportTitle);
     els.juggernautExportPsd.classList.toggle("is-ready", exportHookReady && !emptyCanvas);
     els.juggernautExportPsd.classList.toggle("is-pending-hook", !exportHookReady);
   }
+  if (els.sessionTabDesignReview) {
+    const reviewTitle = appendActionProvenanceDescription("Design Review", ACTION_PROVENANCE.EXTERNAL_MODEL);
+    syncActionProvenanceBadge(els.sessionTabDesignReview, ACTION_PROVENANCE.EXTERNAL_MODEL);
+    els.sessionTabDesignReview.title = reviewTitle;
+    els.sessionTabDesignReview.setAttribute("aria-label", reviewTitle);
+  }
 
   for (const btn of juggernautToolButtons()) {
     const key = String(btn.dataset?.toolId || btn.dataset?.toolKey || "").trim();
     const disabledReason = String(btn.dataset?.disabledReason || "").trim();
-    const isLocallyBacked = JUGGERNAUT_LOCALLY_BACKED_TOOL_KEYS.has(key);
-    const isPending = !isLocallyBacked && disabledReason === "capability_unavailable" && !toolHookReady;
+    const provenance = actionElementProvenance(
+      btn,
+      resolveActionProvenance({
+        capability: btn.dataset?.capability || "",
+      })
+    );
+    const isLocallyBacked =
+      provenance === ACTION_PROVENANCE.LOCAL_ONLY || provenance === ACTION_PROVENANCE.LOCAL_FIRST;
+    const isPending = provenance === ACTION_PROVENANCE.EXTERNAL_MODEL && disabledReason === "capability_unavailable" && !toolHookReady;
     btn.classList.toggle("is-local-utility", isLocallyBacked);
-    btn.classList.toggle("is-ai-tool", !isLocallyBacked);
+    btn.classList.toggle("is-local-first", provenance === ACTION_PROVENANCE.LOCAL_FIRST);
+    btn.classList.toggle("is-ai-tool", provenance === ACTION_PROVENANCE.EXTERNAL_MODEL);
     btn.classList.toggle("is-active-request", String(state.juggernautShell.lastToolKey || "") === key);
     btn.classList.toggle("is-pending-hook", isPending);
     btn.classList.toggle(
@@ -26641,6 +26692,7 @@ function createToolPreviewText(manifest) {
     schema: manifest.schema,
     toolId: manifest.toolId,
     label: manifest.label,
+    provenance: manifest.provenance || ACTION_PROVENANCE.LOCAL_ONLY,
     execution: `${manifest.execution?.kind || "local_edit"}:${manifest.execution?.operation || "unknown"}`,
     params: manifest.execution?.params || {},
     selection: {
@@ -26675,7 +26727,10 @@ function renderCreateToolPreview() {
     });
     els.createToolPreview.textContent = createToolPreviewText(manifest);
     if (els.createToolMeta) {
-      els.createToolMeta.textContent = `Mapped to ${manifest.execution.kind}:${manifest.execution.operation}.`;
+      els.createToolMeta.textContent = appendActionProvenanceDescription(
+        `Mapped to ${manifest.execution.kind}:${manifest.execution.operation}.`,
+        manifest.provenance || ACTION_PROVENANCE.LOCAL_ONLY
+      );
     }
     if (els.createToolSave) els.createToolSave.disabled = false;
   } catch (err) {
@@ -30987,7 +31042,18 @@ function customToolDockTitleFor(tool) {
   if (!tool || typeof tool !== "object") return "Custom tool";
   const label = String(tool.label || tool.shortLabel || tool.toolId || "Custom tool").trim();
   const execution = `${tool.execution?.kind || "local_edit"}:${tool.execution?.operation || "unknown"}`;
-  return `${label} (${execution})`;
+  const provenance = resolveActionProvenance({
+    provenance: tool.provenance,
+    executionKind: tool.execution?.kind,
+  });
+  return appendActionProvenanceDescription(`${label} (${execution})`, provenance);
+}
+
+function customToolProvenance(tool) {
+  return resolveActionProvenance({
+    provenance: tool?.provenance,
+    executionKind: tool?.execution?.kind,
+  });
 }
 
 function customToolDockIconFor(tool) {
@@ -31069,7 +31135,7 @@ function customToolDockRenderSignature(tools = []) {
     state.customToolDockVersion,
     panelOpen ? 1 : 0,
     state.activeCustomToolId || "",
-    tools.map((tool) => `${tool?.toolId || ""}:${tool?.label || ""}:${tool?.shortLabel || ""}`).join("|"),
+    tools.map((tool) => `${tool?.toolId || ""}:${tool?.label || ""}:${tool?.shortLabel || ""}:${customToolProvenance(tool)}`).join("|"),
   ].join("||");
 }
 
@@ -31085,9 +31151,11 @@ function renderCustomToolDock() {
   const createBtn = document.createElement("button");
   createBtn.type = "button";
   createBtn.className = "tool tool-create";
-  createBtn.title = "Create Tool";
-  createBtn.setAttribute("aria-label", "Create Tool");
-  createBtn.innerHTML = customToolCreateIcon();
+  createBtn.dataset.provenance = ACTION_PROVENANCE.LOCAL_ONLY;
+  createBtn.classList.toggle("has-action-provenance", actionProvenanceHasModelCost(ACTION_PROVENANCE.LOCAL_ONLY));
+  createBtn.title = appendActionProvenanceDescription("Create Tool", ACTION_PROVENANCE.LOCAL_ONLY);
+  createBtn.setAttribute("aria-label", appendActionProvenanceDescription("Create Tool", ACTION_PROVENANCE.LOCAL_ONLY));
+  createBtn.innerHTML = `${customToolCreateIcon()}${renderActionProvenanceBadge(ACTION_PROVENANCE.LOCAL_ONLY)}`;
   if (els.createToolPanel && !els.createToolPanel.classList.contains("hidden")) {
     createBtn.classList.add("selected");
     createBtn.classList.add("depressed");
@@ -31099,13 +31167,19 @@ function renderCustomToolDock() {
   root.appendChild(createBtn);
 
   for (const tool of tools) {
+    const provenance = customToolProvenance(tool);
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "tool";
     btn.dataset.toolId = String(tool.toolId || "");
+    btn.dataset.provenance = provenance;
+    btn.classList.toggle("has-action-provenance", actionProvenanceHasModelCost(provenance));
     btn.title = customToolDockTitleFor(tool);
-    btn.setAttribute("aria-label", String(tool.label || tool.shortLabel || tool.toolId || "Custom tool"));
-    btn.innerHTML = customToolDockIconFor(tool);
+    btn.setAttribute(
+      "aria-label",
+      appendActionProvenanceDescription(String(tool.label || tool.shortLabel || tool.toolId || "Custom tool"), provenance)
+    );
+    btn.innerHTML = `${customToolDockIconFor(tool)}${renderActionProvenanceBadge(provenance)}`;
     if (state.activeCustomToolId === tool.toolId) {
       btn.classList.add("selected");
     }

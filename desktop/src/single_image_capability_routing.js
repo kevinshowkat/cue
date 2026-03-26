@@ -1,3 +1,5 @@
+import { resolveActionProvenance } from "./action_provenance.js";
+
 export const SINGLE_IMAGE_RAIL_CONTRACT = "single-image-rail-v1";
 
 export const SINGLE_IMAGE_DISABLED_REASONS = Object.freeze([
@@ -165,6 +167,11 @@ function buildPublicSpec(spec) {
     executionKind: routeProfile.defaultExecutionKind,
     localOperation: routeProfile.localOperation || null,
     fallbackExecutionKind: routeProfile.fallbackExecutionKind || null,
+    provenance: resolveActionProvenance({
+      executionType: spec.executionType || SINGLE_IMAGE_EXECUTION_TYPES.MODEL_BACKED,
+      executionKind: routeProfile.defaultExecutionKind,
+      capability: spec.capability,
+    }),
   });
 }
 
@@ -527,6 +534,7 @@ export function resolveSingleImageAffordanceRoute(value = {}, context = {}) {
     params,
     confidence: clamp01(raw.confidence ?? asRecord(raw.rail)?.confidence, 0),
     reasonCodes: normalizeReasonCodes(raw.reasonCodes || asRecord(raw.rail)?.reasonCodes || []),
+    provenance: spec.provenance,
   };
 }
 
@@ -569,6 +577,7 @@ export function resolveSingleImageCapabilityAvailability(jobOrEntry, context = {
     disabledReason,
     reasonCodes: disabledReason ? mergeReasonCodes(reasonCodes, [disabledReason]) : reasonCodes,
     stickyKey: route.stickyKey,
+    provenance: route.provenance,
   };
   if (route.surface === "direct") {
     availability.executionType = route.executionType;
@@ -605,6 +614,7 @@ export function buildSingleImageRailJobEntries(rankedJobs = [], context = {}) {
       confidence: clamp01(ranked.confidence, 0),
       reasonCodes: availability?.reasonCodes || [],
       stickyKey: job.stickyKey,
+      provenance: job.provenance,
     };
   });
 }

@@ -51,6 +51,9 @@ test("single-image rail: contract renders 3 anchors plus 3 dynamic slots", () =>
   assert.equal(rail.buttons[6].label, "Remove People");
   assert.equal(rail.buttons[7].label, "Polish");
   assert.equal(rail.buttons[8].label, "Relight");
+  assert.equal(rail.buttons[0].provenance, "local_only");
+  assert.equal(rail.buttons[3].provenance, "external_model");
+  assert.equal(rail.buttons[7].provenance, "local_first");
   assert.equal(rail.buttons[0].hotkey, "");
   assert.equal(rail.buttons[1].hotkey, "1");
   assert.equal(rail.buttons[2].hotkey, "2");
@@ -212,6 +215,9 @@ test("single-image rail: worsening enabled state drops the old sticky item", () 
 test("single-image rail: source keeps keyed slot rendering instead of clearing the full rail", () => {
   assert.match(railSource, /data-slot-key/);
   assert.match(railSource, /root\.dataset\.railContract = SINGLE_IMAGE_RAIL_CONTRACT/);
+  assert.match(railSource, /toolEl\.dataset\.provenance/);
+  assert.match(railSource, /renderActionProvenanceBadge/);
+  assert.match(railSource, /is-external-model/);
   assert.match(railSource, /--jg-primary-rail-button-count/);
   assert.doesNotMatch(railSource, /root\.innerHTML = "";/);
 });
@@ -289,8 +295,11 @@ test("single-image rail: direct affordances use shell bridge state for enablemen
     const buttons = Object.fromEntries(rail.buttons.map((button) => [button.toolId, button]));
     assert.equal(buttons.remove_people.disabled, false);
     assert.equal(buttons.remove_people.label, "Remove People");
+    assert.equal(buttons.remove_people.provenance, "external_model");
     assert.equal(buttons.polish.disabled, false);
+    assert.equal(buttons.polish.provenance, "local_first");
     assert.equal(buttons.relight.disabled, false);
+    assert.equal(buttons.relight.provenance, "local_first");
   } finally {
     globalThis.window = originalWindow;
   }

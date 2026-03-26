@@ -48,7 +48,10 @@ test("Juggernaut rail iconography: generated registry exports custom SVG glyphs"
 
 test("Juggernaut rail iconography: rail rendering consumes generated registry and uses keyed slots", () => {
   assert.match(railSource, /getJuggernautRailIconSvg/);
+  assert.match(railSource, /renderActionProvenanceBadge/);
+  assert.match(railSource, /is-external-model/);
   assert.match(railSource, /toolEl\.dataset\.toolKey/);
+  assert.match(railSource, /toolEl\.dataset\.provenance/);
   assert.match(railSource, /className = "tool juggernaut-tool juggernaut-rail-button"/);
   assert.match(railSource, /toolEl\.addEventListener\("pointerdown"/);
   assert.match(railSource, /toolEl\.classList\.add\("is-pressing"\)/);

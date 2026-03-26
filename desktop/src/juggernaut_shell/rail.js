@@ -1,5 +1,12 @@
 import { getJuggernautRailIconSvg } from "./generated/rail_icon_registry.js";
 import { buildSingleImageDirectAffordanceInvocation, buildSingleImageRailInvocation } from "../tool_runtime.js";
+import {
+  ACTION_PROVENANCE,
+  actionProvenanceHasModelCost,
+  appendActionProvenanceDescription,
+  renderActionProvenanceBadge,
+  resolveActionProvenance,
+} from "../action_provenance.js";
 
 export const SINGLE_IMAGE_RAIL_CONTRACT = "single-image-rail-v1";
 export const SINGLE_IMAGE_RAIL_DYNAMIC_SLOT_COUNT = 3;
@@ -51,6 +58,7 @@ const SEEDED_JOB_LIBRARY = Object.freeze({
     requiresSelection: false,
     stickyKey: "cut_out",
     iconId: "select_subject",
+    provenance: ACTION_PROVENANCE.EXTERNAL_MODEL,
   }),
   remove: Object.freeze({
     jobId: "remove",
@@ -59,6 +67,7 @@ const SEEDED_JOB_LIBRARY = Object.freeze({
     requiresSelection: true,
     stickyKey: "remove",
     iconId: "cleanup",
+    provenance: ACTION_PROVENANCE.EXTERNAL_MODEL,
   }),
   new_background: Object.freeze({
     jobId: "new_background",
@@ -67,6 +76,7 @@ const SEEDED_JOB_LIBRARY = Object.freeze({
     requiresSelection: false,
     stickyKey: "new_background",
     iconId: "background_swap",
+    provenance: ACTION_PROVENANCE.EXTERNAL_MODEL,
   }),
   reframe: Object.freeze({
     jobId: "reframe",
@@ -75,6 +85,7 @@ const SEEDED_JOB_LIBRARY = Object.freeze({
     requiresSelection: false,
     stickyKey: "reframe",
     iconId: "reframe",
+    provenance: ACTION_PROVENANCE.EXTERNAL_MODEL,
   }),
   variants: Object.freeze({
     jobId: "variants",
@@ -83,6 +94,7 @@ const SEEDED_JOB_LIBRARY = Object.freeze({
     requiresSelection: false,
     stickyKey: "variants",
     iconId: "variations",
+    provenance: ACTION_PROVENANCE.EXTERNAL_MODEL,
   }),
 });
 const SHELL_AFFORDANCE_LIBRARY = Object.freeze({
@@ -93,6 +105,7 @@ const SHELL_AFFORDANCE_LIBRARY = Object.freeze({
     iconId: "protect",
     communicationTool: "marker",
     localUtility: true,
+    provenance: ACTION_PROVENANCE.LOCAL_ONLY,
   }),
   make_space: Object.freeze({
     jobId: "make_space",
@@ -101,6 +114,7 @@ const SHELL_AFFORDANCE_LIBRARY = Object.freeze({
     iconId: "make_space",
     communicationTool: "magic_select",
     localUtility: true,
+    provenance: ACTION_PROVENANCE.LOCAL_ONLY,
   }),
   remove_people: Object.freeze({
     jobId: "remove_people",
@@ -111,6 +125,7 @@ const SHELL_AFFORDANCE_LIBRARY = Object.freeze({
     runtimeJobId: "remove",
     stickyKey: "single-image-direct:remove_people",
     localUtility: false,
+    provenance: ACTION_PROVENANCE.EXTERNAL_MODEL,
   }),
   polish: Object.freeze({
     jobId: "polish",
@@ -120,6 +135,7 @@ const SHELL_AFFORDANCE_LIBRARY = Object.freeze({
     iconId: "polish",
     stickyKey: "single-image-direct:polish",
     localUtility: true,
+    provenance: ACTION_PROVENANCE.LOCAL_FIRST,
   }),
   relight: Object.freeze({
     jobId: "relight",
@@ -129,13 +145,14 @@ const SHELL_AFFORDANCE_LIBRARY = Object.freeze({
     iconId: "relight",
     stickyKey: "single-image-direct:relight",
     localUtility: true,
+    provenance: ACTION_PROVENANCE.LOCAL_FIRST,
   }),
 });
 
 export const SINGLE_IMAGE_RAIL_INVENTORY = Object.freeze([
-  Object.freeze({ key: "move", label: "Move", kind: "anchor", requiresSelection: false }),
-  Object.freeze({ key: "upload", label: "Upload", kind: "anchor", requiresSelection: false }),
-  Object.freeze({ key: "select", label: "Select", kind: "anchor", requiresSelection: false }),
+  Object.freeze({ key: "move", label: "Move", kind: "anchor", requiresSelection: false, provenance: ACTION_PROVENANCE.LOCAL_ONLY }),
+  Object.freeze({ key: "upload", label: "Upload", kind: "anchor", requiresSelection: false, provenance: ACTION_PROVENANCE.LOCAL_ONLY }),
+  Object.freeze({ key: "select", label: "Select", kind: "anchor", requiresSelection: false, provenance: ACTION_PROVENANCE.LOCAL_ONLY }),
   ...Object.values(SEEDED_JOB_LIBRARY).map((job) =>
     Object.freeze({
       key: job.jobId,
@@ -144,6 +161,7 @@ export const SINGLE_IMAGE_RAIL_INVENTORY = Object.freeze([
       capability: job.capability,
       requiresSelection: job.requiresSelection,
       stickyKey: job.stickyKey,
+      provenance: job.provenance,
     })
   ),
   ...SHELL_DIRECT_AFFORDANCE_ORDER.map((toolId) => SHELL_AFFORDANCE_LIBRARY[toolId]).map((tool) =>
@@ -154,6 +172,7 @@ export const SINGLE_IMAGE_RAIL_INVENTORY = Object.freeze([
       capability: tool.capability,
       requiresSelection: tool.requiresSelection,
       stickyKey: tool.stickyKey || tool.jobId,
+      provenance: tool.provenance,
     })
   ),
 ]);
@@ -229,6 +248,12 @@ function normalizeRankedJob(raw = {}, index = 0) {
     stickyKey: String(raw?.stickyKey || seed.stickyKey || seed.jobId).trim() || seed.jobId,
     iconId: seed.iconId,
     mock: Boolean(raw?.mock),
+    provenance: resolveActionProvenance({
+      provenance: raw?.provenance || seed.provenance,
+      executionType: raw?.executionType,
+      executionKind: raw?.executionKind,
+      capability: raw?.capability || seed.capability,
+    }),
   };
 }
 
@@ -246,7 +271,12 @@ function dynamicPlaceholder(jobId) {
     stickyKey: seed.stickyKey,
     iconId: seed.iconId,
     mock: true,
+    provenance: seed.provenance,
   };
+}
+
+function withButtonProvenanceText(baseText = "", provenance = ACTION_PROVENANCE.LOCAL_ONLY) {
+  return appendActionProvenanceDescription(baseText, provenance);
 }
 
 function disabledReasonText(reason, label) {
@@ -260,27 +290,29 @@ function disabledReasonText(reason, label) {
 }
 
 function buttonMetaTitle(button) {
-  if (button.disabledReason) return disabledReasonText(button.disabledReason, button.label);
-  if (button.toolId === "move") return "Move and arrange images";
-  if (button.toolId === "upload") return "Upload an image";
-  if (button.toolId === "select") return "Select a region on the active image";
-  if (button.toolId === "protect") return "Protect an area from edits";
-  if (button.toolId === "make_space") return "Reserve or create room in an area";
-  if (button.toolId === "remove_people") return "Remove people from the active image";
-  if (button.toolId === "polish") return "Polish the active image";
-  if (button.toolId === "relight") return "Relight the active image";
-  return button.label || button.toolId || "Tool";
+  const provenance = button.provenance || ACTION_PROVENANCE.LOCAL_ONLY;
+  if (button.disabledReason) return withButtonProvenanceText(disabledReasonText(button.disabledReason, button.label), provenance);
+  if (button.toolId === "move") return withButtonProvenanceText("Move and arrange images", provenance);
+  if (button.toolId === "upload") return withButtonProvenanceText("Upload an image", provenance);
+  if (button.toolId === "select") return withButtonProvenanceText("Select a region on the active image", provenance);
+  if (button.toolId === "protect") return withButtonProvenanceText("Protect an area from edits", provenance);
+  if (button.toolId === "make_space") return withButtonProvenanceText("Reserve or create room in an area", provenance);
+  if (button.toolId === "remove_people") return withButtonProvenanceText("Remove people from the active image", provenance);
+  if (button.toolId === "polish") return withButtonProvenanceText("Polish the active image", provenance);
+  if (button.toolId === "relight") return withButtonProvenanceText("Relight the active image", provenance);
+  return withButtonProvenanceText(button.label || button.toolId || "Tool", provenance);
 }
 
 function buttonMetaAriaLabel(button) {
   if (button.disabledReason) return buttonMetaTitle(button);
-  if (button.toolId === "move") return "Move image";
-  if (button.toolId === "upload") return "Upload image";
-  if (button.toolId === "select") return "Select region";
-  if (button.toolId === "protect") return "Protect region";
-  if (button.toolId === "make_space") return "Make space";
-  if (button.toolId === "remove_people") return "Remove people";
-  return button.label || button.toolId || "Tool";
+  const provenance = button.provenance || ACTION_PROVENANCE.LOCAL_ONLY;
+  if (button.toolId === "move") return withButtonProvenanceText("Move image", provenance);
+  if (button.toolId === "upload") return withButtonProvenanceText("Upload image", provenance);
+  if (button.toolId === "select") return withButtonProvenanceText("Select region", provenance);
+  if (button.toolId === "protect") return withButtonProvenanceText("Protect region", provenance);
+  if (button.toolId === "make_space") return withButtonProvenanceText("Make space", provenance);
+  if (button.toolId === "remove_people") return withButtonProvenanceText("Remove people", provenance);
+  return withButtonProvenanceText(button.label || button.toolId || "Tool", provenance);
 }
 
 function buttonHotkey(index) {
@@ -305,8 +337,9 @@ function buildAnchorButtons({
       toggleable: true,
       running: false,
       iconSvg: railIconSvg("move"),
-      title: "Move and arrange images",
-      ariaLabel: "Move image",
+      provenance: ACTION_PROVENANCE.LOCAL_ONLY,
+      title: "",
+      ariaLabel: "",
     },
     {
       slotKey: "anchor-upload",
@@ -321,8 +354,9 @@ function buildAnchorButtons({
       toggleable: false,
       running: false,
       iconSvg: railIconSvg("upload"),
-      title: "Upload an image",
-      ariaLabel: "Upload image",
+      provenance: ACTION_PROVENANCE.LOCAL_ONLY,
+      title: "",
+      ariaLabel: "",
     },
     {
       slotKey: "anchor-select",
@@ -337,10 +371,15 @@ function buildAnchorButtons({
       toggleable: true,
       running: false,
       iconSvg: railIconSvg("select_region"),
-      title: hasImage ? "Select a region on the active image" : "Upload an image before selecting",
-      ariaLabel: hasImage ? "Select region" : "Upload an image before selecting",
+      provenance: ACTION_PROVENANCE.LOCAL_ONLY,
+      title: "",
+      ariaLabel: "",
     },
-  ];
+  ].map((button) => ({
+    ...button,
+    title: buttonMetaTitle(button),
+    ariaLabel: buttonMetaAriaLabel(button),
+  }));
 }
 
 function enabledStateWorsened(previous = {}, next = {}) {
@@ -415,6 +454,7 @@ function buildDynamicButtons(dynamicJobs = [], { runningToolId = "" } = {}) {
       requiresSelection: job.requiresSelection,
       stickyKey: job.stickyKey,
       mock: Boolean(job.mock),
+      provenance: job.provenance || ACTION_PROVENANCE.EXTERNAL_MODEL,
     };
     button.title = buttonMetaTitle(button);
     button.ariaLabel = buttonMetaAriaLabel(button);
@@ -588,11 +628,12 @@ function directInvocationForTool(toolId, runtimeContext = {}) {
 
 function directAffordanceButton(seed, index, { hasImage = false, busy = false } = {}) {
   const runtimeContext = buildShellAffordanceRuntimeContext({ hasImage, busy });
+  const invocation = directInvocationForTool(seed.jobId, runtimeContext);
   const disabledReason = !runtimeContext.hasImage
     ? "unavailable_in_current_mode"
     : !runtimeContext.applyRuntimeReady
       ? "capability_unavailable"
-      : normalizeDisabledReason(directInvocationForTool(seed.jobId, runtimeContext)?.availability?.disabledReason);
+      : normalizeDisabledReason(invocation?.availability?.disabledReason);
   const button = {
     slotKey: `direct-${index}`,
     slotKind: "direct",
@@ -612,6 +653,13 @@ function directAffordanceButton(seed, index, { hasImage = false, busy = false } 
     capability: seed.capability,
     stickyKey: seed.stickyKey,
     localUtility: Boolean(seed.localUtility),
+    provenance: resolveActionProvenance({
+      provenance: invocation?.provenance || seed.provenance,
+      executionType: invocation?.executionType,
+      executionKind: invocation?.route?.executionKind || invocation?.execution?.kind,
+      capability: seed.capability,
+      localUtility: seed.localUtility,
+    }),
     invoke: async () => {
       const apply = browserWindow()?.juggernautApplyTool;
       if (typeof apply !== "function") return false;
@@ -679,6 +727,7 @@ export function getSingleImageRailMockRankedJobs({
         reasonCodes,
         stickyKey: seed.stickyKey,
         mock: true,
+        provenance: seed.provenance,
       },
       index
     );
@@ -737,6 +786,7 @@ function setButtonData(toolEl, button) {
   toolEl.dataset.stickyKey = String(button.stickyKey || "").trim();
   toolEl.dataset.mock = button.mock ? "true" : "false";
   toolEl.dataset.groupStart = button.groupStart ? "true" : "false";
+  toolEl.dataset.provenance = String(button.provenance || "").trim();
 }
 
 function syncButtonClasses(toolEl, button) {
@@ -746,11 +796,17 @@ function syncButtonClasses(toolEl, button) {
   toolEl.classList.toggle("is-group-start", Boolean(button.groupStart));
   toolEl.classList.toggle("selected", Boolean(button.selected));
   toolEl.classList.toggle("depressed", Boolean(button.running));
-  toolEl.classList.toggle("is-local-utility", Boolean(button.localUtility));
+  toolEl.classList.toggle("has-action-provenance", actionProvenanceHasModelCost(button.provenance));
+  toolEl.classList.toggle(
+    "is-local-utility",
+    button.provenance === ACTION_PROVENANCE.LOCAL_ONLY || button.provenance === ACTION_PROVENANCE.LOCAL_FIRST
+  );
+  toolEl.classList.toggle("is-local-first", button.provenance === ACTION_PROVENANCE.LOCAL_FIRST);
+  toolEl.classList.toggle("is-external-model", button.provenance === ACTION_PROVENANCE.EXTERNAL_MODEL);
 }
 
 function syncButtonContent(toolEl, button) {
-  const html = `${button.iconSvg}`;
+  const html = `${button.iconSvg}${renderActionProvenanceBadge(button.provenance)}`;
   if (toolEl.__juggernautRailHtml !== html) {
     toolEl.innerHTML = html;
     toolEl.__juggernautRailHtml = html;

@@ -5,6 +5,10 @@ import {
   resolveSingleImageCapabilityAvailability,
   resolveSingleImageCapabilityJob,
 } from "./single_image_capability_routing.js";
+import {
+  ACTION_PROVENANCE,
+  resolveActionProvenance,
+} from "./action_provenance.js";
 
 export const TOOL_MANIFEST_SCHEMA = "juggernaut.tool_manifest.v1";
 export const TOOL_INVOCATION_SCHEMA = "juggernaut.tool_invocation.v1";
@@ -14,6 +18,8 @@ export const CREATE_TOOL_AFFORDANCE_ID = "create_tool";
 export const CREATE_TOOL_INVOCATION_CONTRACT = "juggernaut.create_tool.v1";
 export const CREATE_TOOL_EXECUTION_TYPE = "tool_manifest_generation";
 export const CREATE_TOOL_ROUTE_PROFILE = "create_tool_local_manifest_builder_v1";
+
+export { ACTION_PROVENANCE } from "./action_provenance.js";
 
 export {
   SINGLE_IMAGE_AFFORDANCE_MAP,
@@ -319,6 +325,9 @@ export function normalizeToolManifest(raw = {}, { existingIds = [] } = {}) {
       operation: String(execution?.operation || inferred.matched.execution.operation || "contrast"),
       params: cloneJson(execution?.params || inferred.matched.execution.params || {}),
     },
+    provenance: resolveActionProvenance({
+      executionKind: execution?.kind || inferred.matched.execution.kind,
+    }),
     receipt: {
       include: ["tool_manifest", "tool_invocation", "selection", "execution"],
       reproducible: true,
@@ -364,12 +373,14 @@ export function buildToolInvocation(
       label: normalizedManifest.label,
       version: normalizedManifest.version,
       executionKind: normalizedManifest.execution.kind,
+      provenance: normalizedManifest.provenance || ACTION_PROVENANCE.LOCAL_ONLY,
     },
     target: {
       activeImageId: activeId || null,
       selectedImageIds: selection,
     },
     execution: cloneJson(normalizedManifest.execution),
+    provenance: normalizedManifest.provenance || ACTION_PROVENANCE.LOCAL_ONLY,
     inputContract: cloneJson(normalizedManifest.inputContract),
     receipt: {
       manifestSchema: normalizedManifest.schema,
@@ -419,6 +430,7 @@ export function buildCreateToolInvocation(
       executionType: CREATE_TOOL_EXECUTION_TYPE,
       routeProfile: CREATE_TOOL_ROUTE_PROFILE,
       surface: "custom_tool_dock",
+      provenance: ACTION_PROVENANCE.LOCAL_ONLY,
     },
     draft: {
       name: normalizedName,
@@ -434,6 +446,7 @@ export function buildCreateToolInvocation(
         existingIds: normalizedExistingIds,
       },
     },
+    provenance: ACTION_PROVENANCE.LOCAL_ONLY,
     inputContract: {
       requiresDescription: true,
       acceptsOptionalName: true,
@@ -520,6 +533,7 @@ function buildSingleImageAffordanceToolDescriptor(route) {
     routeProfile: route.routeProfile,
     requiresSelection: route.requiresSelection,
     surface: route.surface || "direct",
+    provenance: route.provenance,
   };
 }
 
@@ -533,6 +547,9 @@ function buildSingleImageAffordanceExecutionDescriptor(route) {
       executionType: route.executionType,
       routeProfile: route.routeProfile,
       params: cloneJson(route.params || {}),
+      provenance: resolveActionProvenance({
+        executionKind: "local_edit",
+      }),
     };
   }
   return {
@@ -542,6 +559,9 @@ function buildSingleImageAffordanceExecutionDescriptor(route) {
     executionType: route.executionType,
     routeProfile: route.routeProfile,
     params: cloneJson(route.params || {}),
+    provenance: resolveActionProvenance({
+      executionKind: "model_capability",
+    }),
   };
 }
 
@@ -592,6 +612,7 @@ export function buildSingleImageRailInvocation(
     label: job.label,
     capability: job.capability,
     stickyKey: job.stickyKey,
+    provenance: job.provenance || ACTION_PROVENANCE.EXTERNAL_MODEL,
     tool: {
       toolId: job.jobId,
       jobId: job.jobId,
@@ -600,6 +621,7 @@ export function buildSingleImageRailInvocation(
       executionKind: "model_capability",
       capability: job.capability,
       requiresSelection: job.requiresSelection,
+      provenance: job.provenance || ACTION_PROVENANCE.EXTERNAL_MODEL,
     },
     target: {
       activeImageId: activeId || null,
@@ -615,6 +637,7 @@ export function buildSingleImageRailInvocation(
       capability: job.capability,
       jobId: job.jobId,
       params: {},
+      provenance: ACTION_PROVENANCE.EXTERNAL_MODEL,
     },
     inputContract: {
       requiresActiveImage: job.requiresSelection,
@@ -637,6 +660,7 @@ export function buildSingleImageRailInvocation(
       confidence: Math.max(0, Math.min(1, Number(confidence) || 0)),
       reasonCodes: availability?.reasonCodes || [],
       stickyKey: job.stickyKey,
+      provenance: job.provenance || ACTION_PROVENANCE.EXTERNAL_MODEL,
     },
   };
 }
@@ -708,6 +732,7 @@ export function buildSingleImageDirectAffordanceInvocation(
     executionType: route.executionType,
     routeProfile: route.routeProfile,
     stickyKey: route.stickyKey,
+    provenance: route.provenance,
     tool: buildSingleImageAffordanceToolDescriptor(route),
     target: {
       activeImageId: activeId || null,
@@ -744,6 +769,7 @@ export function buildSingleImageDirectAffordanceInvocation(
       localOperation: route.localOperation || null,
       fallbackExecutionKind:
         route.executionType === SINGLE_IMAGE_EXECUTION_TYPES.LOCAL_FIRST ? "model_capability" : null,
+      provenance: route.provenance,
     },
   };
 }

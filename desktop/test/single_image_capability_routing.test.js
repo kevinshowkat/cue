@@ -40,6 +40,7 @@ test("single-image direct affordance map adds remove people, polish, and relight
           executionType: spec.executionType,
           routeProfile: spec.routeProfile,
           localOperation: spec.localOperation,
+          provenance: spec.provenance,
         },
       ])
     ),
@@ -49,18 +50,21 @@ test("single-image direct affordance map adds remove people, polish, and relight
         executionType: SINGLE_IMAGE_EXECUTION_TYPES.MODEL_BACKED,
         routeProfile: "remove_people_model",
         localOperation: null,
+        provenance: "external_model",
       },
       polish: {
         capability: "image_polish",
         executionType: SINGLE_IMAGE_EXECUTION_TYPES.LOCAL_FIRST,
         routeProfile: "polish_local_first",
         localOperation: "polish",
+        provenance: "local_first",
       },
       relight: {
         capability: "image_relight",
         executionType: SINGLE_IMAGE_EXECUTION_TYPES.LOCAL_FIRST,
         routeProfile: "relight_local_first",
         localOperation: "relight",
+        provenance: "local_first",
       },
     }
   );
@@ -99,6 +103,7 @@ test("single-image rail job entries use generic availability reasons and stable 
     confidence: 0.92,
     reasonCodes: ["foreground_detected"],
     stickyKey: "single-image-rail:cut_out",
+    provenance: "external_model",
   });
   assert.equal(jobs[1].disabledReason, "capability_unavailable");
   assert.equal(jobs[2].disabledReason, "unavailable_in_current_mode");
@@ -137,6 +142,7 @@ test("single-image capability availability blocks selectionless and local-only r
     disabledReason: "selection_required",
     reasonCodes: ["selection_required"],
     stickyKey: "single-image-rail:new_background",
+    provenance: "external_model",
   });
 
   const modeBlocked = resolveSingleImageCapabilityAvailability("variants", {
@@ -176,6 +182,7 @@ test("single-image capability request normalization accepts the approved rail co
     executionKind: "model_capability",
     localOperation: null,
     fallbackExecutionKind: null,
+    provenance: "external_model",
     contract: SINGLE_IMAGE_RAIL_CONTRACT,
     params: {},
     confidence: 0.61,
@@ -197,6 +204,7 @@ test("single-image direct affordance routing keeps polish local-first and escala
       executionKind: polish.executionKind,
       routeProfile: polish.routeProfile,
       localOperation: polish.localOperation,
+      provenance: polish.provenance,
     },
     {
       jobId: "polish",
@@ -204,6 +212,7 @@ test("single-image direct affordance routing keeps polish local-first and escala
       executionKind: "local_edit",
       routeProfile: "polish_local_first",
       localOperation: "polish",
+      provenance: "local_first",
     }
   );
 
@@ -245,6 +254,7 @@ test("single-image direct affordance routing keeps polish local-first and escala
   );
   assert.equal(availability.enabled, true);
   assert.equal(availability.executionKind, "local_edit");
+  assert.equal(availability.provenance, "local_first");
 });
 
 test("single-image capability receipt and disabled message stay generic", () => {

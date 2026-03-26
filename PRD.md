@@ -29,6 +29,7 @@ Juggernaut is a text-free-first, image-first desktop design workstation for non-
 - 3D scope for v1: printable relief or mesh export only.
 - Marketplace discovery such as VGen is phase 2, not MVP.
 - Hidden accessibility labels and screen-reader metadata are allowed even when the visible main workflow remains text-free.
+- Actionable controls must surface external model cost with a text-free right-edge strip on any action that may invoke an external model, while hidden labels and tooltips may explain exact execution provenance in words.
 - Telemetry policy:
   - connected or non-local mode defaults to collection enabled with user opt-out
   - local-only mode defaults to no upload, with explicit user opt-in if they want to send anonymized data
@@ -119,7 +120,7 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 4. The user drags one image onto the active session canvas.
 5. After first-use cloud-analysis consent, the system may opportunistically analyze the uploaded image through the design-review upload-analysis path, cache that analysis by image hash, and use it to improve future suggestions without blocking editing or design review.
 6. The left rail keeps two stable icon-only anchors: `Upload` and `Select`.
-7. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the deterministic precomputed action library.
+7. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the deterministic precomputed action library, while any action that may incur model cost shows a right-edge strip.
 8. The bottom rail exposes `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` as the communication layer for complex or non-prebaked changes.
 9. `Marker` lets the user place transient Photoshop-style freehand highlighter marks that are raw and pointer-faithful, without arrowheads, without prior image selection, and without requiring an image under the pointer.
 10. `Protect` uses the same visible freehand marking behavior as `Marker`, but its semantics are "do not change this area" when review or apply consumes the focus contract.
@@ -287,6 +288,7 @@ Notes:
   - `crop_or_outpaint`
   - `identity_preserving_variation`
 - The runtime, not the rail, resolves a capability to a deterministic local transform, a model-backed action, or a hybrid pipeline.
+- The UI must render model-cost-bearing routing back to the user through a persistent right-edge strip on buttons, direct affordances, and proposal/apply actions.
 - Provider and model names must stay out of the main editing loop.
 
 ### 10. Suggested Rail Job Contract
@@ -484,6 +486,7 @@ Rules:
 ### 14. Local-Only Mode
 - The app supports a local-only mode with no required internet access.
 - In local-only mode, cloud-only tools are visibly disabled or swapped for local equivalents.
+- In local-only mode, the model-cost strip remains visible on blocked actions so users can distinguish external-model paths from available local actions.
 - Local-only mode still supports a meaningful subset of the core workflow:
   - import
   - canvas transforms

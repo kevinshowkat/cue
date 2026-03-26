@@ -1741,6 +1741,40 @@ button.ghost:hover {
   height: var(--hud-tool-size);
 }
 
+.custom-tool-dock .tool.has-action-provenance,
+.juggernaut-tool-rail .tool.has-action-provenance,
+.session-tab-strip-action.has-action-provenance {
+  position: relative;
+}
+
+.action-provenance-affordance {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.action-provenance-cost-strip {
+  position: absolute;
+  top: 5px;
+  right: 2px;
+  bottom: 5px;
+  width: 4px;
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.18);
+}
+
+.action-provenance-cost-strip--local-first {
+  background:
+    linear-gradient(180deg, rgba(122, 245, 188, 0.98) 0%, rgba(122, 245, 188, 0.98) 40%, rgba(255, 208, 118, 0.96) 40%, rgba(255, 208, 118, 0.96) 100%);
+}
+
+.action-provenance-cost-strip--external-model {
+  background: linear-gradient(180deg, rgba(255, 219, 142, 0.98), rgba(255, 191, 72, 0.98));
+}
+
 .custom-tool-dock .tool.tool-create {
   color: rgba(255, 212, 0, 0.96);
 }
@@ -10453,6 +10487,7 @@ button.ghost:hover {
 }
 
 .session-tab-strip-action {
+  position: relative;
   width: 34px;
   height: 34px;
   display: inline-flex;
@@ -10471,6 +10506,10 @@ button.ghost:hover {
     transform 0.12s ease,
     color 0.12s ease,
     filter 0.12s ease;
+}
+
+.session-tab-strip-action.has-action-provenance {
+  padding-right: 14px;
 }
 
 .session-tab-strip-action svg {
@@ -10529,6 +10568,12 @@ button.ghost:hover {
   gap: 8px;
   padding: 0 12px;
   white-space: nowrap;
+}
+
+.session-tab-strip-action .action-provenance-cost-strip {
+  top: 4px;
+  right: 3px;
+  bottom: 4px;
 }
 
 .session-tab-runtime-action svg {
@@ -11426,6 +11471,10 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action {
     0 1px 2px rgba(17, 24, 32, 0.05);
 }
 
+body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance {
+  padding-right: 20px;
+}
+
 body.juggernaut-shell .brand-strip .session-tab-strip-new {
   border-color: rgba(88, 128, 184, 0.14);
   background:
@@ -11469,6 +11518,21 @@ body.juggernaut-shell .brand-strip .session-tab-runtime-action span {
 body.juggernaut-shell .brand-strip .session-tab-runtime-action svg {
   width: 15px;
   height: 15px;
+}
+
+body.juggernaut-shell .action-provenance-cost-strip {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.72),
+    0 3px 8px rgba(30, 35, 44, 0.1);
+}
+
+body.juggernaut-shell .action-provenance-cost-strip--local-first {
+  background:
+    linear-gradient(180deg, rgba(124, 171, 145, 0.96) 0%, rgba(124, 171, 145, 0.96) 40%, rgba(214, 179, 128, 0.96) 40%, rgba(214, 179, 128, 0.96) 100%);
+}
+
+body.juggernaut-shell .action-provenance-cost-strip--external-model {
+  background: linear-gradient(180deg, rgba(223, 190, 143, 0.98), rgba(193, 150, 86, 0.98));
 }
 
 body.juggernaut-shell .brand-strip .session-tab-strip-action:hover,

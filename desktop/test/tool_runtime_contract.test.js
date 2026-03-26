@@ -39,6 +39,7 @@ test("generateToolManifest maps descriptive input into a deterministic local too
   assert.equal(manifest.label, "Noir Wash");
   assert.equal(manifest.execution.kind, "local_edit");
   assert.equal(manifest.execution.operation, "grayscale");
+  assert.equal(manifest.provenance, "local_only");
   assert.equal(manifest.inputContract.minImages, 1);
   assert.equal(manifest.inputContract.maxImages, 1);
   assert.equal(manifest.receipt.reproducible, true);
@@ -81,6 +82,8 @@ test("buildToolInvocation emits the edit-branch contract with selection and exec
   assert.equal(invocation.requestId, "tool-runtime-7");
   assert.equal(invocation.tool.toolId, manifest.toolId);
   assert.equal(invocation.execution.operation, "blur");
+  assert.equal(invocation.tool.provenance, "local_only");
+  assert.equal(invocation.provenance, "local_only");
   assert.equal(invocation.target.activeImageId, "img-1");
   assert.deepEqual(invocation.target.selectedImageIds, ["img-1"]);
   assert.equal(invocation.receipt.manifestSchema, manifest.schema);
@@ -129,6 +132,8 @@ test("create tool invocation is a first-class runtime contract with previewable 
   assert.equal(invocation.tool.routeProfile, CREATE_TOOL_ROUTE_PROFILE);
   assert.equal(invocation.execution.kind, "local_manifest_builder");
   assert.equal(invocation.execution.generator, "juggernaut.local_manifest_builder.v1");
+  assert.equal(invocation.tool.provenance, "local_only");
+  assert.equal(invocation.provenance, "local_only");
   assert.deepEqual(invocation.execution.params.existingIds, ["mirror-punch"]);
   assert.equal(invocation.generatedManifest.schema, TOOL_MANIFEST_SCHEMA);
   assert.equal(invocation.generatedManifest.toolId, "mirror-punch-2");
@@ -164,6 +169,8 @@ test("single-image rail invocation uses the approved capability contract without
   assert.equal(invocation.jobId, "cut_out");
   assert.equal(invocation.capability, "subject_isolation");
   assert.equal(invocation.execution.kind, "model_capability");
+  assert.equal(invocation.tool.provenance, "external_model");
+  assert.equal(invocation.provenance, "external_model");
   assert.equal(invocation.tool.toolId, "cut_out");
   assert.equal(invocation.rail.stickyKey, "single-image-rail:cut_out");
   assert.equal(invocation.availability.enabled, true);
@@ -187,6 +194,8 @@ test("single-image direct affordance invocation resolves local-first and model-b
   assert.equal(polish.execution.kind, "local_edit");
   assert.equal(polish.execution.operation, "polish");
   assert.equal(polish.execution.executionType, "local_first");
+  assert.equal(polish.tool.provenance, "local_first");
+  assert.equal(polish.provenance, "local_first");
   assert.equal(polish.route.profile, "polish_local_first");
   assert.equal(polish.availability.enabled, true);
 
@@ -206,5 +215,7 @@ test("single-image direct affordance invocation resolves local-first and model-b
   assert.equal(relight.execution.kind, "model_capability");
   assert.equal(relight.route.executionKind, "model_capability");
   assert.equal(relight.execution.routeProfile, "relight_local_first");
+  assert.equal(relight.tool.provenance, "local_first");
+  assert.equal(relight.provenance, "local_first");
   assert.equal(relight.capability, "image_relight");
 });
