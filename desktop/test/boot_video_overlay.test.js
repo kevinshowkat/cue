@@ -77,6 +77,7 @@ test("startup boot overlay has fullscreen video treatment and fade-out dismissal
   assert.match(css, /\.boot-video-status-rail\s*\{/);
   assert.match(css, /bottom:\s*22px;/);
   assert.match(css, /\.boot-video-overlay\.is-shell-visible \.boot-video-status-rail\s*\{/);
+  assert.match(css, /\.boot-video-overlay\.is-video-ready \.boot-video-status-rail\s*\{/);
   assert.match(css, /\.boot-video-status-label\s*\{/);
   assert.match(css, /\.boot-video-progress-bar\s*\{/);
   assert.match(css, /\.boot-video-overlay\.is-shell-visible \.boot-video-copy\s*\{/);

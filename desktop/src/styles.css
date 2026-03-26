@@ -191,6 +191,11 @@ body {
   transform: translateY(0);
 }
 
+.boot-video-overlay.is-video-ready .boot-video-status-rail {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
 .boot-video-status-label {
   font-family: "IBM Plex Mono", monospace;
   font-size: 10px;
