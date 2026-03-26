@@ -9880,6 +9880,9 @@ function syncActionProvenanceBadge(button, provenance) {
   const costBearing = actionProvenanceHasModelCost(normalized);
   button.dataset.provenance = normalized;
   button.classList.toggle("has-action-provenance", costBearing);
+  button.classList.toggle("is-local-utility", normalized === ACTION_PROVENANCE.LOCAL_ONLY);
+  button.classList.toggle("is-local-first", normalized === ACTION_PROVENANCE.LOCAL_FIRST);
+  button.classList.toggle("is-external-model", normalized === ACTION_PROVENANCE.EXTERNAL_MODEL);
 
   const existing = typeof button.querySelector === "function" ? button.querySelector(".action-provenance-affordance") : null;
   const markup = renderActionProvenanceBadge(normalized);

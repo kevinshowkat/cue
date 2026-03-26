@@ -53,6 +53,13 @@ test("Titlebar runtime actions keep Agent Run on the model-backed provenance pat
   assert.match(app, /syncActionProvenanceBadge\(els\.juggernautAgentRunnerOpen,\s*ACTION_PROVENANCE\.EXTERNAL_MODEL\);/);
 });
 
+test("Shared provenance sync stamps semantic provenance classes onto titlebar actions", () => {
+  assert.match(app, /button\.classList\.toggle\("has-action-provenance",\s*costBearing\);/);
+  assert.match(app, /button\.classList\.toggle\("is-local-utility",\s*normalized === ACTION_PROVENANCE\.LOCAL_ONLY\);/);
+  assert.match(app, /button\.classList\.toggle\("is-local-first",\s*normalized === ACTION_PROVENANCE\.LOCAL_FIRST\);/);
+  assert.match(app, /button\.classList\.toggle\("is-external-model",\s*normalized === ACTION_PROVENANCE\.EXTERNAL_MODEL\);/);
+});
+
 test("Titlebar tab strip supports inline rename and left-edge review-state icons", () => {
   assert.match(app, /function startSessionTabRename\(tabId = ""\)/);
   assert.match(app, /if \(normalizedTabId !== String\(state\.activeTabId \|\| ""\)\.trim\(\)\) return false;/);
