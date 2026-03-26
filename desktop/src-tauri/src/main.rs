@@ -45,6 +45,7 @@ use url::Url;
 
 const MENU_CANVAS_IMPORT: &str = "canvas_import_photos";
 const MENU_CANVAS_EXPORT_PSD: &str = "canvas_export_psd";
+const MENU_CANVAS_EXPORT_PNG: &str = "canvas_export_png";
 const MENU_CANVAS_SETTINGS: &str = "canvas_settings";
 const NATIVE_MENU_ACTION_EVENT: &str = "native-menu-action";
 const DESIGN_REVIEW_PLANNER_MODEL: &str = "gpt-5.4";
@@ -69,14 +70,16 @@ const REVIEW_STANDARD_PLANNER_HTTP_TIMEOUT: Duration = Duration::from_secs(90);
 fn build_app_menu(app_name: &str) -> Menu {
     let import = CustomMenuItem::new(MENU_CANVAS_IMPORT.to_string(), "Import Photos")
         .accelerator("CmdOrCtrl+O");
-    let export_psd = CustomMenuItem::new(MENU_CANVAS_EXPORT_PSD.to_string(), "Export PSD")
+    let export_psd = CustomMenuItem::new(MENU_CANVAS_EXPORT_PSD.to_string(), "PSD")
         .accelerator("CmdOrCtrl+Shift+E");
+    let export_png = CustomMenuItem::new(MENU_CANVAS_EXPORT_PNG.to_string(), "PNG");
     let settings = CustomMenuItem::new(MENU_CANVAS_SETTINGS.to_string(), "Settings…")
         .accelerator("CmdOrCtrl+,");
+    let export_menu = Submenu::new("Export", Menu::new().add_item(export_psd).add_item(export_png));
 
     let canvas_menu = Menu::new()
         .add_item(import)
-        .add_item(export_psd)
+        .add_submenu(export_menu)
         .add_native_item(MenuItem::Separator)
         .add_item(settings);
 
@@ -2194,7 +2197,11 @@ fn export_run(
         "receipt-export-{}.json",
         chrono::Utc::now().format("%Y%m%dT%H%M%S")
     );
-    let receipt_path = run_dir_path.join(receipt_name);
+    let receipt_parent = out_path_buf
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| run_dir_path.clone());
+    let receipt_path = receipt_parent.join(receipt_name);
     let receipt_payload = build_export_receipt_payload(
         &request,
         &receipt_path,
@@ -5260,6 +5267,7 @@ fn main() {
         .on_menu_event(|event| match event.menu_item_id() {
             MENU_CANVAS_IMPORT => emit_native_menu_action(&event.window(), "import_photos"),
             MENU_CANVAS_EXPORT_PSD => emit_native_menu_action(&event.window(), "export_psd"),
+            MENU_CANVAS_EXPORT_PNG => emit_native_menu_action(&event.window(), "export_png"),
             MENU_CANVAS_SETTINGS => emit_native_menu_action(&event.window(), "open_settings"),
             _ => {}
         })

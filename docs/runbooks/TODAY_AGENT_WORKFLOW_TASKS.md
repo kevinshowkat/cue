@@ -165,10 +165,10 @@ Hard constraints:
 
 Mission:
 - Verify these flows:
-  1. Marker -> Design Review -> Accept Proposal -> Export PSD
-  2. Protect -> Remove People -> Export PSD
-  3. Make Space -> Relight -> Export PSD
-  4. Remove People -> Polish -> Export PSD
+  1. Marker -> Design Review -> Accept Proposal -> Export -> PSD
+  2. Protect -> Remove People -> Export -> PSD
+  3. Make Space -> Relight -> Export -> PSD
+  4. Remove People -> Polish -> Export -> PSD
 - Use replay traces where available
 - Validate receipts and exported artifacts
 

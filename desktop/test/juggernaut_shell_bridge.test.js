@@ -29,6 +29,9 @@ test("Juggernaut shell chrome exposes selection status, export button, rail root
   assert.match(html, /id=\"agent-runner-step\"/);
   assert.match(html, /id=\"agent-runner-auto\"/);
   assert.match(html, /id=\"juggernaut-export-psd\"/);
+  assert.match(html, /id=\"juggernaut-export-menu\"/);
+  assert.match(html, /id=\"juggernaut-export-format-psd\"/);
+  assert.match(html, /id=\"juggernaut-export-format-png\"/);
   assert.match(html, /id=\"action-grid\"[^>]*aria-label=\"Juggernaut left rail\"/);
   assert.match(html, /id=\"drop-hint\"/);
 });
@@ -39,6 +42,7 @@ test("Juggernaut shell bridge exposes tool/export registration and request metho
   assert.match(app, /registerToolInvoker\(fn\)/);
   assert.match(app, /registerSingleImageRailRanker\(fn\)/);
   assert.match(app, /registerPsdExportHandler\(fn\)/);
+  assert.match(app, /requestExport\(meta\s*=\s*\{\}\)/);
   assert.match(app, /requestToolInvocation\(toolKey,\s*meta\s*=\s*\{\}\)/);
   assert.match(app, /requestPsdExport\(meta\s*=\s*\{\}\)/);
   assert.match(app, /agentRunnerBridgeKey:\s*AGENT_RUNNER_BRIDGE_KEY/);
@@ -152,14 +156,16 @@ test("Juggernaut shell bridge emits integration events for tools and PSD export"
   assert.match(app, /juggernaut:shell-ready/);
   assert.match(app, /juggernaut:runtime-visibility-changed/);
   assert.match(app, /juggernaut:tool-requested/);
+  assert.match(app, /juggernaut:export-requested/);
   assert.match(app, /juggernaut:export-psd-requested/);
   assert.match(app, /juggernaut:apply-tool/);
+  assert.match(app, /juggernaut:export/);
   assert.match(app, /juggernaut:export-psd/);
 });
 
 test("Juggernaut shell export falls back to the native PSD exporter when no handler is registered", () => {
   assert.match(app, /const exportHookReady = typeof state\.juggernautShell\.psdExportHandler === "function" \|\| typeof invoke === "function";/);
-  assert.match(app, /if \(typeof invoke === "function"\) \{\s*await exportRun\(\);\s*return true;\s*\}/);
+  assert.match(app, /if \(typeof invoke === "function"\) \{\s*return await exportRun\(\);\s*\}/);
   assert.doesNotMatch(app, /Export PSD hook ready for the export branch/);
 });
 

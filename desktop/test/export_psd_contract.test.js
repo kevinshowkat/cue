@@ -40,8 +40,17 @@ test("PSD export limitations explicitly call out flattened fidelity", () => {
 });
 
 test("Export run invokes Tauri with a structured PSD request", () => {
-  assert.match(app, /const outPath = `\$\{state\.runDir\}\/export-\$\{stem\}-\$\{stamp\}\.psd`;/);
-  assert.match(app, /const flattenedSourcePath = `\$\{state\.runDir\}\/export-\$\{stem\}-\$\{stamp\}\.flattened\.png`;/);
+  assert.match(app, /const outPath = await chooseExportDestinationPath\(\{[\s\S]*format: "psd",[\s\S]*suggestedStem: stem,[\s\S]*stamp,[\s\S]*\}\);/);
+  assert.match(app, /const flattenedSourcePath =[\s\S]*join\(state\.runDir,\s*`export-\$\{stem\}-\$\{stamp\}\.flattened\.png`\)/);
   assert.match(app, /const request = buildPsdExportRequest\(\{ outPath, flattenedSourcePath, composite \}\);/);
   assert.match(app, /await invoke\("export_run", \{ request \}\);/);
+});
+
+test("Export prompts for a save path so the user can rename the file and keeps PNG receipts beside it", () => {
+  assert.match(app, /const suggestedName = `export-\$\{exportBaseStem\(suggestedStem\)\}-\$\{String\(stamp \|\| exportTimestampTag\(\)\)\}\$\{extension\}`;/);
+  assert.match(app, /const picked = await save\(\{[\s\S]*defaultPath,[\s\S]*filters: \[\{ name: label, extensions: \[extension\.replace\("\.", ""\)\] \}\],[\s\S]*\}\);/);
+  assert.match(app, /const normalizedPath = normalizeExportPathExtension\(selectedPath,\s*extension\);/);
+  assert.match(app, /const outPath = await chooseExportDestinationPath\(\{[\s\S]*format: "png",[\s\S]*suggestedStem: stem,[\s\S]*stamp,[\s\S]*\}\);/);
+  assert.match(app, /const exportDir = typeof dirname === "function" \? await dirname\(outPath\)\.catch\(\(\) => ""\) : "";/);
+  assert.match(app, /outputDir: exportDir \|\| state\.runDir/);
 });

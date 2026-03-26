@@ -43,7 +43,7 @@ Marks and Magic Select regions remain valid prep for Agent Run:
 
 Important:
 
-- Agent Run now checks the visible canvas against that goal contract before allowing `stop` or `Export PSD`.
+- Agent Run now checks the visible canvas against that goal contract before allowing `stop` or `Export -> PSD`.
 - If a required named person or interaction is still missing, the run should continue instead of stopping cleanly.
 - If the current goal and visible prep state already match a ready design-review request, Agent Run should reuse that review instead of asking for the same review again.
 - Goal contract compile and stop-check requests use a bounded 45-second HTTP planner path rather than the slower websocket-first planner path.
