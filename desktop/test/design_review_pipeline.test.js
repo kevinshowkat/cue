@@ -428,6 +428,109 @@ test("design review pipeline preserves Highlight and Make Space semantics in app
   assert.deepEqual(applyEvents[0].reservedSpaceAreaIds, ["space-right"]);
 });
 
+test("design review pipeline preserves screenshot-polish preview, region, and selected proposal trace state", async () => {
+  const applyEvents = [];
+  const applyCalls = [];
+  const pipeline = createDesignReviewPipeline({
+    providerRouter: {
+      async runPlanner() {
+        return {
+          text: JSON.stringify({
+            proposals: [
+              {
+                label: "Polish CTA hierarchy",
+                imageId: "img-ui",
+                actionType: "background_replace",
+                why: "Tighten the product card while protecting the top nav.",
+                previewBrief: "Preview a cleaner hero block and CTA.",
+                applyBrief: "Polish the screenshot while leaving the top navigation unchanged.",
+                previewImagePath: "/tmp/review-ui-full-frame.png",
+                rationaleCodes: ["ui_spacing", "cta_focus"],
+              },
+            ],
+          }),
+        };
+      },
+    },
+    runApply: async (payload) => {
+      applyCalls.push(payload);
+      return {
+        outputPath: payload.outputPath || "/tmp/review-screenshot-output.png",
+      };
+    },
+    onApplyEvent: (event) => {
+      applyEvents.push(event);
+    },
+  });
+
+  const review = await pipeline.startReview({
+    request: {
+      requestId: "review-screenshot-pipeline",
+      sessionId: "tab:tab-ui",
+      primaryImageId: "img-ui",
+      visibleCanvasRef: "/tmp/review-ui-visible.png",
+      focusInputs: [
+        {
+          focusInputId: "focus-cta",
+          kind: "highlight",
+          imageId: "img-ui",
+          bounds: { x: 420, y: 180, width: 360, height: 240 },
+        },
+      ],
+      protectedRegions: [
+        {
+          protectedRegionId: "protected-nav",
+          imageId: "img-ui",
+          bounds: { x: 0, y: 0, width: 1280, height: 96 },
+        },
+      ],
+      visibleCanvasContext: {
+        runDir: "/tmp/review-screenshot-run",
+        activeTabId: "tab-ui",
+        images: [
+          {
+            id: "img-ui",
+            path: "/tmp/ui-screenshot.png",
+            rectCss: { left: 0, top: 0, width: 1280, height: 720 },
+          },
+        ],
+      },
+    },
+  });
+
+  assert.equal(review.proposals[0].previewImagePath, "/tmp/review-ui-full-frame.png");
+  assert.deepEqual(review.proposals[0].changedRegionBounds, [
+    { x: 420, y: 180, width: 360, height: 240 },
+  ]);
+  assert.deepEqual(review.proposals[0].preserveRegionIds, ["protected-nav"]);
+  assert.deepEqual(review.proposals[0].rationaleCodes, ["ui_spacing", "cta_focus"]);
+
+  const applyResult = await pipeline.applyProposal(review.proposals[0].proposalId, {
+    sessionKey: "tab:tab-ui",
+  });
+  const finalState = pipeline.getState();
+
+  assert.equal(applyResult.ok, true);
+  assert.equal(applyCalls.length, 1);
+  assert.equal(applyCalls[0].proposal.previewImagePath, "/tmp/review-ui-full-frame.png");
+  assert.deepEqual(applyCalls[0].proposal.changedRegionBounds, [
+    { x: 420, y: 180, width: 360, height: 240 },
+  ]);
+  assert.deepEqual(applyCalls[0].proposal.preserveRegionIds, ["protected-nav"]);
+  assert.deepEqual(applyCalls[0].proposal.rationaleCodes, ["ui_spacing", "cta_focus"]);
+  assert.equal(finalState.selectedProposalId, review.proposals[0].proposalId);
+  assert.equal(finalState.lastApplyEvent?.selectedProposalId, review.proposals[0].proposalId);
+  assert.equal(finalState.lastApplyEvent?.previewImagePath, "/tmp/review-ui-full-frame.png");
+  assert.deepEqual(finalState.lastApplyEvent?.changedRegionBounds, [
+    { x: 420, y: 180, width: 360, height: 240 },
+  ]);
+  assert.deepEqual(finalState.lastApplyEvent?.preserveRegionIds, ["protected-nav"]);
+  assert.deepEqual(finalState.slots[0].apply?.preserveRegionIds, ["protected-nav"]);
+  assert.deepEqual(applyEvents.map((event) => event.phase), ["started", "succeeded"]);
+  assert.equal(applyEvents[0].selectedProposalId, review.proposals[0].proposalId);
+  assert.equal(applyEvents[1].selectedProposalId, review.proposals[0].proposalId);
+});
+
 test("design review pipeline resolves apply target from visible image context when proposal and request omit primary image", async () => {
   const applyCalls = [];
   const pipeline = createDesignReviewPipeline({

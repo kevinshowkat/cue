@@ -30,6 +30,17 @@ function cloneJson(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function uniqueStrings(values = [], { limit = Infinity } = {}) {
+  const out = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const text = String(value || "").trim();
+    if (!text || out.includes(text)) continue;
+    out.push(text);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 function normalizeProviderPreference(value, validProviders) {
   const provider = readFirstString(value).toLowerCase();
   return validProviders.has(provider) ? provider : "";
@@ -158,13 +169,36 @@ function buildProviderDebugInfo(request = {}, { response = null, error = null } 
   const provider = readFirstString(response?.provider, request?.provider) || null;
   const transport =
     readFirstString(response?.transport, request?.transport) || resolveProviderApiPlan(request).primaryTransport || null;
+  const proposalId = readFirstString(request?.proposalId) || null;
+  const selectedProposalId = readFirstString(request?.selectedProposalId, request?.proposalId) || null;
   return {
     capturedAt: new Date().toISOString(),
     tauriCommand: DESIGN_REVIEW_PROVIDER_COMMAND,
     provider,
+    proposalId,
+    selectedProposalId,
     requestedModel,
     normalizedModel,
     transport,
+    previewImagePath: readFirstString(request?.previewImagePath, request?.preview_image_path) || null,
+    changedRegionBounds: Array.isArray(request?.changedRegionBounds)
+      ? cloneJson(request.changedRegionBounds)
+      : [],
+    preserveRegionIds: uniqueStrings(
+      [
+        ...(Array.isArray(request?.preserveRegionIds) ? request.preserveRegionIds : []),
+        ...(Array.isArray(request?.preserve_region_ids) ? request.preserve_region_ids : []),
+        ...(Array.isArray(request?.protectedRegionIds) ? request.protectedRegionIds : []),
+      ],
+      { limit: 12 }
+    ),
+    rationaleCodes: uniqueStrings(
+      [
+        ...(Array.isArray(request?.rationaleCodes) ? request.rationaleCodes : []),
+        ...(Array.isArray(request?.rationale_codes) ? request.rationale_codes : []),
+      ],
+      { limit: 6 }
+    ),
     route: {
       kind: readFirstString(request?.kind) || null,
       provider,

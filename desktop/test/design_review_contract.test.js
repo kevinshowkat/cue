@@ -301,6 +301,98 @@ test("design review planner response clamps proposal targets to the highlighted 
   assert.equal(response.proposals[0].imageId, "img-squid");
 });
 
+test("design review planner response normalizes screenshot-polish preview and region trace fields", () => {
+  const response = parseDesignReviewPlannerResponse(
+    JSON.stringify({
+      proposals: [
+        {
+          label: "Polish UI hierarchy",
+          imageId: "img-ui",
+          actionType: "background_replace",
+          why: "Tighten the frame while preserving nav chrome.",
+          previewBrief: "Show a more polished product hero.",
+          applyBrief: "Polish the screenshot while keeping the top nav unchanged.",
+          previewImagePath: "/tmp/review-ui-full-frame.png",
+          changedRegionBounds: [{ x: 420, y: 180, width: 360, height: 240 }],
+          rationaleCodes: ["ui_spacing", "cta_focus"],
+        },
+      ],
+    }),
+    {
+      requestId: "review-screenshot-1",
+      primaryImageId: "img-ui",
+      protectedRegions: [
+        {
+          protectedRegionId: "protected-nav",
+          imageId: "img-ui",
+          bounds: { x: 0, y: 0, width: 1280, height: 96 },
+        },
+      ],
+      visibleCanvasContext: {
+        images: [
+          {
+            id: "img-ui",
+            path: "/tmp/ui-source.png",
+            rectCss: { left: 0, top: 0, width: 1280, height: 720 },
+          },
+        ],
+      },
+      slotCount: 3,
+    }
+  );
+
+  assert.equal(response.ok, true);
+  assert.equal(response.proposals.length, 1);
+  assert.equal(response.proposals[0].previewImagePath, "/tmp/review-ui-full-frame.png");
+  assert.deepEqual(response.proposals[0].changedRegionBounds, [
+    { x: 420, y: 180, width: 360, height: 240 },
+  ]);
+  assert.deepEqual(response.proposals[0].preserveRegionIds, ["protected-nav"]);
+  assert.deepEqual(response.proposals[0].rationaleCodes, ["ui_spacing", "cta_focus"]);
+  assert.match(response.proposals[0].proposalId, /^review-screenshot-1:proposal:/);
+});
+
+test("design review planner response assigns stable fallback proposal ids independent of ranking order", () => {
+  const request = {
+    requestId: "review-stable-proposals",
+    primaryImageId: "img-1",
+    slotCount: 3,
+  };
+  const proposalA = {
+    label: "Warm backdrop",
+    imageId: "img-1",
+    actionType: "background_replace",
+    why: "Give the frame more warmth.",
+    previewBrief: "Preview a warmer backdrop.",
+    applyBrief: "Warm the backdrop only.",
+  };
+  const proposalB = {
+    label: "Open right-side room",
+    imageId: "img-1",
+    actionType: "crop_or_outpaint",
+    why: "Make room for UI copy.",
+    previewBrief: "Preview more room on the right.",
+    applyBrief: "Extend the screenshot to the right for copy space.",
+  };
+  const forward = parseDesignReviewPlannerResponse(
+    JSON.stringify({ proposals: [proposalA, proposalB] }),
+    request
+  ).proposals;
+  const reverse = parseDesignReviewPlannerResponse(
+    JSON.stringify({ proposals: [proposalB, proposalA] }),
+    request
+  ).proposals;
+
+  const forwardIds = new Map(forward.map((proposal) => [proposal.label, proposal.proposalId]));
+  const reverseIds = new Map(reverse.map((proposal) => [proposal.label, proposal.proposalId]));
+
+  assert.equal(forwardIds.get("Warm backdrop"), reverseIds.get("Warm backdrop"));
+  assert.equal(
+    forwardIds.get("Open right-side room"),
+    reverseIds.get("Open right-side room")
+  );
+});
+
 test("design review skeleton slots reserve 2-3 proposal slots immediately", () => {
   const slots = createDesignReviewSkeletonSlots({
     request: {
@@ -559,6 +651,55 @@ test("design review apply request preserves Protect and Make Space focus semanti
   assert.equal(applyRequest.preserveReservedSpace, true);
   assert.equal(applyRequest.protectedRegions.length, 1);
   assert.equal(applyRequest.reservedSpaceIntent?.areas.length, 1);
+});
+
+test("design review apply request carries screenshot-polish trace fields and stable selection ids", () => {
+  const applyRequest = buildDesignReviewApplyRequest({
+    request: {
+      requestId: "review-screenshot-apply",
+      sessionId: "session-screenshot-apply",
+      primaryImageId: "img-ui",
+      protectedRegions: [
+        {
+          protectedRegionId: "protected-nav",
+          imageId: "img-ui",
+          bounds: { x: 0, y: 0, width: 1280, height: 96 },
+        },
+      ],
+      visibleCanvasContext: {
+        images: [
+          {
+            id: "img-ui",
+            path: "/tmp/ui-apply.png",
+            rectCss: { left: 0, top: 0, width: 1280, height: 720 },
+          },
+        ],
+      },
+    },
+    proposal: {
+      imageId: "img-ui",
+      label: "Polish CTA hierarchy",
+      actionType: "background_replace",
+      applyBrief: "Polish the screenshot while leaving the top nav untouched.",
+      previewImagePath: "/tmp/ui-full-preview.png",
+      rationaleCodes: ["ui_spacing", "cta_focus"],
+    },
+    targetImage: {
+      imageId: "img-ui",
+      path: "/tmp/ui-apply.png",
+    },
+  });
+
+  assert.match(applyRequest.proposalId || "", /^review-screenshot-apply:proposal:/);
+  assert.equal(applyRequest.selectedProposalId, applyRequest.proposalId);
+  assert.equal(applyRequest.previewImagePath, "/tmp/ui-full-preview.png");
+  assert.deepEqual(applyRequest.changedRegionBounds, [
+    { x: 0, y: 0, width: 1280, height: 720 },
+  ]);
+  assert.deepEqual(applyRequest.preserveRegionIds, ["protected-nav"]);
+  assert.deepEqual(applyRequest.rationaleCodes, ["ui_spacing", "cta_focus"]);
+  assert.match(applyRequest.prompt, /"changedRegionBounds": \[/);
+  assert.match(applyRequest.prompt, /"preserveRegionIds": \[/);
 });
 
 test("design review apply request resolves target and fallback references from the existing request snapshot", () => {

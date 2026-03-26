@@ -49,6 +49,23 @@ function clampText(value, maxLen = 220) {
   return `${text.slice(0, Math.max(0, maxLen - 1))}…`;
 }
 
+function stableHash(value = "") {
+  const text = String(value ?? "");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function sanitizeProposalIdSegment(value = "", fallback = "proposal") {
+  const normalized = readFirstString(value)
+    .replace(/[^a-z0-9._:-]+/gi, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || fallback;
+}
+
 function normalizeProposalEffectStatement(value, maxLen = 140) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return "";
@@ -82,6 +99,33 @@ function normalizeBounds(raw) {
     width: Math.max(1, width),
     height: Math.max(1, height),
   };
+}
+
+function normalizeBoundsList(values = [], { limit = 6 } = {}) {
+  const list = Array.isArray(values) ? values : values == null ? [] : [values];
+  const out = [];
+  const seen = new Set();
+  for (const value of list) {
+    const bounds = normalizeBounds(asRecord(value?.bounds) ? value.bounds : value);
+    if (!bounds) continue;
+    const key = `${bounds.x}:${bounds.y}:${bounds.width}:${bounds.height}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(bounds);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function normalizePathField(...values) {
+  for (const value of values) {
+    const direct = readFirstString(value);
+    if (direct) return direct;
+    const record = asRecord(value);
+    const path = readFirstString(record?.path, record?.imagePath, record?.image_path);
+    if (path) return path;
+  }
+  return "";
 }
 
 function normalizeCanvasRect(raw) {
@@ -346,6 +390,172 @@ function normalizeTargetRegion(raw = {}) {
     regionCandidateId,
     bounds,
   };
+}
+
+function visibleImageBoundsFromRequest(request = {}, imageId = "") {
+  const normalizedImageId = readFirstString(imageId);
+  if (!normalizedImageId) return null;
+  const visibleCanvasContext = asRecord(request?.visibleCanvasContext) || {};
+  const images = Array.isArray(visibleCanvasContext.images)
+    ? visibleCanvasContext.images.filter((entry) => entry && typeof entry === "object")
+    : [];
+  const match =
+    images.find(
+      (entry) => readFirstString(entry?.id, entry?.imageId, entry?.image_id) === normalizedImageId
+    ) || null;
+  if (!match) return null;
+  return (
+    normalizeBounds(match.bounds) ||
+    normalizeBounds({
+      x: match?.rectCss?.x ?? match?.rectCss?.left,
+      y: match?.rectCss?.y ?? match?.rectCss?.top,
+      width: match?.rectCss?.width,
+      height: match?.rectCss?.height,
+    }) ||
+    null
+  );
+}
+
+function normalizeProposalPreviewImagePath(raw = {}) {
+  const record = asRecord(raw) || {};
+  return (
+    normalizePathField(
+      record.previewImagePath,
+      record.preview_image_path,
+      record.fullFramePreviewImagePath,
+      record.full_frame_preview_image_path,
+      record.previewImage,
+      record.preview_image,
+      record.fullFramePreview,
+      record.full_frame_preview
+    ) || null
+  );
+}
+
+function normalizeProposalRationaleCodes(raw = {}) {
+  const record = asRecord(raw) || {};
+  const source =
+    record.rationaleCodes ??
+    record.rationale_codes ??
+    record.reasonCodes ??
+    record.reason_codes ??
+    [];
+  const values = Array.isArray(source) ? source : String(source || "").split(/[,\n]+/);
+  return uniqueStrings(values, { limit: 6 });
+}
+
+function normalizeProposalPreserveRegionIds(raw = {}, focusContract = null) {
+  const record = asRecord(raw) || {};
+  return uniqueStrings(
+    [
+      ...(Array.isArray(record.preserveRegionIds) ? record.preserveRegionIds : []),
+      ...(Array.isArray(record.preserve_region_ids) ? record.preserve_region_ids : []),
+      ...(Array.isArray(record.preserveRegions)
+        ? record.preserveRegions.map((entry) =>
+            readFirstString(entry?.protectedRegionId, entry?.preserveRegionId, entry?.id)
+          )
+        : []),
+      ...(Array.isArray(record.preserve_regions)
+        ? record.preserve_regions.map((entry) =>
+            readFirstString(entry?.protectedRegionId, entry?.preserveRegionId, entry?.id)
+          )
+        : []),
+      ...protectedRegionIdsFromList(focusContract?.protectedRegions || []),
+    ],
+    { limit: 12 }
+  );
+}
+
+function normalizeProposalChangedRegionBounds({
+  raw = {},
+  request = {},
+  targetRegion = null,
+  focusContract = null,
+  imageId = null,
+} = {}) {
+  const record = asRecord(raw) || {};
+  const explicit = normalizeBoundsList(
+    record.changedRegionBounds ||
+      record.changed_region_bounds ||
+      record.changedRegions ||
+      record.changed_regions ||
+      [],
+    { limit: 6 }
+  );
+  if (explicit.length) return explicit;
+  const scopedTargetBounds = normalizeBoundsList(targetRegion?.bounds, { limit: 6 });
+  if (scopedTargetBounds.length) return scopedTargetBounds;
+  const focusBounds = normalizeBoundsList(
+    Array.isArray(focusContract?.focusInputs)
+      ? focusContract.focusInputs.map((entry) => entry?.bounds)
+      : [],
+    { limit: 6 }
+  );
+  if (focusBounds.length) return focusBounds;
+  const chosenRegionBounds = normalizeBoundsList(request?.chosenRegionCandidate?.bounds, { limit: 6 });
+  if (chosenRegionBounds.length) return chosenRegionBounds;
+  return normalizeBoundsList(visibleImageBoundsFromRequest(request, imageId), { limit: 6 });
+}
+
+function buildStableProposalId({
+  request = {},
+  imageId = null,
+  label = "",
+  actionType = "",
+  why = "",
+  previewBrief = "",
+  applyBrief = "",
+  targetRegion = null,
+  changedRegionBounds = [],
+  preserveRegionIds = [],
+  rationaleCodes = [],
+} = {}) {
+  const requestKey = sanitizeProposalIdSegment(request?.requestId, "review");
+  const actionKey = sanitizeProposalIdSegment(actionType, "custom_edit");
+  const fingerprint = stableHash(
+    JSON.stringify({
+      imageId: readFirstString(imageId) || null,
+      label: clampText(label, 80) || null,
+      actionType: readFirstString(actionType) || null,
+      why: clampText(why, 160) || null,
+      previewBrief: clampText(previewBrief, 140) || null,
+      applyBrief: clampText(applyBrief, 180) || null,
+      targetRegion: normalizeTargetRegion(targetRegion || {}),
+      changedRegionBounds: normalizeBoundsList(changedRegionBounds, { limit: 6 }),
+      preserveRegionIds: uniqueStrings(preserveRegionIds, { limit: 12 }),
+      rationaleCodes: uniqueStrings(rationaleCodes, { limit: 6 }),
+    })
+  );
+  return `${requestKey}:proposal:${actionKey}:${fingerprint}`;
+}
+
+function ensureUniqueProposalIds(proposals = []) {
+  const used = new Set();
+  return (Array.isArray(proposals) ? proposals : []).map((proposal, index) => {
+    const baseId = readFirstString(proposal?.proposalId) || `proposal:${index + 1}`;
+    if (!used.has(baseId)) {
+      used.add(baseId);
+      return proposal;
+    }
+    const disambiguator = stableHash(
+      JSON.stringify({
+        ...proposal,
+        rank: null,
+        status: null,
+      })
+    );
+    let nextId = `${baseId}:${disambiguator}`;
+    let counter = 2;
+    while (used.has(nextId)) {
+      nextId = `${baseId}:${disambiguator}:${counter}`;
+      counter += 1;
+    }
+    used.add(nextId);
+    return {
+      ...proposal,
+      proposalId: nextId,
+    };
+  });
 }
 
 function normalizeReviewTool(raw = "") {
@@ -1858,22 +2068,39 @@ function buildDesignReviewApplyRequestSnapshot(request = {}) {
 }
 
 export function buildDesignReviewApplyPrompt({ request = {}, proposal = {} } = {}) {
+  const normalizedRequest = asRecord(request) || {};
   const normalizedProposal = asRecord(proposal) || {};
   const focusContract = resolveProposalFocusContract({
-    request,
+    request: normalizedRequest,
     proposal: normalizedProposal,
   });
   const negativeConstraints = uniqueStrings(
     normalizedProposal.negativeConstraints || normalizedProposal.negative_constraints || [],
     { limit: 8 }
   );
+  const targetRegion = normalizeTargetRegion(
+    normalizedProposal.targetRegion || normalizedProposal.target_region || {}
+  );
+  const changedRegionBounds = normalizeProposalChangedRegionBounds({
+    raw: normalizedProposal,
+    request: normalizedRequest,
+    targetRegion,
+    focusContract,
+    imageId: readFirstString(normalizedProposal.imageId, normalizedRequest.primaryImageId) || null,
+  });
+  const preserveRegionIds = normalizeProposalPreserveRegionIds(normalizedProposal, focusContract);
+  const rationaleCodes = normalizeProposalRationaleCodes(normalizedProposal);
   const payload = {
-    requestSnapshot: buildDesignReviewApplyRequestSnapshot(request),
+    requestSnapshot: buildDesignReviewApplyRequestSnapshot(normalizedRequest),
     proposal: {
       label: clampText(normalizedProposal.label, 90),
       actionType: clampText(normalizedProposal.actionType, 96),
       applyBrief: clampText(normalizedProposal.applyBrief, 320),
-      targetRegion: normalizeTargetRegion(normalizedProposal.targetRegion || normalizedProposal.target_region || {}),
+      targetRegion,
+      previewImagePath: normalizeProposalPreviewImagePath(normalizedProposal),
+      changedRegionBounds,
+      preserveRegionIds,
+      rationaleCodes,
       negativeConstraints,
       focusInputs: focusContract.focusInputs,
       protectedRegions: focusContract.protectedRegions,
@@ -1889,6 +2116,9 @@ export function buildDesignReviewApplyPrompt({ request = {}, proposal = {} } = {
     "Use referenceImages[] as guidance only and do not modify or return separate outputs for them.",
     "Return exactly one final rendered image for targetImage.",
     "Treat negativeConstraints as hard requirements.",
+    changedRegionBounds.length
+      ? "Use changedRegionBounds as the intended edit area inside the full-frame targetImage."
+      : null,
     focusContract.focusInputs.some((entry) => normalizeFocusKind(entry?.kind) === "highlight")
       ? "Keep the edit centered on highlighted focus inputs when they are present."
       : null,
@@ -1930,13 +2160,42 @@ export function buildDesignReviewApplyRequest({
     visibleImagesById,
     target,
   });
+  const targetRegion = normalizeTargetRegion(
+    normalizedProposal.targetRegion || normalizedProposal.target_region || {}
+  );
+  const previewImagePath = normalizeProposalPreviewImagePath(normalizedProposal);
+  const changedRegionBounds = normalizeProposalChangedRegionBounds({
+    raw: normalizedProposal,
+    request: normalizedRequest,
+    targetRegion,
+    focusContract,
+    imageId: readFirstString(normalizedProposal.imageId, normalizedRequest.primaryImageId) || null,
+  });
+  const preserveRegionIds = normalizeProposalPreserveRegionIds(normalizedProposal, focusContract);
+  const rationaleCodes = normalizeProposalRationaleCodes(normalizedProposal);
+  const proposalId =
+    readFirstString(normalizedProposal.proposalId) ||
+    buildStableProposalId({
+      request: normalizedRequest,
+      imageId: readFirstString(normalizedProposal.imageId, normalizedRequest.primaryImageId) || null,
+      label: normalizedProposal.label,
+      actionType: normalizedProposal.actionType,
+      why: normalizedProposal.why,
+      previewBrief: normalizedProposal.previewBrief,
+      applyBrief: normalizedProposal.applyBrief,
+      targetRegion,
+      changedRegionBounds,
+      preserveRegionIds,
+      rationaleCodes,
+    });
   return {
     schemaVersion: DESIGN_REVIEW_APPLY_REQUEST_SCHEMA,
     kind: "apply",
     provider: readFirstString(provider) || "google",
     requestId: readFirstString(normalizedRequest.requestId) || null,
     sessionId: readFirstString(normalizedRequest.sessionId) || null,
-    proposalId: readFirstString(normalizedProposal.proposalId) || null,
+    proposalId,
+    selectedProposalId: proposalId,
     requestedModel,
     normalizedModel,
     model: requestedModel,
@@ -1953,6 +2212,10 @@ export function buildDesignReviewApplyRequest({
     reservedSpaceAreaIds: reservedSpaceAreaIdsFromIntent(focusContract.reservedSpaceIntent),
     preserveProtectedRegions: focusContract.protectedRegions.length > 0,
     preserveReservedSpace: Boolean(focusContract.reservedSpaceIntent?.areas?.length),
+    previewImagePath,
+    changedRegionBounds,
+    preserveRegionIds,
+    rationaleCodes,
     targetImage: target,
     referenceImages: referenceImageList,
     outputPath: readFirstString(outputPath) || null,
@@ -2096,10 +2359,33 @@ function normalizeProposal(rawProposal = {}, request = {}, { index = 0 } = {}) {
     180
   );
   const negativeConstraints = normalizeNegativeConstraints(raw.negativeConstraints || raw.negative_constraints || []);
+  const previewImagePath = normalizeProposalPreviewImagePath(raw);
+  const changedRegionBounds = normalizeProposalChangedRegionBounds({
+    raw,
+    request,
+    targetRegion,
+    focusContract,
+    imageId,
+  });
+  const preserveRegionIds = normalizeProposalPreserveRegionIds(raw, focusContract);
+  const rationaleCodes = normalizeProposalRationaleCodes(raw);
   return {
     schemaVersion: DESIGN_REVIEW_PROPOSAL_SCHEMA,
     proposalId:
-      readFirstString(raw.proposalId, raw.proposal_id, raw.id) || `${request.requestId || "review"}:proposal:${index + 1}`,
+      readFirstString(raw.proposalId, raw.proposal_id, raw.id) ||
+      buildStableProposalId({
+        request,
+        imageId,
+        label,
+        actionType,
+        why,
+        previewBrief,
+        applyBrief,
+        targetRegion,
+        changedRegionBounds,
+        preserveRegionIds,
+        rationaleCodes,
+      }),
     requestId: request.requestId || null,
     imageId,
     label,
@@ -2108,7 +2394,10 @@ function normalizeProposal(rawProposal = {}, request = {}, { index = 0 } = {}) {
     capability,
     actionIntent: actionType,
     targetRegion,
-    rationaleCodes: uniqueStrings(raw.rationaleCodes || raw.rationale_codes || raw.reasonCodes || [], { limit: 6 }),
+    previewImagePath,
+    changedRegionBounds,
+    preserveRegionIds,
+    rationaleCodes,
     why,
     previewBrief,
     applyBrief,
@@ -2137,10 +2426,12 @@ export function parseDesignReviewPlannerResponse(raw, request = {}) {
       : Array.isArray(parsed)
         ? parsed
         : [];
-  const proposals = rawProposals
-    .map((proposal, index) => normalizeProposal(proposal, request, { index }))
-    .filter((proposal) => proposal.label && proposal.actionType)
-    .slice(0, clamp(request.slotCount, 2, 3));
+  const proposals = ensureUniqueProposalIds(
+    rawProposals
+      .map((proposal, index) => normalizeProposal(proposal, request, { index }))
+      .filter((proposal) => proposal.label && proposal.actionType)
+      .slice(0, clamp(request.slotCount, 2, 3))
+  );
   return {
     ok: proposals.length > 0,
     proposals,

@@ -41,6 +41,37 @@ function uniqueStrings(values = [], { limit = Infinity } = {}) {
   return out;
 }
 
+function proposalTraceState(proposal = {}) {
+  const record = asRecord(proposal) || {};
+  const proposalId = readFirstString(record.proposalId, record.id) || null;
+  const changedRegionBounds = Array.isArray(record.changedRegionBounds)
+    ? cloneJson(record.changedRegionBounds)
+    : record?.targetRegion?.bounds
+      ? [cloneJson(record.targetRegion.bounds)]
+      : [];
+  return {
+    proposalId,
+    selectedProposalId: proposalId,
+    previewImagePath: readFirstString(record.previewImagePath, record.preview_image_path) || null,
+    changedRegionBounds,
+    preserveRegionIds: uniqueStrings(
+      [
+        ...(Array.isArray(record.preserveRegionIds) ? record.preserveRegionIds : []),
+        ...(Array.isArray(record.preserve_region_ids) ? record.preserve_region_ids : []),
+        ...(Array.isArray(record.protectedRegionIds) ? record.protectedRegionIds : []),
+      ],
+      { limit: 12 }
+    ),
+    rationaleCodes: uniqueStrings(
+      [
+        ...(Array.isArray(record.rationaleCodes) ? record.rationaleCodes : []),
+        ...(Array.isArray(record.rationale_codes) ? record.rationale_codes : []),
+      ],
+      { limit: 6 }
+    ),
+  };
+}
+
 function freshState() {
   return {
     status: "idle",
@@ -50,6 +81,7 @@ function freshState() {
     previewJobs: [],
     plannerDebugInfo: null,
     activeApply: null,
+    selectedProposalId: null,
     lastApplyEvent: null,
     errors: [],
     startedAt: null,
@@ -261,6 +293,7 @@ function buildLocalApplyDebugInfo({
       : [];
   const reservedSpaceIntent =
     asRecord(proposal?.reservedSpaceIntent) || asRecord(request?.reservedSpaceIntent) || null;
+  const proposalTrace = proposalTraceState(proposal);
   return {
     source: "design_review_pipeline",
     route: {
@@ -268,9 +301,15 @@ function buildLocalApplyDebugInfo({
     },
     requestId: readFirstString(request?.requestId) || null,
     sessionKey: readFirstString(sessionKey) || null,
+    proposalId: proposalTrace.proposalId,
+    selectedProposalId: proposalTrace.selectedProposalId,
     proposal: cloneJson(proposal),
     request: cloneJson(request),
     reason: readFirstString(reason) || null,
+    previewImagePath: proposalTrace.previewImagePath,
+    changedRegionBounds: proposalTrace.changedRegionBounds,
+    preserveRegionIds: proposalTrace.preserveRegionIds,
+    rationaleCodes: proposalTrace.rationaleCodes,
     focusInputs: cloneJson(focusInputs),
     focusInputIds: uniqueStrings(
       focusInputs.map((entry) => readFirstString(entry?.focusInputId)),
@@ -456,6 +495,7 @@ export function createDesignReviewPipeline({
         previewJobs: [],
         plannerDebugInfo: null,
         activeApply: null,
+        selectedProposalId: null,
         lastApplyEvent: null,
         errors: [],
         startedAt: new Date().toISOString(),
@@ -554,6 +594,7 @@ export function createDesignReviewPipeline({
         previewJobs: [],
         plannerDebugInfo,
         slots: nextSlots,
+        selectedProposalId: null,
         errors: rankedProposals.length ? [] : ["planner_returned_no_proposal"],
         completedAt: new Date().toISOString(),
       });
@@ -628,17 +669,25 @@ export function createDesignReviewPipeline({
         proposal.proposalId
       );
       const focusSemantics = resolveApplyFocusSemantics(request, proposal);
+      const proposalTrace = proposalTraceState(proposal);
+      const selectedProposalId = proposalTrace.selectedProposalId || normalizedProposalId || null;
       const startedAt = new Date().toISOString();
       const startedEvent = {
         phase: "started",
         status: "apply_running",
         requestId,
         sessionKey: resolvedSessionKey || null,
+        proposalId: selectedProposalId,
+        selectedProposalId,
         proposal: {
           ...proposal,
           status: "apply_running",
         },
         request,
+        previewImagePath: proposalTrace.previewImagePath,
+        changedRegionBounds: proposalTrace.changedRegionBounds,
+        preserveRegionIds: proposalTrace.preserveRegionIds,
+        rationaleCodes: proposalTrace.rationaleCodes,
         targetImageId,
         referenceImageIds,
         focusInputs: focusSemantics.focusInputs,
@@ -659,10 +708,15 @@ export function createDesignReviewPipeline({
         status: "apply_running",
         activeApply: {
           requestId,
-          proposalId: normalizedProposalId,
+          proposalId: selectedProposalId,
+          selectedProposalId,
           sessionKey: resolvedSessionKey || null,
           targetImageId,
           referenceImageIds,
+          previewImagePath: proposalTrace.previewImagePath,
+          changedRegionBounds: proposalTrace.changedRegionBounds,
+          preserveRegionIds: proposalTrace.preserveRegionIds,
+          rationaleCodes: proposalTrace.rationaleCodes,
           focusInputIds: focusSemantics.focusInputIds,
           protectedRegionIds: focusSemantics.protectedRegionIds,
           reservedSpaceAreaIds: focusSemantics.reservedSpaceAreaIds,
@@ -670,6 +724,7 @@ export function createDesignReviewPipeline({
           startedAt,
           completedAt: null,
         },
+        selectedProposalId,
         lastApplyEvent: startedEvent,
         proposals: patchProposal(workingState?.proposals, normalizedProposalId, {
           status: "apply_running",
@@ -680,9 +735,15 @@ export function createDesignReviewPipeline({
           debugInfo: null,
           apply: {
             status: "running",
+            proposalId: selectedProposalId,
+            selectedProposalId,
             sessionKey: resolvedSessionKey || null,
             targetImageId,
             referenceImageIds,
+            previewImagePath: proposalTrace.previewImagePath,
+            changedRegionBounds: proposalTrace.changedRegionBounds,
+            preserveRegionIds: proposalTrace.preserveRegionIds,
+            rationaleCodes: proposalTrace.rationaleCodes,
             focusInputIds: focusSemantics.focusInputIds,
             protectedRegionIds: focusSemantics.protectedRegionIds,
             reservedSpaceAreaIds: focusSemantics.reservedSpaceAreaIds,
@@ -718,11 +779,17 @@ export function createDesignReviewPipeline({
           status: "apply_failed",
           requestId,
           sessionKey: resolvedSessionKey || null,
+          proposalId: selectedProposalId,
+          selectedProposalId,
           proposal: {
             ...proposal,
             status: "apply_failed",
           },
           request,
+          previewImagePath: proposalTrace.previewImagePath,
+          changedRegionBounds: proposalTrace.changedRegionBounds,
+          preserveRegionIds: proposalTrace.preserveRegionIds,
+          rationaleCodes: proposalTrace.rationaleCodes,
           targetImageId,
           referenceImageIds,
           focusInputs: focusSemantics.focusInputs,
@@ -741,6 +808,7 @@ export function createDesignReviewPipeline({
           ...workingState,
           status: "apply_failed",
           activeApply: null,
+          selectedProposalId,
           lastApplyEvent: failureEvent,
           proposals: patchProposal(workingState?.proposals, normalizedProposalId, {
             status: "apply_failed",
@@ -751,9 +819,15 @@ export function createDesignReviewPipeline({
             debugInfo,
             apply: {
               status: "failed",
+              proposalId: selectedProposalId,
+              selectedProposalId,
               sessionKey: resolvedSessionKey || null,
               targetImageId,
               referenceImageIds,
+              previewImagePath: proposalTrace.previewImagePath,
+              changedRegionBounds: proposalTrace.changedRegionBounds,
+              preserveRegionIds: proposalTrace.preserveRegionIds,
+              rationaleCodes: proposalTrace.rationaleCodes,
               focusInputIds: focusSemantics.focusInputIds,
               protectedRegionIds: focusSemantics.protectedRegionIds,
               reservedSpaceAreaIds: focusSemantics.reservedSpaceAreaIds,
@@ -817,11 +891,17 @@ export function createDesignReviewPipeline({
           status: "apply_succeeded",
           requestId,
           sessionKey: resolvedSessionKey || null,
+          proposalId: selectedProposalId,
+          selectedProposalId,
           proposal: {
             ...proposal,
             status: "apply_succeeded",
           },
           request,
+          previewImagePath: proposalTrace.previewImagePath,
+          changedRegionBounds: proposalTrace.changedRegionBounds,
+          preserveRegionIds: proposalTrace.preserveRegionIds,
+          rationaleCodes: proposalTrace.rationaleCodes,
           targetImageId,
           referenceImageIds,
           focusInputs: focusSemantics.focusInputs,
@@ -840,6 +920,7 @@ export function createDesignReviewPipeline({
           ...workingState,
           status: "apply_succeeded",
           activeApply: null,
+          selectedProposalId,
           lastApplyEvent: successEvent,
           proposals: patchProposal(workingState?.proposals, normalizedProposalId, {
             status: "apply_succeeded",
@@ -850,9 +931,15 @@ export function createDesignReviewPipeline({
             debugInfo: cloneJson(applyResult?.debugInfo || null),
             apply: {
               status: "succeeded",
+              proposalId: selectedProposalId,
+              selectedProposalId,
               sessionKey: resolvedSessionKey || null,
               targetImageId,
               referenceImageIds,
+              previewImagePath: proposalTrace.previewImagePath,
+              changedRegionBounds: proposalTrace.changedRegionBounds,
+              preserveRegionIds: proposalTrace.preserveRegionIds,
+              rationaleCodes: proposalTrace.rationaleCodes,
               focusInputIds: focusSemantics.focusInputIds,
               protectedRegionIds: focusSemantics.protectedRegionIds,
               reservedSpaceAreaIds: focusSemantics.reservedSpaceAreaIds,

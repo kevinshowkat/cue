@@ -287,10 +287,21 @@ test("design review provider router resolves apply target and guidance reference
       requestId: "review-apply-router",
       sessionId: "session-router",
       primaryImageId: "img-primary",
+      protectedRegions: [
+        {
+          protectedRegionId: "protected-toolbar",
+          imageId: "img-target",
+          bounds: { x: 0, y: 0, width: 1280, height: 80 },
+        },
+      ],
       visibleCanvasContext: {
         images: [
           { id: "img-primary", path: "/tmp/primary-router.png" },
-          { id: "img-target", path: "/tmp/target-router.png" },
+          {
+            id: "img-target",
+            path: "/tmp/target-router.png",
+            rectCss: { left: 0, top: 0, width: 1280, height: 720 },
+          },
           { id: "img-ref", path: "/tmp/ref-router.png" },
         ],
       },
@@ -301,6 +312,9 @@ test("design review provider router resolves apply target and guidance reference
       label: "Warm backdrop",
       actionType: "background_replace",
       applyBrief: "Replace the background with a warmer studio backdrop.",
+      previewImagePath: "/tmp/review-router-full-frame.png",
+      changedRegionBounds: [{ x: 420, y: 180, width: 360, height: 220 }],
+      rationaleCodes: ["ui_spacing"],
     },
     outputPath: "/tmp/review-apply-router.png",
   });
@@ -311,6 +325,13 @@ test("design review provider router resolves apply target and guidance reference
   assert.equal(requests[0].requestedModel, DESIGN_REVIEW_FINAL_APPLY_MODEL);
   assert.equal(requests[0].normalizedModel, DESIGN_REVIEW_FINAL_APPLY_MODEL);
   assert.equal(requests[0].model, DESIGN_REVIEW_FINAL_APPLY_MODEL);
+  assert.equal(requests[0].selectedProposalId, "proposal-router");
+  assert.equal(requests[0].previewImagePath, "/tmp/review-router-full-frame.png");
+  assert.deepEqual(requests[0].changedRegionBounds, [
+    { x: 420, y: 180, width: 360, height: 220 },
+  ]);
+  assert.deepEqual(requests[0].preserveRegionIds, ["protected-toolbar"]);
+  assert.deepEqual(requests[0].rationaleCodes, ["ui_spacing"]);
   assert.deepEqual(requests[0].targetImage, {
     imageId: "img-target",
     path: "/tmp/target-router.png",
@@ -323,6 +344,13 @@ test("design review provider router resolves apply target and guidance reference
   assert.match(requests[0].prompt, /Edit only targetImage\./);
   assert.equal(result.debugInfo?.route?.requestedModel, DESIGN_REVIEW_FINAL_APPLY_MODEL);
   assert.equal(result.debugInfo?.route?.normalizedModel, DESIGN_REVIEW_FINAL_APPLY_MODEL);
+  assert.equal(result.debugInfo?.selectedProposalId, "proposal-router");
+  assert.equal(result.debugInfo?.previewImagePath, "/tmp/review-router-full-frame.png");
+  assert.deepEqual(result.debugInfo?.changedRegionBounds, [
+    { x: 420, y: 180, width: 360, height: 220 },
+  ]);
+  assert.deepEqual(result.debugInfo?.preserveRegionIds, ["protected-toolbar"]);
+  assert.deepEqual(result.debugInfo?.rationaleCodes, ["ui_spacing"]);
   assert.equal(result.debugInfo?.targetImagePath, "/tmp/target-router.png");
   assert.deepEqual(result.debugInfo?.referenceImagePaths, [
     "/tmp/primary-router.png",
