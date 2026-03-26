@@ -33023,10 +33023,11 @@ function timelineNodeSummary(node = null) {
   return targetLabel || countText || "Committed session history";
 }
 
-function timelineNodeAriaLabel(node = null, { current = false, future = false } = {}) {
+function timelineNodeAriaLabel(node = null, { current = false, future = false, historical = false } = {}) {
   const pieces = [];
   pieces.push(timelineNodeSummary(node));
   if (current) pieces.push("Current state");
+  else if (historical) pieces.push("Historical state");
   else if (future) pieces.push("Future state");
   return pieces.join(". ");
 }
@@ -33109,7 +33110,9 @@ function timelineCardStateForNode(node = null, headNode = currentTimelineHeadNod
   const headSeq = Math.max(0, Number(headNode?.seq) || 0);
   const current = headNodeId === String(node?.nodeId || "").trim();
   const future = !current && Math.max(0, Number(node?.seq) || 0) > headSeq;
-  return { current, future };
+  const historical = !current && !future;
+  const inactive = !current;
+  return { current, future, historical, inactive };
 }
 
 function timelineCarouselAnchors(strip = els.timelineStrip) {
@@ -33342,18 +33345,18 @@ function handleTimelineCarouselWheel(event) {
 
 function buildTimelineCard(node = null, headNode = currentTimelineHeadNode()) {
   if (!node?.nodeId) return null;
-  const { current, future } = timelineCardStateForNode(node, headNode);
+  const { current, future, historical, inactive } = timelineCardStateForNode(node, headNode);
   const actionKey = timelineActionKey(node.action, node.kind);
   const usesThumbnail =
     String(node.visualMode || "").trim() === "thumbnail" &&
     String(node.previewPath || "").trim();
   const card = document.createElement("button");
   card.type = "button";
-  card.className = `timeline-card ${usesThumbnail ? "timeline-card--thumb" : "timeline-card--icon"}${current ? " selected" : ""}${future ? " is-future" : ""}`;
+  card.className = `timeline-card ${usesThumbnail ? "timeline-card--thumb" : "timeline-card--icon"}${current ? " selected" : ""}${inactive ? " is-inactive" : ""}${historical ? " is-historical" : ""}${future ? " is-future" : ""}`;
   card.dataset.nodeId = node.nodeId;
   card.dataset.seq = String(Math.max(1, Number(node.seq) || 1));
   card.dataset.structureKey = timelineNodeStructureKey(node);
-  card.setAttribute("aria-label", timelineNodeAriaLabel(node, { current, future }));
+  card.setAttribute("aria-label", timelineNodeAriaLabel(node, { current, future, historical }));
   card.title = timelineNodeSummary(node);
   const seq = document.createElement("span");
   seq.className = "timeline-card-seq";
@@ -33474,16 +33477,24 @@ function syncTimelineViewState(nodes = timelineSortedNodes(), headNode = current
     if (!nodeId) continue;
     const node = state.timelineNodesById instanceof Map ? state.timelineNodesById.get(nodeId) || null : null;
     if (!node) continue;
-    const { current, future } = timelineCardStateForNode(node, headNode);
+    const { current, future, historical, inactive } = timelineCardStateForNode(node, headNode);
     if (card.classList.contains("selected") !== current) {
       card.classList.toggle("selected", current);
+      changed = true;
+    }
+    if (card.classList.contains("is-inactive") !== inactive) {
+      card.classList.toggle("is-inactive", inactive);
+      changed = true;
+    }
+    if (card.classList.contains("is-historical") !== historical) {
+      card.classList.toggle("is-historical", historical);
       changed = true;
     }
     if (card.classList.contains("is-future") !== future) {
       card.classList.toggle("is-future", future);
       changed = true;
     }
-    const nextAria = timelineNodeAriaLabel(node, { current, future });
+    const nextAria = timelineNodeAriaLabel(node, { current, future, historical });
     if (card.getAttribute("aria-label") !== nextAria) {
       card.setAttribute("aria-label", nextAria);
       changed = true;
