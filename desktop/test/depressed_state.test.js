@@ -53,7 +53,7 @@ test("CSS: depressed state has a down/pressed transform", () => {
 test("Juggernaut rail selected state reads as a pressed-in active button", () => {
   assert.match(css, /\.juggernaut-tool\.juggernaut-rail-anchor\.selected,\s*\.juggernaut-tool\.is-local-utility\.selected\s*\{/);
   assert.match(css, /transform:\s*translate3d\(0,\s*2px,\s*0\)\s*scale\(0\.982\)/);
-  assert.match(css, /inset 0 3px 10px rgba\(110,\s*99,\s*74,\s*0\.28\)/);
+  assert.match(css, /inset 0 3px 10px rgba\(167,\s*176,\s*187,\s*0\.34\)/);
   assert.match(css, /\.juggernaut-tool\.juggernaut-rail-anchor\.selected \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.selected \.tool-icon\s*\{/);
 });
 
@@ -97,10 +97,10 @@ test("Juggernaut shell rail selected hover keeps a light-shell pressed treatment
   assert.match(visualSystemCss, /transform:\s*translate3d\(0,\s*1px,\s*0\)/);
 });
 
-test("Local-only buttons use cream fills with black icon and label treatment", () => {
+test("Local-only buttons use the original neutral fills with black icon and label treatment", () => {
   assert.match(
     css,
-    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\s*\{[\s\S]*background:\s*rgba\(235,\s*230,\s*216,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*box-shadow:\s*none;/
+    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(252,\s*253,\s*254,\s*0\.99\),\s*rgba\(241,\s*244,\s*248,\s*0\.98\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*0 8px 16px rgba\(17,\s*24,\s*32,\s*0\.08\);/
   );
   assert.match(
     css,
@@ -108,38 +108,42 @@ test("Local-only buttons use cream fills with black icon and label treatment", (
   );
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\s*\{[\s\S]*background:\s*rgba\(235,\s*230,\s*216,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*box-shadow:\s*none;/
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(255,\s*255,\s*255,\s*0\.98\),\s*rgba\(250,\s*251,\s*253,\s*0\.88\)\s*44%\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*0 12px 22px rgba\(30,\s*35,\s*44,\s*0\.08\);/
+  );
+  assert.match(
+    css,
+    /\.juggernaut-tool\.juggernaut-rail-anchor,\s*\.juggernaut-tool\.is-local-utility\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(252,\s*253,\s*254,\s*0\.99\),\s*rgba\(241,\s*244,\s*248,\s*0\.98\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);/
   );
 });
 
-test("Local-only buttons keep a visible inactive cream state and darker pressed state", () => {
+test("Local-only buttons keep a visible inactive neutral state and darker pressed state", () => {
   assert.match(
     css,
-    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\):disabled\s*\{[\s\S]*background:\s*rgba\(242,\s*238,\s*229,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/
+    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\):disabled\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(252,\s*253,\s*254,\s*0\.99\),\s*rgba\(244,\s*247,\s*250,\s*0\.98\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/
   );
   assert.match(
     css,
-    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.selected,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.selected:hover,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\):active,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.is-active-request\s*\{[\s\S]*background:\s*rgba\(214,\s*204,\s*178,\s*0\.98\);[\s\S]*inset 0 3px 10px rgba\(110,\s*99,\s*74,\s*0\.28\)/
+    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.selected,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.selected:hover,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\):active,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.is-active-request\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(244,\s*247,\s*250,\s*0\.99\),\s*rgba\(232,\s*237,\s*243,\s*0\.97\)\),[\s\S]*inset 0 3px 10px rgba\(167,\s*176,\s*187,\s*0\.34\)/
   );
   assert.match(
     css,
-    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.depressed\s*\{[\s\S]*background:\s*rgba\(205,\s*193,\s*164,\s*0\.98\);[\s\S]*inset 0 4px 12px rgba\(102,\s*92,\s*69,\s*0\.34\)/
+    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.depressed\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(233,\s*238,\s*244,\s*0\.99\),\s*rgba\(221,\s*227,\s*234,\s*0\.98\)\),[\s\S]*inset 0 4px 12px rgba\(146,\s*156,\s*169,\s*0\.42\)/
   );
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility:disabled\s*\{[\s\S]*background:\s*rgba\(242,\s*238,\s*229,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility:disabled\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(249,\s*250,\s*252,\s*0\.98\),\s*rgba\(242,\s*245,\s*248,\s*0\.96\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/
   );
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-pressing\s*\{[\s\S]*background:\s*rgba\(214,\s*204,\s*178,\s*0\.98\);[\s\S]*inset 0 3px 10px rgba\(110,\s*99,\s*74,\s*0\.28\)/
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-pressing\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(247,\s*249,\s*252,\s*0\.98\),\s*rgba\(238,\s*242,\s*247,\s*0\.92\)\s*44%\),[\s\S]*inset 0 2px 6px rgba\(216,\s*223,\s*231,\s*0\.78\)/
   );
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.depressed\s*\{[\s\S]*background:\s*rgba\(205,\s*193,\s*164,\s*0\.98\);[\s\S]*inset 0 4px 12px rgba\(102,\s*92,\s*69,\s*0\.34\)/
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.depressed\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(233,\s*238,\s*244,\s*0\.99\),\s*rgba\(221,\s*227,\s*234,\s*0\.98\)\),[\s\S]*inset 0 4px 12px rgba\(146,\s*156,\s*169,\s*0\.42\)/
   );
   assert.match(
     css,
-    /\.juggernaut-tool\.juggernaut-rail-anchor\.is-selection-empty,\s*\.juggernaut-tool\.is-local-utility\.is-selection-empty\s*\{[\s\S]*background:\s*rgba\(242,\s*238,\s*229,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/
+    /\.juggernaut-tool\.juggernaut-rail-anchor\.is-selection-empty,\s*\.juggernaut-tool\.is-local-utility\.is-selection-empty\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(252,\s*253,\s*254,\s*0\.99\),\s*rgba\(244,\s*247,\s*250,\s*0\.98\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/
   );
 });
 
