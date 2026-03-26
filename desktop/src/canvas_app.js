@@ -33198,11 +33198,11 @@ function rebuildTimelineStrip(nodes = timelineSortedNodes(), headNode = currentT
   strip.classList?.toggle("is-empty", !nodes.length);
   if (!nodes.length) {
     const currentEmpty = strip.querySelector(".timeline-empty");
-    if (!currentEmpty || String(currentEmpty.textContent || "").trim() !== "Your timeline appears after your first edit.") {
+    if (!currentEmpty || String(currentEmpty.textContent || "").trim() !== "Your timeline appears here after you upload your first image.") {
       strip.replaceChildren();
       const empty = document.createElement("div");
       empty.className = "timeline-empty muted";
-      empty.textContent = "Your timeline appears after your first edit.";
+      empty.textContent = "Your timeline appears here after you upload your first image.";
       strip.appendChild(empty);
     }
     state.lastTimelineCenteredNodeId = null;

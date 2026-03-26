@@ -352,5 +352,5 @@ test("rebuildTimelineStrip switches the tray into centered empty mode with only 
   assert.equal(strip.classList.contains("is-empty"), true);
   assert.equal(strip.children.length, 1);
   assert.equal(strip.children[0].className, "timeline-empty muted");
-  assert.equal(strip.children[0].textContent, "Your timeline appears after your first edit.");
+  assert.equal(strip.children[0].textContent, "Your timeline appears here after you upload your first image.");
 });
