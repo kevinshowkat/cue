@@ -105,7 +105,7 @@ body {
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: #efe7d7;
+  background: #e9e4d3;
   opacity: 1;
   transform: none;
   transition: opacity 360ms ease;
@@ -127,7 +127,7 @@ body {
   height: auto;
   max-width: 25%;
   max-height: 25%;
-  background: #000;
+  background: #e9e4d3;
   object-fit: contain;
   opacity: 0;
   transform: scale(0.96);
@@ -167,9 +167,10 @@ body {
   transform: translateY(0) scale(1);
 }
 
-.boot-video-overlay.is-video-ready .boot-video-copy {
-  opacity: 1;
-  transform: translateY(0) scale(1);
+.boot-video-overlay.is-video-imminent .boot-video-copy {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.98);
+  transition-duration: 180ms, 220ms;
 }
 
 .boot-video-status-rail {
@@ -193,8 +194,8 @@ body {
 }
 
 .boot-video-overlay.is-video-ready .boot-video-status-rail {
-  opacity: 0;
-  transform: translateY(8px);
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .boot-video-status-label {
@@ -230,7 +231,7 @@ body {
 }
 
 .boot-video-overlay.is-video-ready .boot-video-scrim {
-  background: rgba(0, 0, 0, 0.04);
+  background: transparent;
 }
 
 .boot-video-logo {

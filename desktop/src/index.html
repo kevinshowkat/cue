@@ -7,7 +7,7 @@
     <style>
       html,
       body {
-        background: #efe7d7;
+        background: #e9e4d3;
       }
     </style>
     <link rel="stylesheet" href="./styles.css" />
@@ -1238,6 +1238,7 @@
       const BOOT_VIDEO_MAX_HOLD_MS = 20000;
       const BOOT_SHELL_INTRO_DELAY_MS = 60;
       const BOOT_VIDEO_START_DELAY_MS = 2000;
+      const BOOT_COPY_FADE_LEAD_MS = 180;
       const BOOT_STATUS_TICK_MS = 700;
       const SPLASH_WINDOW_SIZE = 620;
       const APP_WINDOW_WIDTH = 1400;
@@ -1253,6 +1254,12 @@
         { message: "Preparing canvas engine…", progress: 74 },
         { message: "Mounting controls…", progress: 82 },
       ];
+      const bootReadyStatusQueue = [
+        { message: "Workspace ready. Waiting on video…", progress: 90 },
+        { message: "Syncing launch state…", progress: 92 },
+        { message: "Settling workspace layout…", progress: 94 },
+        { message: "Opening workspace…", progress: 96 },
+      ];
       let bootReady = false;
       let bootFailed = false;
       let bootVideoDone = false;
@@ -1260,6 +1267,7 @@
       let bootVideoObjectUrl = null;
       let bootPrepStatusTimer = 0;
       let bootPrepStatusIndex = 0;
+      let bootStatusQueue = bootPrepStatusQueue;
 
       function setBootProgress(progress = 0) {
         if (!bootProgressBarEl) return;
@@ -1280,20 +1288,22 @@
         }
       }
 
-      function startBootPrepStatusCycle() {
+      function startBootPrepStatusCycle(queue = bootPrepStatusQueue) {
         stopBootPrepStatusCycle();
+        bootStatusQueue = Array.isArray(queue) && queue.length ? queue : bootPrepStatusQueue;
         bootPrepStatusIndex = 0;
-        const current = bootPrepStatusQueue[bootPrepStatusIndex];
+        const current = bootStatusQueue[bootPrepStatusIndex];
         if (current) setBootStatus(current.message, current.progress);
         bootPrepStatusTimer = window.setInterval(() => {
-          bootPrepStatusIndex = (bootPrepStatusIndex + 1) % bootPrepStatusQueue.length;
-          const next = bootPrepStatusQueue[bootPrepStatusIndex];
+          bootPrepStatusIndex = (bootPrepStatusIndex + 1) % bootStatusQueue.length;
+          const next = bootStatusQueue[bootPrepStatusIndex];
           if (next) setBootStatus(next.message, next.progress);
         }, BOOT_STATUS_TICK_MS);
       }
 
       function cleanupBootVideoSource() {
         bootOverlayEl?.classList.remove("is-video-ready");
+        bootOverlayEl?.classList.remove("is-video-imminent");
         stopBootPrepStatusCycle();
         if (bootVideoEl) {
           bootVideoEl.classList.remove("is-visible");
@@ -1372,8 +1382,13 @@
           const bytes = await readBinaryFile(LOCAL_BOOT_VIDEO_PATH);
           bootVideoObjectUrl = URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }));
           setBootStatus("Holding launch frame…", 28);
+          const shellHoldMs = Math.max(0, BOOT_VIDEO_START_DELAY_MS - BOOT_COPY_FADE_LEAD_MS);
           await new Promise((resolve) => {
-            window.setTimeout(resolve, BOOT_VIDEO_START_DELAY_MS);
+            window.setTimeout(resolve, shellHoldMs);
+          });
+          bootOverlayEl?.classList.add("is-video-imminent");
+          await new Promise((resolve) => {
+            window.setTimeout(resolve, BOOT_COPY_FADE_LEAD_MS);
           });
           setBootStatus("Starting playback…", 42);
           bootVideoEl.src = bootVideoObjectUrl;
@@ -1418,12 +1433,11 @@
       startBootPrepStatusCycle();
       Promise.all([import("./design_review_bootstrap.js"), import("./canvas_app.js")])
         .then(() => {
-          stopBootPrepStatusCycle();
           window.__brood_booted = true;
           window.__juggernaut_booted = true;
           bootReady = true;
           if (bootEl) bootEl.classList.add("hidden");
-          if (!bootVideoDone) setBootStatus("Workspace ready. Waiting on video…", 90);
+          if (!bootVideoDone) startBootPrepStatusCycle(bootReadyStatusQueue);
           maybeRevealApp();
         })
         .catch((err) => {
