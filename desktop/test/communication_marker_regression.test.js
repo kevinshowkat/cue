@@ -649,6 +649,12 @@ test("communication overlay renders marker as a thick red stroke and protect as 
     communicationMarkPointsToCanvas: (mark) => mark.points,
     COMMUNICATION_MARK_STROKE: "rgba(220, 28, 28, 0.96)",
     COMMUNICATION_PROTECT_STROKE: "rgba(0, 0, 0, 0.92)",
+    COMMUNICATION_MARK_DRAFT_SHOULDER_CSS_PX: 8.5,
+    COMMUNICATION_MARK_DRAFT_CORE_CSS_PX: 5.75,
+    COMMUNICATION_MARK_COMMITTED_SHOULDER_CSS_PX: 11.5,
+    COMMUNICATION_MARK_COMMITTED_CORE_CSS_PX: 8.25,
+    COMMUNICATION_PROTECT_DRAFT_WIDTH_CSS_PX: 3,
+    COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX: 2,
     traceCommunicationMarkPath: () => true,
     communicationCanvasMarks: () => state.communication.canvasMarks,
     communicationCanvasCssScaleForImageId: () => 1,
@@ -676,7 +682,7 @@ test("communication overlay renders marker as a thick red stroke and protect as 
   ]);
 });
 
-test("communication overlay scales image-space annotations with the viewport zoom", () => {
+test("communication overlay keeps image-space marker width fixed on screen regardless of viewport zoom", () => {
   const rendered = [];
   const state = {
     communication: {
@@ -717,6 +723,12 @@ test("communication overlay scales image-space annotations with the viewport zoo
     communicationDraftPointsToCanvas: () => [],
     communicationMarkPointsToCanvas: (mark) => mark.points,
     COMMUNICATION_MARK_STROKE: "rgba(255, 94, 190, 0.96)",
+    COMMUNICATION_MARK_DRAFT_SHOULDER_CSS_PX: 8.5,
+    COMMUNICATION_MARK_DRAFT_CORE_CSS_PX: 5.75,
+    COMMUNICATION_MARK_COMMITTED_SHOULDER_CSS_PX: 11.5,
+    COMMUNICATION_MARK_COMMITTED_CORE_CSS_PX: 8.25,
+    COMMUNICATION_PROTECT_DRAFT_WIDTH_CSS_PX: 3,
+    COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX: 2,
     traceCommunicationMarkPath: () => true,
     communicationCanvasMarks: () => state.communication.canvasMarks,
     communicationCanvasCssScaleForImageId: () => 0.5,
@@ -727,11 +739,11 @@ test("communication overlay scales image-space annotations with the viewport zoo
 
   assert.deepEqual(rendered, [
     {
-      lineWidth: 6,
+      lineWidth: 12,
       strokeStyle: "rgba(255, 94, 190, 0.16)",
     },
     {
-      lineWidth: 4,
+      lineWidth: 8,
       strokeStyle: "rgba(255, 94, 190, 0.94)",
     },
   ]);

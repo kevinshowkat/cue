@@ -183,6 +183,12 @@ const COMMUNICATION_MARK_MIN_POINT_SPACING_PX = 0.01;
 const COMMUNICATION_MARK_MAX_POINTS = 1024;
 const COMMUNICATION_REVIEW_HISTORY_MAX = 24;
 const COMMUNICATION_IMAGE_ERASE_BRUSH_CSS_PX = 22;
+const COMMUNICATION_MARK_DRAFT_SHOULDER_CSS_PX = 8.5;
+const COMMUNICATION_MARK_DRAFT_CORE_CSS_PX = 5.75;
+const COMMUNICATION_MARK_COMMITTED_SHOULDER_CSS_PX = 11.5;
+const COMMUNICATION_MARK_COMMITTED_CORE_CSS_PX = 8.25;
+const COMMUNICATION_PROTECT_DRAFT_WIDTH_CSS_PX = 3;
+const COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX = 2;
 const COMMUNICATION_STATE_CHANGED_EVENT = "juggernaut:communication-state-changed";
 const COMMUNICATION_REVIEW_REQUESTED_EVENT = "juggernaut:design-review-requested";
 const COMMUNICATION_PROPOSAL_TRAY_EVENT = "juggernaut:communication-proposal-tray-changed";
@@ -24731,10 +24737,6 @@ function renderCommunicationOverlay(octx) {
     );
     const markerShoulderColor = markerStrokeVariant(markerColor, draft ? 0.26 : 0.16);
     const markerCoreColor = markerStrokeVariant(markerColor, draft ? 0.68 : 0.94);
-    const viewportScale =
-      draft && String(mark?.imageId || "").trim()
-        ? communicationCanvasCssScaleForImageId(mark.imageId)
-        : communicationMarkViewportScale(mark);
     octx.save();
     octx.lineCap = "round";
     octx.lineJoin = "round";
@@ -24742,16 +24744,25 @@ function renderCommunicationOverlay(octx) {
     octx.shadowColor = "transparent";
     octx.shadowBlur = 0;
     if (markKind === "freehand_protect") {
-      octx.lineWidth = Math.max(1, Math.round((draft ? 3 : 2) * dpr * viewportScale));
+      octx.lineWidth = Math.max(
+        1,
+        Math.round((draft ? COMMUNICATION_PROTECT_DRAFT_WIDTH_CSS_PX : COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX) * dpr)
+      );
       octx.strokeStyle = draft ? markerStrokeVariant(markerColor, 0.68) : markerColor;
       if (traceCommunicationMarkPath(octx, points)) octx.stroke();
       octx.restore();
       return;
     }
-    octx.lineWidth = Math.max(1, Math.round((draft ? 8.5 : 11.5) * dpr * viewportScale));
+    octx.lineWidth = Math.max(
+      1,
+      Math.round((draft ? COMMUNICATION_MARK_DRAFT_SHOULDER_CSS_PX : COMMUNICATION_MARK_COMMITTED_SHOULDER_CSS_PX) * dpr)
+    );
     octx.strokeStyle = markerShoulderColor;
     if (traceCommunicationMarkPath(octx, points)) octx.stroke();
-    octx.lineWidth = Math.max(1, Math.round((draft ? 5.75 : 8.25) * dpr * viewportScale));
+    octx.lineWidth = Math.max(
+      1,
+      Math.round((draft ? COMMUNICATION_MARK_DRAFT_CORE_CSS_PX : COMMUNICATION_MARK_COMMITTED_CORE_CSS_PX) * dpr)
+    );
     octx.strokeStyle = markerCoreColor;
     if (traceCommunicationMarkPath(octx, points)) octx.stroke();
     octx.restore();
