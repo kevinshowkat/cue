@@ -40,6 +40,7 @@ Build:
 - Bootstrap the desktop app from ../brood or an equivalent fast path.
 - Ensure the app launches.
 - Implement upload or drag-drop image to canvas.
+- Keep the titlebar session strip current, including open, new, and fork-tab affordances.
 - Establish the left vertical icon rail scaffold.
 - Define stable hooks for tool invocation and export.
 

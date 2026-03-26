@@ -70,6 +70,21 @@ test("canvas app routes New Run and Open Run into fresh tabs instead of wiping t
   );
 });
 
+test("forking the active tab clones the visible session into a detached sibling tab", () => {
+  assert.match(
+    app,
+    /function createForkedTabSession\(session = null,\s*\{ label = null \} = \{\}\) \{[\s\S]*const sourceSessionTools =[\s\S]*cloneSessionValue\([\s\S]*toolRegistry: null,[\s\S]*eventsDecoder: null,[\s\S]*\)/
+  );
+  assert.match(
+    app,
+    /function createForkedTabSession\(session = null,\s*\{ label = null \} = \{\}\) \{[\s\S]*next\.forkedFromTabId = String\(cloned\.forkedFromTabId \|\| source\.forkedFromTabId \|\| ""\)\.trim\(\) \|\| null;[\s\S]*next\.toolRegistry = createInSessionToolRegistry\([\s\S]*next\.sessionTools = next\.toolRegistry\.list\(\);[\s\S]*next\.runDir = null;[\s\S]*next\.eventsPath = null;[\s\S]*next\.eventsByteOffset = 0;/
+  );
+  assert.match(
+    app,
+    /async function forkActiveTab\(\) \{[\s\S]*const sourceLabel = sessionTabDisplayLabel\(sourceRecord,\s*DEFAULT_UNTITLED_TAB_TITLE\);[\s\S]*const forkLabel = buildSessionTabForkLabel\(sourceRecord\);[\s\S]*const session = createForkedTabSession\(sourceRecord\.session \|\| createFreshTabSession\(\), \{ label: forkLabel \}\);[\s\S]*session\.forkedFromTabId = activeTabId;[\s\S]*const sourceIndex = tabbedSessions\.tabsOrder\.indexOf\(activeTabId\);[\s\S]*const insertIndex = sourceIndex >= 0 \? sourceIndex \+ 1 : tabbedSessions\.tabsOrder\.length;[\s\S]*tabbedSessions\.upsertTab\([\s\S]*labelManual: true,[\s\S]*forkedFromTabId: activeTabId,[\s\S]*runDir: null,[\s\S]*eventsPath: null,[\s\S]*\{\s*activate: false,\s*index: insertIndex\s*\}[\s\S]*activateTab\(tabId,\s*\{\s*spawnEngine: false,\s*reason: "fork_tab"\s*\}\)/
+  );
+});
+
 test("activating a tab captures and restores image, selection, run, and session-local runtime state", () => {
   assert.match(
     app,

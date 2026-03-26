@@ -10296,6 +10296,34 @@ button.ghost:hover {
   gap: 2px;
 }
 
+.session-tab-title-row {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.session-tab-fork-indicator {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(157, 212, 255, 0.84);
+}
+
+.session-tab-fork-indicator svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.session-tab-item.is-active .session-tab-fork-indicator {
+  color: rgba(196, 234, 255, 0.98);
+}
+
 .session-tab-title {
   min-width: 0;
   max-width: 136px;
@@ -10461,6 +10489,10 @@ button.ghost:hover {
   align-items: center;
 }
 
+.session-tab-rename .session-tab-title-row {
+  width: 100%;
+}
+
 .session-tab-title-input {
   width: 100%;
   min-width: 0;
@@ -10539,6 +10571,15 @@ button.ghost:hover {
 }
 
 .session-tab-strip-new svg {
+  width: 17px;
+  height: 17px;
+}
+
+.session-tab-strip-fork {
+  flex: 0 0 auto;
+}
+
+.session-tab-strip-fork svg {
   width: 17px;
   height: 17px;
 }
@@ -11485,6 +11526,21 @@ body.juggernaut-shell .brand-strip .session-tab-labels {
   gap: 0;
 }
 
+body.juggernaut-shell .brand-strip .session-tab-title-row {
+  gap: 7px;
+}
+
+body.juggernaut-shell .brand-strip .session-tab-fork-indicator {
+  width: 13px;
+  height: 13px;
+  color: rgba(99, 126, 171, 0.78);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-fork-indicator svg {
+  width: 13px;
+  height: 13px;
+}
+
 body.juggernaut-shell .brand-strip .session-tab-title {
   max-width: 156px;
   font-size: 13px;
@@ -11495,6 +11551,10 @@ body.juggernaut-shell .brand-strip .session-tab-title {
 body.juggernaut-shell .brand-strip .session-tab-item.is-active .session-tab-title {
   color: rgba(21, 31, 48, 0.99);
   font-weight: 600;
+}
+
+body.juggernaut-shell .brand-strip .session-tab-item.is-active .session-tab-fork-indicator {
+  color: rgba(58, 96, 162, 0.92);
 }
 
 body.juggernaut-shell .brand-strip .session-tab-flags {
@@ -11631,6 +11691,10 @@ body.juggernaut-shell .brand-strip .session-tab-strip-new {
     linear-gradient(180deg, rgba(252, 254, 255, 0.99), rgba(232, 239, 248, 0.99)),
     rgba(235, 241, 248, 0.98);
   color: rgba(45, 76, 116, 0.94);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-strip-fork {
+  color: rgba(60, 72, 90, 0.92);
 }
 
 body.juggernaut-shell .brand-strip .session-tab-strip-review {
