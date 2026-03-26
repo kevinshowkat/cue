@@ -85,7 +85,19 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-list\s*\{[\s\S]*flex:\s*0 1 auto[\s\S]*overflow-x:\s*auto/);
   assert.match(
     css,
+    /\.session-tab-item\s*\{[\s\S]*box-sizing:\s*border-box[\s\S]*width:\s*212px[\s\S]*min-width:\s*212px[\s\S]*max-width:\s*212px/s
+  );
+  assert.match(
+    css,
     /body\.juggernaut-shell \.brand-strip \.session-tab-list\s*\{[\s\S]*flex:\s*0 1 auto[\s\S]*max-width:\s*min\(68vw,\s*960px\)[\s\S]*border-radius:\s*14px[\s\S]*box-shadow:/s
+  );
+  assert.match(
+    css,
+    /body\.juggernaut-shell \.brand-strip \.session-tab-item\s*\{[\s\S]*box-sizing:\s*border-box[\s\S]*width:\s*216px[\s\S]*min-width:\s*216px[\s\S]*max-width:\s*216px/s
+  );
+  assert.match(
+    css,
+    /@media \(max-width:\s*720px\)\s*\{[\s\S]*body\.juggernaut-shell \.brand-strip \.session-tab-item\s*\{[\s\S]*width:\s*180px[\s\S]*min-width:\s*180px[\s\S]*max-width:\s*180px/s
   );
   assert.match(css, /\.session-tab-item\.is-active\s*\{/);
   assert.match(css, /\.session-tab-item\.is-placeholder\s*\{/);

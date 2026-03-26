@@ -10582,9 +10582,11 @@ button.ghost:hover {
 
 .session-tab-item {
   position: relative;
+  box-sizing: border-box;
   flex: 0 0 auto;
-  min-width: 0;
-  max-width: 240px;
+  width: 212px;
+  min-width: 212px;
+  max-width: 212px;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -11809,6 +11811,8 @@ body.juggernaut-shell .brand-strip {
   }
 
   .session-tab-item {
+    width: 210px;
+    min-width: 210px;
     max-width: 210px;
   }
 
@@ -11922,6 +11926,8 @@ body.juggernaut-shell .brand-strip {
   }
 
   .session-tab-item {
+    width: 176px;
+    min-width: 176px;
     max-width: 176px;
   }
 
@@ -12040,8 +12046,11 @@ body.juggernaut-shell .brand-strip .session-tab-list {
 
 body.juggernaut-shell .brand-strip .session-tab-item {
   position: relative;
+  box-sizing: border-box;
   overflow: hidden;
-  max-width: 240px;
+  width: 216px;
+  min-width: 216px;
+  max-width: 216px;
   padding-right: 0;
   gap: 0;
   border: 1px solid rgba(39, 49, 63, 0.10);
@@ -12739,6 +12748,8 @@ body.juggernaut-shell .brand-strip .session-tab-strip-fork:active {
   }
 
   body.juggernaut-shell .brand-strip .session-tab-item {
+    width: 180px;
+    min-width: 180px;
     max-width: 180px;
   }
 
