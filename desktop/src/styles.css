@@ -840,6 +840,12 @@ button.ghost:hover {
     drop-shadow(0 0 10px rgba(255, 143, 143, 0.22));
 }
 
+.tool-icon-mask {
+  background-color: currentColor;
+  -webkit-mask: var(--tool-icon-mask) center / contain no-repeat;
+  mask: var(--tool-icon-mask) center / contain no-repeat;
+}
+
 .tool-hint {
   font-family: "IBM Plex Mono", monospace;
   font-size: 10px;
@@ -10759,10 +10765,11 @@ button.ghost:hover {
   color: rgba(246, 250, 255, 0.98);
 }
 
-.session-tab-fork-indicator svg {
+.session-tab-fork-indicator .tool-icon {
   width: 11px;
   height: 11px;
   display: block;
+  filter: none;
 }
 
 .session-tab-item.is-active .session-tab-fork-indicator {
@@ -10984,6 +10991,23 @@ button.ghost:hover {
     filter 0.12s ease;
 }
 
+.session-tab-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  font-size: 0;
+  line-height: 0;
+  color: inherit;
+}
+
+.session-tab-action-icon .tool-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  filter: none;
+}
+
 .session-tab-strip-action svg {
   width: 16px;
   height: 16px;
@@ -11009,12 +11033,12 @@ button.ghost:hover {
   margin-left: 2px;
 }
 
-.session-tab-strip-new svg {
+.session-tab-strip-new .session-tab-action-icon .tool-icon {
   width: 17px;
   height: 17px;
 }
 
-.session-tab-strip-fork svg {
+.session-tab-strip-fork .session-tab-action-icon .tool-icon {
   width: 17px;
   height: 17px;
 }
@@ -11065,7 +11089,7 @@ button.ghost:hover {
   padding: 0 12px;
 }
 
-.session-tab-strip-review svg {
+.session-tab-strip-review .session-tab-action-icon .tool-icon {
   width: 15px;
   height: 15px;
   flex: 0 0 auto;
@@ -11125,14 +11149,14 @@ button.ghost:hover {
   color: inherit;
 }
 
-.session-tab-history-action svg,
-.session-tab-runtime-action svg {
+.session-tab-history-action .session-tab-action-icon .tool-icon,
+.session-tab-runtime-action .session-tab-action-icon .tool-icon {
   width: 15px;
   height: 15px;
   flex: 0 0 auto;
 }
 
-#juggernaut-agent-runner-open svg {
+#juggernaut-agent-runner-open .session-tab-action-icon .tool-icon {
   transform: translateX(0.75px);
 }
 
@@ -12263,7 +12287,7 @@ body.juggernaut-shell .brand-strip .session-tab-fork-indicator {
   color: rgba(251, 253, 255, 0.98);
 }
 
-body.juggernaut-shell .brand-strip .session-tab-fork-indicator svg {
+body.juggernaut-shell .brand-strip .session-tab-fork-indicator .tool-icon {
   width: 10px;
   height: 10px;
 }
@@ -12491,8 +12515,9 @@ body.juggernaut-shell .brand-strip .session-tab-runtime-action span {
   line-height: 1;
 }
 
-body.juggernaut-shell .brand-strip .session-tab-history-action svg,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action svg {
+body.juggernaut-shell .brand-strip .session-tab-history-action .session-tab-action-icon .tool-icon,
+body.juggernaut-shell .brand-strip .session-tab-runtime-action .session-tab-action-icon .tool-icon,
+body.juggernaut-shell .brand-strip .session-tab-strip-review .session-tab-action-icon .tool-icon {
   width: 15px;
   height: 15px;
 }
@@ -12621,9 +12646,10 @@ body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool) 
 body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool) .tool-label,
 body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"] span,
 body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"] span,
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"] svg,
+body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"] .session-tab-action-icon .tool-icon,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"] span,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"] svg {
+body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"] .session-tab-action-icon .tool-icon,
+body.juggernaut-shell .brand-strip .session-tab-strip-review[data-provenance="local_only"] .session-tab-action-icon .tool-icon {
   color: rgba(0, 0, 0, 0.92);
   text-shadow: none;
   filter: none;
@@ -12634,9 +12660,10 @@ body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool):
 body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool):disabled .tool-label,
 body.juggernaut-shell .brand-strip .session-tab-strip-action[data-provenance="local_only"]:disabled span,
 body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"]:disabled span,
-body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"]:disabled svg,
+body.juggernaut-shell .brand-strip .session-tab-history-action[data-provenance="local_only"]:disabled .session-tab-action-icon .tool-icon,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:disabled span,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:disabled svg {
+body.juggernaut-shell .brand-strip .session-tab-runtime-action[data-provenance="local_only"]:disabled .session-tab-action-icon .tool-icon,
+body.juggernaut-shell .brand-strip .session-tab-strip-review[data-provenance="local_only"]:disabled .session-tab-action-icon .tool-icon {
   color: rgba(0, 0, 0, 0.5);
   text-shadow: none;
   opacity: 1;

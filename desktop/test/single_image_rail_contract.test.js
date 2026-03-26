@@ -249,7 +249,7 @@ test("single-image rail: canonical affordance labels keep Remove People standard
 
 test("single-image rail: region select uses a marquee glyph while Cut Out keeps subject extraction art", () => {
   const selectAnchorStart = railSource.indexOf('toolId: "select"');
-  const selectRegionIconStart = railSource.indexOf('iconSvg: railIconSvg("select_region")', selectAnchorStart);
+  const selectRegionIconStart = railSource.indexOf('iconMarkup: railIconMarkup("select_region")', selectAnchorStart);
   const cutOutStart = railSource.indexOf('cut_out: Object.freeze({');
   const cutOutSubjectIconStart = railSource.indexOf('iconId: "select_subject"', cutOutStart);
 

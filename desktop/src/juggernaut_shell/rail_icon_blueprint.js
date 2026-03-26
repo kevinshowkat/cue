@@ -1,15 +1,4 @@
-const DEFAULT_STROKE_ATTRS = Object.freeze({
-  fill: "none",
-  stroke: "currentColor",
-  "stroke-width": "1.85",
-  "stroke-linecap": "round",
-  "stroke-linejoin": "round",
-});
-
-const DEFAULT_FILL_ATTRS = Object.freeze({
-  fill: "currentColor",
-  "fill-opacity": "0.14",
-});
+import { DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID, getJuggernautRailIconPack } from "./rail_icon_packs.js";
 
 function freezeAttrs(base, extra = {}) {
   return Object.freeze({ ...base, ...extra });
@@ -18,42 +7,48 @@ function freezeAttrs(base, extra = {}) {
 function strokePath(d, extra = {}) {
   return Object.freeze({
     tag: "path",
-    attrs: freezeAttrs(DEFAULT_STROKE_ATTRS, { d, ...extra }),
+    paint: "stroke",
+    attrs: freezeAttrs({ d }, extra),
   });
 }
 
 function fillPath(d, extra = {}) {
   return Object.freeze({
     tag: "path",
-    attrs: freezeAttrs(DEFAULT_FILL_ATTRS, { d, ...extra }),
+    paint: "fill",
+    attrs: freezeAttrs({ d }, extra),
   });
 }
 
 function strokeCircle(cx, cy, r, extra = {}) {
   return Object.freeze({
     tag: "circle",
-    attrs: freezeAttrs(DEFAULT_STROKE_ATTRS, { cx, cy, r, ...extra }),
+    paint: "stroke",
+    attrs: freezeAttrs({ cx, cy, r }, extra),
   });
 }
 
 function fillCircle(cx, cy, r, extra = {}) {
   return Object.freeze({
     tag: "circle",
-    attrs: freezeAttrs(DEFAULT_FILL_ATTRS, { cx, cy, r, ...extra }),
+    paint: "fill",
+    attrs: freezeAttrs({ cx, cy, r }, extra),
   });
 }
 
 function strokeRect(x, y, width, height, rx, extra = {}) {
   return Object.freeze({
     tag: "rect",
-    attrs: freezeAttrs(DEFAULT_STROKE_ATTRS, { x, y, width, height, rx, ...extra }),
+    paint: "stroke",
+    attrs: freezeAttrs({ x, y, width, height, rx }, extra),
   });
 }
 
 function fillRect(x, y, width, height, rx, extra = {}) {
   return Object.freeze({
     tag: "rect",
-    attrs: freezeAttrs(DEFAULT_FILL_ATTRS, { x, y, width, height, rx, ...extra }),
+    paint: "fill",
+    attrs: freezeAttrs({ x, y, width, height, rx }, extra),
   });
 }
 
@@ -62,16 +57,17 @@ export const JUGGERNAUT_RAIL_ICON_STYLE = Object.freeze({
   viewBox: "0 0 24 24",
   grid: 24,
   safeArea: 2.4,
-  strokeWidth: 1.85,
+  defaultPackId: DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID,
   keywords: Object.freeze([
-    "machined line art",
-    "rounded joins",
+    "shared semantic blueprints",
+    "switchable generated packs",
     "single-subject silhouettes",
-    "currentColor-driven tinting",
-    "deterministic local generation",
+    "currentColor-driven mask tinting",
+    "provider-backed asset generation",
+    "oscillo gemini prompt-family metadata",
   ]),
   artDirection:
-    "Minimal forged glyphs with a machined silhouette, a restrained fill accent, and no stock icon-pack dependency.",
+    "Minimal custom glyph prompts authored from one semantic blueprint set into multiple provider-generated icon packs without a stock icon-pack dependency.",
 });
 
 export const JUGGERNAUT_RAIL_ICON_BLUEPRINTS = Object.freeze([
@@ -151,6 +147,22 @@ export const JUGGERNAUT_RAIL_ICON_BLUEPRINTS = Object.freeze([
       strokePath("M17.55 6.2l2.2 2.2-2.2 2.2"),
       strokePath("M19.1 15.6h-4.25"),
       strokePath("M16.4 13.4l-2.2 2.2 2.2 2.2"),
+    ]),
+  }),
+  Object.freeze({
+    toolId: "reframe",
+    label: "Reframe",
+    semanticRole: "crop-or-outpaint",
+    notes: "Crop frame with opposing arrows so reframing reads as reposition plus expansion, not generic selection.",
+    parts: Object.freeze([
+      fillRect(8.2, 7.2, 7.6, 8.6, 1.7, { "fill-opacity": "0.14" }),
+      strokeRect(8.2, 7.2, 7.6, 8.6, 1.7),
+      strokePath("M5.2 8.85V5.6h3.25"),
+      strokePath("M18.8 8.85V5.6h-3.25"),
+      strokePath("M5.2 15.15v3.25h3.25"),
+      strokePath("M18.8 15.15v3.25h-3.25"),
+      strokePath("M10.65 12l-1.55 1.55 1.55 1.55"),
+      strokePath("M13.35 15.1l1.55-1.55L13.35 12"),
     ]),
   }),
   Object.freeze({
@@ -282,6 +294,75 @@ export const JUGGERNAUT_RAIL_ICON_BLUEPRINTS = Object.freeze([
     ]),
   }),
   Object.freeze({
+    toolId: "new_session",
+    label: "New Session",
+    semanticRole: "create-session",
+    notes: "Single decisive plus glyph for starting a fresh session with no secondary marks.",
+    parts: Object.freeze([
+      strokePath("M12 5.2v13.6"),
+      strokePath("M5.2 12h13.6"),
+    ]),
+  }),
+  Object.freeze({
+    toolId: "fork_session",
+    label: "Fork Session",
+    semanticRole: "branch-session",
+    notes: "Compact branch icon with one origin, one continuation, and one offshoot to signal session forking at a glance.",
+    parts: Object.freeze([
+      strokePath("M8.2 8.6v6.1"),
+      strokePath("M8.2 9.35h6.25"),
+      strokePath("M8.2 14.7c0 2.35 1.95 4.25 4.3 4.25h1.2"),
+      fillCircle(8.2, 6.1, 2.05, { "fill-opacity": "0.18" }),
+      fillCircle(8.2, 18.95, 2.05, { "fill-opacity": "0.18" }),
+      fillCircle(17.1, 9.35, 2.05, { "fill-opacity": "0.18" }),
+    ]),
+  }),
+  Object.freeze({
+    toolId: "history",
+    label: "History",
+    semanticRole: "timeline-history",
+    notes: "Clockwise history loop with a short hand and recall arrow so timeline access reads immediately as history.",
+    parts: Object.freeze([
+      strokePath("M18.55 9.35a6.55 6.55 0 1 1-1.95-2.75"),
+      strokePath("M15.85 4.95h3.6v3.6"),
+      strokePath("M12 8.95v3.5l2.45 1.8"),
+    ]),
+  }),
+  Object.freeze({
+    toolId: "agent_run",
+    label: "Agent Run",
+    semanticRole: "agent-execution",
+    notes: "Three task lines feeding a forward action arrow so an active agent run reads as execution rather than chat.",
+    parts: Object.freeze([
+      strokePath("M6.15 7.55h7.35"),
+      strokePath("M6.15 12h4.45"),
+      strokePath("M6.15 16.45h5.85"),
+      strokePath("M13.95 7.1 19.45 12l-5.5 4.9"),
+    ]),
+  }),
+  Object.freeze({
+    toolId: "export",
+    label: "Export",
+    semanticRole: "deliver-export",
+    notes: "Direct export arrow dropping into an open baseline so shipping work out of the app reads as general export, not a filetype badge.",
+    parts: Object.freeze([
+      strokePath("M12 5.1v9.2"),
+      strokePath("M8.95 11.3 12 14.35l3.05-3.05"),
+      strokePath("M5.65 18.45h12.7"),
+    ]),
+  }),
+  Object.freeze({
+    toolId: "design_review",
+    label: "Design Review",
+    semanticRole: "review-critique",
+    notes: "Primary sparkle with two secondary accents so design review reads as evaluative polish and critique rather than generic favorites.",
+    parts: Object.freeze([
+      strokePath("M12 4.7 13.55 8.35l3.65 1.55-3.65 1.55L12 15.1l-1.55-3.65-3.65-1.55 3.65-1.55z"),
+      strokePath("M18.15 4.95l.58 1.22 1.22.58-1.22.58-.58 1.22-.58-1.22-1.22-.58 1.22-.58z"),
+      strokePath("M6.2 13.85l.72 1.62 1.62.72-1.62.72-.72 1.62-.72-1.62-1.62-.72 1.62-.72z"),
+    ]),
+  }),
+  Object.freeze({
     toolId: "export_psd",
     label: "Export",
     semanticRole: "deliver",
@@ -298,23 +379,55 @@ export const JUGGERNAUT_RAIL_ICON_BLUEPRINTS = Object.freeze([
   }),
 ]);
 
+function formatNumber(value, fallback = 0) {
+  const num = Number(value);
+  const safe = Number.isFinite(num) ? num : fallback;
+  if (Number.isInteger(safe)) return String(safe);
+  return safe.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function renderStrokeAttrs(attrs = {}, pack) {
+  return {
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": formatNumber(pack.render.strokeWidth, 1.85),
+    "stroke-linecap": pack.render.strokeLinecap,
+    "stroke-linejoin": pack.render.strokeLinejoin,
+    ...attrs,
+  };
+}
+
+function renderFillAttrs(attrs = {}, pack) {
+  const baseOpacity = Number(attrs["fill-opacity"]);
+  const nextOpacity = (Number.isFinite(baseOpacity) ? baseOpacity : 0.14) * pack.render.fillOpacityMultiplier;
+  const { ["fill-opacity"]: _ignoredOpacity, ...rest } = attrs;
+  return {
+    fill: "currentColor",
+    ...rest,
+    "fill-opacity": formatNumber(Math.max(0.04, Math.min(0.42, nextOpacity)), 0.14),
+  };
+}
+
 function renderAttrs(attrs) {
   return Object.entries(attrs)
     .map(([key, value]) => ` ${key}="${String(value)}"`)
     .join("");
 }
 
-function renderPart(part) {
-  return `<${part.tag}${renderAttrs(part.attrs)} />`;
+function renderPart(part, pack) {
+  const attrs = part?.paint === "fill" ? renderFillAttrs(part.attrs, pack) : renderStrokeAttrs(part.attrs, pack);
+  return `<${part.tag}${renderAttrs(attrs)} />`;
 }
 
-export function renderJuggernautRailIconSvg(blueprint) {
+export function renderJuggernautRailIconSvg(blueprint, packValue = DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID) {
+  const pack = getJuggernautRailIconPack(packValue);
   const className = `tool-icon tool-icon-${String(blueprint?.toolId || "")
     .trim()
-    .replace(/_/g, "-")}`;
-  const body = (Array.isArray(blueprint?.parts) ? blueprint.parts : []).map(renderPart).join("\n  ");
+    .replace(/_/g, "-")} tool-icon-pack-${pack.id.replace(/_/g, "-")}`;
+  const body = (Array.isArray(blueprint?.parts) ? blueprint.parts : []).map((part) => renderPart(part, pack)).join("\n  ");
+  const wrappedBody = pack.render.svgTransform ? `<g transform="${pack.render.svgTransform}">\n  ${body}\n</g>` : body;
   return `<svg class="${className}" viewBox="${JUGGERNAUT_RAIL_ICON_STYLE.viewBox}" fill="none" aria-hidden="true">
-  ${body}
+  ${wrappedBody}
 </svg>`;
 }
 
