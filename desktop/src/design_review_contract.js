@@ -7,7 +7,7 @@ export const DESIGN_REVIEW_ACCOUNT_MEMORY_SCHEMA = "design-review-account-memory
 export const DESIGN_REVIEW_UPLOAD_ANALYSIS_SCHEMA = "design-review-upload-analysis-v1";
 export const DESIGN_REVIEW_PLANNER_MODEL = "gpt-5.4";
 // Provider-facing Gemini model id for the final apply path (marketed as Nano Banana 2).
-export const DESIGN_REVIEW_FINAL_APPLY_MODEL = "gemini-nano-banana-2";
+export const DESIGN_REVIEW_FINAL_APPLY_MODEL = "gemini-3.1-flash-image-preview";
 export const DESIGN_REVIEW_TRIGGER = "design_review_button";
 
 const KNOWN_ACTION_TYPES = Object.freeze({
@@ -1058,7 +1058,7 @@ export function normalizeDesignReviewApplyModel(rawModel = "") {
   const trimmed = readFirstString(rawModel);
   if (!trimmed) return DESIGN_REVIEW_FINAL_APPLY_MODEL;
   const lower = trimmed.toLowerCase();
-  if (lower === "gemini nano banana 2" || lower === "nano banana 2") {
+  if (lower === "gemini nano banana 2" || lower === "nano banana 2" || lower === "gemini-nano-banana-2") {
     return DESIGN_REVIEW_FINAL_APPLY_MODEL;
   }
   const withoutModelsPrefix = lower.startsWith("models/") ? trimmed.slice("models/".length).trim() : trimmed;
@@ -1066,6 +1066,9 @@ export function normalizeDesignReviewApplyModel(rawModel = "") {
     withoutModelsPrefix.toLowerCase().startsWith("google/")
       ? withoutModelsPrefix.slice("google/".length).trim()
       : withoutModelsPrefix;
+  if (withoutGooglePrefix.toLowerCase() === "gemini-nano-banana-2") {
+    return DESIGN_REVIEW_FINAL_APPLY_MODEL;
+  }
   return withoutGooglePrefix || DESIGN_REVIEW_FINAL_APPLY_MODEL;
 }
 

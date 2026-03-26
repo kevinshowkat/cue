@@ -758,7 +758,7 @@ function createHarness(flow) {
               provider: "google",
             },
             providerRequest: {
-              model: "gemini-nano-banana-2",
+              model: "gemini-3.1-flash-image-preview",
             },
           },
         };
@@ -787,8 +787,8 @@ function createHarness(flow) {
       request: applyResult.request,
       debugInfo: applyResult.debugInfo,
       provider: "google",
-      requestedModel: "gemini-nano-banana-2",
-      normalizedModel: "gemini-nano-banana-2",
+      requestedModel: "gemini-3.1-flash-image-preview",
+      normalizedModel: "gemini-3.1-flash-image-preview",
       costTotalUsd: 0.13,
       latencyPerImageS: 2.8,
     });

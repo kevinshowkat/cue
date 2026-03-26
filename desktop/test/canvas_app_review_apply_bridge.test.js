@@ -562,8 +562,8 @@ test("review apply success replaces the target image in place and records a time
     referenceImageIds: ["img-2"],
     outputPath: "/tmp/out.png",
     provider: "google",
-    requestedModel: "gemini-nano-banana-2",
-    normalizedModel: "gemini-nano-banana-2",
+    requestedModel: "gemini-3.1-flash-image-preview",
+    normalizedModel: "gemini-3.1-flash-image-preview",
     cost_total_usd: 0.12,
     latency_per_image_s: 3.4,
   });
@@ -595,7 +595,7 @@ test("review apply success replaces the target image in place and records a time
   assert.deepEqual(harness.toolCalls, ["pan"]);
   assert.equal(harness.state.tool, "pan");
   assert.equal(harness.state.lastCostLatency?.provider, "google");
-  assert.equal(harness.state.lastCostLatency?.model, "gemini-nano-banana-2");
+  assert.equal(harness.state.lastCostLatency?.model, "gemini-3.1-flash-image-preview");
   assert.equal(harness.clearCalls.length, 1);
   assert.equal(harness.syncReviewFlowCalls, 1);
   assert.deepEqual(harness.dismissCalls, [{ requestId: "review-1" }]);
@@ -638,8 +638,8 @@ test("background review apply completion updates the owning tab session without 
     outputPath: "/tmp/out.png",
     referenceImageIds: ["img-2"],
     provider: "google",
-    requestedModel: "gemini-nano-banana-2",
-    normalizedModel: "gemini-nano-banana-2",
+    requestedModel: "gemini-3.1-flash-image-preview",
+    normalizedModel: "gemini-3.1-flash-image-preview",
   });
 
   assert.equal(ok, true);
@@ -657,7 +657,7 @@ test("background review apply completion updates the owning tab session without 
   assert.equal(harness.session.lastStatusText, "Engine: ready");
   assert.equal(harness.session.lastStatusError, false);
   assert.equal(harness.session.lastCostLatency?.provider, "google");
-  assert.equal(harness.session.lastCostLatency?.model, "gemini-nano-banana-2");
+  assert.equal(harness.session.lastCostLatency?.model, "gemini-3.1-flash-image-preview");
   assert.equal(harness.timelineCalls.length, 1);
   assert.deepEqual(harness.timelineCalls[0].parents, ["tl-1"]);
   assert.deepEqual(harness.syncCalls.at(-1), {

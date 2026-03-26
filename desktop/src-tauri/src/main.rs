@@ -59,7 +59,7 @@ const NATIVE_MENU_ACTION_EVENT: &str = "native-menu-action";
 const DESIGN_REVIEW_PLANNER_MODEL: &str = "gpt-5.4";
 const DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL: &str = "openai/gpt-5.4";
 // Provider-facing Gemini model id for the final apply path (marketed as Nano Banana 2).
-const DESIGN_REVIEW_APPLY_MODEL: &str = "gemini-nano-banana-2";
+const DESIGN_REVIEW_APPLY_MODEL: &str = "gemini-3.1-flash-image-preview";
 const REVIEW_OPENAI_RESPONSES_WS_TRANSPORT: &str = "responses_websocket";
 const REVIEW_OPENAI_RESPONSES_HTTP_TRANSPORT: &str = "responses_http";
 const REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT: &str = "responses_http_fallback";
@@ -3809,7 +3809,7 @@ fn review_normalize_apply_model(raw: &str) -> String {
         return DESIGN_REVIEW_APPLY_MODEL.to_string();
     }
     let lower = trimmed.to_ascii_lowercase();
-    if lower == "gemini nano banana 2" || lower == "nano banana 2" {
+    if lower == "gemini nano banana 2" || lower == "nano banana 2" || lower == "gemini-nano-banana-2" {
         return DESIGN_REVIEW_APPLY_MODEL.to_string();
     }
     let without_models = trimmed
@@ -3820,7 +3820,9 @@ fn review_normalize_apply_model(raw: &str) -> String {
         .strip_prefix("google/")
         .map(str::trim)
         .unwrap_or(without_models);
-    if without_google.eq_ignore_ascii_case(DESIGN_REVIEW_APPLY_MODEL) {
+    if without_google.eq_ignore_ascii_case(DESIGN_REVIEW_APPLY_MODEL)
+        || without_google.eq_ignore_ascii_case("gemini-nano-banana-2")
+    {
         return DESIGN_REVIEW_APPLY_MODEL.to_string();
     }
     without_google.to_string()
@@ -4187,10 +4189,8 @@ fn run_design_review_apply_request(
                 "parts": parts,
             }],
             "generationConfig": {
-                "candidateCount": 1,
-                "responseModalities": ["IMAGE"],
+                "responseModalities": ["TEXT", "IMAGE"],
                 "imageConfig": image_config,
-                "temperature": 0.2,
             }
         });
         let client = Client::builder()
@@ -4359,7 +4359,7 @@ fn run_design_review_apply_request(
         )
     })?;
     let openrouter_model =
-        review_normalize_openrouter_model(&normalized_model, "google/gemini-nano-banana-2");
+        review_normalize_openrouter_model(&normalized_model, "google/gemini-3.1-flash-image-preview");
     let content =
         review_build_openrouter_apply_input(&prompt, &target_image_path, &reference_image_paths).map_err(|error| {
             review_apply_error(
@@ -5799,6 +5799,14 @@ mod tests {
         );
         assert_eq!(
             review_normalize_apply_model("google/gemini-nano-banana-2"),
+            DESIGN_REVIEW_APPLY_MODEL
+        );
+        assert_eq!(
+            review_normalize_apply_model("models/gemini-3.1-flash-image-preview"),
+            DESIGN_REVIEW_APPLY_MODEL
+        );
+        assert_eq!(
+            review_normalize_apply_model("google/gemini-3.1-flash-image-preview"),
             DESIGN_REVIEW_APPLY_MODEL
         );
     }

@@ -708,7 +708,7 @@ test("design review pipeline preserves apply debug payloads on failed proposal s
           provider: "google",
         },
         providerRequest: {
-          model: "gemini-nano-banana-2",
+          model: "gemini-3.1-flash-image-preview",
         },
       };
       throw error;
@@ -742,7 +742,7 @@ test("design review pipeline preserves apply debug payloads on failed proposal s
   assert.equal(finalState.slots[0].apply?.debugInfo?.route?.kind, "apply");
   assert.equal(
     finalState.slots[0].apply?.debugInfo?.providerRequest?.model,
-    "gemini-nano-banana-2"
+    "gemini-3.1-flash-image-preview"
   );
 });
 
