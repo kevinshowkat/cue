@@ -13513,8 +13513,8 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenan
   color: var(--jg-pack-ink);
 }
 
-body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action.is-external-model {
+:root:not([data-rail-icon-pack="default_classic"]) body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model,
+:root:not([data-rail-icon-pack="default_classic"]) body.juggernaut-shell .brand-strip .session-tab-runtime-action.is-external-model {
   border-color: var(--jg-pack-accent-strong);
   border-top-color: rgba(255, 255, 255, 0.44);
   border-left-color: rgba(255, 255, 255, 0.3);
@@ -13529,8 +13529,8 @@ body.juggernaut-shell .brand-strip .session-tab-runtime-action.is-external-model
     0 8px 18px var(--jg-pack-shadow);
 }
 
-body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model:hover,
-body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model:focus-visible {
+:root:not([data-rail-icon-pack="default_classic"]) body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model:hover,
+:root:not([data-rail-icon-pack="default_classic"]) body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model:focus-visible {
   border-color: var(--jg-pack-accent-strong);
   background:
     radial-gradient(80px 52px at 50% 18%, var(--jg-pack-accent-soft), transparent 74%),
@@ -13640,8 +13640,8 @@ body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-proven
     inset 0 1px 0 rgba(255, 255, 255, 0.54);
 }
 
-body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model:active,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action.is-external-model.is-active-request {
+:root:not([data-rail-icon-pack="default_classic"]) body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model:active,
+:root:not([data-rail-icon-pack="default_classic"]) body.juggernaut-shell .brand-strip .session-tab-runtime-action.is-external-model.is-active-request {
   border-color: var(--jg-pack-accent-strong);
   border-top-color: rgba(255, 255, 255, 0.5);
   border-left-color: rgba(255, 255, 255, 0.38);
@@ -13698,8 +13698,8 @@ body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-proven
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62);
 }
 
-body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model:disabled,
-body.juggernaut-shell .brand-strip .session-tab-runtime-action.is-external-model:disabled {
+:root:not([data-rail-icon-pack="default_classic"]) body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model:disabled,
+:root:not([data-rail-icon-pack="default_classic"]) body.juggernaut-shell .brand-strip .session-tab-runtime-action.is-external-model:disabled {
   border-color: var(--jg-pack-border);
   border-top-color: rgba(255, 255, 255, 0.42);
   border-left-color: rgba(255, 255, 255, 0.32);
@@ -13725,8 +13725,8 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenan
   color: var(--jg-pack-ink);
 }
 
-body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model span,
-body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model .session-tab-action-icon .tool-icon {
+:root:not([data-rail-icon-pack="default_classic"]) body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model span,
+:root:not([data-rail-icon-pack="default_classic"]) body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model .session-tab-action-icon .tool-icon {
   color: var(--jg-pack-ink);
 }
 
@@ -13747,8 +13747,8 @@ body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-proven
   color: var(--jg-pack-ink-muted);
 }
 
-body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model:disabled span,
-body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model:disabled .session-tab-action-icon .tool-icon {
+:root:not([data-rail-icon-pack="default_classic"]) body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model:disabled span,
+:root:not([data-rail-icon-pack="default_classic"]) body.juggernaut-shell .brand-strip .session-tab-strip-action.is-external-model:disabled .session-tab-action-icon .tool-icon {
   color: var(--jg-pack-ink-muted);
 }
 
