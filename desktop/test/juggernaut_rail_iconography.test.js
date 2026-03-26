@@ -17,26 +17,23 @@ const manifest = JSON.parse(
   readFileSync(join(here, "..", "src", "assets", "juggernaut-rail-icons", "manifest.json"), "utf8")
 );
 const railSource = readFileSync(join(here, "..", "src", "juggernaut_shell", "rail.js"), "utf8");
+const appSource = readFileSync(join(here, "..", "src", "canvas_app.js"), "utf8");
 
 test("Juggernaut rail iconography: manifest covers the shared generated glyph set", () => {
   const actualIds = manifest.icons.map((icon) => icon.tool_id).sort();
-const expectedIds = [
+  const expectedIds = [
     "agent_run",
-    "background_swap",
     "cleanup",
     "create_tool",
     "design_review",
     "export",
-    "export_psd",
     "fork_session",
     "history",
     "make_space",
     "move",
     "new_session",
-    "polish",
     "protect",
     "reframe",
-    "relight",
     "remove_people",
     "select_region",
     "select_subject",
@@ -77,7 +74,9 @@ test("Juggernaut rail iconography: generated registry exports provider-backed as
   assert.match(getJuggernautRailIconMarkup("select_region", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-select-region/);
   assert.match(getJuggernautRailIconMarkup("reframe", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-reframe/);
   assert.match(getJuggernautRailIconMarkup("protect", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-protect/);
+  assert.match(getJuggernautRailIconMarkup("make_space", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-make-space/);
   assert.match(getJuggernautRailIconMarkup("remove_people", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-remove-people/);
+  assert.match(getJuggernautRailIconMarkup("create_tool", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-create-tool/);
   assert.match(getJuggernautRailIconMarkup("new_session", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-new-session/);
   assert.match(getJuggernautRailIconMarkup("fork_session", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-fork-session/);
   assert.match(getJuggernautRailIconMarkup("history", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-history/);
@@ -118,4 +117,5 @@ test("Juggernaut rail iconography: rail rendering consumes generated registry an
   assert.ok(cutOutSubjectIconStart > cutOutStart);
   assert.ok(reframeStart >= 0);
   assert.ok(reframeIconStart > reframeStart);
+  assert.match(appSource, /getJuggernautRailIconMarkup\("create_tool", settings\.railIconPack\)/);
 });

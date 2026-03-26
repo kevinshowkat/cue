@@ -70,7 +70,7 @@ export const JUGGERNAUT_RAIL_ICON_STYLE = Object.freeze({
     "Minimal custom glyph prompts authored from one semantic blueprint set into multiple provider-generated icon packs without a stock icon-pack dependency.",
 });
 
-export const JUGGERNAUT_RAIL_ICON_BLUEPRINTS = Object.freeze([
+export const JUGGERNAUT_MAIN_APP_ICON_BLUEPRINTS = Object.freeze([
   Object.freeze({
     toolId: "move",
     label: "Move image",
@@ -131,22 +131,6 @@ export const JUGGERNAUT_RAIL_ICON_BLUEPRINTS = Object.freeze([
       strokePath("M12 16v1.35"),
       strokePath("M6.65 12H8"),
       strokePath("M16 12h1.35"),
-    ]),
-  }),
-  Object.freeze({
-    toolId: "background_swap",
-    label: "Background swap",
-    semanticRole: "scene-replace",
-    notes: "Landscape tile with a horizontal exchange arrow to make the background replacement action explicit.",
-    parts: Object.freeze([
-      fillRect(4.9, 6.1, 8.35, 8.05, 2.1, { "fill-opacity": "0.12" }),
-      strokeRect(4.9, 6.1, 8.35, 8.05, 2.1),
-      fillCircle(8.05, 8.55, 0.86, { "fill-opacity": "0.18" }),
-      strokePath("M6.58 12.92l1.96-2.16 1.56 1.58 1.5-1.88"),
-      strokePath("M14.85 8.4h4.25"),
-      strokePath("M17.55 6.2l2.2 2.2-2.2 2.2"),
-      strokePath("M19.1 15.6h-4.25"),
-      strokePath("M16.4 13.4l-2.2 2.2 2.2 2.2"),
     ]),
   }),
   Object.freeze({
@@ -253,37 +237,6 @@ export const JUGGERNAUT_RAIL_ICON_BLUEPRINTS = Object.freeze([
     ]),
   }),
   Object.freeze({
-    toolId: "polish",
-    label: "Polish",
-    semanticRole: "finish",
-    notes: "Primary sparkle with smaller accents so finish/polish reads as a clean global refinement.",
-    parts: Object.freeze([
-      fillPath("M12 4.7 13.6 8.45l3.75 1.6-3.75 1.6L12 15.4l-1.6-3.75-3.75-1.6 3.75-1.6z", {
-        "fill-opacity": "0.16",
-      }),
-      strokePath("M12 4.7 13.6 8.45l3.75 1.6-3.75 1.6L12 15.4l-1.6-3.75-3.75-1.6 3.75-1.6z"),
-      strokePath("M17.55 14.6l.72 1.62 1.63.72-1.63.72-.72 1.63-.72-1.63-1.62-.72 1.62-.72z"),
-      strokePath("M7.15 15.25l.52 1.18 1.18.52-1.18.52-.52 1.18-.52-1.18-1.18-.52 1.18-.52z"),
-    ]),
-  }),
-  Object.freeze({
-    toolId: "relight",
-    label: "Relight",
-    semanticRole: "light-balance",
-    notes: "Half-lit disc with restrained rays so relighting reads as a lighting pass, not exposure only.",
-    parts: Object.freeze([
-      fillCircle(12, 12, 4.7, { "fill-opacity": "0.12" }),
-      fillPath("M12 7.3a4.7 4.7 0 0 1 0 9.4z", { "fill-opacity": "0.18" }),
-      strokeCircle(12, 12, 4.7),
-      strokePath("M12 2.95v2.15"),
-      strokePath("M12 18.9v2.15"),
-      strokePath("M4.15 12h2.15"),
-      strokePath("M17.7 12h2.15"),
-      strokePath("M6.55 6.55 8.05 8.05"),
-      strokePath("M15.95 15.95l1.5 1.5"),
-    ]),
-  }),
-  Object.freeze({
     toolId: "create_tool",
     label: "Create Tool",
     semanticRole: "forge",
@@ -369,22 +322,9 @@ export const JUGGERNAUT_RAIL_ICON_BLUEPRINTS = Object.freeze([
       strokePath("M6.2 13.85l.72 1.62 1.62.72-1.62.72-.72 1.62-.72-1.62-1.62-.72 1.62-.72z"),
     ]),
   }),
-  Object.freeze({
-    toolId: "export_psd",
-    label: "Export",
-    semanticRole: "deliver",
-    notes: "Downstream release arrow framed by a lifted shoulder and base rule.",
-    parts: Object.freeze([
-      fillPath("M8.15 18.2h7.7l-.95 1.55H9.1z", { "fill-opacity": "0.18" }),
-      strokePath("M12 6.08v9.12"),
-      strokePath("M8.95 12.3L12 15.35l3.05-3.05"),
-      strokePath("M7.62 6.42h8.76"),
-      strokePath("M7.62 6.42L6.35 8.12"),
-      strokePath("M16.38 6.42l1.27 1.7"),
-      strokePath("M5.55 18.2h12.9"),
-    ]),
-  }),
 ]);
+
+export const JUGGERNAUT_RAIL_ICON_BLUEPRINTS = JUGGERNAUT_MAIN_APP_ICON_BLUEPRINTS;
 
 function formatNumber(value, fallback = 0) {
   const num = Number(value);

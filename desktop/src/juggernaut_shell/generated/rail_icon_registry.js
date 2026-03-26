@@ -7,7 +7,7 @@ function normalizePackId(value = "") {
 }
 
 function escapeCssUrl(value = "") {
-  return String(value || "").replace(/'/g, "%27");
+  return String(value || '').replace(/'/g, '%27');
 }
 
 export const JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS = Object.freeze({
@@ -16,15 +16,12 @@ export const JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS = Object.freeze({
     "upload": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/upload.png", import.meta.url).href,
     "select_subject": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/select_subject.png", import.meta.url).href,
     "select_region": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/select_region.png", import.meta.url).href,
-    "background_swap": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/background_swap.png", import.meta.url).href,
     "reframe": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/reframe.png", import.meta.url).href,
     "cleanup": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/cleanup.png", import.meta.url).href,
     "variations": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/variations.png", import.meta.url).href,
     "protect": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/protect.png", import.meta.url).href,
     "make_space": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/make_space.png", import.meta.url).href,
     "remove_people": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/remove_people.png", import.meta.url).href,
-    "polish": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/polish.png", import.meta.url).href,
-    "relight": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/relight.png", import.meta.url).href,
     "create_tool": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/create_tool.png", import.meta.url).href,
     "new_session": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/new_session.png", import.meta.url).href,
     "fork_session": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/fork_session.png", import.meta.url).href,
@@ -32,22 +29,18 @@ export const JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS = Object.freeze({
     "agent_run": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/agent_run.png", import.meta.url).href,
     "export": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/export.png", import.meta.url).href,
     "design_review": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/design_review.png", import.meta.url).href,
-    "export_psd": new URL("../../assets/juggernaut-rail-icons/oscillo_ink/export_psd.png", import.meta.url).href,
   }),
   "industrial_mono": Object.freeze({
     "move": new URL("../../assets/juggernaut-rail-icons/industrial_mono/move.png", import.meta.url).href,
     "upload": new URL("../../assets/juggernaut-rail-icons/industrial_mono/upload.png", import.meta.url).href,
     "select_subject": new URL("../../assets/juggernaut-rail-icons/industrial_mono/select_subject.png", import.meta.url).href,
     "select_region": new URL("../../assets/juggernaut-rail-icons/industrial_mono/select_region.png", import.meta.url).href,
-    "background_swap": new URL("../../assets/juggernaut-rail-icons/industrial_mono/background_swap.png", import.meta.url).href,
     "reframe": new URL("../../assets/juggernaut-rail-icons/industrial_mono/reframe.png", import.meta.url).href,
     "cleanup": new URL("../../assets/juggernaut-rail-icons/industrial_mono/cleanup.png", import.meta.url).href,
     "variations": new URL("../../assets/juggernaut-rail-icons/industrial_mono/variations.png", import.meta.url).href,
     "protect": new URL("../../assets/juggernaut-rail-icons/industrial_mono/protect.png", import.meta.url).href,
     "make_space": new URL("../../assets/juggernaut-rail-icons/industrial_mono/make_space.png", import.meta.url).href,
     "remove_people": new URL("../../assets/juggernaut-rail-icons/industrial_mono/remove_people.png", import.meta.url).href,
-    "polish": new URL("../../assets/juggernaut-rail-icons/industrial_mono/polish.png", import.meta.url).href,
-    "relight": new URL("../../assets/juggernaut-rail-icons/industrial_mono/relight.png", import.meta.url).href,
     "create_tool": new URL("../../assets/juggernaut-rail-icons/industrial_mono/create_tool.png", import.meta.url).href,
     "new_session": new URL("../../assets/juggernaut-rail-icons/industrial_mono/new_session.png", import.meta.url).href,
     "fork_session": new URL("../../assets/juggernaut-rail-icons/industrial_mono/fork_session.png", import.meta.url).href,
@@ -55,22 +48,18 @@ export const JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS = Object.freeze({
     "agent_run": new URL("../../assets/juggernaut-rail-icons/industrial_mono/agent_run.png", import.meta.url).href,
     "export": new URL("../../assets/juggernaut-rail-icons/industrial_mono/export.png", import.meta.url).href,
     "design_review": new URL("../../assets/juggernaut-rail-icons/industrial_mono/design_review.png", import.meta.url).href,
-    "export_psd": new URL("../../assets/juggernaut-rail-icons/industrial_mono/export_psd.png", import.meta.url).href,
   }),
   "painterly_folk": Object.freeze({
     "move": new URL("../../assets/juggernaut-rail-icons/painterly_folk/move.png", import.meta.url).href,
     "upload": new URL("../../assets/juggernaut-rail-icons/painterly_folk/upload.png", import.meta.url).href,
     "select_subject": new URL("../../assets/juggernaut-rail-icons/painterly_folk/select_subject.png", import.meta.url).href,
     "select_region": new URL("../../assets/juggernaut-rail-icons/painterly_folk/select_region.png", import.meta.url).href,
-    "background_swap": new URL("../../assets/juggernaut-rail-icons/painterly_folk/background_swap.png", import.meta.url).href,
     "reframe": new URL("../../assets/juggernaut-rail-icons/painterly_folk/reframe.png", import.meta.url).href,
     "cleanup": new URL("../../assets/juggernaut-rail-icons/painterly_folk/cleanup.png", import.meta.url).href,
     "variations": new URL("../../assets/juggernaut-rail-icons/painterly_folk/variations.png", import.meta.url).href,
     "protect": new URL("../../assets/juggernaut-rail-icons/painterly_folk/protect.png", import.meta.url).href,
     "make_space": new URL("../../assets/juggernaut-rail-icons/painterly_folk/make_space.png", import.meta.url).href,
     "remove_people": new URL("../../assets/juggernaut-rail-icons/painterly_folk/remove_people.png", import.meta.url).href,
-    "polish": new URL("../../assets/juggernaut-rail-icons/painterly_folk/polish.png", import.meta.url).href,
-    "relight": new URL("../../assets/juggernaut-rail-icons/painterly_folk/relight.png", import.meta.url).href,
     "create_tool": new URL("../../assets/juggernaut-rail-icons/painterly_folk/create_tool.png", import.meta.url).href,
     "new_session": new URL("../../assets/juggernaut-rail-icons/painterly_folk/new_session.png", import.meta.url).href,
     "fork_session": new URL("../../assets/juggernaut-rail-icons/painterly_folk/fork_session.png", import.meta.url).href,
@@ -78,22 +67,18 @@ export const JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS = Object.freeze({
     "agent_run": new URL("../../assets/juggernaut-rail-icons/painterly_folk/agent_run.png", import.meta.url).href,
     "export": new URL("../../assets/juggernaut-rail-icons/painterly_folk/export.png", import.meta.url).href,
     "design_review": new URL("../../assets/juggernaut-rail-icons/painterly_folk/design_review.png", import.meta.url).href,
-    "export_psd": new URL("../../assets/juggernaut-rail-icons/painterly_folk/export_psd.png", import.meta.url).href,
   }),
   "kinetic_marker": Object.freeze({
     "move": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/move.png", import.meta.url).href,
     "upload": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/upload.png", import.meta.url).href,
     "select_subject": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/select_subject.png", import.meta.url).href,
     "select_region": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/select_region.png", import.meta.url).href,
-    "background_swap": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/background_swap.png", import.meta.url).href,
     "reframe": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/reframe.png", import.meta.url).href,
     "cleanup": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/cleanup.png", import.meta.url).href,
     "variations": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/variations.png", import.meta.url).href,
     "protect": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/protect.png", import.meta.url).href,
     "make_space": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/make_space.png", import.meta.url).href,
     "remove_people": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/remove_people.png", import.meta.url).href,
-    "polish": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/polish.png", import.meta.url).href,
-    "relight": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/relight.png", import.meta.url).href,
     "create_tool": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/create_tool.png", import.meta.url).href,
     "new_session": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/new_session.png", import.meta.url).href,
     "fork_session": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/fork_session.png", import.meta.url).href,
@@ -101,7 +86,6 @@ export const JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS = Object.freeze({
     "agent_run": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/agent_run.png", import.meta.url).href,
     "export": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/export.png", import.meta.url).href,
     "design_review": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/design_review.png", import.meta.url).href,
-    "export_psd": new URL("../../assets/juggernaut-rail-icons/kinetic_marker/export_psd.png", import.meta.url).href,
   }),
 });
 
@@ -123,3 +107,4 @@ export function getJuggernautRailIconMarkup(toolId = "", packId = DEFAULT_JUGGER
   const packClass = `tool-icon-pack-${normalizedPackId.replace(/_/g, "-")}`;
   return `<span class="tool-icon tool-icon-mask ${toolClass} ${packClass}" aria-hidden="true" style="--tool-icon-mask:url('${escapeCssUrl(assetUrl)}')"></span>`;
 }
+

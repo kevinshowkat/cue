@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile as execFileCallback } from "node:child_process";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -24,11 +24,13 @@ const tempDir = join(root, ".tmp", "juggernaut-rail-icons");
 const planPath = join(tempDir, "generation-plan.json");
 const reportPath = join(tempDir, "generation-report.json");
 const pythonGeneratorPath = join(root, "scripts", "generate_juggernaut_rail_icons.py");
+const ALL_BLUEPRINT_TOOL_IDS = new Set(JUGGERNAUT_RAIL_ICON_BLUEPRINTS.map((blueprint) => blueprint.toolId));
 
 function parseCliArgs(argv = process.argv.slice(2)) {
   const args = Array.from(argv);
   const options = {
     onlyToolIds: null,
+    onlyPackIds: null,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -51,6 +53,23 @@ function parseCliArgs(argv = process.argv.slice(2)) {
         .filter(Boolean);
       continue;
     }
+    if (arg === "--packs" || arg === "--pack") {
+      const raw = String(args[index + 1] || "").trim();
+      if (!raw) {
+        throw new Error("--packs requires a comma-separated pack id list");
+      }
+      options.onlyPackIds = raw.split(",").map((value) => String(value || "").trim()).filter(Boolean);
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--packs=") || arg.startsWith("--pack=")) {
+      const raw = arg.includes("--packs=") ? arg.slice("--packs=".length) : arg.slice("--pack=".length);
+      options.onlyPackIds = raw
+        .split(",")
+        .map((value) => String(value || "").trim())
+        .filter(Boolean);
+      continue;
+    }
     throw new Error(`Unknown argument: ${arg}`);
   }
 
@@ -59,9 +78,19 @@ function parseCliArgs(argv = process.argv.slice(2)) {
 
 const cli = parseCliArgs();
 const requestedToolIdSet = cli.onlyToolIds ? new Set(cli.onlyToolIds) : null;
+const requestedPackIdSet = cli.onlyPackIds ? new Set(cli.onlyPackIds) : null;
+const ACTIVE_ICON_PACKS = requestedPackIdSet
+  ? JUGGERNAUT_RAIL_ICON_PACKS.filter((pack) => requestedPackIdSet.has(pack.id))
+  : JUGGERNAUT_RAIL_ICON_PACKS;
 const ACTIVE_ICON_BLUEPRINTS = requestedToolIdSet
   ? JUGGERNAUT_RAIL_ICON_BLUEPRINTS.filter((blueprint) => requestedToolIdSet.has(blueprint.toolId))
   : JUGGERNAUT_RAIL_ICON_BLUEPRINTS;
+
+if (requestedPackIdSet && ACTIVE_ICON_PACKS.length !== requestedPackIdSet.size) {
+  const knownPackIds = new Set(JUGGERNAUT_RAIL_ICON_PACKS.map((pack) => pack.id));
+  const unknownPackIds = Array.from(requestedPackIdSet).filter((packId) => !knownPackIds.has(packId));
+  throw new Error(`Unknown pack ids for --packs: ${unknownPackIds.join(", ")}`);
+}
 
 if (requestedToolIdSet && ACTIVE_ICON_BLUEPRINTS.length !== requestedToolIdSet.size) {
   const knownToolIds = new Set(JUGGERNAUT_RAIL_ICON_BLUEPRINTS.map((blueprint) => blueprint.toolId));
@@ -69,7 +98,9 @@ if (requestedToolIdSet && ACTIVE_ICON_BLUEPRINTS.length !== requestedToolIdSet.s
   throw new Error(`Unknown tool ids for --only: ${unknownToolIds.join(", ")}`);
 }
 
-const PARTIAL_GENERATION = ACTIVE_ICON_BLUEPRINTS.length !== JUGGERNAUT_RAIL_ICON_BLUEPRINTS.length;
+const PARTIAL_GENERATION =
+  ACTIVE_ICON_BLUEPRINTS.length !== JUGGERNAUT_RAIL_ICON_BLUEPRINTS.length ||
+  ACTIVE_ICON_PACKS.length !== JUGGERNAUT_RAIL_ICON_PACKS.length;
 
 function renderRegistryModule(entriesByPack) {
   const lines = [];
@@ -132,7 +163,7 @@ function buildGenerationPlan() {
       model: process.env.GEMINI_IMAGE_MODEL || process.env.OSCILLO_GOOGLE_IMAGE_MODEL || "gemini-3-pro-image-preview",
     },
     default_pack_id: DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID,
-    packs: JUGGERNAUT_RAIL_ICON_PACKS.map((pack) => ({
+    packs: ACTIVE_ICON_PACKS.map((pack) => ({
       id: pack.id,
       label: pack.label,
       settings_label: pack.settingsLabel,
@@ -148,6 +179,28 @@ function buildGenerationPlan() {
       })),
     })),
   };
+}
+
+function readAssetToolId(fileName = "") {
+  const match = String(fileName || "").match(/^(.+)\.(png|svg)$/i);
+  return match ? String(match[1] || "").trim() : "";
+}
+
+async function pruneStaleAssetFiles(dirPath, allowedToolIds = ALL_BLUEPRINT_TOOL_IDS) {
+  let entries = [];
+  try {
+    entries = await readdir(dirPath, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  await Promise.all(
+    entries.map(async (entry) => {
+      if (!entry?.isFile?.()) return;
+      const toolId = readAssetToolId(entry.name);
+      if (!toolId || allowedToolIds.has(toolId)) return;
+      await rm(join(dirPath, entry.name), { force: true });
+    })
+  );
 }
 
 function findPackReport(report, packId) {
@@ -170,6 +223,8 @@ async function main() {
   await mkdir(assetDir, { recursive: true });
   await mkdir(generatedDir, { recursive: true });
   await mkdir(tempDir, { recursive: true });
+  await pruneStaleAssetFiles(assetDir);
+  await Promise.all(JUGGERNAUT_RAIL_ICON_PACKS.map((pack) => pruneStaleAssetFiles(join(assetDir, pack.id))));
 
   const existingManifest = PARTIAL_GENERATION ? await readExistingManifest() : null;
   if (PARTIAL_GENERATION && !existingManifest) {
@@ -214,46 +269,46 @@ async function main() {
 
   for (const pack of JUGGERNAUT_RAIL_ICON_PACKS) {
     const packReport = findPackReport(report, pack.id);
-    if (!packReport) {
+    const existingPackEntry = (existingManifest?.packs || []).find((entry) => entry.id === pack.id) || null;
+    if (!packReport && !existingPackEntry) {
       throw new Error(`Missing generation report for pack ${pack.id}`);
     }
     const packRegistryEntries = [];
     const generatedManifestIcons = new Map();
-    const existingManifestIcons = new Map(
-      ((existingManifest?.packs || []).find((entry) => entry.id === pack.id)?.icons || []).map((icon) => [icon.tool_id, icon])
-    );
+    const existingManifestIcons = new Map((existingPackEntry?.icons || []).map((icon) => [icon.tool_id, icon]));
 
-    for (const blueprint of ACTIVE_ICON_BLUEPRINTS) {
-      const iconReport = findIconReport(packReport, blueprint.toolId);
-      if (!iconReport) {
-        throw new Error(`Missing generation report for ${pack.id}:${blueprint.toolId}`);
+    if (packReport) {
+      for (const blueprint of ACTIVE_ICON_BLUEPRINTS) {
+        const iconReport = findIconReport(packReport, blueprint.toolId);
+        if (!iconReport) {
+          throw new Error(`Missing generation report for ${pack.id}:${blueprint.toolId}`);
+        }
+
+        const defaultRelativeAsset = `./${blueprint.toolId}.png`;
+        if (pack.id === DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID) {
+          await copyFile(join(assetDir, pack.id, `${blueprint.toolId}.png`), join(assetDir, `${blueprint.toolId}.png`));
+        }
+
+        generatedManifestIcons.set(blueprint.toolId, {
+          tool_id: blueprint.toolId,
+          label: blueprint.label,
+          semantic_role: blueprint.semanticRole,
+          notes: blueprint.notes,
+          asset: pack.id === DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID ? defaultRelativeAsset : `./${pack.id}/${blueprint.toolId}.png`,
+          asset_kind: "mask_png",
+          gemini_prompt: buildJuggernautRailIconGeminiPrompt(blueprint, pack.id),
+          effective_prompt: iconReport.effective_prompt,
+          generation: {
+            raw_result_format: iconReport.raw_result_format,
+            mask_strategy: iconReport.mask_strategy,
+            mask_threshold: iconReport.mask_threshold,
+            mask_coverage: iconReport.mask_coverage,
+            mask_bbox: iconReport.mask_bbox,
+            final_asset: iconReport.final_asset,
+            session_index: iconReport.session_index,
+          },
+        });
       }
-
-      const packRelativeAsset = `../../assets/juggernaut-rail-icons/${pack.id}/${blueprint.toolId}.png`;
-      const defaultRelativeAsset = `./${blueprint.toolId}.png`;
-      if (pack.id === DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID) {
-        await copyFile(join(assetDir, pack.id, `${blueprint.toolId}.png`), join(assetDir, `${blueprint.toolId}.png`));
-      }
-
-      generatedManifestIcons.set(blueprint.toolId, {
-        tool_id: blueprint.toolId,
-        label: blueprint.label,
-        semantic_role: blueprint.semanticRole,
-        notes: blueprint.notes,
-        asset: pack.id === DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID ? defaultRelativeAsset : `./${pack.id}/${blueprint.toolId}.png`,
-        asset_kind: "mask_png",
-        gemini_prompt: buildJuggernautRailIconGeminiPrompt(blueprint, pack.id),
-        effective_prompt: iconReport.effective_prompt,
-        generation: {
-          raw_result_format: iconReport.raw_result_format,
-          mask_strategy: iconReport.mask_strategy,
-          mask_threshold: iconReport.mask_threshold,
-          mask_coverage: iconReport.mask_coverage,
-          mask_bbox: iconReport.mask_bbox,
-          final_asset: iconReport.final_asset,
-          session_index: iconReport.session_index,
-        },
-      });
     }
 
     const packManifestIcons = [];
