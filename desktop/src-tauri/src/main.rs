@@ -142,7 +142,7 @@ fn build_tools_menu() -> Menu {
         CustomMenuItem::new(MENU_TOOLS_CREATE_TOOL.to_string(), "Create Tool");
     let slot_labels = [
         "Marker",
-        "Protect",
+        "Highlight",
         "Magic Select",
         "Make Space",
         "Eraser",

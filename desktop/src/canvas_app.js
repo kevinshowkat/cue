@@ -159,7 +159,7 @@ const COMMUNICATION_REVIEW_SCHEMA_VERSION = "juggernaut.communication-review.v1"
 const COMMUNICATION_TOOL_IDS = Object.freeze(["marker", "protect", "magic_select", "make_space", "eraser"]);
 const NATIVE_MENU_COMMUNICATION_TOOLS = Object.freeze([
   { toolId: "marker", label: "Marker" },
-  { toolId: "protect", label: "Protect" },
+  { toolId: "protect", label: "Highlight" },
   { toolId: "magic_select", label: "Magic Select" },
   { toolId: "make_space", label: "Make Space" },
   { toolId: "eraser", label: "Eraser" },
@@ -187,8 +187,8 @@ const COMMUNICATION_MARK_DRAFT_SHOULDER_CSS_PX = 8.5;
 const COMMUNICATION_MARK_DRAFT_CORE_CSS_PX = 5.75;
 const COMMUNICATION_MARK_COMMITTED_SHOULDER_CSS_PX = 11.5;
 const COMMUNICATION_MARK_COMMITTED_CORE_CSS_PX = 8.25;
-const COMMUNICATION_PROTECT_DRAFT_WIDTH_CSS_PX = 3;
-const COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX = 2;
+const COMMUNICATION_PROTECT_DRAFT_WIDTH_CSS_PX = 22;
+const COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX = 18;
 const COMMUNICATION_STATE_CHANGED_EVENT = "juggernaut:communication-state-changed";
 const COMMUNICATION_REVIEW_REQUESTED_EVENT = "juggernaut:design-review-requested";
 const COMMUNICATION_PROPOSAL_TRAY_EVENT = "juggernaut:communication-proposal-tray-changed";
@@ -201,13 +201,26 @@ const DESIGN_REVIEW_TIMELINE_CLEARANCE_PX = 14;
 const DESIGN_REVIEW_APPLY_SHIMMER_LOOP_MS = 1350;
 const EDIT_PROPOSALS_LABEL = "Design Review";
 const COMMUNICATION_MARK_STROKE = "rgba(220, 28, 28, 0.96)";
-const COMMUNICATION_PROTECT_STROKE = "rgba(0, 0, 0, 0.92)";
+const COMMUNICATION_PROTECT_STROKE = "rgba(255, 228, 76, 0.7)";
 const COMMUNICATION_REGION_ACTIVE = "rgba(100, 210, 255, 0.94)";
 const COMMUNICATION_REGION_IDLE = "rgba(100, 210, 255, 0.34)";
 const IMAGE_SELECTION_INACTIVE_STROKE = "rgba(118, 211, 255, 0.56)";
 const DEFAULT_UNTITLED_TAB_TITLE = "Untitled Canvas";
 const SESSION_TAB_TITLE_MAX_LENGTH = 40;
 const SESSION_SNAPSHOT_FILENAME = "juggernaut-session.json";
+
+function communicationToolDisplayLabel(toolId = "") {
+  const normalized = String(toolId || "").trim().toLowerCase();
+  if (normalized === "protect") return "Highlight";
+  const entry = NATIVE_MENU_COMMUNICATION_TOOLS.find((item) => item.toolId === normalized);
+  return entry?.label || String(toolId || "").trim() || "Tool";
+}
+
+function communicationReviewToolId(toolId = "") {
+  const normalized = String(toolId || "").trim().toLowerCase();
+  if (normalized === "protect") return "highlight";
+  return normalized || null;
+}
 const AGENT_RUNNER_BRIDGE_KEY = "__JUGGERNAUT_AGENT_RUNNER__";
 const AGENT_RUNNER_STATE_EVENT = "juggernaut:agent-runner-state";
 const AGENT_RUNNER_LOG_EVENT = "juggernaut:agent-runner-log";
@@ -22911,7 +22924,7 @@ function buildCommunicationReviewPayload({ requestId = null, source = "ui" } = {
       visibleImages: buildCommunicationVisibleImagesPayload(),
     },
     communication: {
-      tool: communicationToolId(),
+      tool: communicationReviewToolId(communicationToolId()),
       marks: buildCommunicationMarksPayload(),
       regionSelections: buildCommunicationRegionsPayload(),
       latestAnchor: resolveCommunicationReviewAnchor(),
@@ -23076,7 +23089,7 @@ function buildObservableCommunicationTraceSnapshot(request = null) {
 
 function finishObservableCommunicationMarkerStroke(
   pointerEvent = null,
-  { source = "agent_observable_marker" } = {}
+  { source = "agent_observable_marker", tool = "marker" } = {}
 ) {
   const mark = commitCommunicationMarkDraft();
   clearObservableCommunicationPointerState();
@@ -23102,7 +23115,7 @@ function finishObservableCommunicationMarkerStroke(
   }
   return {
     ok: Boolean(mark),
-    tool: "marker",
+    tool: tool === "protect" ? "highlight" : tool,
     mark_id: mark?.id ? String(mark.id) : null,
     image_id: mark?.imageId ? String(mark.imageId) : null,
     source_image_id: mark?.sourceImageId ? String(mark.sourceImageId) : null,
@@ -23245,7 +23258,7 @@ async function performObservableCommunicationMarkerStroke(
     pointsCss.slice(1),
     { stepDelayMs: request?.step_delay_ms }
   );
-  return finishObservableCommunicationMarkerStroke(pointerEvent);
+  return finishObservableCommunicationMarkerStroke(pointerEvent, { tool: toolId });
 }
 
 async function performObservableCommunicationMagicSelectClick(
@@ -23307,7 +23320,7 @@ function installAgentObservableDriverRuntime() {
   const driver = createAgentObservableDriver({
     performMarkerStroke: performObservableCommunicationMarkerStroke,
     performProtectStroke: (request = {}) =>
-      performObservableCommunicationMarkerStroke(request, { toolId: "protect", toolLabel: "protect" }),
+      performObservableCommunicationMarkerStroke(request, { toolId: "protect", toolLabel: "highlight" }),
     performMagicSelectClick: performObservableCommunicationMagicSelectClick,
     performMakeSpaceClick: (request = {}) =>
       performObservableCommunicationMagicSelectClick(request, { toolId: "make_space", toolLabel: "make space" }),
@@ -24743,11 +24756,20 @@ function renderCommunicationOverlay(octx) {
     octx.shadowColor = "transparent";
     octx.shadowBlur = 0;
     if (markKind === "freehand_protect") {
-      octx.lineWidth = Math.max(
-        1,
-        Math.round((draft ? COMMUNICATION_PROTECT_DRAFT_WIDTH_CSS_PX : COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX) * dpr)
-      );
-      octx.strokeStyle = draft ? markerStrokeVariant(markerColor, 0.68) : markerColor;
+      const highlightBodyWidthCss = draft
+        ? COMMUNICATION_PROTECT_DRAFT_WIDTH_CSS_PX
+        : COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX;
+      const highlightCoreWidthCss = highlightBodyWidthCss * 0.58;
+      octx.globalCompositeOperation = "multiply";
+      octx.lineWidth = Math.max(1, Math.round(highlightBodyWidthCss * dpr));
+      octx.strokeStyle = draft
+        ? markerStrokeVariant(markerColor, 0.5)
+        : markerStrokeVariant(markerColor, 0.38);
+      if (traceCommunicationMarkPath(octx, points)) octx.stroke();
+      octx.lineWidth = Math.max(1, Math.round(highlightCoreWidthCss * dpr));
+      octx.strokeStyle = draft
+        ? markerStrokeVariant(markerColor, 0.74)
+        : markerStrokeVariant(markerColor, 0.58);
       if (traceCommunicationMarkPath(octx, points)) octx.stroke();
       octx.restore();
       return;
@@ -32524,7 +32546,7 @@ function _timelineMakeNodeId(seq = 1) {
 
 function timelineActionKey(action = null, kind = null) {
   const normalized = String(action || "").trim().toLowerCase();
-  if (normalized.includes("protect")) return "protect";
+  if (normalized.includes("highlight") || normalized.includes("protect")) return "highlight";
   if (normalized.includes("magic")) return "magic";
   if (normalized.includes("erase region")) return "erase";
   if (normalized.includes("erase mark")) return "erase";
@@ -32564,7 +32586,7 @@ function timelineKindForAction(actionKey = "state", explicitKind = null) {
     return "transform";
   }
   if (actionKey === "delete") return "delete";
-  if (actionKey === "mark" || actionKey === "protect" || actionKey === "magic" || actionKey === "erase" || actionKey === "annotate" || actionKey === "circle") {
+  if (actionKey === "mark" || actionKey === "highlight" || actionKey === "magic" || actionKey === "erase" || actionKey === "annotate" || actionKey === "circle") {
     return "annotation";
   }
   return "state";
@@ -32772,8 +32794,8 @@ function setTimelineOpen(open = true, { persist = false } = {}) {
 }
 
 function timelineGlyphSvgMarkup(actionKey = "state") {
-  if (actionKey === "protect") {
-    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8 18.5 6v5.2c0 4.1-2.4 7.2-6.5 9-4.1-1.8-6.5-4.9-6.5-9V6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>';
+  if (actionKey === "highlight") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 17.8h7.6M7.3 13.8l5.2-7.2 4.2 3.1-5.2 7.2-4.9 1.1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="m13.8 8.3 4.1 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
   }
   if (actionKey === "magic") {
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 18 9-9m0 0 1.8-3.8L20.6 7 16.8 8.8M9.1 5.4v2.2M5.2 9.3H7.4M16.6 15.8v2.1M14.8 17.6h2.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -43956,7 +43978,7 @@ function installCanvasHandlers() {
             if (mark) {
               recordTimelineNode({
                 imageId: mark.imageId || null,
-                action: mark.kind === "freehand_protect" ? "Protect" : "Mark",
+                action: mark.kind === "freehand_protect" ? communicationToolDisplayLabel("protect") : "Mark",
                 kind: "annotation",
                 visualMode: "icon",
                 label: mark.imageId ? state.imagesById.get(mark.imageId)?.label || "Mark" : "Canvas Mark",

@@ -67,7 +67,7 @@ Hard constraints:
 - Do not own shell rail exposure
 
 Build:
-- Add `Protect` semantics for "do not change this region"
+- Add `Highlight` semantics for "focus design review here"
 - Add `Make Space` semantics for "reserve or create room here"
 - Preserve the existing review proposal/apply split
 - Keep the output action-first
@@ -133,7 +133,7 @@ Hard constraints:
 
 Build:
 - Expose:
-  - Protect
+  - Highlight
   - Remove People
   - Polish
   - Make Space
@@ -166,7 +166,7 @@ Hard constraints:
 Mission:
 - Verify these flows:
   1. Marker -> Design Review -> Accept Proposal -> Export -> PSD
-  2. Protect -> Remove People -> Export -> PSD
+  2. Highlight -> Remove People -> Export -> PSD
   3. Make Space -> Relight -> Export -> PSD
   4. Remove People -> Polish -> Export -> PSD
 - Use replay traces where available

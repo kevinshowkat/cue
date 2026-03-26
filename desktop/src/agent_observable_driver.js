@@ -15,7 +15,7 @@ const OBSERVABLE_ACTIONS = Object.freeze({
   }),
   protect_stroke: Object.freeze({
     method: "protectStroke",
-    tool: "protect",
+    tool: "highlight",
     minPoints: 2,
   }),
   magic_select_click: Object.freeze({
@@ -66,6 +66,7 @@ function normalizeObservableActionName(value = "") {
   if (!key) return "";
   if (OBSERVABLE_ACTIONS[key]) return key;
   if (key === "marker") return "marker_stroke";
+  if (key === "highlight") return "protect_stroke";
   if (key === "protect") return "protect_stroke";
   if (key === "magic_select" || key === "magicselect" || key === "magic-select") return "magic_select_click";
   if (key === "make_space" || key === "makespace" || key === "make-space") return "make_space_click";

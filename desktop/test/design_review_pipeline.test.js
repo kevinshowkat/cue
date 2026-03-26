@@ -262,7 +262,73 @@ test("design review pipeline applies an accepted proposal and emits structured a
   assert.ok(String(applyEvents[1].outputPath || "").includes("review-apply"));
 });
 
-test("design review pipeline preserves Protect and Make Space semantics in apply state and events", async () => {
+test("design review pipeline keeps targeting and references inside the Highlight image scope", async () => {
+  const applyCalls = [];
+  const pipeline = createDesignReviewPipeline({
+    providerRouter: {
+      async runPlanner() {
+        return {
+          text: JSON.stringify({
+            proposals: [
+              {
+                label: "Metal SpongeBob Squidward",
+                imageId: "img-metal",
+                actionType: "background_replace",
+                why: "Incorrectly tries to pull in an unrelated image.",
+                previewBrief: "Preview a scoped character-only replacement.",
+                applyBrief: "Replace Squidward with SpongeBob only.",
+              },
+            ],
+          }),
+        };
+      },
+    },
+    runApply: async (payload) => {
+      applyCalls.push(payload);
+      return {
+        outputPath: payload.outputPath || "/tmp/review-highlight-scope-output.png",
+      };
+    },
+  });
+
+  const review = await pipeline.startReview({
+    request: {
+      requestId: "review-highlight-scope",
+      sessionId: "tab:tab-highlight",
+      primaryImageId: "img-squid",
+      focusImageIds: ["img-squid", "img-sponge"],
+      visibleCanvasRef: "/tmp/review-highlight-scope.png",
+      imageIdsInView: ["img-metal", "img-squid", "img-sponge"],
+      selectedImageIds: ["img-squid"],
+      visibleCanvasContext: {
+        runDir: "/tmp/review-highlight-scope-run",
+        activeTabId: "tab-highlight",
+        images: [
+          { id: "img-metal", path: "/tmp/metal.png" },
+          { id: "img-squid", path: "/tmp/squidward.png" },
+          { id: "img-sponge", path: "/tmp/spongebob.png" },
+        ],
+      },
+    },
+  });
+
+  assert.equal(review.proposals[0].imageId, "img-squid");
+
+  const applyResult = await pipeline.applyProposal(review.proposals[0].proposalId, {
+    sessionKey: "tab:tab-highlight",
+  });
+
+  assert.equal(applyResult.ok, true);
+  assert.equal(applyCalls.length, 1);
+  assert.equal(applyCalls[0].targetImageId, "img-squid");
+  assert.deepEqual(applyCalls[0].referenceImageIds, ["img-sponge"]);
+  assert.deepEqual(
+    applyCalls[0].referenceImages.map((image) => image.id),
+    ["img-sponge"]
+  );
+});
+
+test("design review pipeline preserves Highlight and Make Space semantics in apply state and events", async () => {
   const applyEvents = [];
   const applyCalls = [];
   const pipeline = createDesignReviewPipeline({
@@ -275,9 +341,9 @@ test("design review pipeline preserves Protect and Make Space semantics in apply
                 label: "Open copy room",
                 imageId: "img-hero",
                 actionType: "crop_or_outpaint",
-                why: "Create space for copy while protecting the hero subject.",
+                why: "Create space for copy while focusing the change on the highlighted subject area.",
                 previewBrief: "Preview wider room on the right side.",
-                applyBrief: "Expand the scene to the right and keep the hero untouched.",
+                applyBrief: "Expand the scene to the right while keeping the edit centered on the highlighted hero area.",
               },
             ],
           }),
@@ -305,12 +371,12 @@ test("design review pipeline preserves Protect and Make Space semantics in apply
       requestId: "review-apply-focus",
       sessionId: "tab:tab-focus",
       primaryImageId: "img-hero",
-      reviewTool: "make_space",
+      reviewTool: "highlight",
       visibleCanvasRef: "/tmp/review-focus-visible.png",
       focusInputs: [
         {
-          focusInputId: "focus-protect-hero",
-          kind: "protect",
+          focusInputId: "focus-highlight-hero",
+          kind: "highlight",
           imageId: "img-hero",
           bounds: { x: 20, y: 24, width: 94, height: 128 },
         },
@@ -319,13 +385,6 @@ test("design review pipeline preserves Protect and Make Space semantics in apply
           kind: "make_space",
           imageId: "img-hero",
           bounds: { x: 180, y: 18, width: 140, height: 112 },
-        },
-      ],
-      protectedRegions: [
-        {
-          protectedRegionId: "protected-hero",
-          imageId: "img-hero",
-          bounds: { x: 20, y: 24, width: 94, height: 128 },
         },
       ],
       reservedSpaceIntent: {
@@ -358,14 +417,14 @@ test("design review pipeline preserves Protect and Make Space semantics in apply
 
   assert.equal(applyResult.ok, true);
   assert.equal(applyCalls.length, 1);
-  assert.deepEqual(applyCalls[0].proposal.focusInputIds, ["focus-protect-hero", "focus-space-right"]);
-  assert.deepEqual(applyCalls[0].proposal.protectedRegionIds, ["protected-hero"]);
+  assert.deepEqual(applyCalls[0].proposal.focusInputIds, ["focus-highlight-hero", "focus-space-right"]);
+  assert.deepEqual(applyCalls[0].proposal.protectedRegionIds, []);
   assert.deepEqual(applyCalls[0].proposal.reservedSpaceAreaIds, ["space-right"]);
-  assert.equal(finalState.lastApplyEvent?.protectedRegionIds?.[0], "protected-hero");
+  assert.deepEqual(finalState.lastApplyEvent?.protectedRegionIds, []);
   assert.equal(finalState.lastApplyEvent?.reservedSpaceAreaIds?.[0], "space-right");
   assert.deepEqual(applyEvents.map((event) => event.phase), ["started", "succeeded"]);
-  assert.deepEqual(applyEvents[0].focusInputIds, ["focus-protect-hero", "focus-space-right"]);
-  assert.deepEqual(applyEvents[0].protectedRegionIds, ["protected-hero"]);
+  assert.deepEqual(applyEvents[0].focusInputIds, ["focus-highlight-hero", "focus-space-right"]);
+  assert.deepEqual(applyEvents[0].protectedRegionIds, []);
   assert.deepEqual(applyEvents[0].reservedSpaceAreaIds, ["space-right"]);
 });
 

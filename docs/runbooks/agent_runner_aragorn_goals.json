@@ -91,21 +91,21 @@
       ]
     },
     {
-      "id": "aragorn-protect-stress",
-      "goal": "Improve the image while strictly preserving the protected parts, then export a PSD.",
+      "id": "aragorn-highlight-focus",
+      "goal": "Improve the image while clearly centering the edit on the highlighted parts, then export a PSD.",
       "preconditions": [
-        "human pre-places Protect over face, chest emblem, and sword hand"
+        "human pre-places Highlight over face, chest emblem, and sword hand"
       ],
       "expected_first_actions": [
         "request_design_review"
       ],
       "success_signals": [
-        "protected regions remain stable",
-        "edit is conservative around preserved content"
+        "the edit clearly targets the highlighted region first",
+        "the proposal stays centered on the highlighted content"
       ],
       "failure_signals": [
-        "face or hand changes noticeably",
-        "protected content is overwritten"
+        "the edit ignores the highlighted content",
+        "the proposal drifts away from the highlighted area"
       ]
     },
     {

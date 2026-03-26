@@ -5,7 +5,7 @@
     "This manifest is a first-pass machine-readable catalog for agent-operated Juggernaut workflows.",
     "Affordances are agent-facing descriptions of what operations do; execution types remain internal stable runtime identifiers.",
     "Provider and model details belong primarily to route profiles and receipts, not to the semantic identity of an affordance.",
-    "The current visible right-side communication rail exposes Marker, Protect, Magic Select, and Eraser; make_space remains documented as a dormant runtime affordance."
+    "The current visible right-side communication rail exposes Marker, Highlight, Magic Select, and Eraser; make_space remains documented as a dormant runtime affordance."
   ],
   "executionTypes": [
     {
@@ -461,24 +461,25 @@
     },
     {
       "id": "protect",
-      "label": "Protect",
+      "label": "Highlight",
       "surface": "focus",
       "source": "right_rail",
-      "whatItDoes": "Adds a visible protected-region mark that says do not edit this area.",
+      "whatItDoes": "Adds a visible yellow highlighter pass that tells design review to focus on that area and keep review/apply scope inside the circled images.",
       "whenToUse": [
-        "preserving a face or product detail",
-        "scoping design review with explicit no-edit zones",
-        "protecting content before a broader edit"
+        "focusing design review on the most important area",
+        "calling out the exact subject or detail the next edit should center on",
+        "guiding a broader edit without committing pixels"
       ],
       "whenNotToUse": [
         "committing a final image edit",
-        "requesting expansion or open space"
+        "requesting expansion or open space",
+        "declaring a hard no-edit zone"
       ],
       "requiresImage": false,
       "requiresFocus": false,
       "mutatesPixels": false,
       "reversible": true,
-      "executionType": "communication_protect",
+      "executionType": "communication_highlight",
       "routeProfileId": null,
       "costClass": "none",
       "latencyClass": "instant"

@@ -18,7 +18,7 @@ Juggernaut is a text-free-first, image-first desktop design workstation for non-
 - Product split:
   - left rail = deterministic precomputed action library
   - right rail = communication layer for complex or non-prebaked changes
-- V1 right-side communication rail tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
+- V1 right-side communication rail tools: `Marker`, `Highlight`, `Magic Select`, `Make Space`, `Eraser`.
 - V1 shell model: single-window, Warp-style session tabs over one shared canvas surface.
 - `Create Tool` remains core product value, but for the single-image-first wedge it moves to a secondary follow-on surface such as `Save Shortcut`.
 - Icon system: custom iconography generated from the same pipeline family used for Oscillo bookend icon generation, with the starting reference at `../oscillo/scripts/generate_bookend_overlays.py`.
@@ -103,7 +103,7 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 - No multi-image flows in the primary loop.
 - Left rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library.
 - Right rail shape: communication-only rail for complex or non-prebaked changes.
-- Right-side communication rail v1 tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
+- Right-side communication rail v1 tools: `Marker`, `Highlight`, `Magic Select`, `Make Space`, `Eraser`.
 - `Create Tool` remains in the product, but enters as a secondary follow-on capability through `Save Shortcut` or a secondary dialog after useful edits.
 
 ## V1 Non-Goals
@@ -122,9 +122,9 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 6. After first-use cloud-analysis consent, the system may opportunistically analyze the uploaded image through the design-review upload-analysis path, cache that analysis by image hash, and use it to improve future suggestions without blocking editing or design review.
 7. The left rail keeps two stable icon-only anchors: `Upload` and `Select`.
 8. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the deterministic precomputed action library, while any action that may incur model cost shows a top-right sapphire-blue dot.
-9. The right rail exposes `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` as the communication layer for complex or non-prebaked changes.
+9. The right rail exposes `Marker`, `Highlight`, `Magic Select`, `Make Space`, and `Eraser` as the communication layer for complex or non-prebaked changes.
 10. `Marker` lets the user place transient Photoshop-style freehand highlighter marks that are raw and pointer-faithful, without arrowheads, without prior image selection, and without requiring an image under the pointer.
-11. `Protect` uses the same visible freehand marking behavior as `Marker`, but its semantics are "do not change this area" when review or apply consumes the focus contract.
+11. `Highlight` uses the same visible freehand marking behavior as `Marker`, but renders like a yellow sharpie and tells `Design review` to focus proposals on the highlighted area and the highlighted images only.
 12. `Magic Select` lets the user click an image and cycle through 2-3 proposed candidate regions for communication and review.
 13. `Make Space` uses region-candidate selection semantics to say "preserve or create room here" for review and later execution.
 14. `Eraser` clears communication marks and region proposals only; it does not delete image pixels or committed edits.
@@ -228,12 +228,12 @@ Notes:
 - The right rail is the communication layer for complex or non-prebaked changes that do not map cleanly to a single left-rail action.
 - Right-side communication rail v1 contains exactly 5 tools:
   - `Marker`
-  - `Protect`
+  - `Highlight`
   - `Magic Select`
   - `Make Space`
   - `Eraser`
 - `Marker` creates transient Photoshop-style freehand highlighter annotations that mean "look here" or "change this".
-- `Protect` creates protected-region focus input using the same visible freehand marking surface as `Marker`, but with "do not edit here" semantics.
+- `Highlight` creates review-focus input using the same visible freehand marking surface as `Marker`, but with stronger "focus the review here" semantics and image-scoping behavior when it circles specific images.
 - `Magic Select` proposes 2-3 candidate regions for a clicked image location and lets the user cycle through them before review.
 - `Make Space` creates reserved-space focus input using region candidates to signal "preserve or create room here".
 - `Eraser` removes communication marks and region proposals only.
@@ -559,7 +559,7 @@ Rules:
 - The main workspace includes a right-side communication rail.
 - The main workspace includes an in-app session tab strip using a single shared canvas surface.
 - The left rail keeps stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library.
-- The right-side communication rail contains `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` in v1.
+- The right-side communication rail contains `Marker`, `Highlight`, `Magic Select`, `Make Space`, and `Eraser` in v1.
 - The main editing workflow requires no text labels to operate.
 - The primary wedge is one image in and one usable asset out.
 - No multi-image action is required in the primary loop.
@@ -576,7 +576,7 @@ Rules:
 
 ### Communication Rail And Review
 - `Marker` is a transient Photoshop-style freehand highlighter mark in canvas-overlay space, with raw pointer-faithful paths and no arrowheads.
-- `Protect` is a transient protected-region mark in canvas-overlay space and must preserve "do not edit here" semantics through review and apply.
+- `Highlight` is a transient yellow-sharpie focus mark in canvas-overlay space and must steer `Design review` toward the highlighted area without turning it into a no-edit zone; when it circles specific images, unrelated visible images are out of scope.
 - `Magic Select` proposes 2-3 candidate regions per click and lets the user cycle among them.
 - `Make Space` produces reserved-space region candidates that tell review and downstream execution to preserve or create room there.
 - `Eraser` clears communication marks and region proposals only.
@@ -630,7 +630,7 @@ Rules:
 - Fork or adapt `../brood` into a Juggernaut desktop shell.
 - Achieve launchable single-image upload-to-canvas loop.
 - Land the primary rail contract with stable anchors and 3 dynamic job slots.
-- Land the right-side communication rail contract for `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`, and explicit `Design review`.
+- Land the right-side communication rail contract for `Marker`, `Highlight`, `Magic Select`, `Make Space`, `Eraser`, and explicit `Design review`.
 - Wire at least one working single-image edit path.
 - Expose a follow-on `Save Shortcut` / `Create Tool` surface after a useful edit.
 - Export to PSD.

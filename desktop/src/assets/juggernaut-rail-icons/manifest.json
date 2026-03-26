@@ -68,9 +68,9 @@
     },
     {
       "tool_id": "protect",
-      "label": "Protect",
-      "semantic_role": "protect-region",
-      "notes": "Protected region tile paired with a compact shield so no-edit protection reads immediately.",
+      "label": "Highlight",
+      "semantic_role": "highlight-focus",
+      "notes": "Angular highlighter silhouette with a marker-like pointed felt nib, flatter cap, and flat-sided barrel so review-focus reads like a real marker instead of a rounded tube.",
       "asset": "./protect.svg"
     },
     {

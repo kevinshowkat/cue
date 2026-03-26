@@ -84,6 +84,190 @@ function normalizeBounds(raw) {
   };
 }
 
+function normalizeCanvasRect(raw) {
+  const rect = asRecord(raw);
+  if (!rect) return null;
+  const left = Number(rect.left ?? rect.x);
+  const top = Number(rect.top ?? rect.y);
+  const width = Number(rect.width ?? rect.w);
+  const height = Number(rect.height ?? rect.h);
+  if (![left, top, width, height].every(Number.isFinite)) return null;
+  return {
+    left,
+    top,
+    width: Math.max(1, width),
+    height: Math.max(1, height),
+    right: left + Math.max(1, width),
+    bottom: top + Math.max(1, height),
+  };
+}
+
+function pointInPolygon(point = null, polygon = []) {
+  const px = Number(point?.x);
+  const py = Number(point?.y);
+  if (!Number.isFinite(px) || !Number.isFinite(py) || !Array.isArray(polygon) || polygon.length < 3) {
+    return false;
+  }
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const xi = Number(polygon[i]?.x) || 0;
+    const yi = Number(polygon[i]?.y) || 0;
+    const xj = Number(polygon[j]?.x) || 0;
+    const yj = Number(polygon[j]?.y) || 0;
+    const intersects =
+      yi > py !== yj > py &&
+      px < ((xj - xi) * (py - yi)) / Math.max(0.000001, yj - yi) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function segmentCross(a = null, b = null, c = null) {
+  return (
+    ((Number(b?.x) || 0) - (Number(a?.x) || 0)) * ((Number(c?.y) || 0) - (Number(a?.y) || 0)) -
+    ((Number(b?.y) || 0) - (Number(a?.y) || 0)) * ((Number(c?.x) || 0) - (Number(a?.x) || 0))
+  );
+}
+
+function pointOnSegment(point = null, start = null, end = null) {
+  const cross = Math.abs(segmentCross(start, end, point));
+  if (cross > 0.001) return false;
+  const px = Number(point?.x) || 0;
+  const py = Number(point?.y) || 0;
+  const minX = Math.min(Number(start?.x) || 0, Number(end?.x) || 0) - 0.001;
+  const maxX = Math.max(Number(start?.x) || 0, Number(end?.x) || 0) + 0.001;
+  const minY = Math.min(Number(start?.y) || 0, Number(end?.y) || 0) - 0.001;
+  const maxY = Math.max(Number(start?.y) || 0, Number(end?.y) || 0) + 0.001;
+  return px >= minX && px <= maxX && py >= minY && py <= maxY;
+}
+
+function segmentsIntersect(a1 = null, a2 = null, b1 = null, b2 = null) {
+  const d1 = segmentCross(a1, a2, b1);
+  const d2 = segmentCross(a1, a2, b2);
+  const d3 = segmentCross(b1, b2, a1);
+  const d4 = segmentCross(b1, b2, a2);
+  if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) {
+    if ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)) return true;
+  }
+  if (Math.abs(d1) <= 0.001 && pointOnSegment(b1, a1, a2)) return true;
+  if (Math.abs(d2) <= 0.001 && pointOnSegment(b2, a1, a2)) return true;
+  if (Math.abs(d3) <= 0.001 && pointOnSegment(a1, b1, b2)) return true;
+  if (Math.abs(d4) <= 0.001 && pointOnSegment(a2, b1, b2)) return true;
+  return false;
+}
+
+function pointInAxisAlignedRect(point = null, rect = null) {
+  const normalizedRect = normalizeCanvasRect(rect);
+  const px = Number(point?.x);
+  const py = Number(point?.y);
+  if (!normalizedRect || !Number.isFinite(px) || !Number.isFinite(py)) return false;
+  return (
+    px >= normalizedRect.left &&
+    px <= normalizedRect.right &&
+    py >= normalizedRect.top &&
+    py <= normalizedRect.bottom
+  );
+}
+
+function axisAlignedRectOverlapArea(a = null, b = null) {
+  const rectA = normalizeCanvasRect(a);
+  const rectB = normalizeCanvasRect(b);
+  if (!rectA || !rectB) return 0;
+  const overlapWidth = Math.max(0, Math.min(rectA.right, rectB.right) - Math.max(rectA.left, rectB.left));
+  const overlapHeight = Math.max(0, Math.min(rectA.bottom, rectB.bottom) - Math.max(rectA.top, rectB.top));
+  return overlapWidth * overlapHeight;
+}
+
+function segmentIntersectsAxisAlignedRect(start = null, end = null, rect = null) {
+  const normalizedRect = normalizeCanvasRect(rect);
+  if (!normalizedRect) return false;
+  if (pointInAxisAlignedRect(start, normalizedRect) || pointInAxisAlignedRect(end, normalizedRect)) return true;
+  const topLeft = { x: normalizedRect.left, y: normalizedRect.top };
+  const topRight = { x: normalizedRect.right, y: normalizedRect.top };
+  const bottomRight = { x: normalizedRect.right, y: normalizedRect.bottom };
+  const bottomLeft = { x: normalizedRect.left, y: normalizedRect.bottom };
+  return (
+    segmentsIntersect(start, end, topLeft, topRight) ||
+    segmentsIntersect(start, end, topRight, bottomRight) ||
+    segmentsIntersect(start, end, bottomRight, bottomLeft) ||
+    segmentsIntersect(start, end, bottomLeft, topLeft)
+  );
+}
+
+function polylineFormsClosedLoop(points = [], bounds = null) {
+  if (!Array.isArray(points) || points.length < 3) return false;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const normalizedBounds = normalizeCanvasRect(bounds);
+  const threshold = normalizedBounds
+    ? Math.max(18, Math.min(96, Math.min(normalizedBounds.width, normalizedBounds.height) * 0.35))
+    : 36;
+  return Math.hypot((Number(last?.x) || 0) - (Number(first?.x) || 0), (Number(last?.y) || 0) - (Number(first?.y) || 0)) <= threshold;
+}
+
+function polylineAxisAlignedRectOverlapScore(points = [], rect = null, bounds = null) {
+  const normalizedRect = normalizeCanvasRect(rect);
+  if (!normalizedRect || !Array.isArray(points) || !points.length) return 0;
+  let score = 0;
+  for (const point of points) {
+    if (pointInAxisAlignedRect(point, normalizedRect)) score += 2;
+  }
+  for (let index = 1; index < points.length; index += 1) {
+    if (segmentIntersectsAxisAlignedRect(points[index - 1], points[index], normalizedRect)) {
+      score += 4;
+    }
+  }
+  if (polylineFormsClosedLoop(points, bounds)) {
+    const center = {
+      x: normalizedRect.left + normalizedRect.width * 0.5,
+      y: normalizedRect.top + normalizedRect.height * 0.5,
+    };
+    if (pointInPolygon(center, points)) score += 8;
+  }
+  if (score <= 0 && bounds) {
+    score = axisAlignedRectOverlapArea(bounds, normalizedRect) > 0 ? 1 : 0;
+  }
+  return score;
+}
+
+function deriveHighlightImageIdsFromMark(mark = null, imagesInView = []) {
+  const directImageIds = uniqueStrings(
+    [readFirstString(mark?.imageId), readFirstString(mark?.sourceImageId)].filter(Boolean),
+    { limit: 6 }
+  );
+  const normalizedPoints = Array.isArray(mark?.points)
+    ? mark.points
+        .map((point) => ({
+          x: Number(point?.x),
+          y: Number(point?.y),
+        }))
+        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    : [];
+  const normalizedBounds = normalizeCanvasRect(mark?.bounds);
+  const coordinateSpace = readFirstString(mark?.coordinateSpace) || "canvas_overlay";
+  if (coordinateSpace !== "canvas_overlay" && directImageIds.length) {
+    return directImageIds;
+  }
+  const overlaps = [];
+  for (const image of Array.isArray(imagesInView) ? imagesInView : []) {
+    const imageId = readFirstString(image?.id, image?.imageId, image?.image_id) || null;
+    const rectCss = normalizeCanvasRect(image?.rectCss);
+    if (!imageId || !rectCss) continue;
+    const score = polylineAxisAlignedRectOverlapScore(normalizedPoints, rectCss, normalizedBounds);
+    if (score > 0) {
+      overlaps.push({ imageId, score });
+    }
+  }
+  overlaps.sort((left, right) => right.score - left.score);
+  return uniqueStrings(
+    [
+      ...directImageIds,
+      ...overlaps.map((entry) => entry.imageId),
+    ],
+    { limit: 6 }
+  );
+}
+
 function nowId(prefix = "review") {
   const stamp = Date.now().toString(36);
   const rand = Math.random().toString(36).slice(2, 8);
@@ -171,6 +355,19 @@ function normalizeReviewTool(raw = "") {
   if (!normalized) return null;
   if (
     [
+      "highlight",
+      "highlighted",
+      "highlight_region",
+      "highlighted_region",
+      "review_focus",
+      "focus_region",
+      "focus_area",
+    ].includes(normalized)
+  ) {
+    return "highlight";
+  }
+  if (
+    [
       "protect",
       "protected",
       "protect_region",
@@ -197,7 +394,9 @@ function normalizeReviewTool(raw = "") {
 
 function normalizeFocusKind(rawKind = "", fallbackKind = "") {
   const normalized = normalizeReviewTool(rawKind) || normalizeReviewTool(fallbackKind);
-  if (normalized === "protect" || normalized === "make_space") return normalized;
+  if (normalized === "highlight" || normalized === "protect" || normalized === "make_space") {
+    return normalized;
+  }
   return "";
 }
 
@@ -292,7 +491,29 @@ function buildFocusContractId(prefix = "focus", kind = "", area = {}, index = 0)
 }
 
 function focusInstructionForKind(kind = "") {
-  return kind === "protect" ? "Do not change this region." : "Reserve or create room here.";
+  if (kind === "highlight") return "Focus the design review on this highlighted area.";
+  if (kind === "protect") return "Do not change this region.";
+  return "Reserve or create room here.";
+}
+
+function focusSemanticForKind(kind = "") {
+  if (kind === "highlight") return "highlight_region";
+  if (kind === "protect") return "protected_region";
+  return "reserved_space";
+}
+
+function focusStrengthForKind(kind = "") {
+  if (kind === "protect") return "hard";
+  if (kind === "highlight") return "focus";
+  return "prefer";
+}
+
+function normalizeMarkFocusKind(rawKind = "") {
+  const normalized = readFirstString(rawKind).toLowerCase();
+  if (normalized === "freehand_protect" || normalized === "freehand_highlight") {
+    return "highlight";
+  }
+  return "";
 }
 
 function normalizeFocusInput(
@@ -324,7 +545,7 @@ function normalizeFocusInput(
       readFirstString(record.focusInputId, record.focus_input_id, record.id) ||
       buildFocusContractId("focus", kind, area, index),
     kind,
-    semantic: kind === "protect" ? "protected_region" : "reserved_space",
+    semantic: focusSemanticForKind(kind),
     imageId: area.imageId,
     markIds: area.markIds,
     regionCandidateId: area.regionCandidateId,
@@ -336,7 +557,7 @@ function normalizeFocusInput(
     sourceTool:
       normalizeReviewTool(readFirstString(record.sourceTool, record.source_tool, record.tool, reviewTool)) ||
       kind,
-    strength: kind === "protect" ? "hard" : "prefer",
+    strength: focusStrengthForKind(kind),
   };
 }
 
@@ -621,6 +842,47 @@ function deriveProtectedRegionsFromFocusInputs(focusInputs = []) {
   );
 }
 
+function deriveFocusInputsFromMarkedHighlights(marks = [], primaryImageId = null, imagesInView = []) {
+  const inputs = [];
+  (Array.isArray(marks) ? marks : []).forEach((mark, index) => {
+    const kind = normalizeMarkFocusKind(readFirstString(mark?.kind, mark?.type));
+    if (!kind) return;
+    const markId = readFirstString(mark?.id);
+    const bounds = normalizeBounds(mark?.bounds);
+    const imageIds =
+      kind === "highlight"
+        ? deriveHighlightImageIdsFromMark(mark, imagesInView)
+        : uniqueStrings(
+            [readFirstString(mark?.imageId), readFirstString(mark?.sourceImageId)].filter(Boolean),
+            { limit: 6 }
+          );
+    const scopedImageIds = imageIds.length
+      ? imageIds
+      : [readFirstString(mark?.imageId, mark?.sourceImageId, primaryImageId) || null];
+    scopedImageIds.forEach((imageId, imageIndex) => {
+      const input = normalizeFocusInput(
+        {
+          kind,
+          tool: kind,
+          sourceTool: kind,
+          imageId,
+          markIds: markId ? [markId] : [],
+          bounds,
+        },
+        {
+          reviewTool: kind,
+          fallbackImageId: imageId,
+          fallbackMarkIds: markId ? [markId] : [],
+          fallbackBounds: bounds,
+          index: index * 10 + imageIndex,
+        }
+      );
+      if (input) inputs.push(input);
+    });
+  });
+  return mergeFocusInputs(inputs);
+}
+
 function deriveReservedSpaceIntentFromFocusInputs(focusInputs = []) {
   const areas = (Array.isArray(focusInputs) ? focusInputs : [])
     .filter((entry) => normalizeFocusKind(entry?.kind) === "make_space")
@@ -676,6 +938,9 @@ function deriveFocusInputsFromReviewToolFallback({
     );
     if (input) inputs.push(input);
   });
+  if (kind === "highlight") {
+    return mergeFocusInputs(inputs);
+  }
   const normalizedCandidates = (Array.isArray(regionCandidates) ? regionCandidates : []).filter(
     (candidate) => candidate && typeof candidate === "object"
   );
@@ -731,6 +996,7 @@ function normalizeDesignReviewFocusContract({
   reservedSpaceIntent = null,
   reviewTool = "",
   marks = [],
+  imagesInView = [],
   regionCandidates = [],
   activeRegionCandidateId = null,
   primaryImageId = null,
@@ -760,6 +1026,7 @@ function normalizeDesignReviewFocusContract({
   });
   let mergedFocusInputs = mergeFocusInputs(
     normalizedFocusInputs,
+    deriveFocusInputsFromMarkedHighlights(marks, primaryImageId, imagesInView),
     normalizedProtectedRegions.map(createFocusInputFromProtectedRegion).filter(Boolean),
     (normalizedReservedSpaceIntent?.areas || []).map(createFocusInputFromReservedSpaceArea).filter(Boolean)
   );
@@ -788,6 +1055,88 @@ function normalizeDesignReviewFocusContract({
       normalizedReservedSpaceIntent
     ),
   };
+}
+
+function highlightScopeImageIdsFromFocusInputs({
+  reviewTool = "",
+  focusInputs = [],
+  imagesInView = [],
+  selectedImageIds = [],
+  primaryImageId = null,
+} = {}) {
+  const normalizedReviewTool = normalizeReviewTool(reviewTool) || null;
+  const highlightImageIds = uniqueStrings(
+    (Array.isArray(focusInputs) ? focusInputs : [])
+      .filter((entry) => normalizeFocusKind(entry?.kind, normalizedReviewTool) === "highlight")
+      .map((entry) => readFirstString(entry?.imageId))
+      .filter(Boolean),
+    { limit: 6 }
+  );
+  if (normalizedReviewTool !== "highlight" && !highlightImageIds.length) return [];
+  if (!highlightImageIds.length) {
+    return uniqueStrings(
+      [
+        ...(Array.isArray(selectedImageIds) ? selectedImageIds : []),
+        readFirstString(primaryImageId) || null,
+      ].filter(Boolean),
+      { limit: 6 }
+    );
+  }
+  const visibleImageIds = uniqueStrings(
+    (Array.isArray(imagesInView) ? imagesInView : []).map((image) =>
+      readFirstString(image?.id, image?.imageId, image?.image_id)
+    ),
+    { limit: 12 }
+  );
+  return uniqueStrings(
+    [
+      ...(Array.isArray(selectedImageIds) ? selectedImageIds : []).filter((imageId) =>
+        highlightImageIds.includes(String(imageId || "").trim())
+      ),
+      highlightImageIds.includes(readFirstString(primaryImageId)) ? readFirstString(primaryImageId) : null,
+      ...visibleImageIds.filter((imageId) => highlightImageIds.includes(imageId)),
+      ...highlightImageIds,
+    ].filter(Boolean),
+    { limit: 6 }
+  );
+}
+
+function resolveHighlightScopedPrimaryImageId({
+  reviewTool = "",
+  focusImageIds = [],
+  imagesInView = [],
+  selectedImageIds = [],
+  primaryImageId = null,
+} = {}) {
+  const normalizedReviewTool = normalizeReviewTool(reviewTool) || null;
+  const scopedIds = uniqueStrings(focusImageIds || [], { limit: 6 });
+  const normalizedPrimaryImageId = readFirstString(primaryImageId) || null;
+  if (normalizedReviewTool !== "highlight" || !scopedIds.length) return normalizedPrimaryImageId;
+  if (normalizedPrimaryImageId && scopedIds.includes(normalizedPrimaryImageId)) {
+    return normalizedPrimaryImageId;
+  }
+  const scopedSet = new Set(scopedIds);
+  const activeScopedImageId = (Array.isArray(imagesInView) ? imagesInView : [])
+    .find((image) => {
+      const imageId = readFirstString(image?.id, image?.imageId, image?.image_id);
+      return imageId && scopedSet.has(imageId) && Boolean(image?.active);
+    });
+  const selectedScopedImageId = (Array.isArray(selectedImageIds) ? selectedImageIds : []).find((imageId) =>
+    scopedSet.has(String(imageId || "").trim())
+  );
+  const firstVisibleScopedImageId = (Array.isArray(imagesInView) ? imagesInView : [])
+    .map((image) => readFirstString(image?.id, image?.imageId, image?.image_id))
+    .find((imageId) => imageId && scopedSet.has(imageId));
+  return (
+    readFirstString(
+      activeScopedImageId?.id,
+      activeScopedImageId?.imageId,
+      selectedScopedImageId,
+      firstVisibleScopedImageId,
+      scopedIds[0],
+      normalizedPrimaryImageId
+    ) || null
+  );
 }
 
 function focusEntryMatchesImage(entry = {}, imageId = null) {
@@ -1102,7 +1451,7 @@ export function buildDesignReviewRequest({
     Array.isArray(selectedImageIds) ? selectedImageIds : shell.selectedImageIds || [],
     { limit: 6 }
   );
-  const primaryImageId =
+  const requestedPrimaryImageId =
     readFirstString(shell.activeImageId, visual.canvas?.active_image_id, selected[0], imageIdsInView[0]) || null;
   const marks = Array.isArray(visual.marks) ? visual.marks.filter((item) => item && typeof item === "object") : [];
   const markIds = uniqueStrings(marks.map((item) => item.id), { limit: 16 });
@@ -1115,7 +1464,7 @@ export function buildDesignReviewRequest({
       id:
         readFirstString(item.id, item.regionCandidateId, item.region_candidate_id) ||
         `region_${index + 1}`,
-      imageId: readFirstString(item.imageId, item.image_id, primaryImageId) || null,
+      imageId: readFirstString(item.imageId, item.image_id, requestedPrimaryImageId) || null,
       source: readFirstString(item.source) || "magic_select",
       clickPoint: asRecord(item.clickPoint || item.click_point) ? { ...(item.clickPoint || item.click_point) } : null,
       maskRef: readFirstString(item.maskRef, item.mask_ref) || null,
@@ -1136,18 +1485,12 @@ export function buildDesignReviewRequest({
   const analyses = (Array.isArray(cachedImageAnalyses) ? cachedImageAnalyses : [])
     .filter((entry) => entry && typeof entry === "object")
     .map((entry) => ({ ...entry }));
-  const imageIdentityHints = normalizeImageIdentityHints({
-    imagesInView,
-    cachedImageAnalyses: analyses,
-    primaryImageId,
-    selectedImageIds: selected,
-  });
   const firstAnalysisRef =
     readFirstString(uploadAnalysisRef, analyses[0]?.analysisRef, analyses[0]?.analysis_ref) || null;
   const normalizedRequestId = readFirstString(requestId) || nowId("review");
   const normalizedSessionId =
     readFirstString(sessionId, shell.activeTabId, shell.runDir ? `session:${shell.runDir}` : "") || normalizedRequestId;
-  const reviewFocus = normalizeDesignReviewFocusContract({
+  let reviewFocus = normalizeDesignReviewFocusContract({
     focusInputs:
       Array.isArray(focusInputs)
         ? focusInputs
@@ -1183,9 +1526,85 @@ export function buildDesignReviewRequest({
       readFirstString(reviewTool, visual.reviewTool, visual.review_tool, shell.reviewTool, shell.review_tool) ||
       null,
     marks,
+    imagesInView,
     regionCandidates: normalizedRegionCandidates,
     activeRegionCandidateId,
+    primaryImageId: requestedPrimaryImageId,
+  });
+  let focusImageIds = highlightScopeImageIdsFromFocusInputs({
+    reviewTool: reviewFocus.reviewTool,
+    focusInputs: reviewFocus.focusInputs,
+    imagesInView,
+    selectedImageIds: selected,
+    primaryImageId: requestedPrimaryImageId,
+  });
+  const scopedPrimaryImageId = resolveHighlightScopedPrimaryImageId({
+    reviewTool: reviewFocus.reviewTool,
+    focusImageIds,
+    imagesInView,
+    selectedImageIds: selected,
+    primaryImageId: requestedPrimaryImageId,
+  });
+  if (
+    reviewFocus.reviewTool === "highlight" &&
+    scopedPrimaryImageId &&
+    scopedPrimaryImageId !== requestedPrimaryImageId
+  ) {
+    reviewFocus = normalizeDesignReviewFocusContract({
+      focusInputs:
+        Array.isArray(focusInputs)
+          ? focusInputs
+          : Array.isArray(visual.focusInputs)
+            ? visual.focusInputs
+            : Array.isArray(visual.focus_inputs)
+              ? visual.focus_inputs
+              : Array.isArray(shell.focusInputs)
+                ? shell.focusInputs
+                : Array.isArray(shell.focus_inputs)
+                  ? shell.focus_inputs
+                  : [],
+      protectedRegions:
+        Array.isArray(protectedRegions)
+          ? protectedRegions
+          : Array.isArray(visual.protectedRegions)
+            ? visual.protectedRegions
+            : Array.isArray(visual.protected_regions)
+              ? visual.protected_regions
+              : Array.isArray(shell.protectedRegions)
+                ? shell.protectedRegions
+                : Array.isArray(shell.protected_regions)
+                  ? shell.protected_regions
+                  : [],
+      reservedSpaceIntent:
+        reservedSpaceIntent ??
+        visual.reservedSpaceIntent ??
+        visual.reserved_space_intent ??
+        shell.reservedSpaceIntent ??
+        shell.reserved_space_intent ??
+        null,
+      reviewTool:
+        readFirstString(reviewTool, visual.reviewTool, visual.review_tool, shell.reviewTool, shell.review_tool) ||
+        null,
+      marks,
+      imagesInView,
+      regionCandidates: normalizedRegionCandidates,
+      activeRegionCandidateId,
+      primaryImageId: scopedPrimaryImageId,
+    });
+    focusImageIds = highlightScopeImageIdsFromFocusInputs({
+      reviewTool: reviewFocus.reviewTool,
+      focusInputs: reviewFocus.focusInputs,
+      imagesInView,
+      selectedImageIds: selected,
+      primaryImageId: scopedPrimaryImageId,
+    });
+  }
+  const primaryImageId = scopedPrimaryImageId || requestedPrimaryImageId;
+  const imageIdentityHints = normalizeImageIdentityHints({
+    imagesInView,
+    cachedImageAnalyses: analyses,
     primaryImageId,
+    selectedImageIds: selected,
   });
   const focusInputIds = focusInputIdsFromList(reviewFocus.focusInputs);
   const protectedRegionIds = protectedRegionIdsFromList(reviewFocus.protectedRegions);
@@ -1198,6 +1617,7 @@ export function buildDesignReviewRequest({
     visibleCanvasRef: readFirstString(visibleCanvasRef) || null,
     imageIdsInView,
     primaryImageId,
+    focusImageIds,
     markIds,
     activeRegionCandidateId: readFirstString(activeRegionCandidateId) || null,
     selectionState,
@@ -1236,6 +1656,8 @@ export function buildDesignReviewRequest({
 export function buildDesignReviewPlannerPrompt(request = {}) {
   const normalized = asRecord(request) || {};
   const slotCount = clamp(normalized.slotCount, 2, 3);
+  const focusImageIds = uniqueStrings(normalized.focusImageIds || [], { limit: 6 });
+  const hasHighlightScope = focusImageIds.length > 0;
   const identityHints = Array.isArray(normalized.imageIdentityHints)
     ? normalized.imageIdentityHints
         .filter((entry) => entry && typeof entry === "object")
@@ -1248,6 +1670,9 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
           subjectTags: uniqueStrings(entry?.subjectTags || [], { limit: 3 }),
         }))
     : [];
+  const scopedIdentityHints = hasHighlightScope
+    ? identityHints.filter((entry) => focusImageIds.includes(readFirstString(entry?.imageId)))
+    : identityHints;
   const focusPayload = buildDesignReviewFocusPromptPayload({
     focusInputs: normalized.focusInputs || [],
     protectedRegions: normalized.protectedRegions || [],
@@ -1259,8 +1684,15 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
     "Write actions as short edit intents, not advice, critique, or conversation.",
     "Make previewBrief and applyBrief specific, positive, and verb-first.",
     "Use concise effect statements, not rationale essays.",
-    "Use the whole visible canvas as context, not just the local annotation area.",
-    "Treat off-image and between-image annotations as valid relationship cues for linkage, movement, spacing, and placement between visible images.",
+    hasHighlightScope
+      ? "When Highlight circles specific images, keep every proposal scoped to those highlighted images only."
+      : "Use the whole visible canvas as context, not just the local annotation area.",
+    hasHighlightScope
+      ? "Ignore unrelated visible images outside reviewScope.imageIds unless a highlighted annotation explicitly overlaps them."
+      : "Treat off-image and between-image annotations as valid relationship cues for linkage, movement, spacing, and placement between visible images.",
+    hasHighlightScope
+      ? "Treat off-image and between-image annotations as valid relationship cues for linkage, movement, spacing, and placement between scoped images."
+      : null,
     "Treat annotations and the chosen region candidate as focus hints, not crop-only constraints.",
     "If annotations sketch missing scene elements or motion cues such as a hoop, arrow, dunk path, or destination box, treat them as instruction overlays for what the edited image should render, not as the finished result.",
     "Use image identity hints when they exist so subjects are named concretely; do not say second image or reference image generically.",
@@ -1270,14 +1702,31 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
   if (focusPayload?.protectedRegions?.length) {
     promptSections.push("Protect focus inputs mean do not change that region.");
   }
+  if ((normalized.focusInputs || []).some((entry) => normalizeFocusKind(entry?.kind) === "highlight")) {
+    promptSections.push("Highlight focus inputs mark the areas the design review should prioritize.");
+  }
   if (focusPayload?.reservedSpaceIntent?.areas?.length) {
     promptSections.push("Make Space focus inputs mean reserve or create room there.");
   }
-  if (identityHints.length) {
+  if (scopedIdentityHints.length) {
     promptSections.push(
       JSON.stringify(
         {
-          imageIdentityHints: identityHints,
+          imageIdentityHints: scopedIdentityHints,
+        },
+        null,
+        2
+      )
+    );
+  }
+  if (hasHighlightScope) {
+    promptSections.push(
+      JSON.stringify(
+        {
+          reviewScope: {
+            mode: "highlight_image_scope",
+            imageIds: focusImageIds,
+          },
         },
         null,
         2
@@ -1366,6 +1815,7 @@ function buildDesignReviewApplyRequestSnapshot(request = {}) {
     requestId: readFirstString(normalized.requestId) || null,
     sessionId: readFirstString(normalized.sessionId) || null,
     primaryImageId: readFirstString(normalized.primaryImageId, visibleCanvasContext.activeImageId) || null,
+    focusImageIds: uniqueStrings(normalized.focusImageIds || [], { limit: 8 }),
     imageIdsInView: uniqueStrings(normalized.imageIdsInView || [], { limit: 12 }),
     selectedImageIds: uniqueStrings(normalized.selectedImageIds || [], { limit: 8 }),
     markIds: uniqueStrings(normalized.markIds || [], { limit: 8 }),
@@ -1431,6 +1881,9 @@ export function buildDesignReviewApplyPrompt({ request = {}, proposal = {} } = {
     "Use referenceImages[] as guidance only and do not modify or return separate outputs for them.",
     "Return exactly one final rendered image for targetImage.",
     "Treat negativeConstraints as hard requirements.",
+    focusContract.focusInputs.some((entry) => normalizeFocusKind(entry?.kind) === "highlight")
+      ? "Keep the edit centered on highlighted focus inputs when they are present."
+      : null,
     focusContract.protectedRegions.length ? "Treat protectedRegions as no-edit zones." : null,
     focusContract.reservedSpaceIntent?.areas?.length
       ? "When reservedSpaceIntent is present, preserve or create open room in those areas without altering protectedRegions."
@@ -1589,8 +2042,20 @@ function normalizeNegativeConstraints(raw = []) {
 
 function normalizeProposal(rawProposal = {}, request = {}, { index = 0 } = {}) {
   const raw = asRecord(rawProposal) || {};
-  const imageId =
+  const scopedImageIds = uniqueStrings(request.focusImageIds || [], { limit: 8 });
+  const requestedImageId =
     readFirstString(raw.imageId, raw.image_id, request.primaryImageId, request.selectedImageIds?.[0]) || null;
+  const imageId =
+    scopedImageIds.length && requestedImageId && !scopedImageIds.includes(requestedImageId)
+      ? readFirstString(
+          scopedImageIds.includes(readFirstString(request.primaryImageId)) ? request.primaryImageId : null,
+          (Array.isArray(request.selectedImageIds) ? request.selectedImageIds : []).find((id) =>
+            scopedImageIds.includes(String(id || "").trim())
+          ),
+          scopedImageIds[0],
+          requestedImageId
+        ) || null
+      : requestedImageId;
   const focusContract = resolveProposalFocusContract({
     request,
     proposal: {

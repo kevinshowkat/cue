@@ -38,7 +38,7 @@ const RAIL_LABELS = Object.freeze({
   new_background: "New Background",
   reframe: "Reframe",
   variants: "Variants",
-  protect: "Protect",
+  protect: "Highlight",
   make_space: "Make Space",
   remove_people: "Remove People",
   polish: "Polish",
@@ -95,10 +95,10 @@ const SEEDED_JOB_LIBRARY = Object.freeze({
 const SHELL_AFFORDANCE_LIBRARY = Object.freeze({
   protect: Object.freeze({
     jobId: "protect",
-    label: "Protect",
+    label: "Highlight",
     requiresSelection: false,
     iconId: "protect",
-    communicationTool: "marker",
+    communicationTool: "protect",
     localUtility: true,
     provenance: ACTION_PROVENANCE.LOCAL_ONLY,
   }),
@@ -292,7 +292,7 @@ function buttonMetaTitle(button) {
   if (button.toolId === "move") return withButtonProvenanceText("Move and arrange images", provenance);
   if (button.toolId === "upload") return withButtonProvenanceText("Upload an image", provenance);
   if (button.toolId === "select") return withButtonProvenanceText("Select a region on the active image", provenance);
-  if (button.toolId === "protect") return withButtonProvenanceText("Protect an area from edits", provenance);
+  if (button.toolId === "protect") return withButtonProvenanceText("Highlight an area so design review focuses there", provenance);
   if (button.toolId === "make_space") return withButtonProvenanceText("Reserve or create room in an area", provenance);
   if (button.toolId === "remove_people") return withButtonProvenanceText("Remove people from the active image", provenance);
   if (button.toolId === "polish") return withButtonProvenanceText("Polish the active image", provenance);
@@ -306,7 +306,7 @@ function buttonMetaAriaLabel(button) {
   if (button.toolId === "move") return withButtonProvenanceText("Move image", provenance);
   if (button.toolId === "upload") return withButtonProvenanceText("Upload image", provenance);
   if (button.toolId === "select") return withButtonProvenanceText("Select region", provenance);
-  if (button.toolId === "protect") return withButtonProvenanceText("Protect region", provenance);
+  if (button.toolId === "protect") return withButtonProvenanceText("Highlight region", provenance);
   if (button.toolId === "make_space") return withButtonProvenanceText("Make space", provenance);
   if (button.toolId === "remove_people") return withButtonProvenanceText("Remove people", provenance);
   return withButtonProvenanceText(button.label || button.toolId || "Tool", provenance);
@@ -882,7 +882,7 @@ function syncExternalRailState(root) {
   for (const button of Array.from(root.querySelectorAll("button[data-tool-id]"))) {
     const toolId = String(button?.dataset?.toolId || "").trim();
     const isSelected =
-      (toolId === "protect" && communicationTool === "marker") ||
+      (toolId === "protect" && communicationTool === "protect") ||
       (toolId === "make_space" && communicationTool === "magic_select");
     if (toolId === "protect" || toolId === "make_space") {
       button.classList.toggle("selected", isSelected);

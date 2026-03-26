@@ -184,7 +184,7 @@ test("observable driver can replay a persisted trace entry through the same hand
   assert.equal(replayed.trace.replay.method, "markerStroke");
 });
 
-test("observable driver supports protect and make-space actions as first-class observable calls", async () => {
+test("observable driver supports highlight and make-space actions as first-class observable calls", async () => {
   const requests = [];
   const driver = createAgentObservableDriver({
     performProtectStroke: async (request = {}) => {
@@ -221,14 +221,14 @@ test("observable driver supports protect and make-space actions as first-class o
   });
 
   assert.equal(protect.ok, true);
-  assert.equal(protect.trace.action.tool, "protect");
+  assert.equal(protect.trace.action.tool, "highlight");
   assert.equal(protect.trace.replay.method, "protectStroke");
   assert.equal(makeSpace.ok, true);
   assert.equal(makeSpace.trace.action.tool, "make_space");
   assert.equal(makeSpace.trace.replay.method, "makeSpaceClick");
   assert.deepEqual(
     requests.map((request) => request.tool),
-    ["protect", "make_space"]
+    ["highlight", "make_space"]
   );
 });
 

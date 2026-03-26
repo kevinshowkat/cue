@@ -68,19 +68,19 @@ test("design review request builder carries visible canvas context, marks, selec
   ]);
 });
 
-test("design review request builder derives Protect and Make Space focus contracts from tool-scoped marks and regions", () => {
-  const protectRequest = buildDesignReviewRequest({
+test("design review request builder derives Highlight and Make Space focus contracts from tool-scoped marks and regions", () => {
+  const highlightRequest = buildDesignReviewRequest({
     shellContext: {
-      runDir: "/tmp/protect-run",
+      runDir: "/tmp/highlight-run",
       activeImageId: "img-1",
-      images: [{ id: "img-1", path: "/tmp/protect.png" }],
+      images: [{ id: "img-1", path: "/tmp/highlight.png" }],
     },
     visualPrompt: {
       canvas: { mode: "single", active_image_id: "img-1" },
       marks: [
         {
-          id: "mark-protect",
-          type: "freehand_marker",
+          id: "mark-highlight",
+          type: "freehand_protect",
           imageId: "img-1",
           bounds: { x: 10, y: 20, width: 120, height: 90 },
         },
@@ -88,24 +88,24 @@ test("design review request builder derives Protect and Make Space focus contrac
     },
     regionCandidates: [
       {
-        id: "region-protect",
+        id: "region-highlight",
         imageId: "img-1",
         bounds: { x: 16, y: 28, width: 64, height: 72 },
       },
     ],
-    activeRegionCandidateId: "region-protect",
-    reviewTool: "Protect",
+    activeRegionCandidateId: "region-highlight",
+    reviewTool: "Highlight",
   });
 
-  assert.equal(protectRequest.reviewTool, "protect");
+  assert.equal(highlightRequest.reviewTool, "highlight");
   assert.deepEqual(
-    protectRequest.focusInputs.map((entry) => entry.kind),
-    ["protect", "protect"]
+    highlightRequest.focusInputs.map((entry) => entry.kind),
+    ["highlight"]
   );
-  assert.equal(protectRequest.protectedRegions.length, 2);
-  assert.equal(protectRequest.focusInputIds.length, 2);
-  assert.equal(protectRequest.protectedRegionIds.length, 2);
-  assert.equal(protectRequest.reservedSpaceIntent, null);
+  assert.equal(highlightRequest.protectedRegions.length, 0);
+  assert.equal(highlightRequest.focusInputIds.length, 1);
+  assert.equal(highlightRequest.protectedRegionIds.length, 0);
+  assert.equal(highlightRequest.reservedSpaceIntent, null);
 
   const makeSpaceRequest = buildDesignReviewRequest({
     shellContext: {
@@ -144,6 +144,61 @@ test("design review request builder derives Protect and Make Space focus contrac
   assert.equal(makeSpaceRequest.reservedSpaceIntent?.mode, "reserve_or_create_room");
   assert.equal(makeSpaceRequest.reservedSpaceIntent?.areas.length, 2);
   assert.equal(makeSpaceRequest.reservedSpaceAreaIds.length, 2);
+});
+
+test("design review request builder scopes Highlight to the circled images only", () => {
+  const visibleImages = [
+    {
+      id: "img-metal",
+      path: "/tmp/metal.png",
+      rectCss: { left: 20, top: 20, width: 120, height: 120 },
+    },
+    {
+      id: "img-squid",
+      path: "/tmp/squidward.png",
+      rectCss: { left: 18, top: 220, width: 120, height: 120 },
+    },
+    {
+      id: "img-sponge",
+      path: "/tmp/spongebob.png",
+      rectCss: { left: 168, top: 220, width: 120, height: 120 },
+    },
+  ];
+  const request = buildDesignReviewRequest({
+    shellContext: {
+      runDir: "/tmp/highlight-scope-run",
+      activeImageId: "img-metal",
+      images: visibleImages,
+    },
+    visualPrompt: {
+      canvas: { mode: "multi", active_image_id: "img-metal" },
+      images: visibleImages,
+      marks: [
+        {
+          id: "mark-highlight-scope",
+          type: "freehand_protect",
+          coordinateSpace: "canvas_overlay",
+          points: [
+            { x: 14, y: 206 },
+            { x: 10, y: 352 },
+            { x: 308, y: 352 },
+            { x: 302, y: 206 },
+            { x: 14, y: 206 },
+          ],
+          bounds: { x: 10, y: 206, width: 298, height: 146 },
+        },
+      ],
+    },
+    reviewTool: "Highlight",
+  });
+
+  assert.equal(request.reviewTool, "highlight");
+  assert.equal(request.primaryImageId, "img-squid");
+  assert.deepEqual(request.focusImageIds, ["img-squid", "img-sponge"]);
+  assert.deepEqual(
+    request.focusInputs.map((entry) => entry.imageId),
+    ["img-squid", "img-sponge"]
+  );
 });
 
 test("design review planner response parser accepts fenced JSON and normalizes proposal fields", () => {
@@ -186,6 +241,33 @@ test("design review planner response parser accepts fenced JSON and normalizes p
   assert.deepEqual(response.proposals[0].negativeConstraints, ["Do not change wardrobe", "Do not crop the face"]);
 });
 
+test("design review planner response clamps proposal targets to the highlighted image scope", () => {
+  const response = parseDesignReviewPlannerResponse(
+    JSON.stringify({
+      proposals: [
+        {
+          label: "Metal SpongeBob Squidward",
+          imageId: "img-metal",
+          actionType: "background_replace",
+          why: "Incorrectly tries to use an unrelated image.",
+          previewBrief: "Preview a character-only composite.",
+          applyBrief: "Replace Squidward with SpongeBob only.",
+        },
+      ],
+    }),
+    {
+      requestId: "review-highlight-scope",
+      primaryImageId: "img-squid",
+      focusImageIds: ["img-squid", "img-sponge"],
+      selectedImageIds: ["img-squid"],
+      slotCount: 3,
+    }
+  );
+
+  assert.equal(response.ok, true);
+  assert.equal(response.proposals[0].imageId, "img-squid");
+});
+
 test("design review skeleton slots reserve 2-3 proposal slots immediately", () => {
   const slots = createDesignReviewSkeletonSlots({
     request: {
@@ -206,6 +288,7 @@ test("design review planner prompt stays compact, restores canvas-scope constrai
     visibleCanvasRef: "/tmp/review-visible.png",
     markIds: ["mark-1"],
     slotCount: 3,
+    focusImageIds: ["img-ref-2"],
     imageIdentityHints: [
       {
         imageId: "img-ref-2",
@@ -217,8 +300,8 @@ test("design review planner prompt stays compact, restores canvas-scope constrai
     ],
     focusInputs: [
       {
-        focusInputId: "focus-protect",
-        kind: "protect",
+        focusInputId: "focus-highlight",
+        kind: "highlight",
         imageId: "img-ref-2",
         bounds: { x: 12, y: 18, width: 84, height: 64 },
       },
@@ -227,13 +310,6 @@ test("design review planner prompt stays compact, restores canvas-scope constrai
         kind: "make_space",
         imageId: "img-ref-2",
         bounds: { x: 110, y: 22, width: 140, height: 80 },
-      },
-    ],
-    protectedRegions: [
-      {
-        protectedRegionId: "protected-1",
-        imageId: "img-ref-2",
-        bounds: { x: 12, y: 18, width: 84, height: 64 },
       },
     ],
     reservedSpaceIntent: {
@@ -253,18 +329,20 @@ test("design review planner prompt stays compact, restores canvas-scope constrai
   assert.match(prompt, /Write actions as short edit intents, not advice, critique, or conversation\./);
   assert.match(prompt, /Make previewBrief and applyBrief specific, positive, and verb-first\./);
   assert.match(prompt, /Use concise effect statements, not rationale essays\./);
-  assert.match(prompt, /Use the whole visible canvas as context, not just the local annotation area\./);
-  assert.match(prompt, /Treat off-image and between-image annotations as valid relationship cues for linkage, movement, spacing, and placement between visible images\./);
+  assert.match(prompt, /When Highlight circles specific images, keep every proposal scoped to those highlighted images only\./);
+  assert.match(prompt, /Ignore unrelated visible images outside reviewScope\.imageIds unless a highlighted annotation explicitly overlaps them\./);
+  assert.match(prompt, /Treat off-image and between-image annotations as valid relationship cues for linkage, movement, spacing, and placement between scoped images\./);
   assert.match(prompt, /Treat annotations and the chosen region candidate as focus hints, not crop-only constraints\./);
   assert.match(prompt, /If annotations sketch missing scene elements or motion cues such as a hoop, arrow, dunk path, or destination box, treat them as instruction overlays for what the edited image should render, not as the finished result\./);
-  assert.match(prompt, /Protect focus inputs mean do not change that region\./);
+  assert.match(prompt, /Highlight focus inputs mark the areas the design review should prioritize\./);
   assert.match(prompt, /Make Space focus inputs mean reserve or create room there\./);
   assert.match(prompt, /Use image identity hints when they exist so subjects are named concretely/);
   assert.match(prompt, /Prefer edits that can plausibly route through the normal execution layer later\./);
   assert.match(prompt, /Return 3 ranked proposals as JSON only\./);
   assert.match(prompt, /"imageIdentityHints": \[/);
+  assert.match(prompt, /"reviewScope": \{/);
+  assert.match(prompt, /"imageIds": \[\s*"img-ref-2"\s*\]/);
   assert.match(prompt, /"reviewFocus": \{/);
-  assert.match(prompt, /"protectedRegions": \[/);
   assert.match(prompt, /"reservedSpaceIntent": \{/);
   assert.match(prompt, /"subject": "Michael Jordan"/);
   assert.match(prompt, /"markIds": \[\s*"optional annotation ids"\s*\]/);
@@ -273,6 +351,7 @@ test("design review planner prompt stays compact, restores canvas-scope constrai
   assert.match(prompt, /"applyBrief": "short verb-first sentence describing the exact edit"/);
   assert.doesNotMatch(prompt, /"requestId": "review-compact"/);
   assert.doesNotMatch(prompt, /"visibleCanvasRef": "\/tmp\/review-visible\.png"/);
+  assert.doesNotMatch(prompt, /Use the whole visible canvas as context, not just the local annotation area\./);
 });
 
 test("design review apply prompt explicitly constrains edits to targetImage and guidance references only", () => {
@@ -301,14 +380,15 @@ test("design review apply prompt explicitly constrains edits to targetImage and 
         regionCandidateId: "region-1",
         bounds: { x: 10, y: 12, width: 220, height: 260 },
       },
-      negativeConstraints: ["Do not alter the subject pose", "Do not change clothing colors"],
-      protectedRegions: [
+      focusInputs: [
         {
-          protectedRegionId: "protected-apply-1",
+          focusInputId: "focus-highlight-apply-1",
+          kind: "highlight",
           imageId: "img-target",
           bounds: { x: 18, y: 32, width: 80, height: 90 },
         },
       ],
+      negativeConstraints: ["Do not alter the subject pose", "Do not change clothing colors"],
       reservedSpaceIntent: {
         reservedSpaceIntentId: "space-intent-apply-1",
         areas: [
@@ -329,14 +409,14 @@ test("design review apply prompt explicitly constrains edits to targetImage and 
   assert.match(prompt, /"requestSnapshot"/);
   assert.match(prompt, /"label": "Tighten background"/);
   assert.match(prompt, /"negativeConstraints": \[/);
-  assert.match(prompt, /Treat protectedRegions as no-edit zones\./);
+  assert.match(prompt, /Keep the edit centered on highlighted focus inputs when they are present\./);
   assert.match(
     prompt,
     /When reservedSpaceIntent is present, preserve or create open room in those areas without altering protectedRegions\./
   );
-  assert.match(prompt, /"protectedRegions": \[/);
   assert.match(prompt, /"reservedSpaceIntent": \{/);
-  assert.match(prompt, /"preserveProtectedRegions": true/);
+  assert.match(prompt, /"focusInputs": \[/);
+  assert.match(prompt, /"preserveProtectedRegions": false/);
   assert.match(prompt, /"preserveReservedSpace": true/);
 });
 

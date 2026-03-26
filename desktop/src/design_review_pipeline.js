@@ -121,6 +121,10 @@ function imageCatalogFromRequest(request = {}) {
     : [];
 }
 
+function reviewScopeImageIds(request = {}) {
+  return uniqueStrings(request?.focusImageIds || [], { limit: 12 });
+}
+
 function findImageRecordById(request = {}, imageId = "") {
   const normalizedImageId = readFirstString(imageId);
   if (!normalizedImageId) return null;
@@ -139,6 +143,8 @@ function resolveProposalTargetImageId(request = {}, proposal = {}) {
     .map((image) => readFirstString(image?.id, image?.imageId, image?.image_id))
     .filter(Boolean);
   const catalogIdSet = new Set(catalogIds);
+  const scopedImageIds = reviewScopeImageIds(request);
+  const scopedImageIdSet = new Set(scopedImageIds);
   const candidates = [
     proposal?.imageId,
     proposal?.image_id,
@@ -151,11 +157,23 @@ function resolveProposalTargetImageId(request = {}, proposal = {}) {
     visibleCanvasContext?.canvas?.active_image_id,
     request?.selectedImageIds?.[0],
     request?.imageIdsInView?.[0],
+    scopedImageIds[0] || null,
     catalogIds[0] || null,
   ]
     .map((value) => readFirstString(value))
     .filter(Boolean);
 
+  if (scopedImageIds.length) {
+    for (const candidate of candidates) {
+      if (scopedImageIdSet.has(candidate) && (catalogIdSet.size === 0 || catalogIdSet.has(candidate))) {
+        return candidate;
+      }
+    }
+    if (catalogIdSet.size > 0) {
+      return scopedImageIds.find((imageId) => catalogIdSet.has(imageId)) || catalogIds[0] || null;
+    }
+    return scopedImageIds[0] || candidates[0] || null;
+  }
   if (catalogIdSet.size > 0) {
     for (const candidate of candidates) {
       if (catalogIdSet.has(candidate)) return candidate;
@@ -167,6 +185,8 @@ function resolveProposalTargetImageId(request = {}, proposal = {}) {
 
 function resolveProposalReferenceImageIds(request = {}, proposal = {}, targetImageId = null) {
   const normalizedTargetImageId = readFirstString(targetImageId);
+  const scopedImageIds = reviewScopeImageIds(request).filter((imageId) => imageId !== normalizedTargetImageId);
+  const scopedImageIdSet = new Set(scopedImageIds);
   const explicitReferenceIds = uniqueStrings(
     [
       ...(Array.isArray(proposal?.referenceImageIds) ? proposal.referenceImageIds : []),
@@ -181,8 +201,12 @@ function resolveProposalReferenceImageIds(request = {}, proposal = {}, targetIma
         : []),
     ],
     { limit: 12 }
-  ).filter((imageId) => imageId !== normalizedTargetImageId);
+  ).filter((imageId) =>
+    imageId !== normalizedTargetImageId &&
+    (!scopedImageIdSet.size || scopedImageIdSet.has(imageId))
+  );
   if (explicitReferenceIds.length) return explicitReferenceIds;
+  if (scopedImageIds.length) return scopedImageIds;
   return uniqueStrings(
     [
       ...(Array.isArray(request?.selectedImageIds) ? request.selectedImageIds : []),

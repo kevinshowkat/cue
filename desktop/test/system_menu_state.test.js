@@ -18,7 +18,7 @@ test("native system menu payload fills fixed tool and shortcut slots", () => {
     },
     tools: [
       { label: "Marker", enabled: true },
-      { label: "Protect", enabled: true },
+      { label: "Highlight", enabled: true },
       { label: "Magic Select", enabled: true },
       { label: "Eraser", enabled: true },
     ],
@@ -32,7 +32,7 @@ test("native system menu payload fills fixed tool and shortcut slots", () => {
   assert.equal(payload.file.canCloseSession, false);
   assert.equal(payload.tools.length, NATIVE_TOOLS_SLOT_COUNT);
   assert.deepEqual(payload.tools[0], { label: "Marker", enabled: true });
-  assert.deepEqual(payload.tools[1], { label: "Protect", enabled: true });
+  assert.deepEqual(payload.tools[1], { label: "Highlight", enabled: true });
   assert.deepEqual(payload.tools[2], { label: "Magic Select", enabled: true });
   assert.deepEqual(payload.tools[3], { label: "Eraser", enabled: true });
   assert.deepEqual(payload.tools[4], { label: "Tool Slot 5", enabled: false });
