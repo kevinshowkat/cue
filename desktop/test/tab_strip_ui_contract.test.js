@@ -11,7 +11,7 @@ const css = readFileSync(join(here, "..", "src", "styles.css"), "utf8");
 test("Session tab strip mounts inside the titlebar brand strip with core-owned ids", () => {
   assert.match(
     html,
-    /class=\"brand-strip\"[^>]*role=\"toolbar\"[\s\S]*class=\"window-drag-region\"[^>]*data-tauri-drag-region[\s\S]*id=\"session-tab-strip\"[\s\S]*class=\"session-tab-run\"[\s\S]*id=\"session-tab-list\"[^>]*role=\"tablist\"[\s\S]*id=\"session-tab-new\"[\s\S]*id=\"session-tab-fork\"[\s\S]*id=\"session-tab-open\"[\s\S]*id=\"session-tab-design-review\"/
+    /class=\"brand-strip\"[^>]*role=\"toolbar\"[\s\S]*class=\"window-drag-region\"[^>]*data-tauri-drag-region[\s\S]*id=\"session-tab-strip\"[\s\S]*class=\"session-tab-run\"[\s\S]*id=\"session-tab-list\"[^>]*role=\"tablist\"[\s\S]*id=\"session-tab-new\"[\s\S]*id=\"session-tab-fork\"[\s\S]*id=\"session-tab-history\"[\s\S]*id=\"session-tab-design-review\"/
   );
 
   const brandStripStart = html.indexOf('<div class="brand-strip"');
@@ -23,12 +23,12 @@ test("Session tab strip mounts inside the titlebar brand strip with core-owned i
   assert.equal(brandStripChunk.includes('id="session-tab-list"'), true);
   assert.equal(brandStripChunk.includes('id="session-tab-new"'), true);
   assert.equal(brandStripChunk.includes('id="session-tab-fork"'), true);
-  assert.equal(brandStripChunk.includes('id="session-tab-open"'), true);
+  assert.equal(brandStripChunk.includes('id="session-tab-history"'), true);
   assert.equal(brandStripChunk.includes('id="session-tab-design-review"'), true);
   assert.equal(brandStripChunk.includes('id="session-tab-strip-shell-head-placeholder"'), false);
 });
 
-test("Session tab strip seeds a visible launch tab and exposes the Design Review action", () => {
+test("Session tab strip seeds a visible launch tab and exposes History plus the Design Review action", () => {
   assert.match(
     html,
     /id=\"session-tab-list\"[^>]*role=\"tablist\"[^>]*aria-label=\"Open sessions\">[\s\S]*data-tab-id=\"tab-launch\"[\s\S]*<span class=\"session-tab-title\">Untitled Canvas<\/span>[\s\S]*<\/div>/
@@ -36,6 +36,10 @@ test("Session tab strip seeds a visible launch tab and exposes the Design Review
   assert.match(
     html,
     /class=\"session-tab-run\"[^>]*aria-label=\"Open sessions, new session, and fork tab\"[\s\S]*id=\"session-tab-list\"[\s\S]*id=\"session-tab-new\"[\s\S]*id=\"session-tab-fork\"/
+  );
+  assert.match(
+    html,
+    /id=\"session-tab-history\"[^>]*class=\"session-tab-strip-action session-tab-runtime-action session-tab-history-action\"[^>]*aria-label=\"History\"[^>]*aria-controls=\"timeline-dock\"[^>]*aria-expanded=\"true\"[^>]*aria-pressed=\"true\"[^>]*title=\"History\"[\s\S]*<svg[\s\S]*<\/svg>[\s\S]*<span>History<\/span>/
   );
   assert.match(
     html,
@@ -58,7 +62,7 @@ test("Session tab strip seeds a visible launch tab and exposes the Design Review
   const brandStripChunk = html.slice(brandStripStart, mainStart);
   assert.match(
     brandStripChunk,
-    /class=\"session-tab-run\"[\s\S]*id=\"session-tab-list\"[\s\S]*id=\"session-tab-new\"[\s\S]*id=\"session-tab-fork\"[\s\S]*class=\"session-tab-strip-actions\"[\s\S]*id=\"session-tab-open\"[\s\S]*id=\"juggernaut-agent-runner-open\"[\s\S]*id=\"juggernaut-export-psd\"[\s\S]*id=\"session-tab-design-review\"/
+    /class=\"session-tab-run\"[\s\S]*id=\"session-tab-list\"[\s\S]*id=\"session-tab-new\"[\s\S]*id=\"session-tab-fork\"[\s\S]*class=\"session-tab-strip-actions\"[\s\S]*id=\"session-tab-history\"[\s\S]*id=\"juggernaut-agent-runner-open\"[\s\S]*id=\"juggernaut-export-psd\"[\s\S]*id=\"session-tab-design-review\"/
   );
   assert.equal(brandStripChunk.includes('data-tab-id="tab-launch"'), true);
   assert.equal(brandStripChunk.includes('data-tab-id="tab-hero"'), false);
@@ -102,8 +106,11 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-strip-new\s*\{/);
   assert.match(css, /\.session-tab-strip-fork\s*\{/);
   assert.match(css, /\.session-tab-strip-review\s*\{/);
+  assert.match(css, /\.session-tab-history-action,\s*\.session-tab-runtime-action\s*\{/);
+  assert.match(css, /\.session-tab-history-action\[data-provenance="local_only"\]\[aria-pressed="true"\],/);
   assert.match(css, /\.session-tab-runtime-action\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*white-space:\s*nowrap/s);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-history-action,\s*body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\s*\{/);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*padding:\s*0 14px/s);
   assert.match(css, /\.session-tab-runtime-action\.is-ready\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\[data-provenance="local_only"\],\s*\.session-tab-runtime-action\[data-provenance="local_only"\]\.is-ready\s*\{/);

@@ -150,15 +150,26 @@
           </div>
           <div class="session-tab-strip-actions" role="group" aria-label="Session actions">
             <button
-              id="session-tab-open"
-              class="session-tab-strip-action"
+              id="session-tab-history"
+              class="session-tab-strip-action session-tab-runtime-action session-tab-history-action"
               type="button"
-              aria-label="Open session"
-              title="Open session"
+              aria-label="History"
+              aria-controls="timeline-dock"
+              aria-expanded="true"
+              aria-pressed="true"
+              title="History"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
-                  d="M4.5 8.5h5l1.8 2h8.2v7.5a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2zM4.5 8.5V7a2 2 0 0 1 2-2h3.2l1.8 2H17.5a2 2 0 0 1 2 2v1.5"
+                  d="M18.6 9.1a6.6 6.6 0 1 1-1.9-2.7"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M15.9 4.9h3.6v3.6M12 8.9v3.5l2.45 1.8"
                   fill="none"
                   stroke="currentColor"
                   stroke-width="1.8"
@@ -166,7 +177,7 @@
                   stroke-linejoin="round"
                 />
               </svg>
-              <span class="sr-only">Open session</span>
+              <span>History</span>
             </button>
             <button
               id="juggernaut-agent-runner-open"
