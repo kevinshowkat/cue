@@ -11,7 +11,10 @@ This replaces the earlier lineage-overlay concept that swapped image paths in pl
 - Collapsing the dock leaves a visible stub under the tab strip so timeline access never fully disappears.
 - Nodes stay in chronological order even after the user rewinds to an older head.
 - Image-result steps render thumbnail cards.
-- Session-state steps render action glyphs for moves, marks, protect, magic select, erase, annotate, circle, delete, and related local mutations.
+- Session-state steps render action visuals that stay close to the live app affordance:
+  - pack-aware rail icons are reused when the action already has a user-selectable shell icon
+  - communication actions use compact tip/nib silhouettes derived from the visible communication tools instead of unrelated generic glyphs
+  - fallback glyphs remain only for timeline actions that do not yet have a truer in-app icon source
 - When the tray overflows, fixed left/right arrow buttons appear at the outer edges and advance the carousel by page-sized steps.
 - The current state summary is rendered under the strip instead of to its side.
 - Hovering or focusing a card previews the state you would change to in the detail line under the strip.

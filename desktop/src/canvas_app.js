@@ -1522,6 +1522,8 @@ function applyRailIconPackSetting(packId, { announce = true, source = "settings"
     els.railIconPack.value = resolved;
   }
   syncJuggernautShellIconography(resolved);
+  state.lastRenderedTimelineStructureKey = "";
+  renderTimeline();
   renderJuggernautShellChrome();
   renderActionGrid();
   syncNativeIconographyMenu(resolved).catch(() => {});
@@ -32931,6 +32933,62 @@ function setTimelineOpen(open = true, { persist = false } = {}) {
   return changed;
 }
 
+function timelineRailIconIdForActionKey(actionKey = "state") {
+  const normalized = String(actionKey || "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "import") return "upload";
+  if (normalized === "move") return "move";
+  return null;
+}
+
+function timelineCommunicationTipSvgMarkup(actionKey = "state") {
+  const normalized = String(actionKey || "").trim().toLowerCase();
+  if (normalized === "mark") {
+    return `<svg class="timeline-card-tip timeline-card-tip--marker" viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M12 3.15c.45 0 .84.21 1.12.62l1.04 1.55c.17.25.26.54.26.84v1.14H9.58V6.16c0-.3.09-.59.26-.84l1.04-1.55c.28-.41.67-.62 1.12-.62Z" fill="currentColor" />
+  <path d="M9.9 7.4h4.2v9.9c0 1.17-.95 2.12-2.1 2.12s-2.1-.95-2.1-2.12Z" fill="rgba(18, 22, 29, 0.98)" />
+  <path d="M12 19.42 13.05 21.1 12 21.95 10.95 21.1Z" fill="currentColor" />
+</svg>`;
+  }
+  if (normalized === "highlight") {
+    return `<svg class="timeline-card-tip timeline-card-tip--highlight" viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M12 3.1c.5 0 .93.23 1.24.68l1.16 1.7c.19.29.29.61.29.95v1.02H9.31V6.43c0-.34.1-.66.29-.95l1.16-1.7c.31-.45.74-.68 1.24-.68Z" fill="currentColor" />
+  <path d="M8.55 7.85h6.9l.92 1.3v8.05l-.92 1.3h-6.9l-.92-1.3V9.15Z" fill="currentColor" fill-opacity="0.96" />
+  <path d="M9.05 18.95h5.9l1 1v1.35l-1 1H9.05l-1-.98v-1.39Z" fill="currentColor" />
+</svg>`;
+  }
+  if (normalized === "magic") {
+    return `<svg class="timeline-card-tip timeline-card-tip--magic" viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M12 3.2 12.72 4.82 14.34 5.54 12.72 6.26 12 7.88 11.28 6.26 9.66 5.54 11.28 4.82Z" fill="currentColor" />
+  <path d="M11.15 8.15h1.7v11.25h-1.7z" fill="rgba(25, 31, 40, 0.96)" />
+  <circle cx="12" cy="15.4" r="2.45" fill="none" stroke="currentColor" stroke-width="1.45" />
+  <path d="M16.15 16.8 16.65 17.95 17.8 18.45 16.65 18.95 16.15 20.1 15.65 18.95 14.5 18.45 15.65 17.95Z" fill="rgba(100, 210, 255, 0.88)" />
+</svg>`;
+  }
+  if (normalized === "erase") {
+    return `<svg class="timeline-card-tip timeline-card-tip--eraser" viewBox="0 0 24 24" aria-hidden="true">
+  <rect x="9.15" y="3.1" width="5.7" height="2.7" rx="1.12" fill="rgba(241, 132, 157, 0.96)" />
+  <rect x="9.35" y="5.6" width="5.3" height="1.6" rx="0.68" fill="rgba(212, 201, 185, 0.98)" />
+  <path d="M10 7.05h4c.84 0 1.5.68 1.5 1.5v8.95c0 1.52-1.23 2.75-2.75 2.75h-1.5c-1.52 0-2.75-1.23-2.75-2.75V8.55c0-.82.68-1.5 1.5-1.5Z" fill="rgba(224, 170, 88, 0.98)" />
+  <path d="M10.45 12.3h3.1M10.45 15.65h3.1" fill="none" stroke="rgba(176, 120, 48, 0.88)" stroke-width="0.95" stroke-linecap="round" />
+  <path d="M10.95 20.25 12 21.95l1.05-1.7" fill="rgba(249, 229, 194, 0.94)" />
+</svg>`;
+  }
+  return "";
+}
+
+function timelineCardGlyphMarkup(actionKey = "state", packId = settings.railIconPack) {
+  const communicationTipMarkup = timelineCommunicationTipSvgMarkup(actionKey);
+  if (communicationTipMarkup) return communicationTipMarkup;
+  const railIconId = timelineRailIconIdForActionKey(actionKey);
+  if (railIconId) {
+    const resolvedPackId = normalizeJuggernautRailIconPackId(packId);
+    const iconMarkup = getJuggernautRailIconMarkup(railIconId, resolvedPackId);
+    if (iconMarkup) return iconMarkup;
+  }
+  return timelineGlyphSvgMarkup(actionKey);
+}
+
 function timelineGlyphSvgMarkup(actionKey = "state") {
   if (actionKey === "highlight") {
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 17.8h7.6M7.3 13.8l5.2-7.2 4.2 3.1-5.2 7.2-4.9 1.1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="m13.8 8.3 4.1 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
@@ -33429,7 +33487,7 @@ function buildTimelineCard(node = null, headNode = currentTimelineHeadNode()) {
   } else {
     const glyph = document.createElement("span");
     glyph.className = `timeline-card-glyph timeline-card-glyph--${actionKey}`;
-    glyph.innerHTML = timelineGlyphSvgMarkup(actionKey);
+    glyph.innerHTML = timelineCardGlyphMarkup(actionKey);
     visual.appendChild(glyph);
   }
   card.appendChild(visual);

@@ -129,4 +129,7 @@ test("Juggernaut rail iconography: rail rendering consumes generated registry an
   assert.ok(reframeStart >= 0);
   assert.ok(reframeIconStart > reframeStart);
   assert.match(appSource, /getJuggernautRailIconMarkup\("create_tool", settings\.railIconPack\)/);
+  assert.match(appSource, /function timelineCardGlyphMarkup\(actionKey = "state", packId = settings\.railIconPack\)/);
+  assert.match(appSource, /getJuggernautRailIconMarkup\(railIconId,\s*resolvedPackId\)/);
+  assert.match(appSource, /state\.lastRenderedTimelineStructureKey = "";\s*renderTimeline\(\);/);
 });

@@ -53,3 +53,10 @@ test("timeline card hover restores semantic color for glyphs and thumbnails", ()
     /body\.juggernaut-shell \.timeline-card\.is-inactive:hover img,\s*body\.juggernaut-shell \.timeline-card\.is-inactive:focus-visible img\s*\{[\s\S]*filter:\s*grayscale\(0\) saturate\(1\.08\) contrast\(1\.04\) brightness\(1\.01\);/
   );
 });
+
+test("timeline cards size pack-aware icons and communication tool tips inside the glyph slot", () => {
+  assert.match(css, /\.timeline-card-glyph \.tool-icon-mask\s*\{[\s\S]*width:\s*22px;[\s\S]*height:\s*22px;/);
+  assert.match(css, /\.timeline-card-tip\s*\{[\s\S]*width:\s*22px;[\s\S]*height:\s*22px;/);
+  assert.match(css, /\.timeline-card-tip--highlight\s*\{[\s\S]*rotate\(-10deg\)/);
+  assert.match(css, /\.timeline-card-tip--eraser\s*\{[\s\S]*rotate\(9deg\)/);
+});

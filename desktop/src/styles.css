@@ -10214,6 +10214,36 @@ button.ghost:hover {
   height: 22px;
 }
 
+.timeline-card-glyph .tool-icon-mask {
+  width: 22px;
+  height: 22px;
+}
+
+.timeline-card-tip {
+  width: 22px;
+  height: 22px;
+}
+
+.timeline-card-tip--marker {
+  transform: translateY(-0.4px) rotate(-9deg);
+  transform-origin: center 44%;
+}
+
+.timeline-card-tip--highlight {
+  transform: translateY(-0.2px) rotate(-10deg);
+  transform-origin: center 42%;
+}
+
+.timeline-card-tip--magic {
+  transform: translateY(-0.1px) rotate(-2deg);
+  transform-origin: center 45%;
+}
+
+.timeline-card-tip--eraser {
+  transform: translateY(0.1px) rotate(9deg);
+  transform-origin: center 44%;
+}
+
 .timeline-card-glyph--mark {
   color: rgba(64, 108, 172, 0.96);
 }
