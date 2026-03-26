@@ -53,7 +53,7 @@ test("CSS: depressed state has a down/pressed transform", () => {
 test("Juggernaut rail selected state reads as a pressed-in active button", () => {
   assert.match(css, /\.juggernaut-tool\.juggernaut-rail-anchor\.selected,\s*\.juggernaut-tool\.is-local-utility\.selected\s*\{/);
   assert.match(css, /transform:\s*translate3d\(0,\s*2px,\s*0\)\s*scale\(0\.982\)/);
-  assert.match(css, /inset 0 2px 8px rgba\(124,\s*113,\s*89,\s*0\.24\)/);
+  assert.match(css, /inset 0 3px 10px rgba\(110,\s*99,\s*74,\s*0\.28\)/);
   assert.match(css, /\.juggernaut-tool\.juggernaut-rail-anchor\.selected \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.selected \.tool-icon\s*\{/);
 });
 
@@ -115,19 +115,31 @@ test("Local-only buttons use cream fills with black icon and label treatment", (
 test("Local-only buttons keep a visible inactive cream state and darker pressed state", () => {
   assert.match(
     css,
-    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\):disabled\s*\{[\s\S]*background:\s*rgba\(235,\s*230,\s*216,\s*0\.72\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.58\);/
+    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\):disabled\s*\{[\s\S]*background:\s*rgba\(242,\s*238,\s*229,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/
   );
   assert.match(
     css,
-    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.selected,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.selected:hover,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.depressed,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\):active,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.is-active-request\s*\{[\s\S]*background:\s*rgba\(220,\s*212,\s*194,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(124,\s*113,\s*89,\s*0\.24\)/
+    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.selected,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.selected:hover,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\):active,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.is-active-request\s*\{[\s\S]*background:\s*rgba\(214,\s*204,\s*178,\s*0\.98\);[\s\S]*inset 0 3px 10px rgba\(110,\s*99,\s*74,\s*0\.28\)/
+  );
+  assert.match(
+    css,
+    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.depressed\s*\{[\s\S]*background:\s*rgba\(205,\s*193,\s*164,\s*0\.98\);[\s\S]*inset 0 4px 12px rgba\(102,\s*92,\s*69,\s*0\.34\)/
   );
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility:disabled\s*\{[\s\S]*background:\s*rgba\(235,\s*230,\s*216,\s*0\.72\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.58\);/
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility:disabled\s*\{[\s\S]*background:\s*rgba\(242,\s*238,\s*229,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/
   );
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-pressing,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.depressed\s*\{[\s\S]*background:\s*rgba\(220,\s*212,\s*194,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(124,\s*113,\s*89,\s*0\.2\)/
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-pressing\s*\{[\s\S]*background:\s*rgba\(214,\s*204,\s*178,\s*0\.98\);[\s\S]*inset 0 3px 10px rgba\(110,\s*99,\s*74,\s*0\.28\)/
+  );
+  assert.match(
+    visualSystemCss,
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.depressed\s*\{[\s\S]*background:\s*rgba\(205,\s*193,\s*164,\s*0\.98\);[\s\S]*inset 0 4px 12px rgba\(102,\s*92,\s*69,\s*0\.34\)/
+  );
+  assert.match(
+    css,
+    /\.juggernaut-tool\.juggernaut-rail-anchor\.is-selection-empty,\s*\.juggernaut-tool\.is-local-utility\.is-selection-empty\s*\{[\s\S]*background:\s*rgba\(242,\s*238,\s*229,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/
   );
 });
 
@@ -143,27 +155,35 @@ test("Model-backed external-call buttons use flat taupe fills without gradients 
 });
 
 test("Model-backed external-call buttons keep a visible inactive state when unavailable", () => {
-  assert.match(css, /\.tool\.has-action-provenance:disabled,\s*\.session-tab-strip-action\.has-action-provenance:disabled,\s*\.session-tab-runtime-action\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.72\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.58\);[\s\S]*opacity:\s*1;/);
+  assert.match(css, /\.tool\.has-action-provenance:disabled,\s*\.session-tab-strip-action\.has-action-provenance:disabled,\s*\.session-tab-runtime-action\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(224,\s*214,\s*211,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);[\s\S]*opacity:\s*1;/);
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.72\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.58\);[\s\S]*opacity:\s*1;/
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(224,\s*214,\s*211,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);[\s\S]*opacity:\s*1;/
   );
   assert.match(visualSystemCss, /\.juggernaut-tool-rail \.tool\.has-action-provenance\.is-selection-empty,\s*$/m);
-  assert.match(visualSystemCss, /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-selection-empty\s*\{[\s\S]*opacity:\s*1;/);
-  assert.match(css, /\.tool\.has-action-provenance:disabled \.tool-icon,\s*\.tool\.has-action-provenance:disabled \.tool-hint,\s*\.tool\.has-action-provenance:disabled \.tool-label,[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.58\);/);
+  assert.match(visualSystemCss, /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-selection-empty\s*\{[\s\S]*background:\s*rgba\(224,\s*214,\s*211,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/);
+  assert.match(css, /\.tool\.has-action-provenance:disabled \.tool-icon,\s*\.tool\.has-action-provenance:disabled \.tool-hint,\s*\.tool\.has-action-provenance:disabled \.tool-label,[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/);
 });
 
 test("Model-backed external-call buttons darken and recess when active", () => {
   assert.match(
     css,
-    /\.tool\.has-action-provenance\.selected,\s*\.tool\.has-action-provenance\.selected:hover,\s*\.tool\.has-action-provenance\.depressed,\s*\.tool\.has-action-provenance:active\s*\{[\s\S]*background:\s*rgba\(177,\s*157,\s*152,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*inset 0 2px 8px rgba\(92,\s*74,\s*70,\s*0\.42\)/
+    /\.tool\.has-action-provenance\.selected,\s*\.tool\.has-action-provenance\.selected:hover,\s*\.tool\.has-action-provenance:active\s*\{[\s\S]*background:\s*rgba\(170,\s*149,\s*143,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*inset 0 3px 10px rgba\(81,\s*64,\s*60,\s*0\.46\)/
   );
   assert.match(
     css,
-    /\.session-tab-strip-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(177,\s*157,\s*152,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*inset 0 2px 8px rgba\(92,\s*74,\s*70,\s*0\.42\)/
+    /\.tool\.has-action-provenance\.depressed,\s*\.tool\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(154,\s*132,\s*126,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*inset 0 4px 12px rgba\(72,\s*56,\s*52,\s*0\.54\)/
+  );
+  assert.match(
+    css,
+    /\.session-tab-strip-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(154,\s*132,\s*126,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*transform:\s*translateY\(1px\);[\s\S]*inset 0 4px 12px rgba\(72,\s*56,\s*52,\s*0\.54\)/
   );
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-pressing\s*\{[\s\S]*background:\s*rgba\(177,\s*157,\s*152,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*inset 0 2px 8px rgba\(92,\s*74,\s*70,\s*0\.36\)/
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-pressing\s*\{[\s\S]*background:\s*rgba\(170,\s*149,\s*143,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*inset 0 3px 10px rgba\(81,\s*64,\s*60,\s*0\.46\)/
+  );
+  assert.match(
+    visualSystemCss,
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.depressed\s*\{[\s\S]*background:\s*rgba\(154,\s*132,\s*126,\s*0\.98\);[\s\S]*inset 0 4px 12px rgba\(72,\s*56,\s*52,\s*0\.54\)/
   );
 });
