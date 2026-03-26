@@ -53,7 +53,7 @@ test("CSS: depressed state has a down/pressed transform", () => {
 test("Juggernaut rail selected state reads as a pressed-in active button", () => {
   assert.match(css, /\.juggernaut-tool\.juggernaut-rail-anchor\.selected,\s*\.juggernaut-tool\.is-local-utility\.selected\s*\{/);
   assert.match(css, /transform:\s*translate3d\(0,\s*2px,\s*0\)\s*scale\(0\.982\)/);
-  assert.match(css, /inset 0 2px 8px rgba\(5,\s*9,\s*14,\s*0\.58\)/);
+  assert.match(css, /inset 0 2px 8px rgba\(124,\s*113,\s*89,\s*0\.24\)/);
   assert.match(css, /\.juggernaut-tool\.juggernaut-rail-anchor\.selected \.tool-icon,\s*\.juggernaut-tool\.is-local-utility\.selected \.tool-icon\s*\{/);
 });
 
@@ -95,6 +95,40 @@ test("Juggernaut shell rail selected hover keeps a light-shell pressed treatment
   );
   assert.match(visualSystemCss, /filter:\s*none;/);
   assert.match(visualSystemCss, /transform:\s*translate3d\(0,\s*1px,\s*0\)/);
+});
+
+test("Local-only buttons use cream fills with black icon and label treatment", () => {
+  assert.match(
+    css,
+    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\s*\{[\s\S]*background:\s*rgba\(235,\s*230,\s*216,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*box-shadow:\s*none;/
+  );
+  assert.match(
+    css,
+    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\) \.tool-hint,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\) \.tool-label\s*\{[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);/
+  );
+  assert.match(
+    visualSystemCss,
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\s*\{[\s\S]*background:\s*rgba\(235,\s*230,\s*216,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*box-shadow:\s*none;/
+  );
+});
+
+test("Local-only buttons keep a visible inactive cream state and darker pressed state", () => {
+  assert.match(
+    css,
+    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\):disabled\s*\{[\s\S]*background:\s*rgba\(235,\s*230,\s*216,\s*0\.72\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.58\);/
+  );
+  assert.match(
+    css,
+    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.selected,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.selected:hover,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.depressed,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\):active,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.is-active-request\s*\{[\s\S]*background:\s*rgba\(220,\s*212,\s*194,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(124,\s*113,\s*89,\s*0\.24\)/
+  );
+  assert.match(
+    visualSystemCss,
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility:disabled\s*\{[\s\S]*background:\s*rgba\(235,\s*230,\s*216,\s*0\.72\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.58\);/
+  );
+  assert.match(
+    visualSystemCss,
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-pressing,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.depressed\s*\{[\s\S]*background:\s*rgba\(220,\s*212,\s*194,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(124,\s*113,\s*89,\s*0\.2\)/
+  );
 });
 
 test("Model-backed external-call buttons use flat taupe fills without gradients or glow", () => {

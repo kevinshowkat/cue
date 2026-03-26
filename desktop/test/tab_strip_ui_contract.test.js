@@ -96,6 +96,10 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*white-space:\s*nowrap/s);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*padding:\s*0 14px/s);
   assert.match(css, /\.session-tab-runtime-action\.is-ready\s*\{/);
+  assert.match(css, /\.session-tab-runtime-action\[data-provenance="local_only"\],\s*\.session-tab-runtime-action\[data-provenance="local_only"\]\.is-ready\s*\{/);
+  assert.match(css, /\.session-tab-runtime-action\[data-provenance="local_only"\],\s*\.session-tab-runtime-action\[data-provenance="local_only"\]\.is-ready\s*\{[\s\S]*background:\s*rgba\(235,\s*230,\s*216,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);/);
+  assert.match(css, /\.session-tab-strip-action\[data-provenance="local_only"\]:active,\s*\.session-tab-runtime-action\[data-provenance="local_only"\]:active,\s*\.session-tab-runtime-action\[data-provenance="local_only"\]\.is-active-request\s*\{[\s\S]*background:\s*rgba\(220,\s*212,\s*194,\s*0\.98\);/);
+  assert.match(css, /\.session-tab-runtime-action\[data-provenance="local_only"\]:disabled\s*\{[\s\S]*background:\s*rgba\(235,\s*230,\s*216,\s*0\.72\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.58\);/);
   assert.match(css, /\.session-tab-runtime-action\.has-action-provenance,\s*\.session-tab-runtime-action\.has-action-provenance\.is-ready\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\.has-action-provenance,\s*\.session-tab-runtime-action\.has-action-provenance\.is-ready\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.98\);/);
   assert.match(css, /\.session-tab-strip-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(177,\s*157,\s*152,\s*0\.98\);/);

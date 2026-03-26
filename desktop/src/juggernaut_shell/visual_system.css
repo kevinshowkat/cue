@@ -771,9 +771,55 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-p
   filter: none;
 }
 
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility {
+  border-color: rgba(205, 196, 177, 0.42);
+  border-top-color: rgba(251, 248, 241, 0.92);
+  border-left-color: rgba(243, 237, 225, 0.82);
+  background: rgba(235, 230, 216, 0.98);
+  color: rgba(0, 0, 0, 0.92);
+  box-shadow: none;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility:hover:not(:disabled):not(.selected):not(.is-active-request):not(.is-pressing):not(.depressed) {
+  border-color: rgba(191, 181, 160, 0.48);
+  border-top-color: rgba(253, 250, 244, 0.94);
+  border-left-color: rgba(246, 240, 228, 0.84);
+  background: rgba(235, 230, 216, 0.98);
+  color: rgba(0, 0, 0, 0.92);
+  box-shadow: none;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.selected,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.selected:hover,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-active-request,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-active-request:hover,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-pressing,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.depressed {
+  border-color: rgba(172, 161, 139, 0.52);
+  border-top-color: rgba(241, 235, 223, 0.82);
+  border-left-color: rgba(230, 222, 208, 0.72);
+  background: rgba(220, 212, 194, 0.98);
+  color: rgba(0, 0, 0, 0.92);
+  box-shadow:
+    inset 0 2px 8px rgba(124, 113, 89, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  filter: none;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility:disabled {
+  border-color: rgba(205, 196, 177, 0.32);
+  border-top-color: rgba(247, 242, 232, 0.8);
+  border-left-color: rgba(239, 232, 220, 0.7);
+  background: rgba(235, 230, 216, 0.72);
+  color: rgba(0, 0, 0, 0.58);
+  box-shadow: none;
+  opacity: 1;
+  filter: none;
+}
+
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button[data-tool-id="upload"],
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button[data-tool-id="export_psd"] {
-  color: rgba(53, 64, 79, 0.84);
+  color: rgba(0, 0, 0, 0.92);
 }
 
 @keyframes juggernautUploadGoldShimmer {
@@ -838,19 +884,19 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-empty-can
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button[data-tool-id="create_tool"] {
-  color: rgba(64, 99, 86, 0.86);
+  color: rgba(0, 0, 0, 0.92);
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.selected[data-tool-id="upload"],
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.selected[data-tool-id="export_psd"],
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-active-request[data-tool-id="upload"],
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-active-request[data-tool-id="export_psd"] {
-  color: rgba(35, 43, 54, 0.9);
+  color: rgba(0, 0, 0, 0.92);
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.selected[data-tool-id="create_tool"],
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-active-request[data-tool-id="create_tool"] {
-  color: rgba(45, 79, 67, 0.9);
+  color: rgba(0, 0, 0, 0.92);
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button .tool-icon {
@@ -866,6 +912,31 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-p
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance .tool-hint,
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance .tool-label {
   color: rgba(255, 255, 255, 0.96);
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility .tool-icon,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility .tool-hint,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility .tool-label {
+  color: rgba(0, 0, 0, 0.92);
+  filter: none;
+  text-shadow: none;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility:hover:not(:disabled) .tool-icon,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility:hover:not(:disabled) .tool-hint,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility:hover:not(:disabled) .tool-label,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.selected .tool-icon,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.selected .tool-hint,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.selected .tool-label,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-active-request .tool-icon,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-active-request .tool-hint,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-active-request .tool-label,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-pressing .tool-icon,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-pressing .tool-hint,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-pressing .tool-label {
+  color: rgba(0, 0, 0, 0.92);
+  filter: none;
+  text-shadow: none;
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:hover:not(:disabled) .tool-icon,
@@ -900,6 +971,19 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-p
   color: rgba(255, 255, 255, 0.92);
 }
 
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility .tool-hint {
+  color: rgba(0, 0, 0, 0.92);
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility:disabled .tool-icon,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility:disabled .tool-hint,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility:disabled .tool-label {
+  color: rgba(0, 0, 0, 0.58);
+  opacity: 1;
+  filter: none;
+  text-shadow: none;
+}
+
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:hover:not(:disabled) .tool-hint,
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.selected .tool-hint,
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-active-request .tool-hint {
@@ -913,6 +997,10 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-pending-h
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-selection-empty {
   opacity: 0.74;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-selection-empty {
+  opacity: 1;
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button::after {
