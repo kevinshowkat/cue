@@ -36,6 +36,9 @@ test("Juggernaut rail iconography: manifest covers the shared generated glyph se
 
 test("Juggernaut rail iconography: generated registry exports custom SVG glyphs", () => {
   assert.equal(typeof JUGGERNAUT_RAIL_ICON_REGISTRY.upload, "string");
+  assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.upload, /<rect/);
+  assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.upload, /M9\.65 7\.3 12 4\.95 14\.35 7\.3/);
+  assert.doesNotMatch(JUGGERNAUT_RAIL_ICON_REGISTRY.upload, /M5\.25 12h13\.5/);
   assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.select_region, /tool-icon-select-region/);
   assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.select_subject, /tool-icon-select-subject/);
   assert.match(JUGGERNAUT_RAIL_ICON_REGISTRY.background_swap, /fill-opacity=/);

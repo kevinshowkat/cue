@@ -97,10 +97,14 @@ export const JUGGERNAUT_RAIL_ICON_BLUEPRINTS = Object.freeze([
     toolId: "upload",
     label: "Import image",
     semanticRole: "ingest",
-    notes: "Classic centered plus sign so adding/importing an image reads immediately without extra metaphor.",
+    notes: "Upload arrow above a compact image frame so the rail reads as image import instead of generic add-tab creation.",
     parts: Object.freeze([
-      strokePath("M12 5.25v13.5", { "stroke-width": "2.1" }),
-      strokePath("M5.25 12h13.5", { "stroke-width": "2.1" }),
+      fillRect(5.15, 10.9, 13.7, 7.95, 2.05, { "fill-opacity": "0.12" }),
+      strokeRect(5.15, 10.9, 13.7, 7.95, 2.05),
+      fillCircle(8.95, 13.35, 0.82, { "fill-opacity": "0.18" }),
+      strokePath("M7.25 17.05l2.2-2.2 1.8 1.7 2.25-2.55 2.25 3.05"),
+      strokePath("M12 9.1V4.95"),
+      strokePath("M9.65 7.3 12 4.95 14.35 7.3"),
     ]),
   }),
   Object.freeze({

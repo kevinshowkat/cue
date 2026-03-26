@@ -65,6 +65,16 @@ test("Session tab strip seeds a visible launch tab and exposes the Design Review
   assert.equal(brandStripChunk.includes('data-tab-id="tab-cleanup"'), false);
 });
 
+test("Session tab strip uses a simple plus glyph for the new-session action", () => {
+  const newButtonStart = html.indexOf('id="session-tab-new"');
+  const forkButtonStart = html.indexOf('id="session-tab-fork"', newButtonStart);
+  assert.ok(newButtonStart >= 0 && forkButtonStart > newButtonStart, "expected new-session button before fork button");
+  const newButtonChunk = html.slice(newButtonStart, forkButtonStart);
+  assert.match(newButtonChunk, /d=\"M12 6\.25v11\.5\"/);
+  assert.match(newButtonChunk, /d=\"M6\.25 12h11\.5\"/);
+  assert.doesNotMatch(newButtonChunk, /A2\.25 2\.25/);
+});
+
 test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", () => {
   assert.match(css, /\.session-tab-strip\s*\{[\s\S]*flex:\s*1 1 auto/);
   assert.match(css, /\.session-tab-run\s*\{/);

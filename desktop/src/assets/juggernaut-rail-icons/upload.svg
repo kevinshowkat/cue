@@ -1,4 +1,8 @@
 <svg class="tool-icon tool-icon-upload" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-  <path fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" d="M12 5.25v13.5" />
-  <path fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" d="M5.25 12h13.5" />
+  <rect fill="currentColor" fill-opacity="0.12" x="5.15" y="10.9" width="13.7" height="7.95" rx="2.05" />
+  <rect fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" x="5.15" y="10.9" width="13.7" height="7.95" rx="2.05" />
+  <circle fill="currentColor" fill-opacity="0.18" cx="8.95" cy="13.35" r="0.82" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M7.25 17.05l2.2-2.2 1.8 1.7 2.25-2.55 2.25 3.05" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M12 9.1V4.95" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M9.65 7.3 12 4.95 14.35 7.3" />
 </svg>

@@ -292,7 +292,8 @@
       "id": "new_background",
       "label": "New Background",
       "surface": "direct_execution",
-      "source": "left_rail",
+      "source": "runtime_only",
+      "visibleInCurrentUi": false,
       "whatItDoes": "Replaces or reinterprets background content while preserving the main subject.",
       "whenToUse": [
         "scene simplification",
@@ -357,6 +358,80 @@
       "reversible": true,
       "executionType": "identity_preserving_variation",
       "routeProfileId": "identity_preserving_variation_default_v1",
+      "costClass": "medium",
+      "latencyClass": "medium"
+    },
+    {
+      "id": "remove_people",
+      "label": "Remove People",
+      "surface": "direct_execution",
+      "source": "left_rail",
+      "whatItDoes": "Removes people from the current image while rebuilding the remaining scene.",
+      "whenToUse": [
+        "clearing background bystanders",
+        "removing unwanted people from a shot",
+        "simplifying a scene before export"
+      ],
+      "whenNotToUse": [
+        "removing a non-human object",
+        "global lighting or finish changes"
+      ],
+      "requiresImage": true,
+      "requiresFocus": true,
+      "mutatesPixels": true,
+      "reversible": true,
+      "executionType": "people_removal",
+      "routeProfileId": "remove_people_model",
+      "costClass": "medium",
+      "latencyClass": "medium"
+    },
+    {
+      "id": "polish",
+      "label": "Polish",
+      "surface": "direct_execution",
+      "source": "runtime_only",
+      "visibleInCurrentUi": false,
+      "whatItDoes": "Applies a global finish pass that gently refines tone, contrast, and saturation.",
+      "whenToUse": [
+        "final cleanup before export",
+        "lifting an image without changing composition",
+        "quick finishing after a structural edit"
+      ],
+      "whenNotToUse": [
+        "removing a subject",
+        "changing scene layout or lighting direction"
+      ],
+      "requiresImage": true,
+      "requiresFocus": true,
+      "mutatesPixels": true,
+      "reversible": true,
+      "executionType": "image_polish",
+      "routeProfileId": "polish_local_first",
+      "costClass": "low",
+      "latencyClass": "fast"
+    },
+    {
+      "id": "relight",
+      "label": "Relight",
+      "surface": "direct_execution",
+      "source": "runtime_only",
+      "visibleInCurrentUi": false,
+      "whatItDoes": "Adjusts perceived scene lighting, exposure balance, and overall light placement.",
+      "whenToUse": [
+        "improving a flat or underlit image",
+        "reshaping lighting emphasis after cleanup",
+        "making a subject read more clearly"
+      ],
+      "whenNotToUse": [
+        "removing an object",
+        "changing framing or background content"
+      ],
+      "requiresImage": true,
+      "requiresFocus": true,
+      "mutatesPixels": true,
+      "reversible": true,
+      "executionType": "image_relight",
+      "routeProfileId": "relight_local_first",
       "costClass": "medium",
       "latencyClass": "medium"
     },
