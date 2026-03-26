@@ -7,7 +7,7 @@ This tree mixes current Cue product docs, active implementation notes, historica
 - [desktop.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/desktop.md): current desktop app behavior and shell notes
 - [features/visual-timeline/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/visual-timeline/README.md): tab-local history model and restore contract
 - [features/shell-canvas-integration.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/shell-canvas-integration.md): shell bridge, tool, and export wiring
-- [psd-export-slice.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/psd-export-slice.md): PSD export contract and current fidelity limits
+- [psd-export-slice.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/psd-export-slice.md): PSD contract plus the shared low-effort raster export notes
 - [runbooks/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/README.md): multi-agent launch, design, and polish runbooks
 - [agent_quickstart.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent_quickstart.md): practical agent task routing
 - [../CHANGELOG.md](/Users/mainframe/Desktop/projects/Juggernaut/CHANGELOG.md): notable recent product/runtime changes

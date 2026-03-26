@@ -1581,7 +1581,7 @@ struct ExportTimelineNodePayload {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ExportPsdRequest {
+struct ExportRunRequest {
     #[serde(default)]
     schema_version: Option<u32>,
     #[serde(default)]
@@ -1681,10 +1681,10 @@ struct RunReceiptRecord {
 }
 
 #[derive(Debug, Clone)]
-struct ResolvedExportPsdRequest {
+struct ResolvedExportRunRequest {
     schema_version: u32,
     document_name: String,
-    format: String,
+    format: NativeExportFormat,
     run_dir: String,
     requested_out_path: String,
     out_path: String,
@@ -1702,6 +1702,120 @@ struct ResolvedExportPsdRequest {
     limitations: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeExportFormat {
+    Psd,
+    Png,
+    Jpg,
+    Webp,
+    Tiff,
+}
+
+impl NativeExportFormat {
+    fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "psd" => Some(Self::Psd),
+            "png" => Some(Self::Png),
+            "jpg" | "jpeg" => Some(Self::Jpg),
+            "webp" => Some(Self::Webp),
+            "tif" | "tiff" => Some(Self::Tiff),
+            _ => None,
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            Self::Psd => "psd",
+            Self::Png => "png",
+            Self::Jpg => "jpg",
+            Self::Webp => "webp",
+            Self::Tiff => "tiff",
+        }
+    }
+
+    fn primary_extension(self) -> &'static str {
+        match self {
+            Self::Psd => "psd",
+            Self::Png => "png",
+            Self::Jpg => "jpg",
+            Self::Webp => "webp",
+            Self::Tiff => "tiff",
+        }
+    }
+
+    fn matches_extension(self, value: &str) -> bool {
+        match self {
+            Self::Psd => value.eq_ignore_ascii_case("psd"),
+            Self::Png => value.eq_ignore_ascii_case("png"),
+            Self::Jpg => value.eq_ignore_ascii_case("jpg") || value.eq_ignore_ascii_case("jpeg"),
+            Self::Webp => value.eq_ignore_ascii_case("webp"),
+            Self::Tiff => value.eq_ignore_ascii_case("tif") || value.eq_ignore_ascii_case("tiff"),
+        }
+    }
+
+    fn operation(self) -> &'static str {
+        match self {
+            Self::Psd => "export_psd",
+            Self::Png => "export_png",
+            Self::Jpg => "export_jpg",
+            Self::Webp => "export_webp",
+            Self::Tiff => "export_tiff",
+        }
+    }
+
+    fn export_contract(self) -> &'static str {
+        match self {
+            Self::Psd => "juggernaut.psd_export.v1",
+            Self::Png | Self::Jpg | Self::Webp | Self::Tiff => "juggernaut.raster_export.v1",
+        }
+    }
+
+    fn writer_id(self) -> &'static str {
+        match self {
+            Self::Psd => "juggernaut-psd-export-v1",
+            Self::Png | Self::Jpg | Self::Webp | Self::Tiff => "juggernaut-raster-export-v1",
+        }
+    }
+
+    fn supports_alpha(self) -> bool {
+        !matches!(self, Self::Jpg)
+    }
+
+    fn background(self) -> &'static str {
+        if self.supports_alpha() {
+            "transparent"
+        } else {
+            "white"
+        }
+    }
+
+    fn fidelity(self) -> &'static str {
+        match self {
+            Self::Psd => "partial_flattened",
+            Self::Png | Self::Jpg | Self::Webp | Self::Tiff => "flattened_raster",
+        }
+    }
+
+    fn image_format(self) -> Option<image::ImageFormat> {
+        match self {
+            Self::Psd => None,
+            Self::Png => Some(image::ImageFormat::Png),
+            Self::Jpg => Some(image::ImageFormat::Jpeg),
+            Self::Webp => Some(image::ImageFormat::WebP),
+            Self::Tiff => Some(image::ImageFormat::Tiff),
+        }
+    }
+}
+
+fn parse_export_format(value: &str) -> Result<NativeExportFormat, String> {
+    NativeExportFormat::parse(value).ok_or_else(|| {
+        format!(
+            "unsupported export format '{}'; expected one of psd, png, jpg/jpeg, webp, tiff/tif",
+            value
+        )
+    })
+}
+
 fn default_export_document_name(run_dir: &Path) -> String {
     run_dir
         .file_name()
@@ -1712,15 +1826,25 @@ fn default_export_document_name(run_dir: &Path) -> String {
         .to_string()
 }
 
-fn default_export_limitations() -> Vec<String> {
-    vec![
-        "PSD export is flattened to a single bitmap composition with alpha; editable per-source PSD layers are not included in this March 8 slice."
-            .to_string(),
+fn default_export_limitations(format: NativeExportFormat) -> Vec<String> {
+    let mut out = vec![match format {
+        NativeExportFormat::Psd => "PSD export is flattened to a single bitmap composition with alpha; editable per-source PSD layers are not included in this current slice.".to_string(),
+        NativeExportFormat::Png => "PNG export is flattened to a single bitmap composition with alpha; editable layers, masks, and tool semantics are not included in this current slice.".to_string(),
+        NativeExportFormat::Jpg => "JPG export is flattened to a single bitmap composition; transparent pixels are composited onto white and editable layers are not included in this current slice.".to_string(),
+        NativeExportFormat::Webp => "WEBP export is flattened to a single bitmap composition with alpha; editable layers, masks, and tool semantics are not included in this current slice.".to_string(),
+        NativeExportFormat::Tiff => "TIFF export is flattened to a single bitmap composition with alpha; editable layers, masks, and tool semantics are not included in this current slice.".to_string(),
+    }];
+    out.push(
         "Export reconstructs canvas placement from Cue run artifacts and does not preserve live tool semantics, masks, or effect-token re-editability."
             .to_string(),
-        "If the shell still requests export.html, the native exporter normalizes the output artifact to .psd and leaves a pointer note at the requested legacy path."
-            .to_string(),
-    ]
+    );
+    if format == NativeExportFormat::Psd {
+        out.push(
+            "If the shell still requests export.html, the native exporter normalizes the output artifact to .psd and leaves a pointer note at the requested legacy path."
+                .to_string(),
+        );
+    }
+    out
 }
 
 fn merge_limitations(base: &[String], extras: &[String]) -> Vec<String> {
@@ -1738,15 +1862,66 @@ fn merge_limitations(base: &[String], extras: &[String]) -> Vec<String> {
     out
 }
 
-fn normalize_psd_out_path(requested: &Path, run_dir: &Path) -> PathBuf {
+fn normalize_export_out_path(
+    requested: &Path,
+    run_dir: &Path,
+    format: NativeExportFormat,
+) -> PathBuf {
     let base = if requested.as_os_str().is_empty() {
-        run_dir.join("export.psd")
+        run_dir.join(format!("export.{}", format.primary_extension()))
     } else {
         requested.to_path_buf()
     };
     match base.extension().and_then(|value| value.to_str()) {
-        Some(ext) if ext.eq_ignore_ascii_case("psd") => base,
-        _ => base.with_extension("psd"),
+        Some(ext) if format.matches_extension(ext) => base,
+        _ => base.with_extension(format.primary_extension()),
+    }
+}
+
+fn flatten_rgba_for_opaque_export(rgba: &image::RgbaImage) -> image::RgbImage {
+    let (width, height) = rgba.dimensions();
+    let mut out = Vec::with_capacity((width as usize) * (height as usize) * 3);
+    for pixel in rgba.pixels() {
+        let alpha = u32::from(pixel[3]);
+        for channel in pixel.0.iter().take(3) {
+            let value = ((u32::from(*channel) * alpha) + (255 * (255 - alpha)) + 127) / 255;
+            out.push(value as u8);
+        }
+    }
+    image::RgbImage::from_raw(width, height, out)
+        .expect("flattened opaque export buffer dimensions should stay valid")
+}
+
+fn encode_dynamic_image(
+    image: image::DynamicImage,
+    format: image::ImageFormat,
+) -> Result<Vec<u8>, String> {
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut cursor, format)
+        .map_err(|e| e.to_string())?;
+    Ok(cursor.into_inner())
+}
+
+fn encode_flattened_export(
+    format: NativeExportFormat,
+    rgba: &image::RgbaImage,
+) -> Result<Vec<u8>, String> {
+    let (width, height) = rgba.dimensions();
+    match format {
+        NativeExportFormat::Psd => encode_flattened_psd_rgba(width, height, rgba.as_raw()),
+        NativeExportFormat::Jpg => encode_dynamic_image(
+            image::DynamicImage::ImageRgb8(flatten_rgba_for_opaque_export(rgba)),
+            image::ImageFormat::Jpeg,
+        ),
+        NativeExportFormat::Png | NativeExportFormat::Webp | NativeExportFormat::Tiff => {
+            encode_dynamic_image(
+                image::DynamicImage::ImageRgba8(rgba.clone()),
+                format
+                    .image_format()
+                    .expect("raster export format should map to an image encoder"),
+            )
+        }
     }
 }
 
@@ -2224,18 +2399,13 @@ fn build_source_images_from_receipts(
 }
 
 fn resolve_provided_export_request(
-    request: ExportPsdRequest,
-) -> Result<ResolvedExportPsdRequest, String> {
+    request: ExportRunRequest,
+) -> Result<ResolvedExportRunRequest, String> {
     let run_dir_path = PathBuf::from(&request.run_dir);
     if !run_dir_path.exists() {
         return Err(format!("run dir not found: {}", request.run_dir));
     }
-    if request.format.trim().to_lowercase() != "psd" {
-        return Err(format!(
-            "unsupported export format '{}'; expected psd",
-            request.format
-        ));
-    }
+    let format = parse_export_format(&request.format)?;
 
     let flattened_source_path = PathBuf::from(&request.flattened_source_path);
     if !flattened_source_path.exists() {
@@ -2246,7 +2416,7 @@ fn resolve_provided_export_request(
     }
 
     let requested_out_path = PathBuf::from(&request.out_path);
-    let normalized_out_path = normalize_psd_out_path(&requested_out_path, &run_dir_path);
+    let normalized_out_path = normalize_export_out_path(&requested_out_path, &run_dir_path, format);
     let records = collect_run_receipt_records(&run_dir_path)?;
     let edit_receipts = if request.edit_receipts.is_empty() {
         collect_edit_receipts_from_records(&records)
@@ -2254,12 +2424,12 @@ fn resolve_provided_export_request(
         request.edit_receipts.clone()
     };
 
-    Ok(ResolvedExportPsdRequest {
+    Ok(ResolvedExportRunRequest {
         schema_version: request.schema_version.unwrap_or(1),
         document_name: request
             .document_name
             .unwrap_or_else(|| default_export_document_name(&run_dir_path)),
-        format: request.format,
+        format,
         run_dir: request.run_dir,
         requested_out_path: requested_out_path.to_string_lossy().to_string(),
         out_path: normalized_out_path.to_string_lossy().to_string(),
@@ -2278,21 +2448,22 @@ fn resolve_provided_export_request(
             request.action_sequence
         },
         edit_receipts,
-        limitations: merge_limitations(&default_export_limitations(), &request.limitations),
+        limitations: merge_limitations(&default_export_limitations(format), &request.limitations),
     })
 }
 
 fn resolve_legacy_export_request(
     run_dir: String,
     out_path: String,
-) -> Result<ResolvedExportPsdRequest, String> {
+    format: NativeExportFormat,
+) -> Result<ResolvedExportRunRequest, String> {
     let run_dir_path = PathBuf::from(&run_dir);
     if !run_dir_path.exists() {
         return Err(format!("run dir not found: {run_dir}"));
     }
 
     let requested_out_path = PathBuf::from(&out_path);
-    let normalized_out_path = normalize_psd_out_path(&requested_out_path, &run_dir_path);
+    let normalized_out_path = normalize_export_out_path(&requested_out_path, &run_dir_path, format);
     let records = collect_run_receipt_records(&run_dir_path)?;
     let edit_receipts = collect_edit_receipts_from_records(&records);
 
@@ -2312,10 +2483,10 @@ fn resolve_legacy_export_request(
     };
 
     let flattened_source_path = write_generated_flattened_source(&run_dir_path, &composite)?;
-    Ok(ResolvedExportPsdRequest {
+    Ok(ResolvedExportRunRequest {
         schema_version: 1,
         document_name: default_export_document_name(&run_dir_path),
-        format: "psd".to_string(),
+        format,
         run_dir,
         requested_out_path: requested_out_path.to_string_lossy().to_string(),
         out_path: normalized_out_path.to_string_lossy().to_string(),
@@ -2330,15 +2501,15 @@ fn resolve_legacy_export_request(
         timeline_head_node_id: None,
         action_sequence: derive_action_sequence(&edit_receipts),
         edit_receipts,
-        limitations: merge_limitations(&default_export_limitations(), &extra_limits),
+        limitations: merge_limitations(&default_export_limitations(format), &extra_limits),
     })
 }
 
 fn resolve_export_request(
-    request: Option<ExportPsdRequest>,
+    request: Option<ExportRunRequest>,
     run_dir: Option<String>,
     out_path: Option<String>,
-) -> Result<ResolvedExportPsdRequest, String> {
+) -> Result<ResolvedExportRunRequest, String> {
     if let Some(request) = request {
         return resolve_provided_export_request(request);
     }
@@ -2355,7 +2526,12 @@ fn resolve_export_request(
                 .to_string_lossy()
                 .to_string()
         });
-    resolve_legacy_export_request(run_dir, out_path)
+    let inferred_format = PathBuf::from(&out_path)
+        .extension()
+        .and_then(|value| value.to_str())
+        .and_then(NativeExportFormat::parse)
+        .unwrap_or(NativeExportFormat::Psd);
+    resolve_legacy_export_request(run_dir, out_path, inferred_format)
 }
 
 fn write_legacy_export_pointer(
@@ -2382,7 +2558,7 @@ fn write_legacy_export_pointer(
 }
 
 fn build_export_receipt_payload(
-    request: &ResolvedExportPsdRequest,
+    request: &ResolvedExportRunRequest,
     receipt_path: &Path,
     out_path: &Path,
     width: u32,
@@ -2390,6 +2566,13 @@ fn build_export_receipt_payload(
     flattened_source_sha256: &str,
     output_sha256: &str,
 ) -> serde_json::Value {
+    let format_id = request.format.id();
+    let operation = request.format.operation();
+    let export_contract = request.format.export_contract();
+    let writer_id = request.format.writer_id();
+    let background = request.format.background();
+    let channel_count = if request.format.supports_alpha() { 4 } else { 3 };
+
     let source_images: Vec<serde_json::Value> = request
         .source_images
         .iter()
@@ -2464,6 +2647,49 @@ fn build_export_receipt_payload(
         .map(|receipt| serde_json::json!(receipt))
         .collect();
 
+    let mut provider_response = serde_json::json!({
+        "writer": writer_id,
+        "format": format_id,
+        "encoded": {
+            "version": 1,
+            "channels": channel_count,
+            "depth": 8,
+            "color_mode": "rgb",
+            "layer_strategy": "flattened_single_bitmap",
+            "alpha_preserved": request.format.supports_alpha(),
+        },
+        "hashes": {
+            "flattened_source_sha256": flattened_source_sha256,
+            "output_sha256": output_sha256,
+        },
+    });
+    if let Some(object) = provider_response.as_object_mut() {
+        if request.format == NativeExportFormat::Psd {
+            object.insert(
+                "psd".to_string(),
+                serde_json::json!({
+                    "version": 1,
+                    "channels": channel_count,
+                    "depth": 8,
+                    "color_mode": "rgb",
+                    "layer_strategy": "flattened_single_bitmap",
+                }),
+            );
+        } else {
+            object.insert(
+                "raster".to_string(),
+                serde_json::json!({
+                    "format": format_id,
+                    "channels": channel_count,
+                    "depth": 8,
+                    "color_mode": "rgb",
+                    "layer_strategy": "flattened_single_bitmap",
+                    "alpha_preserved": request.format.supports_alpha(),
+                }),
+            );
+        }
+    }
+
     serde_json::json!({
         "schema_version": request.schema_version,
         "request": {
@@ -2472,19 +2698,19 @@ fn build_export_receipt_payload(
             "size": format!("{width}x{height}"),
             "n": 1,
             "seed": null,
-            "output_format": request.format,
+            "output_format": format_id,
             "inputs": {
                 "init_image": request.flattened_source_path,
                 "mask": null,
                 "reference_images": request.source_images.iter().map(|image| image.path.clone()).collect::<Vec<_>>(),
             },
             "provider": "local",
-            "model": "juggernaut-psd-export-v1",
+            "model": writer_id,
             "provider_options": {},
             "out_dir": request.run_dir,
             "metadata": {
-                "operation": "export_psd",
-                "export_contract": "juggernaut.psd_export.v1",
+                "operation": operation,
+                "export_contract": export_contract,
                 "document_name": request.document_name,
                 "canvas_mode": request.canvas_mode,
                 "active_image_id": request.active_image_id,
@@ -2508,12 +2734,12 @@ fn build_export_receipt_payload(
         },
         "resolved": {
             "provider": "local",
-            "model": "juggernaut-psd-export-v1",
+            "model": writer_id,
             "size": format!("{width}x{height}"),
             "width": width,
             "height": height,
-            "output_format": request.format,
-            "background": "transparent",
+            "output_format": format_id,
+            "background": background,
             "seed": null,
             "n": 1,
             "user": null,
@@ -2527,8 +2753,9 @@ fn build_export_receipt_payload(
             "partial_images": null,
             "provider_params": {
                 "layer_strategy": "flattened_single_bitmap",
-                "channel_count": 4,
+                "channel_count": channel_count,
                 "color_mode": "rgb",
+                "alpha_preserved": request.format.supports_alpha(),
             },
             "warnings": limitations,
         },
@@ -2542,20 +2769,7 @@ fn build_export_receipt_payload(
             "timeline_head_node_id": request.timeline_head_node_id,
             "edit_receipts": edit_receipts,
         },
-        "provider_response": {
-            "writer": "juggernaut-psd-export-v1",
-            "psd": {
-                "version": 1,
-                "channels": 4,
-                "depth": 8,
-                "color_mode": "rgb",
-                "layer_strategy": "flattened_single_bitmap",
-            },
-            "hashes": {
-                "flattened_source_sha256": flattened_source_sha256,
-                "output_sha256": output_sha256,
-            },
-        },
+        "provider_response": provider_response,
         "warnings": limitations,
         "artifacts": {
             "image_path": request.flattened_source_path,
@@ -2563,16 +2777,16 @@ fn build_export_receipt_payload(
             "receipt_path": receipt_path.to_string_lossy().to_string(),
         },
         "result_metadata": {
-            "operation": "export_psd",
+            "operation": operation,
             "created_at": chrono::Utc::now().to_rfc3339(),
-            "format": request.format,
+            "format": format_id,
             "document_name": request.document_name,
             "source_image_count": request.source_images.len(),
             "timeline_node_count": request.timeline_nodes.len(),
             "timeline_schema_version": request.timeline_schema_version,
             "timeline_head_node_id": request.timeline_head_node_id,
             "editable_layer_count": 0,
-            "fidelity": "partial_flattened",
+            "fidelity": request.format.fidelity(),
             "canvas_mode": request.canvas_mode,
             "active_image_id": request.active_image_id,
             "output_sha256": output_sha256,
@@ -2584,7 +2798,7 @@ fn build_export_receipt_payload(
 
 #[tauri::command]
 fn export_run(
-    request: Option<ExportPsdRequest>,
+    request: Option<ExportRunRequest>,
     run_dir: Option<String>,
     out_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
@@ -2604,9 +2818,9 @@ fn export_run(
         .map_err(|e| format!("{}: {e}", flattened_source_path.to_string_lossy()))?;
     let rgba = decoded.to_rgba8();
     let (width, height) = rgba.dimensions();
-    let psd_bytes = encode_flattened_psd_rgba(width, height, rgba.as_raw())?;
-    let output_sha256 = sha256_hex(&psd_bytes);
-    std::fs::write(&out_path_buf, &psd_bytes)
+    let encoded_bytes = encode_flattened_export(request.format, &rgba)?;
+    let output_sha256 = sha256_hex(&encoded_bytes);
+    std::fs::write(&out_path_buf, &encoded_bytes)
         .map_err(|e| format!("{}: {e}", out_path_buf.to_string_lossy()))?;
 
     let receipt_name = format!(
@@ -2633,7 +2847,7 @@ fn export_run(
         .map_err(|e| format!("{}: {e}", receipt_path.to_string_lossy()))?;
 
     let requested_out_path = PathBuf::from(&request.requested_out_path);
-    if requested_out_path != out_path_buf {
+    if request.format == NativeExportFormat::Psd && requested_out_path != out_path_buf {
         write_legacy_export_pointer(
             &requested_out_path,
             &out_path_buf,
@@ -2642,18 +2856,34 @@ fn export_run(
         )?;
     }
 
-    Ok(serde_json::json!({
+    let mut payload = serde_json::json!({
         "ok": true,
-        "psdPath": out_path_buf.to_string_lossy().to_string(),
+        "exportPath": out_path_buf.to_string_lossy().to_string(),
         "receiptPath": receipt_path.to_string_lossy().to_string(),
+        "format": request.format.id(),
         "limitations": request.limitations,
+        "outPath": out_path_buf.to_string_lossy().to_string(),
         "out_path": out_path_buf.to_string_lossy().to_string(),
         "receipt_path": receipt_path.to_string_lossy().to_string(),
         "flattened_source_path": flattened_source_path.to_string_lossy().to_string(),
         "width": width,
         "height": height,
         "output_sha256": output_sha256,
-    }))
+    });
+    if let Some(object) = payload.as_object_mut() {
+        let legacy_key = match request.format {
+            NativeExportFormat::Psd => "psdPath",
+            NativeExportFormat::Png => "pngPath",
+            NativeExportFormat::Jpg => "jpgPath",
+            NativeExportFormat::Webp => "webpPath",
+            NativeExportFormat::Tiff => "tiffPath",
+        };
+        object.insert(
+            legacy_key.to_string(),
+            serde_json::json!(out_path_buf.to_string_lossy().to_string()),
+        );
+    }
+    Ok(payload)
 }
 
 #[tauri::command]
@@ -5636,12 +5866,13 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        encode_flattened_psd_rgba, is_native_engine_placeholder, push_native_path_candidate,
-        resolve_existing_env_binary_path, review_build_google_apply_parts,
+        encode_flattened_export, encode_flattened_psd_rgba, flatten_rgba_for_opaque_export,
+        is_native_engine_placeholder, normalize_export_out_path, parse_export_format,
+        push_native_path_candidate, resolve_existing_env_binary_path, review_build_google_apply_parts,
         review_build_openai_planner_payload,
         review_choose_apply_aspect_ratio, review_choose_apply_image_size,
         review_normalize_apply_model, review_resolve_apply_image_config, run_design_review_apply_request,
@@ -5649,7 +5880,7 @@ mod tests {
         review_format_planner_http_error_for_transport, review_format_planner_remote_failure,
         review_format_planner_transport_timeout, review_normalize_planner_model,
         review_should_fallback_openai_ws_error, EngineProgramCandidate, ReviewPlannerRequestError,
-        DESIGN_REVIEW_APPLY_MODEL, DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL,
+        NativeExportFormat, DESIGN_REVIEW_APPLY_MODEL, DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL,
         DESIGN_REVIEW_PLANNER_MODEL, REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
         REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT, REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
         REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT,
@@ -5679,6 +5910,59 @@ mod tests {
     fn flattened_psd_encoder_rejects_wrong_rgba_length() {
         let err = encode_flattened_psd_rgba(2, 1, &[1, 2, 3]).unwrap_err();
         assert!(err.contains("expected 8 rgba bytes"));
+    }
+
+    #[test]
+    fn export_format_parser_accepts_low_effort_aliases() {
+        assert_eq!(parse_export_format("psd").unwrap(), NativeExportFormat::Psd);
+        assert_eq!(parse_export_format("jpeg").unwrap(), NativeExportFormat::Jpg);
+        assert_eq!(parse_export_format("tif").unwrap(), NativeExportFormat::Tiff);
+        assert!(parse_export_format("pdf").is_err());
+    }
+
+    #[test]
+    fn export_path_normalizer_preserves_supported_aliases() {
+        let run_dir = PathBuf::from("/tmp/cue-export-test");
+        assert_eq!(
+            normalize_export_out_path(Path::new("/tmp/output.jpeg"), &run_dir, NativeExportFormat::Jpg),
+            PathBuf::from("/tmp/output.jpeg")
+        );
+        assert_eq!(
+            normalize_export_out_path(Path::new("/tmp/output.tif"), &run_dir, NativeExportFormat::Tiff),
+            PathBuf::from("/tmp/output.tif")
+        );
+        assert_eq!(
+            normalize_export_out_path(Path::new("/tmp/output"), &run_dir, NativeExportFormat::Webp),
+            PathBuf::from("/tmp/output.webp")
+        );
+    }
+
+    #[test]
+    fn opaque_export_blends_transparent_pixels_on_white() {
+        let rgba =
+            image::RgbaImage::from_raw(2, 1, vec![10, 20, 30, 0, 4, 5, 6, 255]).expect("rgba");
+        let rgb = flatten_rgba_for_opaque_export(&rgba);
+        assert_eq!(rgb.as_raw(), &[255, 255, 255, 4, 5, 6]);
+    }
+
+    #[test]
+    fn raster_export_encoder_writes_expected_signatures() {
+        let rgba = image::RgbaImage::from_raw(1, 1, vec![12, 34, 56, 255]).expect("rgba");
+
+        let png = encode_flattened_export(NativeExportFormat::Png, &rgba).unwrap();
+        assert_eq!(&png[0..8], b"\x89PNG\r\n\x1a\n");
+
+        let jpg = encode_flattened_export(NativeExportFormat::Jpg, &rgba).unwrap();
+        assert_eq!(&jpg[0..3], &[0xff, 0xd8, 0xff]);
+
+        let webp = encode_flattened_export(NativeExportFormat::Webp, &rgba).unwrap();
+        assert_eq!(&webp[0..4], b"RIFF");
+        assert_eq!(&webp[8..12], b"WEBP");
+
+        let tiff = encode_flattened_export(NativeExportFormat::Tiff, &rgba).unwrap();
+        let little_endian = &tiff[0..4] == b"II*\0";
+        let big_endian = &tiff[0..4] == b"MM\0*";
+        assert!(little_endian || big_endian);
     }
 
     fn temp_file_path(name: &str) -> PathBuf {

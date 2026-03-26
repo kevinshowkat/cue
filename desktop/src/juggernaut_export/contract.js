@@ -1,4 +1,6 @@
 export const JUGGERNAUT_PSD_EXPORT_CONTRACT = "juggernaut.psd_export.v1";
+export const JUGGERNAUT_RASTER_EXPORT_CONTRACT = "juggernaut.raster_export.v1";
+export const JUGGERNAUT_NATIVE_EXPORT_FORMATS = Object.freeze(["psd", "png", "jpg", "webp", "tiff"]);
 
 export const JUGGERNAUT_PSD_EXPORT_LIMITATIONS = [
   "PSD export is flattened to a single bitmap composition with alpha; editable per-source PSD layers are not included in this March 8 slice.",
@@ -25,5 +27,7 @@ export function defaultJuggernautPsdExportOutput() {
 }
 
 // Shell contract note:
-// `exportJuggernautPsd()` remains the canonical shell entrypoint. The native
-// `export_run` Tauri command is the implementation surface behind that hook.
+// `requestExport({ format })` is the general shell entrypoint for low-effort
+// raster formats, while `exportJuggernautPsd()` remains the legacy PSD-specific
+// hook. The native `export_run` Tauri command is the implementation surface
+// behind both paths.

@@ -29,6 +29,10 @@ test("Juggernaut launch slice: upload, custom tool creation, local apply, and PS
   assert.match(html, /id="drop-hint"/);
   assert.match(html, /id="create-tool-panel"/);
   assert.match(html, /id="juggernaut-export-psd"/);
+  assert.match(html, /id="juggernaut-export-format-png"/);
+  assert.match(html, /id="juggernaut-export-format-jpg"/);
+  assert.match(html, /id="juggernaut-export-format-webp"/);
+  assert.match(html, /id="juggernaut-export-format-tiff"/);
 
   const registry = createInSessionToolRegistry();
   const manifest = registry.createFromDescription({
@@ -107,12 +111,14 @@ test("Juggernaut launch slice: upload, custom tool creation, local apply, and PS
   assert.equal(saved[0].meta.source, "tool_runtime");
 
   const buildPsdExportRequest = loadNamedFunction("buildPsdExportRequest");
+  const normalizeExportFormat = loadNamedFunction("normalizeExportFormat");
   const previousGlobals = {
     collectExportTimelineNodes: globalThis.collectExportTimelineNodes,
     SESSION_TIMELINE_SCHEMA_VERSION: globalThis.SESSION_TIMELINE_SCHEMA_VERSION,
     state: globalThis.state,
     getVisibleActiveId: globalThis.getVisibleActiveId,
     exportPsdLimitations: globalThis.exportPsdLimitations,
+    normalizeExportFormat: globalThis.normalizeExportFormat,
   };
 
   globalThis.collectExportTimelineNodes = () => [
@@ -129,6 +135,7 @@ test("Juggernaut launch slice: upload, custom tool creation, local apply, and PS
   globalThis.SESSION_TIMELINE_SCHEMA_VERSION = 1;
   globalThis.getVisibleActiveId = () => "img-1";
   globalThis.exportPsdLimitations = () => [...JUGGERNAUT_PSD_EXPORT_LIMITATIONS];
+  globalThis.normalizeExportFormat = normalizeExportFormat;
 
   try {
     const request = buildPsdExportRequest({
@@ -170,5 +177,6 @@ test("Juggernaut launch slice: upload, custom tool creation, local apply, and PS
     globalThis.state = previousGlobals.state;
     globalThis.getVisibleActiveId = previousGlobals.getVisibleActiveId;
     globalThis.exportPsdLimitations = previousGlobals.exportPsdLimitations;
+    globalThis.normalizeExportFormat = previousGlobals.normalizeExportFormat;
   }
 });

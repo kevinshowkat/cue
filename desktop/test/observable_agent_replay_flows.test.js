@@ -268,6 +268,7 @@ function createHarness(flow) {
   });
 
   const exportPsdLimitations = instantiateCanvasAppFunction("exportPsdLimitations");
+  const normalizeExportFormat = instantiateCanvasAppFunction("normalizeExportFormat");
   const resolveDesignReviewApplyRequestImagePath = instantiateCanvasAppFunction(
     "resolveDesignReviewApplyRequestImagePath",
     {
@@ -309,6 +310,7 @@ function createHarness(flow) {
     state,
     getVisibleActiveId: () => activeImageId,
     exportPsdLimitations,
+    normalizeExportFormat,
   });
 
   function nextMs(step = 37) {

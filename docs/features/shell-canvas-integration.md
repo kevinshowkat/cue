@@ -86,7 +86,7 @@ Runtime-only image actions remain invokable for non-rail callers, but they are n
 }
 ```
 
-## PSD export payload
+## Export payload
 
 `registerPsdExportHandler(fn)` receives:
 
@@ -99,7 +99,7 @@ Runtime-only image actions remain invokable for non-rail callers, but they are n
 }
 ```
 
-`requestExport(meta?)` accepts `format: "psd" | "png"` and routes PNG through the built-in flattened canvas export path. Both export routes now open a save dialog with a suggested filename so the user can choose the destination and rename the file before writing it. `registerPsdExportHandler(fn)` remains PSD-only for compatibility.
+`requestExport(meta?)` accepts `format: "psd" | "png" | "jpg" | "jpeg" | "webp" | "tiff" | "tif"` and routes all built-in formats through the shared native export command so they all write receipts beside the chosen destination. `registerPsdExportHandler(fn)` remains PSD-only for compatibility with the existing shell bridge surface.
 
 ## Events
 

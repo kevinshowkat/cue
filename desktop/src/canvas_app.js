@@ -709,6 +709,9 @@ const els = {
   juggernautExportMenu: document.getElementById("juggernaut-export-menu"),
   juggernautExportFormatPsd: document.getElementById("juggernaut-export-format-psd"),
   juggernautExportFormatPng: document.getElementById("juggernaut-export-format-png"),
+  juggernautExportFormatJpg: document.getElementById("juggernaut-export-format-jpg"),
+  juggernautExportFormatWebp: document.getElementById("juggernaut-export-format-webp"),
+  juggernautExportFormatTiff: document.getElementById("juggernaut-export-format-tiff"),
   reelAdminToggle: document.getElementById("reel-admin-toggle"),
   settingsToggle: document.getElementById("settings-toggle"),
   settingsDrawer: document.getElementById("settings-drawer"),
@@ -9869,6 +9872,9 @@ function juggernautShellToolLabel(toolKey) {
   const key = String(toolKey || "").trim();
   if (key === "export_psd") return "Export PSD";
   if (key === "export_png") return "Export PNG";
+  if (key === "export_jpg") return "Export JPG";
+  if (key === "export_webp") return "Export WEBP";
+  if (key === "export_tiff") return "Export TIFF";
   return getSingleImageRailLabel(key) || key || "Tool";
 }
 
@@ -10282,9 +10288,10 @@ function renderJuggernautShellChrome() {
   syncTimelineDockVisibility();
 
   const toolHookReady = typeof state.juggernautShell.toolInvoker === "function";
-  const exportHookReady = typeof state.juggernautShell.psdExportHandler === "function" || typeof invoke === "function";
-  const pngExportReady = typeof writeBinaryFile === "function";
-  const exportMenuReady = exportHookReady || pngExportReady;
+  const customPsdExportReady = typeof state.juggernautShell.psdExportHandler === "function";
+  const nativeExportReady = nativeRasterExportReady();
+  const psdExportReady = customPsdExportReady || nativeExportReady;
+  const exportMenuReady = psdExportReady;
   const exportToggleReady = !emptyCanvas && exportMenuReady;
   renderAgentRunnerActivityChrome();
   if (els.juggernautExportPsd) {
@@ -10310,24 +10317,57 @@ function renderJuggernautShellChrome() {
   if (els.juggernautExportFormatPsd) {
     const psdTitle = emptyCanvas
       ? "Upload an image before exporting PSD"
-      : exportHookReady
-        ? "Export Photoshop (.psd)"
-        : "PSD export is unavailable in this runtime";
-    els.juggernautExportFormatPsd.disabled = emptyCanvas || !exportHookReady;
+      : psdExportReady
+        ? exportFormatTitle("psd")
+        : exportFormatUnavailableMessage("psd");
+    els.juggernautExportFormatPsd.disabled = emptyCanvas || !psdExportReady;
     els.juggernautExportFormatPsd.title = psdTitle;
     els.juggernautExportFormatPsd.setAttribute("aria-label", psdTitle);
-    els.juggernautExportFormatPsd.classList.toggle("is-pending-hook", !emptyCanvas && !exportHookReady);
+    els.juggernautExportFormatPsd.classList.toggle("is-pending-hook", !emptyCanvas && !psdExportReady);
   }
   if (els.juggernautExportFormatPng) {
     const pngTitle = emptyCanvas
       ? "Upload an image before exporting PNG"
-      : pngExportReady
-        ? "Export flattened PNG (.png)"
-        : "PNG export is unavailable in this runtime";
-    els.juggernautExportFormatPng.disabled = emptyCanvas || !pngExportReady;
+      : nativeExportReady
+        ? exportFormatTitle("png")
+        : exportFormatUnavailableMessage("png");
+    els.juggernautExportFormatPng.disabled = emptyCanvas || !nativeExportReady;
     els.juggernautExportFormatPng.title = pngTitle;
     els.juggernautExportFormatPng.setAttribute("aria-label", pngTitle);
-    els.juggernautExportFormatPng.classList.toggle("is-pending-hook", !emptyCanvas && !pngExportReady);
+    els.juggernautExportFormatPng.classList.toggle("is-pending-hook", !emptyCanvas && !nativeExportReady);
+  }
+  if (els.juggernautExportFormatJpg) {
+    const jpgTitle = emptyCanvas
+      ? "Upload an image before exporting JPG"
+      : nativeExportReady
+        ? exportFormatTitle("jpg")
+        : exportFormatUnavailableMessage("jpg");
+    els.juggernautExportFormatJpg.disabled = emptyCanvas || !nativeExportReady;
+    els.juggernautExportFormatJpg.title = jpgTitle;
+    els.juggernautExportFormatJpg.setAttribute("aria-label", jpgTitle);
+    els.juggernautExportFormatJpg.classList.toggle("is-pending-hook", !emptyCanvas && !nativeExportReady);
+  }
+  if (els.juggernautExportFormatWebp) {
+    const webpTitle = emptyCanvas
+      ? "Upload an image before exporting WEBP"
+      : nativeExportReady
+        ? exportFormatTitle("webp")
+        : exportFormatUnavailableMessage("webp");
+    els.juggernautExportFormatWebp.disabled = emptyCanvas || !nativeExportReady;
+    els.juggernautExportFormatWebp.title = webpTitle;
+    els.juggernautExportFormatWebp.setAttribute("aria-label", webpTitle);
+    els.juggernautExportFormatWebp.classList.toggle("is-pending-hook", !emptyCanvas && !nativeExportReady);
+  }
+  if (els.juggernautExportFormatTiff) {
+    const tiffTitle = emptyCanvas
+      ? "Upload an image before exporting TIFF"
+      : nativeExportReady
+        ? exportFormatTitle("tiff")
+        : exportFormatUnavailableMessage("tiff");
+    els.juggernautExportFormatTiff.disabled = emptyCanvas || !nativeExportReady;
+    els.juggernautExportFormatTiff.title = tiffTitle;
+    els.juggernautExportFormatTiff.setAttribute("aria-label", tiffTitle);
+    els.juggernautExportFormatTiff.classList.toggle("is-pending-hook", !emptyCanvas && !nativeExportReady);
   }
   if (els.sessionTabDesignReview) {
     const reviewTitle = appendActionProvenanceDescription("Design Review", ACTION_PROVENANCE.EXTERNAL_MODEL);
@@ -10369,11 +10409,7 @@ async function requestJuggernautPsdExport({ source = "shell" } = {}) {
 }
 
 async function requestJuggernautExport({ format = "psd", source = "shell" } = {}) {
-  const normalizedFormat = String(format || "psd").trim().toLowerCase();
-  if (normalizedFormat === "png") {
-    return exportJuggernautPng({ source });
-  }
-  return requestJuggernautPsdExport({ source });
+  return exportJuggernautFormat({ format, source });
 }
 
 function isJuggernautExportMenuOpen() {
@@ -10403,13 +10439,12 @@ function closeJuggernautExportMenu({ focusToggle = false } = {}) {
 function openJuggernautExportMenu({ focusFirst = false } = {}) {
   if (!els.juggernautExportPsd || !els.juggernautExportMenu) return false;
   const emptyCanvas = state.images.length === 0;
-  const exportHookReady = typeof state.juggernautShell.psdExportHandler === "function" || typeof invoke === "function";
-  const pngExportReady = typeof writeBinaryFile === "function";
+  const exportHookReady = typeof state.juggernautShell.psdExportHandler === "function" || nativeRasterExportReady();
   if (emptyCanvas) {
     showToast("Upload an image before exporting.", "tip", 2600);
     return false;
   }
-  if (!exportHookReady && !pngExportReady) {
+  if (!exportHookReady) {
     showToast("Export is unavailable in this runtime.", "tip", 2600);
     return false;
   }
@@ -10436,13 +10471,12 @@ function toggleJuggernautExportMenu(options = {}) {
 }
 
 function juggernautExportActionLabel(format = "psd") {
-  return String(format || "").trim().toLowerCase() === "png" ? "Export PNG" : "Export PSD";
+  return `Export ${exportFormatLabel(format)}`;
 }
 
 function juggernautExportRetryHint(format = "psd") {
-  return String(format || "").trim().toLowerCase() === "png"
-    ? "Try again after the canvas finishes loading."
-    : "Try again after the canvas finishes loading.";
+  void format;
+  return "Try again after the canvas finishes loading.";
 }
 
 function publishTabbedSessionsSnapshot(snapshot = null) {
@@ -31532,47 +31566,59 @@ function dispatchJuggernautExportEvents(format, eventDetail) {
   return Boolean(delegated?.defaultPrevented || legacyDelegated?.defaultPrevented);
 }
 
-export async function exportJuggernautPsd({ source = "shell" } = {}) {
-  state.juggernautShell.lastToolKey = "export_psd";
-  renderJuggernautShellChrome();
-  const eventDetail = {
+function buildJuggernautExportEventDetail({ format = "psd", source = "shell" } = {}) {
+  return {
     source,
-    format: "psd",
+    format: normalizeExportFormat(format),
     context: buildJuggernautShellContext(),
     requestedAt: Date.now(),
     selectedImageId: state.juggernautShell.selectedImageId,
     selectedImageIds: state.juggernautShell.selectedImageIds.slice(0, 3),
     selectedImage: state.juggernautShell.selectedImage,
   };
-  if (dispatchJuggernautExportEvents("psd", eventDetail)) return true;
-  if (typeof state.juggernautShell.psdExportHandler === "function") {
+}
+
+async function exportJuggernautFormat({ format = "psd", source = "shell" } = {}) {
+  const normalizedFormat = normalizeExportFormat(format);
+  state.juggernautShell.lastToolKey = exportFormatActionKey(normalizedFormat);
+  renderJuggernautShellChrome();
+  const eventDetail = buildJuggernautExportEventDetail({
+    source,
+    format: normalizedFormat,
+  });
+  if (dispatchJuggernautExportEvents(normalizedFormat, eventDetail)) return true;
+  if (normalizedFormat === "psd" && typeof state.juggernautShell.psdExportHandler === "function") {
     return (
       (await state.juggernautShell.psdExportHandler({
         ...eventDetail,
       })) ?? true
     );
   }
-  if (typeof invoke === "function") {
-    return await exportRun();
+  if (nativeRasterExportReady()) {
+    return await exportRunInFormat(normalizedFormat);
   }
-  showToast("PSD export is unavailable in this runtime.", "tip", 2800);
+  showToast(exportFormatUnavailableMessage(normalizedFormat), "tip", 2800);
   return false;
 }
 
+export async function exportJuggernautPsd({ source = "shell" } = {}) {
+  return exportJuggernautFormat({ format: "psd", source });
+}
+
 export async function exportJuggernautPng({ source = "shell" } = {}) {
-  state.juggernautShell.lastToolKey = "export_png";
-  renderJuggernautShellChrome();
-  const eventDetail = {
-    source,
-    format: "png",
-    context: buildJuggernautShellContext(),
-    requestedAt: Date.now(),
-    selectedImageId: state.juggernautShell.selectedImageId,
-    selectedImageIds: state.juggernautShell.selectedImageIds.slice(0, 3),
-    selectedImage: state.juggernautShell.selectedImage,
-  };
-  if (dispatchJuggernautExportEvents("png", eventDetail)) return true;
-  return await exportRunPng();
+  return exportJuggernautFormat({ format: "png", source });
+}
+
+async function exportJuggernautJpg({ source = "shell" } = {}) {
+  return exportJuggernautFormat({ format: "jpg", source });
+}
+
+async function exportJuggernautWebp({ source = "shell" } = {}) {
+  return exportJuggernautFormat({ format: "webp", source });
+}
+
+async function exportJuggernautTiff({ source = "shell" } = {}) {
+  return exportJuggernautFormat({ format: "tiff", source });
 }
 
 function isSingleImageRailCapabilityPlan(plan = {}) {
@@ -35333,10 +35379,62 @@ function normalizeExportPathExtension(path, extension) {
   return `${normalizedPath}${normalizedExtension}`;
 }
 
+function normalizeExportFormat(format = "psd") {
+  const normalized = String(format || "psd").trim().toLowerCase();
+  if (normalized === "png") return "png";
+  if (normalized === "jpg" || normalized === "jpeg") return "jpg";
+  if (normalized === "webp") return "webp";
+  if (normalized === "tif" || normalized === "tiff") return "tiff";
+  return "psd";
+}
+
+function exportFormatExtension(format = "psd") {
+  const normalized = normalizeExportFormat(format);
+  if (normalized === "png") return ".png";
+  if (normalized === "jpg") return ".jpg";
+  if (normalized === "webp") return ".webp";
+  if (normalized === "tiff") return ".tiff";
+  return ".psd";
+}
+
+function exportFormatFilterExtensions(format = "psd") {
+  const normalized = normalizeExportFormat(format);
+  if (normalized === "jpg") return ["jpg", "jpeg"];
+  if (normalized === "tiff") return ["tiff", "tif"];
+  return [exportFormatExtension(normalized).replace(".", "")];
+}
+
+function exportFormatLabel(format = "psd") {
+  const normalized = normalizeExportFormat(format);
+  if (normalized === "png") return "PNG";
+  if (normalized === "jpg") return "JPG";
+  if (normalized === "webp") return "WEBP";
+  if (normalized === "tiff") return "TIFF";
+  return "PSD";
+}
+
+function exportFormatTitle(format = "psd") {
+  const normalized = normalizeExportFormat(format);
+  if (normalized === "psd") return "Export Photoshop (.psd)";
+  return `Export ${exportFormatLabel(normalized)} (${exportFormatExtension(normalized)})`;
+}
+
+function exportFormatUnavailableMessage(format = "psd") {
+  return `${exportFormatLabel(format)} export is unavailable in this runtime.`;
+}
+
+function exportFormatActionKey(format = "psd") {
+  return `export_${normalizeExportFormat(format)}`;
+}
+
+function nativeRasterExportReady() {
+  return typeof invoke === "function" && typeof writeBinaryFile === "function";
+}
+
 async function chooseExportDestinationPath({ format = "psd", suggestedStem = "canvas", stamp = "" } = {}) {
-  const normalizedFormat = String(format || "psd").trim().toLowerCase();
-  const extension = normalizedFormat === "png" ? ".png" : ".psd";
-  const label = normalizedFormat === "png" ? "PNG" : "PSD";
+  const normalizedFormat = normalizeExportFormat(format);
+  const extension = exportFormatExtension(normalizedFormat);
+  const label = exportFormatLabel(normalizedFormat);
   setStatus(`Engine: choose ${label} export file…`);
   const defaultDir = await resolveDefaultExportDirectory();
   const suggestedName = `export-${exportBaseStem(suggestedStem)}-${String(stamp || exportTimestampTag())}${extension}`;
@@ -35345,7 +35443,7 @@ async function chooseExportDestinationPath({ format = "psd", suggestedStem = "ca
     : suggestedName;
   const picked = await save({
     defaultPath,
-    filters: [{ name: label, extensions: [extension.replace(".", "")] }],
+    filters: [{ name: label, extensions: exportFormatFilterExtensions(normalizedFormat) }],
   });
   const selectedPath = Array.isArray(picked) ? picked[0] : picked;
   const normalizedPath = normalizeExportPathExtension(selectedPath, extension);
@@ -35391,6 +35489,29 @@ function exportPngLimitations() {
     "PNG export is flattened to a single bitmap composition with alpha and does not preserve editable layers, masks, or tool semantics.",
     "Canvas transform fidelity is preserved in the flattened composite, but source DPI metadata is not currently retained.",
   ];
+}
+
+function exportRasterFormatLimitations(format = "png") {
+  const normalized = normalizeExportFormat(format);
+  if (normalized === "jpg") {
+    return [
+      "JPG export is flattened to a single bitmap composition and composites transparent pixels onto white rather than preserving alpha.",
+      "Canvas transform fidelity is preserved in the flattened composite, but editable layers, masks, tool semantics, and source DPI metadata are not currently retained.",
+    ];
+  }
+  if (normalized === "webp") {
+    return [
+      "WEBP export is flattened to a single bitmap composition with alpha and does not preserve editable layers, masks, or tool semantics.",
+      "Canvas transform fidelity is preserved in the flattened composite, but source DPI metadata is not currently retained.",
+    ];
+  }
+  if (normalized === "tiff") {
+    return [
+      "TIFF export is flattened to a single bitmap composition with alpha and does not preserve editable layers, masks, or tool semantics.",
+      "Canvas transform fidelity is preserved in the flattened composite, but source DPI metadata is not currently retained.",
+    ];
+  }
+  return exportPngLimitations();
 }
 
 function polygonBounds(points = []) {
@@ -35607,11 +35728,12 @@ async function buildPsdExportComposite() {
   };
 }
 
-function buildPsdExportRequest({ outPath, flattenedSourcePath, composite }) {
+function buildPsdExportRequest({ outPath, flattenedSourcePath, composite, format = "psd" }) {
+  const normalizedFormat = normalizeExportFormat(format);
   const timelineNodes = collectExportTimelineNodes();
   return {
     schemaVersion: 1,
-    format: "psd",
+    format: normalizedFormat,
     runDir: String(state.runDir || "").trim(),
     outPath,
     flattenedSourcePath,
@@ -35624,26 +35746,7 @@ function buildPsdExportRequest({ outPath, flattenedSourcePath, composite }) {
     timelineSchemaVersion: SESSION_TIMELINE_SCHEMA_VERSION,
     timelineHeadNodeId: state.timelineHeadNodeId ? String(state.timelineHeadNodeId) : null,
     actionSequence: timelineNodes.map((node) => node?.action).filter(Boolean),
-    limitations: exportPsdLimitations(),
-  };
-}
-
-function buildPngExportReceiptMeta({ outPath, composite }) {
-  const timelineNodes = collectExportTimelineNodes();
-  return {
-    format: "png",
-    out_path: outPath,
-    canvas_mode: state.canvasMode,
-    active_image_id: getVisibleActiveId() ? String(getVisibleActiveId()) : null,
-    timeline_schema_version: SESSION_TIMELINE_SCHEMA_VERSION,
-    timeline_head_node_id: state.timelineHeadNodeId ? String(state.timelineHeadNodeId) : null,
-    export_bounds_css: composite?.boundsCss || null,
-    flattened_size_px: composite ? { width: composite.width, height: composite.height } : null,
-    source_image_ids: Array.isArray(composite?.sourceImages)
-      ? composite.sourceImages.map((source) => String(source?.id || "")).filter(Boolean)
-      : [],
-    timeline_node_ids: timelineNodes.map((node) => String(node?.nodeId || "")).filter(Boolean),
-    limitations: exportPngLimitations(),
+    limitations: normalizedFormat === "psd" ? exportPsdLimitations() : exportRasterFormatLimitations(normalizedFormat),
   };
 }
 
@@ -36235,8 +36338,9 @@ async function runRecast({ fromQueue = false } = {}) {
   }
 }
 
-async function exportRun() {
+async function exportRunInFormat(format = "psd") {
   bumpInteraction();
+  const normalizedFormat = normalizeExportFormat(format);
   if (!state.runDir) {
     showToast("Create or open a run before exporting.", "tip", 2600);
     return false;
@@ -36245,7 +36349,7 @@ async function exportRun() {
   const stamp = exportTimestampTag();
   const stem = exportBaseStem(active?.label || active?.path || "canvas");
   const outPath = await chooseExportDestinationPath({
-    format: "psd",
+    format: normalizedFormat,
     suggestedStem: stem,
     stamp,
   });
@@ -36253,13 +36357,22 @@ async function exportRun() {
   const flattenedSourcePath =
     (await join(state.runDir, `export-${stem}-${stamp}.flattened.png`).catch(() => "")) ||
     `${state.runDir}/export-${stem}-${stamp}.flattened.png`;
-  setStatus("Engine: exporting PSD…");
+  setStatus(`Engine: exporting ${exportFormatLabel(normalizedFormat)}…`);
   try {
     const composite = await buildPsdExportComposite();
     await writeCanvasPngToPath(composite.canvas, flattenedSourcePath);
-    const request = buildPsdExportRequest({ outPath, flattenedSourcePath, composite });
+    const request = buildPsdExportRequest({
+      outPath,
+      flattenedSourcePath,
+      composite,
+      format: normalizedFormat,
+    });
     const result = await invoke("export_run", { request });
-    const savedPath = result?.outPath ? String(result.outPath) : outPath;
+    const savedPath = result?.outPath
+      ? String(result.outPath)
+      : result?.exportPath
+        ? String(result.exportPath)
+        : outPath;
     const receiptPath = result?.receiptPath ? String(result.receiptPath) : null;
     setStatus(`Engine: exported ${basename(savedPath)}`);
     showToast(`Exported ${basename(savedPath)}${receiptPath ? " with receipt." : "."}`, "tip", 3200);
@@ -36272,42 +36385,24 @@ async function exportRun() {
   }
 }
 
+async function exportRun() {
+  return exportRunInFormat("psd");
+}
+
 async function exportRunPng() {
-  bumpInteraction();
-  if (!state.runDir) {
-    showToast("Create or open a run before exporting.", "tip", 2600);
-    return false;
-  }
-  const active = getActiveImage();
-  const stamp = exportTimestampTag();
-  const stem = exportBaseStem(active?.label || active?.path || "canvas");
-  const outPath = await chooseExportDestinationPath({
-    format: "png",
-    suggestedStem: stem,
-    stamp,
-  });
-  if (!outPath) return false;
-  const exportDir = typeof dirname === "function" ? await dirname(outPath).catch(() => "") : "";
-  setStatus("Engine: exporting PNG…");
-  try {
-    const composite = await buildPsdExportComposite();
-    await writeCanvasPngToPath(composite.canvas, outPath);
-    const receiptPath = await writeLocalReceipt({
-      artifactId: `export-png-${stamp}`,
-      imagePath: outPath,
-      operation: "export_png",
-      meta: buildPngExportReceiptMeta({ outPath, composite }),
-      outputDir: exportDir || state.runDir,
-    });
-    setStatus(`Engine: exported ${basename(outPath)}`);
-    showToast(`Exported ${basename(outPath)}${receiptPath ? " with receipt." : "."}`, "tip", 3200);
-    return true;
-  } catch (err) {
-    const msg = err?.message || String(err || "export failed");
-    setStatus(`Engine: export failed (${msg})`, true);
-    showToast(`Export failed: ${msg}`, "error", 4200);
-    return false;
-  }
+  return exportRunInFormat("png");
+}
+
+async function exportRunJpg() {
+  return exportRunInFormat("jpg");
+}
+
+async function exportRunWebp() {
+  return exportRunInFormat("webp");
+}
+
+async function exportRunTiff() {
+  return exportRunInFormat("tiff");
 }
 
 function createTabId() {

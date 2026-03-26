@@ -30,7 +30,7 @@ There is no web app.
 5. Accept a proposal to run a real in-place single-image apply.
 6. Optionally preview or create a reusable tool from the current edit pattern.
 7. Use `History` to inspect or restore earlier tab-local states.
-8. Export PSD or flattened PNG with a receipt.
+8. Export PSD, PNG, JPG, WEBP, or TIFF with a receipt.
 
 The primary Cue wedge is still single-image-first even though older Brood-derived multi-image actions remain available in the runtime.
 
@@ -54,12 +54,13 @@ The primary Cue wedge is still single-image-first even though older Brood-derive
 
 ## Export
 
-- The titlebar export menu offers PSD and flattened PNG.
+- The titlebar export menu offers PSD, PNG, JPG, WEBP, and TIFF.
 - `File > Export Session...` currently routes to PSD export.
 - Both export routes open a save dialog and remember the last export directory.
 - Export receipts include the current timeline head and timeline schema version.
 - PSD is currently a flattened bitmap composition with alpha rather than fully editable per-image layers.
-- PNG is also flattened and does not preserve editable tool semantics.
+- PNG, WEBP, and TIFF are also flattened and do not preserve editable tool semantics.
+- JPG is flattened and composites transparency onto white because the format does not preserve alpha.
 
 ## Legacy Runtime Note
 
