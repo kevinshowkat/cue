@@ -85,6 +85,7 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-item\.is-review-progress\s+\.session-tab-busy-indicator\s*\{/);
   assert.match(css, /\.session-tab-rename-shell\s*\{/);
   assert.match(css, /\.session-tab-title-row\s*\{/);
+  assert.match(css, /\.session-tab-fork-indicator\s*\{[\s\S]*border-radius:\s*999px[\s\S]*background:/s);
   assert.match(css, /\.session-tab-fork-indicator\s*\{/);
   assert.match(css, /\.session-tab-title-input\s*\{/);
   assert.match(css, /\.session-tab-close\s*\{/);
@@ -98,6 +99,7 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-runtime-action\.is-pending-hook\s*\{/);
   assert.match(css, /\.session-tab-action-menu-panel\s*\{/);
   assert.match(css, /\.session-tab-action-menu-item\s*\{/);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-fork-indicator\s*\{[\s\S]*background:/s);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-fork-indicator\s*\{/);
   assert.match(css, /@keyframes\s+sessionTabBusyPulse/);
   assert.match(css, /@keyframes\s+sessionTabReviewPulse/);
