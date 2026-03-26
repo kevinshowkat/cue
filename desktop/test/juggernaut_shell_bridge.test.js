@@ -176,11 +176,17 @@ test("Juggernaut runner and export controls live in the titlebar session actions
   const brandStripChunk = html.slice(brandStripStart, mainStart);
   assert.match(
     brandStripChunk,
-    /class=\"session-tab-strip-actions\"[^>]*role=\"group\"[^>]*aria-label=\"Session actions\"[\s\S]*id=\"session-tab-history\"[\s\S]*id=\"juggernaut-agent-runner-open\"[\s\S]*id=\"juggernaut-export-psd\"[\s\S]*id=\"session-tab-design-review\"/
+    /class=\"session-tab-strip-actions\"[^>]*role=\"group\"[^>]*aria-label=\"Session actions\"[\s\S]*id=\"session-tab-history\"[\s\S]*id=\"juggernaut-agent-runner-open\"[\s\S]*id=\"session-tab-design-review\"[\s\S]*id=\"juggernaut-export-psd\"/
   );
   assert.doesNotMatch(html, /session-tab-strip-shell-head-placeholder/);
   assert.match(styles, /\.session-tab-runtime-action\s*\{/);
   assert.match(styles, /\.session-tab-runtime-action\.is-ready\s*\{/);
   assert.match(styles, /\.agent-runner-banner\s*\{/);
   assert.match(styles, /\.canvas-wrap\.agent-runner-active\s*\{/);
+});
+
+test("Juggernaut shell export toggle disables until the canvas has an exportable image", () => {
+  assert.match(app, /const exportToggleReady = !emptyCanvas && exportMenuReady;/);
+  assert.match(app, /els\.juggernautExportPsd\.disabled = !exportToggleReady;/);
+  assert.match(app, /if \(!exportToggleReady && isJuggernautExportMenuOpen\(\)\) \{\s*closeJuggernautExportMenu\(\);\s*\}/);
 });

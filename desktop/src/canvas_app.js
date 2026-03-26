@@ -10130,8 +10130,12 @@ function renderJuggernautShellChrome() {
   const exportHookReady = typeof state.juggernautShell.psdExportHandler === "function" || typeof invoke === "function";
   const pngExportReady = typeof writeBinaryFile === "function";
   const exportMenuReady = exportHookReady || pngExportReady;
+  const exportToggleReady = !emptyCanvas && exportMenuReady;
   renderAgentRunnerActivityChrome();
   if (els.juggernautExportPsd) {
+    if (!exportToggleReady && isJuggernautExportMenuOpen()) {
+      closeJuggernautExportMenu();
+    }
     const exportTitleBase = emptyCanvas
       ? "Upload an image before exporting"
       : exportMenuReady
@@ -10139,12 +10143,14 @@ function renderJuggernautShellChrome() {
         : "Export is unavailable in this runtime";
     const exportTitle = appendActionProvenanceDescription(exportTitleBase, ACTION_PROVENANCE.LOCAL_ONLY);
     syncActionProvenanceBadge(els.juggernautExportPsd, ACTION_PROVENANCE.LOCAL_ONLY);
+    els.juggernautExportPsd.disabled = !exportToggleReady;
     els.juggernautExportPsd.title = exportTitle;
     els.juggernautExportPsd.setAttribute("aria-label", exportTitle);
-    els.juggernautExportPsd.setAttribute("aria-expanded", isJuggernautExportMenuOpen() ? "true" : "false");
+    els.juggernautExportPsd.setAttribute("aria-disabled", exportToggleReady ? "false" : "true");
+    els.juggernautExportPsd.setAttribute("aria-expanded", exportToggleReady && isJuggernautExportMenuOpen() ? "true" : "false");
     els.juggernautExportPsd.classList.toggle("is-open", isJuggernautExportMenuOpen());
-    els.juggernautExportPsd.classList.toggle("is-ready", exportMenuReady && !emptyCanvas);
-    els.juggernautExportPsd.classList.toggle("is-pending-hook", !exportMenuReady);
+    els.juggernautExportPsd.classList.toggle("is-ready", exportToggleReady);
+    els.juggernautExportPsd.classList.toggle("is-pending-hook", !emptyCanvas && !exportMenuReady);
   }
   if (els.juggernautExportFormatPsd) {
     const psdTitle = emptyCanvas
