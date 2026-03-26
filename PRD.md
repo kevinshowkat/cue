@@ -1,7 +1,7 @@
 # Juggernaut
 
 Status: Draft v0.2  
-Last updated: 2026-03-25  
+Last updated: 2026-03-26  
 Document owner: Product / founding team
 
 ## Purpose
@@ -21,7 +21,7 @@ Juggernaut is a text-free-first, image-first desktop design workstation for non-
 - V1 right-side communication rail tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
 - V1 shell model: single-window, Warp-style session tabs over one shared canvas surface.
 - `Create Tool` remains core product value, but for the single-image-first wedge it moves to a secondary follow-on surface such as `Save Shortcut`.
-- Icon system: custom iconography generated from the same pipeline family used for Oscillo bookend icon generation, with the starting reference at `../oscillo/scripts/generate_bookend_overlays.py`.
+- Icon system: custom iconography generated from the same pipeline family used for Oscillo bookend icon generation, with the starting reference at `../oscillo/scripts/generate_bookend_overlays.py`, provider-generated mask packs for the rail and session/titlebar actions, and a global Settings toggle for pack switching.
 - Export requirement: native `.psd`, native `.ai`, and native `.fig` are release requirements.
 - Native `.ai` and `.fig` exports must re-import into Juggernaut with high fidelity.
 - Release requirement: macOS, Windows, and Linux parity at first release.

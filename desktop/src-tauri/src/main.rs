@@ -50,6 +50,10 @@ const MENU_FILE_CLOSE_SESSION: &str = "file_close_session";
 const MENU_FILE_IMPORT_PHOTOS: &str = "file_import_photos";
 const MENU_FILE_EXPORT_SESSION: &str = "file_export_session";
 const MENU_FILE_SETTINGS: &str = "file_settings";
+const MENU_SETTINGS_ICON_PACK_OSCILLO_INK: &str = "settings_icon_pack_oscillo_ink";
+const MENU_SETTINGS_ICON_PACK_INDUSTRIAL_MONO: &str = "settings_icon_pack_industrial_mono";
+const MENU_SETTINGS_ICON_PACK_PAINTERLY_FOLK: &str = "settings_icon_pack_painterly_folk";
+const MENU_SETTINGS_ICON_PACK_KINETIC_MARKER: &str = "settings_icon_pack_kinetic_marker";
 const MENU_TOOLS_CREATE_TOOL: &str = "tools_create_tool";
 const MENU_TOOLS_SLOT_PREFIX: &str = "tools_slot_";
 const MENU_SHORTCUTS_SLOT_PREFIX: &str = "shortcuts_slot_";
@@ -177,6 +181,51 @@ fn build_shortcuts_menu() -> Menu {
     )
 }
 
+fn native_iconography_menu_items() -> [(&'static str, &'static str, &'static str); 4] {
+    [
+        (
+            "oscillo_ink",
+            MENU_SETTINGS_ICON_PACK_OSCILLO_INK,
+            "Oscillo / Cuphead",
+        ),
+        (
+            "industrial_mono",
+            MENU_SETTINGS_ICON_PACK_INDUSTRIAL_MONO,
+            "Jony Ive",
+        ),
+        (
+            "painterly_folk",
+            MENU_SETTINGS_ICON_PACK_PAINTERLY_FOLK,
+            "Frida Kahlo",
+        ),
+        (
+            "kinetic_marker",
+            MENU_SETTINGS_ICON_PACK_KINETIC_MARKER,
+            "Michael Jordan",
+        ),
+    ]
+}
+
+fn active_iconography_menu_title(pack_id: &str, active_pack_id: &str, label: &str) -> String {
+    if pack_id == active_pack_id {
+        format!("[x] {label}")
+    } else {
+        label.to_string()
+    }
+}
+
+fn build_settings_menu() -> Menu {
+    let active_pack_id = "industrial_mono";
+    let mut menu = Menu::new();
+    for (pack_id, menu_id, label) in native_iconography_menu_items() {
+        menu = menu.add_item(CustomMenuItem::new(
+            menu_id.to_string(),
+            active_iconography_menu_title(pack_id, active_pack_id, label),
+        ));
+    }
+    menu
+}
+
 fn build_app_menu(app_name: &str) -> Menu {
     let mut menu = Menu::new();
 
@@ -239,7 +288,8 @@ fn build_app_menu(app_name: &str) -> Menu {
         window_menu = window_menu.add_native_item(MenuItem::Separator);
     }
     window_menu = window_menu.add_native_item(MenuItem::CloseWindow);
-    menu.add_submenu(Submenu::new("Window", window_menu))
+    menu = menu.add_submenu(Submenu::new("Window", window_menu));
+    menu.add_submenu(Submenu::new("Settings", build_settings_menu()))
 }
 
 fn emit_native_menu_action(window: &tauri::Window, action: &str) {
@@ -328,6 +378,13 @@ fn sync_native_menu_slots(
     }
 }
 
+fn sync_native_iconography_menu_titles(window: &tauri::Window, active_pack_id: &str) {
+    for (pack_id, menu_id, label) in native_iconography_menu_items() {
+        let title = active_iconography_menu_title(pack_id, active_pack_id, label);
+        update_native_menu_item(window, menu_id, Some(&title), Some(true));
+    }
+}
+
 #[tauri::command]
 fn sync_native_menu_state(
     window: tauri::Window,
@@ -389,6 +446,15 @@ fn sync_native_menu_state(
         "Shortcut Slot",
         &payload.shortcuts,
     );
+    Ok(())
+}
+
+#[tauri::command]
+fn sync_native_iconography_menu(
+    window: tauri::Window,
+    active_pack_id: String,
+) -> Result<(), String> {
+    sync_native_iconography_menu_titles(&window, active_pack_id.trim());
     Ok(())
 }
 
@@ -5458,6 +5524,27 @@ fn main() {
                 MENU_FILE_SETTINGS => {
                     emit_native_menu_action(&event.window(), "open_settings")
                 }
+                MENU_SETTINGS_ICON_PACK_OSCILLO_INK => {
+                    emit_native_menu_action(&event.window(), "settings_icon_pack:oscillo_ink")
+                }
+                MENU_SETTINGS_ICON_PACK_INDUSTRIAL_MONO => {
+                    emit_native_menu_action(
+                        &event.window(),
+                        "settings_icon_pack:industrial_mono",
+                    )
+                }
+                MENU_SETTINGS_ICON_PACK_PAINTERLY_FOLK => {
+                    emit_native_menu_action(
+                        &event.window(),
+                        "settings_icon_pack:painterly_folk",
+                    )
+                }
+                MENU_SETTINGS_ICON_PACK_KINETIC_MARKER => {
+                    emit_native_menu_action(
+                        &event.window(),
+                        "settings_icon_pack:kinetic_marker",
+                    )
+                }
                 MENU_TOOLS_CREATE_TOOL => {
                     emit_native_menu_action(&event.window(), "open_create_tool")
                 }
@@ -5481,6 +5568,7 @@ fn main() {
         .manage(pty_state)
         .invoke_handler(tauri::generate_handler![
             sync_native_menu_state,
+            sync_native_iconography_menu,
             report_automation_result,
             report_automation_frontend_ready,
             spawn_pty,

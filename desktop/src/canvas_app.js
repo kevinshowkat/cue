@@ -23,10 +23,17 @@ import {
   getSingleImageRailLabel,
   getSingleImageRailMockRankedJobs,
   renderJuggernautRail,
+  setJuggernautRailIconPack,
   SINGLE_IMAGE_RAIL_CONTRACT,
   SINGLE_IMAGE_RAIL_INVENTORY,
   SINGLE_IMAGE_RAIL_MOCK_ADAPTER,
 } from "./juggernaut_shell/rail.js";
+import {
+  DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID,
+  getJuggernautRailIconPack,
+  normalizeJuggernautRailIconPackId,
+} from "./juggernaut_shell/rail_icon_packs.js";
+import { getJuggernautRailIconMarkup } from "./juggernaut_shell/generated/rail_icon_registry.js";
 import {
   mergeAmbientSuggestions,
   placeAmbientSuggestions,
@@ -252,6 +259,7 @@ const MOTHER_GENERATION_POST_VERSION_TIMEOUT_MS = 240_000;
 const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview";
 const LEGACY_DEFAULT_IMAGE_MODEL = "gemini-2.5-flash-image";
 const IMAGE_MODEL_DEFAULT_MIGRATION_KEY = "brood.imageModel.default.v2";
+const RAIL_ICON_PACK_LS_KEY = "juggernaut.railIconPack.v1";
 const PROMPT_STRATEGY_MODE_KEY = "brood.promptStrategyMode.v1";
 const PROMPT_REPEAT_FULL_KEY = "brood.promptRepeatFull.v1";
 const PROMPT_BENCHMARK_LS_KEY = "brood.promptBenchmark.v1";
@@ -692,6 +700,7 @@ const els = {
   settingsToggle: document.getElementById("settings-toggle"),
   settingsDrawer: document.getElementById("settings-drawer"),
   settingsClose: document.getElementById("settings-close"),
+  railIconPack: document.getElementById("rail-icon-pack"),
   memoryToggle: document.getElementById("memory-toggle"),
   alwaysOnVisionToggle: document.getElementById("always-on-vision-toggle"),
   alwaysOnVisionReadout: document.getElementById("always-on-vision-readout"),
@@ -1410,6 +1419,9 @@ function promptBenchmarkReset() {
 const settings = {
   memory: localStorage.getItem("brood.memory") === "1",
   alwaysOnVision: false,
+  railIconPack: normalizeJuggernautRailIconPackId(
+    localStorage.getItem(RAIL_ICON_PACK_LS_KEY) || DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID
+  ),
   textModel: localStorage.getItem("brood.textModel") || "gpt-5.2",
   imageModel: (() => {
     const storedRaw = String(localStorage.getItem("brood.imageModel") || "").trim();
@@ -1430,6 +1442,84 @@ const settings = {
   promptRepeatFull: localStorage.getItem(PROMPT_REPEAT_FULL_KEY) === "1",
   installTelemetryOptIn: localStorage.getItem(INSTALL_TELEMETRY_OPT_IN_KEY) === "1",
 };
+
+setJuggernautRailIconPack(settings.railIconPack);
+
+function applyDocumentRailIconPack(packId = "") {
+  const resolved = normalizeJuggernautRailIconPackId(packId);
+  const root = typeof document !== "undefined" ? document.documentElement : null;
+  const body = typeof document !== "undefined" ? document.body : null;
+  if (root?.dataset) root.dataset.railIconPack = resolved;
+  if (body?.dataset) body.dataset.railIconPack = resolved;
+  return resolved;
+}
+
+applyDocumentRailIconPack(settings.railIconPack);
+
+function renderJuggernautShellIconSlot(slot, iconId = "", packId = settings.railIconPack) {
+  if (!slot) return;
+  const resolvedIconId =
+    String(iconId || slot.dataset?.juggernautIconSlot || slot.getAttribute?.("data-juggernaut-icon-slot") || "").trim();
+  if (!resolvedIconId) return;
+  const resolvedPackId = normalizeJuggernautRailIconPackId(packId);
+  if (slot.dataset?.renderedIconId === resolvedIconId && slot.dataset?.renderedIconPack === resolvedPackId) {
+    return;
+  }
+  slot.innerHTML = getJuggernautRailIconMarkup(resolvedIconId, resolvedPackId);
+  if (slot.dataset) {
+    slot.dataset.renderedIconId = resolvedIconId;
+    slot.dataset.renderedIconPack = resolvedPackId;
+  }
+}
+
+function syncJuggernautShellIconography(packId = settings.railIconPack) {
+  const resolvedPackId = normalizeJuggernautRailIconPackId(packId);
+  if (typeof document === "undefined") return resolvedPackId;
+  const slots = document.querySelectorAll("[data-juggernaut-icon-slot]");
+  for (const slot of slots) {
+    renderJuggernautShellIconSlot(slot, "", resolvedPackId);
+  }
+  return resolvedPackId;
+}
+
+function iconPackLabel(packId = "") {
+  return getJuggernautRailIconPack(packId).label;
+}
+
+async function syncNativeIconographyMenu(activePackId = settings.railIconPack) {
+  await invoke("sync_native_iconography_menu", {
+    activePackId: normalizeJuggernautRailIconPackId(activePackId),
+  }).catch((error) => {
+    console.warn("native iconography menu sync failed", error);
+  });
+}
+
+function applyRailIconPackSetting(packId, { announce = true, source = "settings" } = {}) {
+  const resolved = normalizeJuggernautRailIconPackId(packId);
+  const changed = settings.railIconPack !== resolved;
+  settings.railIconPack = resolved;
+  localStorage.setItem(RAIL_ICON_PACK_LS_KEY, resolved);
+  setJuggernautRailIconPack(resolved);
+  applyDocumentRailIconPack(resolved);
+  if (els.railIconPack && els.railIconPack.value !== resolved) {
+    els.railIconPack.value = resolved;
+  }
+  syncJuggernautShellIconography(resolved);
+  renderJuggernautShellChrome();
+  renderActionGrid();
+  syncNativeIconographyMenu(resolved).catch(() => {});
+  if (changed) {
+    queueNativeSystemMenuSync();
+    recordUserEvent("rail_icon_pack_changed", {
+      pack_id: resolved,
+      source: String(source || "settings").trim() || "settings",
+    });
+    if (announce) {
+      showToast(`Iconography set to ${iconPackLabel(resolved)}.`, "tip", 2200);
+    }
+  }
+  return resolved;
+}
 
 function telemetryRandomHex(bytes = 10) {
   const size = Math.max(4, Math.floor(Number(bytes) || 10));
@@ -10126,6 +10216,7 @@ function renderJuggernautShellChrome() {
   const activeImage = getActiveImage();
   const selectedIds = getSelectedIds();
   const emptyCanvas = state.images.length === 0;
+  syncJuggernautShellIconography();
   if (els.juggernautSelectionStatus) {
     if (emptyCanvas) {
       els.juggernautSelectionStatus.textContent = "Drop an image to begin";
@@ -44588,21 +44679,8 @@ function createSessionTabForkIndicator() {
   const indicator = document.createElement("span");
   indicator.className = "session-tab-fork-indicator";
   indicator.setAttribute("aria-hidden", "true");
-  indicator.innerHTML = `
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M8 8.5v6.4M8 9.25h6.4M8 14.9c0 2.6 2.1 4.7 4.7 4.7h1.05"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.8"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-      <circle cx="8" cy="6" r="2.25" fill="currentColor" />
-      <circle cx="8" cy="18" r="2.25" fill="currentColor" />
-      <circle cx="17" cy="9.25" r="2.25" fill="currentColor" />
-    </svg>
-  `;
+  indicator.dataset.juggernautIconSlot = "fork_session";
+  renderJuggernautShellIconSlot(indicator, "fork_session");
   return indicator;
 }
 
@@ -45356,6 +45434,7 @@ function installUi() {
   if (els.settingsToggle && els.settingsDrawer) {
     els.settingsToggle.addEventListener("click", () => {
       bumpInteraction();
+      if (els.railIconPack) els.railIconPack.value = settings.railIconPack;
       els.settingsDrawer.classList.remove("hidden");
       refreshKeyStatus().catch(() => {});
       refreshPortraitsDirReadout().catch(() => {});
@@ -45369,6 +45448,13 @@ function installUi() {
     els.settingsClose.addEventListener("click", () => {
       bumpInteraction();
       els.settingsDrawer.classList.add("hidden");
+    });
+  }
+  if (els.railIconPack) {
+    els.railIconPack.value = settings.railIconPack;
+    els.railIconPack.addEventListener("change", () => {
+      bumpInteraction();
+      applyRailIconPackSetting(els.railIconPack.value, { source: "settings_toggle" });
     });
   }
   if (els.aestheticOnboardingOpen) {
@@ -46573,6 +46659,13 @@ async function boot() {
       });
       return;
     }
+    if (action.startsWith("settings_icon_pack:")) {
+      bumpInteraction();
+      applyRailIconPackSetting(action.slice("settings_icon_pack:".length), {
+        source: "native_menu",
+      });
+      return;
+    }
     if (action === "new_session") {
       bumpInteraction();
       void runWithUserError("New session", () => createRun(), {
@@ -46625,6 +46718,8 @@ async function boot() {
       els.settingsToggle?.click();
     }
   });
+
+  await syncNativeIconographyMenu(settings.railIconPack);
 
   // Provision the visible boot tab with a real run as soon as the backend is ready.
   await ensureRun();

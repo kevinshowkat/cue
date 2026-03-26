@@ -185,6 +185,13 @@ test("Juggernaut runner and export controls live in the titlebar session actions
   );
   assert.doesNotMatch(html, /session-tab-strip-shell-head-placeholder/);
   assert.match(styles, /\.session-tab-runtime-action\s*\{/);
+  assert.match(html, /data-juggernaut-icon-slot=\"history\"/);
+  assert.match(html, /data-juggernaut-icon-slot=\"agent_run\"/);
+  assert.match(html, /data-juggernaut-icon-slot=\"export\"/);
+  assert.match(html, /data-juggernaut-icon-slot=\"design_review\"/);
+  assert.match(app, /function syncJuggernautShellIconography\(packId = settings\.railIconPack\)/);
+  assert.match(app, /slot\.innerHTML = getJuggernautRailIconMarkup\(resolvedIconId,\s*resolvedPackId\);/);
+  assert.match(app, /indicator\.dataset\.juggernautIconSlot = "fork_session";/);
   assert.match(styles, /\.session-tab-runtime-action\.is-ready\s*\{/);
   assert.match(styles, /\.agent-runner-banner\s*\{/);
   assert.match(styles, /\.canvas-wrap\.agent-runner-active\s*\{/);

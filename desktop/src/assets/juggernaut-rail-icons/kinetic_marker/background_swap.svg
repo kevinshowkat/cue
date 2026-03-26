@@ -1,0 +1,12 @@
+<svg class="tool-icon tool-icon-background-swap tool-icon-pack-kinetic-marker" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <g transform="rotate(-6 12 12)">
+  <rect fill="currentColor" x="4.9" y="6.1" width="8.35" height="8.05" rx="2.1" fill-opacity="0.05" />
+  <rect fill="none" stroke="currentColor" stroke-width="2.22" stroke-linecap="square" stroke-linejoin="miter" x="4.9" y="6.1" width="8.35" height="8.05" rx="2.1" />
+  <circle fill="currentColor" cx="8.05" cy="8.55" r="0.86" fill-opacity="0.08" />
+  <path fill="none" stroke="currentColor" stroke-width="2.22" stroke-linecap="square" stroke-linejoin="miter" d="M6.58 12.92l1.96-2.16 1.56 1.58 1.5-1.88" />
+  <path fill="none" stroke="currentColor" stroke-width="2.22" stroke-linecap="square" stroke-linejoin="miter" d="M14.85 8.4h4.25" />
+  <path fill="none" stroke="currentColor" stroke-width="2.22" stroke-linecap="square" stroke-linejoin="miter" d="M17.55 6.2l2.2 2.2-2.2 2.2" />
+  <path fill="none" stroke="currentColor" stroke-width="2.22" stroke-linecap="square" stroke-linejoin="miter" d="M19.1 15.6h-4.25" />
+  <path fill="none" stroke="currentColor" stroke-width="2.22" stroke-linecap="square" stroke-linejoin="miter" d="M16.4 13.4l-2.2 2.2 2.2 2.2" />
+</g>
+</svg>
