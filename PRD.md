@@ -597,6 +597,7 @@ Rules:
 ### Tabbed Sessions
 - `New Run` creates a new tab/session instead of wiping the current session.
 - `Open Run` opens an existing run in a new tab.
+- Blank auto-titled tabs use `Untitled Canvas`, `Untitled Canvas (2)`, `Untitled Canvas (3)`, and so on in tab-strip order.
 - Closing a tab closes only the shell session and does not delete the backing run directory.
 - Only the active tab is attached to engine/events in v1.
 - Inactive tabs do not keep a live engine/event stream or background live generation in v1.

@@ -162,3 +162,57 @@ test("tab rename can only start for the active tab", () => {
   assert.equal(startSessionTabRename("tab-active"), true);
   assert.equal(renderCalls, 1);
 });
+
+test("automatic untitled tabs get stable numbered display labels", () => {
+  const DEFAULT_UNTITLED_TAB_TITLE = "Untitled Canvas";
+  const SESSION_TAB_TITLE_MAX_LENGTH = 40;
+  const normalizeSessionTabTitleInput = instantiateFunction("normalizeSessionTabTitleInput", {
+    SESSION_TAB_TITLE_MAX_LENGTH,
+  });
+  const formatUntitledSessionTabLabel = instantiateFunction("formatUntitledSessionTabLabel", {
+    DEFAULT_UNTITLED_TAB_TITLE,
+  });
+  const parseUntitledSessionTabSequence = instantiateFunction("parseUntitledSessionTabSequence", {
+    DEFAULT_UNTITLED_TAB_TITLE,
+    SESSION_TAB_TITLE_MAX_LENGTH,
+    normalizeSessionTabTitleInput,
+  });
+  const tabs = [
+    { tabId: "tab-1", labelManual: false },
+    { tabId: "tab-2", labelManual: false },
+    { tabId: "tab-3", labelManual: false },
+  ];
+  const tabbedSessions = {
+    tabsOrder: tabs.map((tab) => tab.tabId),
+    getTab(tabId) {
+      return tabs.find((tab) => tab.tabId === tabId) || null;
+    },
+  };
+  const sessionTabAutomaticLabelForRecord = (record, fallback) => {
+    return record?.automaticLabel || fallback;
+  };
+  const resolveUntitledSessionTabDisplayLabel = instantiateFunction("resolveUntitledSessionTabDisplayLabel", {
+    DEFAULT_UNTITLED_TAB_TITLE,
+    SESSION_TAB_TITLE_MAX_LENGTH,
+    formatUntitledSessionTabLabel,
+    parseUntitledSessionTabSequence,
+    normalizeSessionTabTitleInput,
+    sessionTabAutomaticLabelForRecord,
+    tabbedSessions,
+  });
+  const sessionTabDisplayLabel = instantiateFunction("sessionTabDisplayLabel", {
+    DEFAULT_UNTITLED_TAB_TITLE,
+    SESSION_TAB_TITLE_MAX_LENGTH,
+    normalizeSessionTabTitleInput,
+    resolveUntitledSessionTabDisplayLabel,
+  });
+
+  assert.equal(sessionTabDisplayLabel(tabs[0], DEFAULT_UNTITLED_TAB_TITLE), "Untitled Canvas");
+  assert.equal(sessionTabDisplayLabel(tabs[1], DEFAULT_UNTITLED_TAB_TITLE), "Untitled Canvas (2)");
+  assert.equal(sessionTabDisplayLabel(tabs[2], DEFAULT_UNTITLED_TAB_TITLE), "Untitled Canvas (3)");
+
+  tabs[0].labelManual = true;
+  tabs[0].label = "Untitled Canvas";
+  assert.equal(sessionTabDisplayLabel(tabs[1], DEFAULT_UNTITLED_TAB_TITLE), "Untitled Canvas (2)");
+  assert.equal(sessionTabDisplayLabel(tabs[2], DEFAULT_UNTITLED_TAB_TITLE), "Untitled Canvas (3)");
+});
