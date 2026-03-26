@@ -36579,11 +36579,53 @@ function sessionTabAutomaticLabelForRecord(record = null, fallback = DEFAULT_UNT
   });
 }
 
+function formatUntitledSessionTabLabel(sequence = 1) {
+  const normalized = Math.max(1, Number(sequence) || 1);
+  return normalized > 1 ? `${DEFAULT_UNTITLED_TAB_TITLE} (${normalized})` : DEFAULT_UNTITLED_TAB_TITLE;
+}
+
+function parseUntitledSessionTabSequence(title = "") {
+  const normalized = normalizeSessionTabTitleInput(title, SESSION_TAB_TITLE_MAX_LENGTH);
+  if (!normalized) return 0;
+  if (normalized === DEFAULT_UNTITLED_TAB_TITLE) return 1;
+  const prefix = `${DEFAULT_UNTITLED_TAB_TITLE} (`;
+  if (!normalized.startsWith(prefix) || !normalized.endsWith(")")) return 0;
+  const sequence = Number(normalized.slice(prefix.length, -1));
+  if (!Number.isInteger(sequence) || sequence < 2) return 0;
+  return sequence;
+}
+
+function resolveUntitledSessionTabDisplayLabel(record = null, fallback = DEFAULT_UNTITLED_TAB_TITLE) {
+  const baseTitle = sessionTabAutomaticLabelForRecord(record, fallback);
+  if (baseTitle !== DEFAULT_UNTITLED_TAB_TITLE) return baseTitle;
+  const targetTabId = String(record?.tabId || "").trim();
+  if (!targetTabId) return baseTitle;
+  const usedSequences = new Set();
+  for (const tabId of tabbedSessions.tabsOrder) {
+    const candidate = tabbedSessions.getTab(tabId) || null;
+    if (!candidate) continue;
+    const manualTitle = candidate.labelManual
+      ? normalizeSessionTabTitleInput(candidate.label, SESSION_TAB_TITLE_MAX_LENGTH)
+      : "";
+    const manualSequence = parseUntitledSessionTabSequence(manualTitle);
+    if (manualSequence) usedSequences.add(manualSequence);
+    if (candidate.labelManual) continue;
+    const candidateBaseTitle = sessionTabAutomaticLabelForRecord(candidate, fallback);
+    if (candidateBaseTitle !== DEFAULT_UNTITLED_TAB_TITLE) continue;
+    let nextSequence = 1;
+    while (usedSequences.has(nextSequence)) nextSequence += 1;
+    usedSequences.add(nextSequence);
+    const displayTitle = formatUntitledSessionTabLabel(nextSequence);
+    if (String(candidate.tabId || "").trim() === targetTabId) return displayTitle;
+  }
+  return baseTitle;
+}
+
 function sessionTabDisplayLabel(record = null, fallback = DEFAULT_UNTITLED_TAB_TITLE) {
   if (record?.labelManual) {
     return normalizeSessionTabTitleInput(record?.label, SESSION_TAB_TITLE_MAX_LENGTH) || DEFAULT_UNTITLED_TAB_TITLE;
   }
-  return sessionTabAutomaticLabelForRecord(record, fallback);
+  return resolveUntitledSessionTabDisplayLabel(record, fallback);
 }
 
 function sessionTabForkSourceId(record = null) {
