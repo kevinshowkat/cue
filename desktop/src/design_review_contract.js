@@ -7,7 +7,7 @@ export const DESIGN_REVIEW_ACCOUNT_MEMORY_SCHEMA = "design-review-account-memory
 export const DESIGN_REVIEW_UPLOAD_ANALYSIS_SCHEMA = "design-review-upload-analysis-v1";
 export const DESIGN_REVIEW_PLANNER_MODEL = "gpt-5.4";
 // Provider-facing Gemini model id for the final apply path (marketed as Nano Banana 2).
-export const DESIGN_REVIEW_FINAL_APPLY_MODEL = "gemini-3.1-flash-image-preview";
+export const DESIGN_REVIEW_FINAL_APPLY_MODEL = "gemini-nano-banana-2";
 export const DESIGN_REVIEW_TRIGGER = "design_review_button";
 
 const KNOWN_ACTION_TYPES = Object.freeze({

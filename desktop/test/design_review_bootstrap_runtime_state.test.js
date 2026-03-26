@@ -259,7 +259,7 @@ test("review bootstrap debug payload collector preserves apply failure details i
               provider: "google",
             },
             providerRequest: {
-              model: "gemini-3.1-flash-image-preview",
+              model: "gemini-nano-banana-2",
             },
           },
         },
@@ -280,7 +280,7 @@ test("review bootstrap debug payload collector preserves apply failure details i
   assert.equal(payload.failedSlots[0].debugInfo?.route?.kind, "apply");
   assert.equal(
     payload.failedSlots[0].debugInfo?.providerRequest?.model,
-    "gemini-3.1-flash-image-preview"
+    "gemini-nano-banana-2"
   );
   assert.equal(payload.applyFailure?.status, "apply_failed");
 });

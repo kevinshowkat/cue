@@ -59,7 +59,7 @@ const NATIVE_MENU_ACTION_EVENT: &str = "native-menu-action";
 const DESIGN_REVIEW_PLANNER_MODEL: &str = "gpt-5.4";
 const DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL: &str = "openai/gpt-5.4";
 // Provider-facing Gemini model id for the final apply path (marketed as Nano Banana 2).
-const DESIGN_REVIEW_APPLY_MODEL: &str = "gemini-3.1-flash-image-preview";
+const DESIGN_REVIEW_APPLY_MODEL: &str = "gemini-nano-banana-2";
 const REVIEW_OPENAI_RESPONSES_WS_TRANSPORT: &str = "responses_websocket";
 const REVIEW_OPENAI_RESPONSES_HTTP_TRANSPORT: &str = "responses_http";
 const REVIEW_OPENAI_RESPONSES_HTTP_FALLBACK_TRANSPORT: &str = "responses_http_fallback";
@@ -4359,7 +4359,7 @@ fn run_design_review_apply_request(
         )
     })?;
     let openrouter_model =
-        review_normalize_openrouter_model(&normalized_model, "google/gemini-3.1-flash-image-preview");
+        review_normalize_openrouter_model(&normalized_model, "google/gemini-nano-banana-2");
     let content =
         review_build_openrouter_apply_input(&prompt, &target_image_path, &reference_image_paths).map_err(|error| {
             review_apply_error(
@@ -5794,11 +5794,11 @@ mod tests {
             DESIGN_REVIEW_APPLY_MODEL
         );
         assert_eq!(
-            review_normalize_apply_model("models/gemini-3.1-flash-image-preview"),
+            review_normalize_apply_model("models/gemini-nano-banana-2"),
             DESIGN_REVIEW_APPLY_MODEL
         );
         assert_eq!(
-            review_normalize_apply_model("google/gemini-3.1-flash-image-preview"),
+            review_normalize_apply_model("google/gemini-nano-banana-2"),
             DESIGN_REVIEW_APPLY_MODEL
         );
     }

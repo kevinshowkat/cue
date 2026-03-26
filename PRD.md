@@ -535,6 +535,7 @@ Rules:
 - Local routing must remain compatible with no-network mode.
 - V1 design-review defaults:
   - planner/reviewer: `GPT-5.4 vision`
+  - final apply generation: `Nano Banana 2` (`gemini-nano-banana-2`)
 
 ## Export Targets
 ### Required Release Targets
