@@ -404,8 +404,15 @@ function ensureReviewStyle() {
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .communication-proposal-slot-list {
   gap: 6px;
 }
+#communication-proposal-tray.is-design-review-runtime .communication-proposal-slot-list {
+  gap: 6px;
+}
+#communication-proposal-tray.is-design-review-runtime .communication-proposal-slot {
+  padding: 7px 10px;
+  border-radius: 12px;
+}
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .communication-proposal-slot {
-  padding: 8px 10px;
+  padding: 7px 10px;
   border-radius: 12px;
 }
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-card {
@@ -413,17 +420,18 @@ function ensureReviewStyle() {
   gap: 0;
 }
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-copy {
-  gap: 4px;
+  gap: 3px;
 }
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-title {
-  font-size: 13px;
-  line-height: 1.24;
+  font-size: 12px;
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-why,
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-hint,
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-detail-row,
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-actions {
   display: none;
 }
@@ -468,18 +476,18 @@ function ensureReviewStyle() {
 }
 .design-review-runtime-copy {
   display: grid;
-  gap: 7px;
+  gap: 4px;
   min-width: 0;
 }
 .design-review-runtime-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 .design-review-runtime-label {
   font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -487,8 +495,8 @@ function ensureReviewStyle() {
 }
 .design-review-runtime-status {
   border-radius: 999px;
-  padding: 3px 8px;
-  font-size: 10px;
+  padding: 2px 7px;
+  font-size: 9px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   background: rgba(226, 232, 238, 0.96);
@@ -515,15 +523,27 @@ function ensureReviewStyle() {
   color: rgba(162, 49, 49, 0.94);
 }
 .design-review-runtime-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 1.32;
+  line-height: 1.24;
   color: rgba(24, 38, 56, 0.94);
 }
+.design-review-runtime-detail-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .design-review-runtime-why {
-  font-size: 12px;
-  line-height: 1.42;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.28;
   color: rgba(72, 90, 111, 0.8);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .design-review-runtime-hint {
   font-size: 11px;
@@ -535,14 +555,17 @@ function ensureReviewStyle() {
 }
 .design-review-runtime-actions {
   display: flex;
-  justify-content: flex-start;
+  justify-content: flex-end;
+  align-self: center;
 }
 .design-review-runtime-action {
   border: 0;
   border-radius: 999px;
-  padding: 7px 11px;
-  font-size: 11px;
+  padding: 5px 10px;
+  font-size: 10px;
   font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
   background: rgba(28, 118, 242, 0.92);
   color: rgba(255, 255, 255, 0.98);
@@ -1150,7 +1173,9 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
     why.className = `design-review-runtime-why${slot?.error ? " is-error" : ""}`;
     why.textContent = slotSummaryText(slot);
 
-    copy.append(row, titleNode, why);
+    const detailRow = document.createElement("div");
+    detailRow.className = "design-review-runtime-detail-row";
+    detailRow.appendChild(why);
 
     if (slot?.proposal) {
       const actions = document.createElement("div");
@@ -1174,9 +1199,10 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
         handleAccept();
       });
       actions.appendChild(accept);
-      copy.appendChild(actions);
+      detailRow.appendChild(actions);
     }
 
+    copy.append(row, titleNode, detailRow);
     layout.append(copy);
     card.appendChild(layout);
     fragment.appendChild(card);
