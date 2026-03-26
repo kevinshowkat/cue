@@ -23,7 +23,7 @@ An agent should prefer the loop:
 
 ## Working Rules
 - Prefer `observe` before every expensive or destructive mutation.
-- Treat `Marker`, `Protect`, `Magic Select`, and `Eraser` as the current visible focus-setting tools, not final edits.
+- Treat `Marker`, `Highlight`, `Magic Select`, and `Eraser` as the current visible focus-setting tools, not final edits.
 - Keep dormant `make_space` semantics available at the runtime layer, but do not advertise them as a current visible rail control.
 - Use direct affordances when the desired edit class is already obvious.
 - Use `Design review` when the goal is ambiguous, aesthetic, or multi-step.
@@ -47,7 +47,7 @@ Current built-in controls:
 
 Current built-in execution path:
 - plans through the shared design-review planner router
-- executes visible `Marker`, `Magic Select`, and `Eraser` actions through the observable driver
+- executes visible `Marker`, `Highlight`, `Magic Select`, and `Eraser` actions through the observable driver
 - can request or accept `Design review`
 - can invoke seeded single-image jobs, direct affordances, custom tools, `Create Tool`, and PSD export
 
@@ -84,13 +84,15 @@ Agents should reason from what the affordance does, not from the internal type n
 ### 2. Focus And Scoping
 Current focus affordances correspond to the right-side communication rail:
 - `Marker`
-- `Protect`
+- `Highlight`
 - `Magic Select`
 - `Eraser`
 
 These are non-destructive communication operations.
 
 `Make Space` remains a dormant runtime affordance for compatibility, but it is not currently exposed in the visible communication rail.
+
+`Highlight` is not a no-edit constraint. It is a stronger review-focus signal that tells `Design review` which region and which circled images to prioritize.
 
 Use them when:
 - the target area is unclear
@@ -215,7 +217,7 @@ The result should be advisory guidance such as:
 - known caveats
 
 Good examples:
-- `Protect -> Design Review -> Accept Proposal -> Export PSD`
+- `Highlight -> Design Review -> Accept Proposal -> Export PSD`
 - `Remove People -> Polish -> Export PSD`
 - `make_space` (runtime-only, currently hidden) -> Relight -> Export PSD
 

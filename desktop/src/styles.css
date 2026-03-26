@@ -8075,10 +8075,10 @@ button.ghost:hover {
 }
 
 .communication-tool.communication-tool-protect {
-  --communication-tool-tilt: 4deg;
-  --communication-tool-scale: 1.14;
-  --communication-tool-accent: rgba(122, 225, 255, 0.22);
-  --communication-tool-saturation: 0.98;
+  --communication-tool-tilt: -10deg;
+  --communication-tool-scale: 1.19;
+  --communication-tool-accent: rgba(255, 223, 74, 0.34);
+  --communication-tool-saturation: 1.12;
 }
 
 .communication-tool.communication-tool-magic-select {
@@ -10024,8 +10024,9 @@ button.ghost:hover {
   color: rgba(64, 108, 172, 0.96);
 }
 
+.timeline-card-glyph--highlight,
 .timeline-card-glyph--protect {
-  color: rgba(47, 129, 96, 0.96);
+  color: rgba(192, 152, 32, 0.98);
 }
 
 .timeline-card-glyph--magic {
