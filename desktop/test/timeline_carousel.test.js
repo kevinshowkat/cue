@@ -69,6 +69,7 @@ function createFakeTimelineCard(nodeId, structureKey) {
 
 function createFakeTimelineStrip(initialChildren = []) {
   const strip = {
+    classList: createFakeClassList(),
     children: [],
     firstChild: null,
     appendChild(node) {
@@ -136,6 +137,37 @@ function createFakeTimelineStrip(initialChildren = []) {
   };
   for (const child of initialChildren) strip.appendChild(child);
   return strip;
+}
+
+function createFakeClassList(initialValues = []) {
+  const values = new Set(initialValues);
+  return {
+    add(...tokens) {
+      for (const token of tokens) values.add(token);
+    },
+    remove(...tokens) {
+      for (const token of tokens) values.delete(token);
+    },
+    contains(token) {
+      return values.has(token);
+    },
+    toggle(token, force) {
+      if (force === true) {
+        values.add(token);
+        return true;
+      }
+      if (force === false) {
+        values.delete(token);
+        return false;
+      }
+      if (values.has(token)) {
+        values.delete(token);
+        return false;
+      }
+      values.add(token);
+      return true;
+    },
+  };
 }
 
 test("timeline carousel target left advances by carousel pages and clamps to the strip bounds", () => {
@@ -241,6 +273,19 @@ test("timeline detail text previews hovered target states and falls back to the 
   assert.equal(timelineDetailText(headNode), "Current state · Import · A.jpg");
 });
 
+test("timeline detail text is empty when no head node exists", () => {
+  const timelineDetailText = instantiateFunction("timelineDetailText", {
+    state: {
+      timelinePreviewNodeId: null,
+      timelineNodesById: new Map(),
+    },
+    currentTimelineHeadNode: () => null,
+    timelineNodeSummary: () => "unused",
+  });
+
+  assert.equal(timelineDetailText(null), "");
+});
+
 test("rebuildTimelineStrip preserves existing cards when a new timeline node appends", () => {
   const firstCard = createFakeTimelineCard("tl-1", "tl-1:k1");
   const secondCard = createFakeTimelineCard("tl-2", "tl-2:k2");
@@ -272,4 +317,40 @@ test("rebuildTimelineStrip preserves existing cards when a new timeline node app
   assert.equal(strip.children[0], firstCard);
   assert.equal(strip.children[1], secondCard);
   assert.deepEqual(buildCalls, ["tl-3"]);
+});
+
+test("rebuildTimelineStrip switches the tray into centered empty mode with only the empty copy", () => {
+  const strip = createFakeTimelineStrip();
+  const shell = {
+    classList: createFakeClassList(),
+  };
+  const rebuildTimelineStrip = instantiateFunction("rebuildTimelineStrip", {
+    els: { timelineShell: shell, timelineStrip: strip },
+    scheduleTimelineCarouselChromeSync: () => {},
+    state: { lastTimelineCenteredNodeId: "tl-2" },
+    document: {
+      createElement(tagName) {
+        assert.equal(tagName, "div");
+        return {
+          className: "",
+          textContent: "",
+          dataset: {},
+          parentNode: null,
+          nextSibling: null,
+          remove() {
+            if (this.parentNode) this.parentNode.removeChild(this);
+          },
+        };
+      },
+    },
+  });
+
+  const changed = rebuildTimelineStrip([], null);
+
+  assert.equal(changed, true);
+  assert.equal(shell.classList.contains("is-empty"), true);
+  assert.equal(strip.classList.contains("is-empty"), true);
+  assert.equal(strip.children.length, 1);
+  assert.equal(strip.children[0].className, "timeline-empty muted");
+  assert.equal(strip.children[0].textContent, "Your timeline appears after your first edit.");
 });

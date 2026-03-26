@@ -32830,7 +32830,7 @@ function timelineDetailText(headNode = currentTimelineHeadNode()) {
     previewNodeId && state.timelineNodesById instanceof Map
       ? state.timelineNodesById.get(previewNodeId) || null
       : null;
-  if (!previewNode) return headNode ? timelineNodeSummary(headNode) : "Timeline";
+  if (!previewNode) return headNode ? timelineNodeSummary(headNode) : "";
   const previewSummary = timelineNodeSummary(previewNode);
   if (previewNodeId === headNodeId) return `Current state · ${previewSummary}`;
   return `Change to · ${previewSummary}`;
@@ -33178,6 +33178,8 @@ function buildTimelineCard(node = null, headNode = currentTimelineHeadNode()) {
 function rebuildTimelineStrip(nodes = timelineSortedNodes(), headNode = currentTimelineHeadNode()) {
   const strip = els.timelineStrip;
   if (!strip) return false;
+  els.timelineShell?.classList?.toggle("is-empty", !nodes.length);
+  strip.classList?.toggle("is-empty", !nodes.length);
   if (!nodes.length) {
     const currentEmpty = strip.querySelector(".timeline-empty");
     if (!currentEmpty || String(currentEmpty.textContent || "").trim() !== "Your timeline appears after your first edit.") {

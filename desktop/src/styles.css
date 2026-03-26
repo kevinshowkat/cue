@@ -9712,12 +9712,25 @@ button.ghost:hover {
   overflow: hidden;
 }
 
+.timeline-shell.is-empty {
+  align-content: center;
+}
+
 .timeline-track {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) 28px;
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.timeline-shell.is-empty .timeline-track {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.timeline-shell.is-empty .timeline-arrow,
+.timeline-shell.is-empty .timeline-detail {
+  display: none;
 }
 
 .timeline-arrow {
@@ -9801,11 +9814,23 @@ button.ghost:hover {
   scroll-behavior: auto;
 }
 
+.timeline-strip.is-empty {
+  justify-content: center;
+  width: 100%;
+  min-height: 32px;
+  overflow: hidden;
+}
+
 .timeline-empty {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 32px;
   font-family: "IBM Plex Mono", monospace;
   font-size: 11px;
   letter-spacing: 0.01em;
-  padding: 0 8px;
+  padding: 0;
+  text-align: center;
 }
 
 .timeline-card {
