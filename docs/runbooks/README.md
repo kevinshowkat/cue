@@ -1,6 +1,6 @@
 # Runbooks
 
-These are the multi-agent execution documents created during the launch/design/polish waves for Juggernaut.
+These are the multi-agent execution documents created during the launch/design/polish waves for Cue.
 
 ## Current Files
 

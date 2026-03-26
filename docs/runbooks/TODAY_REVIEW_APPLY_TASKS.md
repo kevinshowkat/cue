@@ -1,4 +1,4 @@
-# Today Review Apply Tasks (Juggernaut)
+# Today Review Apply Tasks (Cue)
 
 Historical prompt pack for the March 9, 2026 review-apply wave.
 
@@ -24,7 +24,7 @@ Update the date, branch names, worktree paths, and mission text before reusing t
 
 ## Coordinator
 ```text
-You are the coordinator for Juggernaut's March 9 review-apply wave.
+You are the coordinator for Cue's March 9 review-apply wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -67,7 +67,7 @@ Mission:
 
 ## Runtime
 ```text
-You are the runtime agent for Juggernaut's March 9 review-apply wave.
+You are the runtime agent for Cue's March 9 review-apply wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -121,7 +121,7 @@ Do not:
 
 ## Provider / Backend
 ```text
-You are the provider/backend agent for Juggernaut's March 9 review-apply wave.
+You are the provider/backend agent for Cue's March 9 review-apply wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -194,7 +194,7 @@ Do not:
 
 ## Canvas / Tabs
 ```text
-You are the canvas/tabs agent for Juggernaut's March 9 review-apply wave.
+You are the canvas/tabs agent for Cue's March 9 review-apply wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -246,7 +246,7 @@ Do not:
 
 ## Verify
 ```text
-You are the verify agent for Juggernaut's March 9 review-apply wave.
+You are the verify agent for Cue's March 9 review-apply wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md

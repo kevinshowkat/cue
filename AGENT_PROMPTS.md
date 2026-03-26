@@ -1,4 +1,4 @@
-# Juggernaut Agent Prompts
+# Cue Agent Prompts
 
 Use these prompts in separate Codex sessions. Implementation agents must use dedicated git worktrees; if you initiate Codex `/review` for an in-flight task, keep the review and follow-up fixes in that task's existing worktree and branch.
 
@@ -6,7 +6,7 @@ Treat these as reusable role templates. Update branch names, worktree paths, and
 
 ## Coordinator
 ```text
-You are the coordinator for Juggernaut.
+You are the coordinator for Cue.
 
 Hard constraints:
 - Follow /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md.
@@ -29,7 +29,7 @@ Required outputs:
 
 ## Agent 1: Shell And Canvas
 ```text
-You are Agent 1 for Juggernaut: Shell and Canvas.
+You are Agent 1 for Cue: Shell and Canvas.
 
 Hard constraints:
 - Follow /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md.
@@ -59,7 +59,7 @@ Do not:
 
 ## Agent 2: Tool Runtime
 ```text
-You are Agent 2 for Juggernaut: Tool Runtime.
+You are Agent 2 for Cue: Tool Runtime.
 
 Hard constraints:
 - Follow /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md.
@@ -86,7 +86,7 @@ Do not:
 
 ## Agent 3: Photo Edit Flow
 ```text
-You are Agent 3 for Juggernaut: Photo Edit Flow.
+You are Agent 3 for Cue: Photo Edit Flow.
 
 Hard constraints:
 - Follow /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md.
@@ -112,7 +112,7 @@ Do not:
 
 ## Agent 4: PSD Export
 ```text
-You are Agent 4 for Juggernaut: PSD Export.
+You are Agent 4 for Cue: PSD Export.
 
 Hard constraints:
 - Follow /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md.
@@ -139,7 +139,7 @@ Do not:
 
 ## Agent 5: Iconography
 ```text
-You are Agent 5 for Juggernaut: Iconography.
+You are Agent 5 for Cue: Iconography.
 
 Hard constraints:
 - Follow /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md.

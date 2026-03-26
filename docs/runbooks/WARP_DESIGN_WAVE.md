@@ -1,4 +1,4 @@
-# Warp Design Wave Runbook (Juggernaut)
+# Warp Design Wave Runbook (Cue)
 
 Use this when repointing the existing Warp/Codex tabs from the launch slice to the design wave.
 
@@ -7,7 +7,7 @@ Use this when repointing the existing Warp/Codex tabs from the launch slice to t
 - Design work should branch from the integrated slice, not from the older first-wave feature branches.
 
 ## 2. Create And Warm Worktrees
-Run once from the main Juggernaut repo:
+Run once from the main Cue repo:
 
 ```bash
 ./scripts/create_juggernaut_design_worktrees.sh

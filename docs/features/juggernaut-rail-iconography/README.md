@@ -1,4 +1,4 @@
-# Juggernaut Rail Iconography
+# Cue Rail Iconography
 
 This branch owns the generated iconography shared by the left rail and the session/titlebar shell actions.
 

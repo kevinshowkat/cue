@@ -8,12 +8,12 @@ Use this pack to test the first-class `Agent Run` surface against the local Arag
 Important:
 - `aragorn.jpg` is currently a local untracked fixture, not a tracked repo asset.
 - the clean worktree used for code changes will not contain this file unless you copy it in yourself
-- the easiest way to run these tests is from the main Juggernaut checkout, where the file already exists
+- the easiest way to run these tests is from the main Cue checkout, where the file already exists
 - the companion machine-readable cases live in `docs/runbooks/agent_runner_aragorn_goals.json`
 
 ## Setup
 
-1. Launch Juggernaut from the main checkout.
+1. Launch Cue from the main checkout.
 2. Import `/Users/mainframe/Desktop/projects/Juggernaut/images/aragorn.jpg` into the canvas.
 3. Keep Aragorn as the only image on canvas for the cleanest run, or make sure Aragorn is the active image if other images are present.
 4. Open `Agent Run` from the top-right shell action. It now opens as a compact card tucked tight to the tab bar, clearing the titlebar shadow while keeping the panel title fully visible, with the goal field and icon-only `Submit`, `Expand`, and `Close` controls.
@@ -66,7 +66,7 @@ The current Agent Run planner can directly plan:
 - `create_tool`
 - `export_psd`
 
-It does not yet plan `highlight` or `make_space` directly. If you want to test those, pre-place them yourself, then let Agent Run continue from that scoped state.
+It does not yet plan `protect` or `make_space` directly. If you want to test those, pre-place them yourself, then let Agent Run continue from that scoped state.
 
 Also note:
 
@@ -155,28 +155,28 @@ What to look for:
   - subject shifted or cropped badly
   - reserved area ignored
 
-### 5. Manual Highlight Focus Test
+### 5. Manual Protect Stress Test
 
 Manual pre-step:
 
-- before starting Agent Run, use `Highlight` over the area the next edit should prioritize:
+- before starting Agent Run, use `Protect` over:
   - Aragorn’s face
   - chest emblem area
   - sword hand
 
 Goal:
 
-`Improve the image while clearly centering the edit on the highlighted parts, then export a PSD.`
+`Improve the image while strictly preserving the protected parts, then export a PSD.`
 
 What to look for:
 
 - good first move:
   - `request_design_review`
-  - then a proposal that stays centered on the highlighted area
+  - then a conservative proposal
 - success signal:
-  - the edit clearly targets the highlighted region first
+  - protected areas remain visually stable
 - failure signal:
-  - the edit ignores the highlighted area
+  - face or hand altered despite protection
 
 ### 6. Create Tool Judgment
 

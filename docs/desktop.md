@@ -1,6 +1,6 @@
 # Desktop App (Tauri)
 
-Juggernaut is a Tauri desktop app with its strongest verification on macOS today. The release bar still targets the same core feature set across macOS, Windows, and Linux, but the currently shipped and tested slice is the Mac desktop shell.
+Cue is a Tauri desktop app with its strongest verification on macOS today. The release bar still targets the same core feature set across macOS, Windows, and Linux, but the currently shipped and tested slice is the Mac desktop shell.
 
 There is no web app.
 
@@ -17,7 +17,7 @@ There is no web app.
 - **Session tab**: an isolated shell state bound to one run directory. Tabs can be created fresh, opened from disk, saved, closed, or forked from the current tab.
 - **Shared canvas**: only the active tab is attached to runtime/events at a time; switching tabs swaps session state into the shared surface.
 - **Visual timeline**: tab-local history toggled by the titlebar `History` button. It can restore prior committed states without re-running model work.
-- **Communication overlay**: the `Marker`, `Highlight`, `Magic Select`, and `Eraser` tools used to scope `Design Review`; `Make Space` remains a dormant runtime affordance.
+- **Communication overlay**: the `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` tools used to scope `Design Review`.
 - **Agent Run**: a compact goal-driven panel that can step or auto-run review, tool-preview/create, and export actions against the current tab.
 
 ## Current Primary Workflow
@@ -31,7 +31,7 @@ There is no web app.
 7. Use `History` to inspect or restore earlier tab-local states.
 8. Export PSD or flattened PNG with a receipt.
 
-The primary Juggernaut wedge is still single-image-first even though older Brood-derived multi-image actions remain available in the runtime.
+The primary Cue wedge is still single-image-first even though older Brood-derived multi-image actions remain available in the runtime.
 
 ## Left Rail And Review
 
@@ -62,7 +62,7 @@ The primary Juggernaut wedge is still single-image-first even though older Brood
 
 ## Legacy Runtime Note
 
-Older Brood-era capabilities such as multi-image blends, DNA/Soul token flows, and some multi-image generation helpers are still present in the runtime. They are useful implementation carryover, but they are not the main Juggernaut launch loop.
+Older Brood-era capabilities such as multi-image blends, DNA/Soul token flows, and some multi-image generation helpers are still present in the runtime. They are useful implementation carryover, but they are not the main Cue launch loop.
 
 ## See Also
 

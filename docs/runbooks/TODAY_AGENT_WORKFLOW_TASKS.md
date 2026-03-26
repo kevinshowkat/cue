@@ -1,4 +1,4 @@
-# Today Agent Workflow Tasks (Juggernaut)
+# Today Agent Workflow Tasks (Cue)
 
 Historical prompt pack for the first observable-agent workflow build wave.
 
@@ -13,7 +13,7 @@ Update the branch names, worktree paths, and mission text before reusing these p
 
 ## Observable Core
 ```text
-You are the observable-core agent for Juggernaut's agent workflow wave.
+You are the observable-core agent for Cue's agent workflow wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -49,7 +49,7 @@ Deliver:
 
 ## Focus / Review
 ```text
-You are the focus-review agent for Juggernaut's agent workflow wave.
+You are the focus-review agent for Cue's agent workflow wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -69,7 +69,7 @@ Hard constraints:
 - Do not own shell rail exposure
 
 Build:
-- Add `Highlight` semantics for "focus design review here"
+- Add `Protect` semantics for "do not change this region"
 - Add `Make Space` semantics for "reserve or create room here"
 - Preserve the existing review proposal/apply split
 - Keep the output action-first
@@ -82,7 +82,7 @@ Deliver:
 
 ## Direct Tools
 ```text
-You are the direct-tools agent for Juggernaut's agent workflow wave.
+You are the direct-tools agent for Cue's agent workflow wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -115,7 +115,7 @@ Deliver:
 
 ## Shell Integration
 ```text
-You are the shell-integration agent for Juggernaut's agent workflow wave.
+You are the shell-integration agent for Cue's agent workflow wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -135,7 +135,7 @@ Hard constraints:
 
 Build:
 - Expose:
-  - Highlight
+  - Protect
   - Remove People
   - Polish
   - Make Space
@@ -150,7 +150,7 @@ Deliver:
 
 ## Verify
 ```text
-You are the verify agent for Juggernaut's agent workflow wave.
+You are the verify agent for Cue's agent workflow wave.
 
 Read and follow:
 1) /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md
@@ -168,7 +168,7 @@ Hard constraints:
 Mission:
 - Verify these flows:
   1. Marker -> Design Review -> Accept Proposal -> Export -> PSD
-  2. Highlight -> Remove People -> Export -> PSD
+  2. Protect -> Remove People -> Export -> PSD
   3. Make Space -> Relight -> Export -> PSD
   4. Remove People -> Polish -> Export -> PSD
 - Use replay traces where available

@@ -1,6 +1,6 @@
 # macOS Local and Private Image Editing
 
-Juggernaut is currently verified most deeply on macOS through the Tauri desktop shell. Release still targets the same core feature set across macOS, Windows, and Linux, but Mac is the strongest local/private path today.
+Cue is currently verified most deeply on macOS through the Tauri desktop shell. Release still targets the same core feature set across macOS, Windows, and Linux, but Mac is the strongest local/private path today.
 
 ## Platform Scope
 

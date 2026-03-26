@@ -813,6 +813,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "cue-desktop"
+version = "0.2.4"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "cocoa",
+ "image 0.25.9",
+ "objc",
+ "portable-pty",
+ "rand 0.8.5",
+ "reqwest",
+ "rustls 0.23.37",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tungstenite",
+ "url",
+]
+
+[[package]]
 name = "darling"
 version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2249,28 +2271,6 @@ dependencies = [
  "fluent-uri",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "juggernaut-desktop"
-version = "0.2.4"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "cocoa",
- "image 0.25.9",
- "objc",
- "portable-pty",
- "rand 0.8.5",
- "reqwest",
- "rustls 0.23.37",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tungstenite",
- "url",
 ]
 
 [[package]]

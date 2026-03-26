@@ -1,4 +1,4 @@
-# Warp Review Apply Wave Runbook (Juggernaut)
+# Warp Review Apply Wave Runbook (Cue)
 
 Use this when repointing Codex tabs to land the review-accept apply path.
 
@@ -16,7 +16,7 @@ Use this when repointing Codex tabs to land the review-accept apply path.
   - final apply = Gemini Nano Banana 2
 
 ## 3. Create And Warm Worktrees
-Run once from the main Juggernaut repo:
+Run once from the main Cue repo:
 
 ```bash
 git worktree add ../juggernaut-review-apply-coordinator -b feature/review-apply-coordination main

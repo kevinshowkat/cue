@@ -216,7 +216,7 @@ test("agent runner planner prompt carries the single-step JSON contract and comp
     },
   });
 
-  assert.match(prompt, /You are the planner for Juggernaut Agent Run\./);
+  assert.match(prompt, /You are the planner for Cue Agent Run\./);
   assert.match(prompt, /Return JSON only\./);
   assert.match(prompt, /The first visual input is the current rendered visible canvas view, including visible marks and overlays\./);
   assert.match(prompt, /Any additional visual inputs are visible source images for detail only; use the rendered canvas view to reason about the next step\./);

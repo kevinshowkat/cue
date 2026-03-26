@@ -1,5 +1,5 @@
 [package]
-name = "juggernaut-desktop"
+name = "cue-desktop"
 version = "0.2.4"
 edition = "2021"
 

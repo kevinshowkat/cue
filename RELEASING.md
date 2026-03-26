@@ -1,6 +1,6 @@
-# Releasing Juggernaut
+# Releasing Cue
 
-This repo currently packages Juggernaut as a signed and notarized macOS DMG via GitHub Releases. Windows and Linux remain release targets, but the automated shipping path here is still macOS-first.
+This repo currently packages Cue as a signed and notarized macOS DMG via GitHub Releases. Windows and Linux remain release targets, but the automated shipping path here is still macOS-first.
 
 ## Canonical Local Release Check
 
@@ -71,14 +71,14 @@ Apple signing/notarization secrets:
 4. Commit the release changes.
 5. Tag and push: `git tag vX.Y.Z` then `git push origin vX.Y.Z`.
 6. Wait for the `publish` workflow to finish.
-7. Verify the draft release contains a Juggernaut DMG.
+7. Verify the draft release contains a Cue DMG.
 8. Verify the Homebrew sync step if you are still using the legacy tap automation.
 
 ## Current Caveats
 
 - The native engine binary still ships under the internal resource name `brood-rs`.
-- Some Homebrew automation is still legacy-named while the app/product identity has moved to Juggernaut.
-- The release pipeline now targets Juggernaut artifact naming, but the tap migration itself is still an operational follow-up.
+- Some Homebrew automation is still legacy-named while the app/product identity has moved to Cue.
+- The release pipeline now targets Cue artifact naming, but the tap migration itself is still an operational follow-up.
 
 ## Notarization Notes
 

@@ -6,7 +6,7 @@
     "distDir": "../dist"
   },
   "package": {
-    "productName": "Juggernaut",
+    "productName": "Cue",
     "version": "0.2.4"
   },
   "tauri": {
@@ -24,7 +24,7 @@
     },
     "windows": [
       {
-        "title": "Juggernaut",
+        "title": "Cue",
         "width": 620,
         "height": 620,
         "center": true,
@@ -35,7 +35,7 @@
       }
     ],
     "bundle": {
-      "identifier": "com.juggernaut.app",
+      "identifier": "com.cue.app",
       "active": true,
       "targets": ["dmg"],
       "resources": ["resources/brood-rs"],

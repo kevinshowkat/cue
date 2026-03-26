@@ -3,7 +3,7 @@
 Canonical agent instructions live in this file.
 
 ## Project Intent
-- Build `Juggernaut`, a text-free-first, image-first desktop design workstation.
+- Build `Cue`, a text-free-first, image-first desktop design workstation.
 - The source-of-truth product definition is [`PRD.md`](/Users/mainframe/Desktop/projects/Juggernaut/PRD.md).
 - Current operating objective: harden and document the launchable single-image-first desktop slice already landed in the repo while preserving the release bar in [`PRD.md`](/Users/mainframe/Desktop/projects/Juggernaut/PRD.md).
 
@@ -23,7 +23,7 @@ Canonical agent instructions live in this file.
 - VGen or artist-marketplace discovery is phase 2.
 - Connected mode defaults to telemetry enabled with opt-out.
 - Local-only mode defaults to no upload, with explicit opt-in for anonymized sharing.
-- Native `.ai` and `.fig` are release targets and must re-import into Juggernaut with high fidelity.
+- Native `.ai` and `.fig` are release targets and must re-import into Cue with high fidelity.
 
 ## Upstream Reference
 - Reuse as much of `../brood` as practical before introducing new frameworks or runtime layers.
@@ -116,7 +116,7 @@ git worktree remove ../juggernaut-<feature>
 - Use [`TODAY_APPLE_POLISH_TASKS.md`](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/TODAY_APPLE_POLISH_TASKS.md) for the Apple-polish worker prompts.
 
 ## Build And Test Status
-- `Juggernaut` is now bootstrapped from `../brood` on branch `feature/juggernaut-bootstrap`.
+- `Cue` is now bootstrapped from `../brood` on branch `feature/juggernaut-bootstrap`.
 - Verified commands on this branch:
   - `cd desktop && npm install`
   - `cd desktop && npm test`
@@ -124,7 +124,7 @@ git worktree remove ../juggernaut-<feature>
   - `cd desktop/src-tauri && cargo check`
   - `cd desktop && npm run tauri build`
 - Latest verified macOS bundle output:
-  - `desktop/src-tauri/target/release/bundle/dmg/Juggernaut_0.2.4_aarch64.dmg`
+  - `desktop/src-tauri/target/release/bundle/dmg/Cue_0.2.4_aarch64.dmg`
 
 ## Delivery Standard
 - Favor concrete, shippable scope over expansive aspiration.

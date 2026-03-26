@@ -1,13 +1,13 @@
-# Juggernaut Agent Runtime Guide
+# Cue Agent Runtime Guide
 
 Status: Draft v0.1  
 Last updated: 2026-03-13
 
 ## Purpose
-This document explains how an LLM or agent should use Juggernaut as a constrained visual runtime. It is a companion to [agent-workflow-prd.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-workflow-prd.md) and [agent-affordances.json](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-affordances.json).
+This document explains how an LLM or agent should use Cue as a constrained visual runtime. It is a companion to [agent-workflow-prd.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-workflow-prd.md) and [agent-affordances.json](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-affordances.json).
 
 ## Core Model
-Juggernaut should be treated as 3 cooperating surfaces:
+Cue should be treated as 3 cooperating surfaces:
 - `observe`: inspect current state without changing it
 - `mutate`: change a tab, image, overlay, or export state
 - `review`: generate and apply structured edit proposals through design review
@@ -23,7 +23,7 @@ An agent should prefer the loop:
 
 ## Working Rules
 - Prefer `observe` before every expensive or destructive mutation.
-- Treat `Marker`, `Highlight`, `Magic Select`, and `Eraser` as the current visible focus-setting tools, not final edits.
+- Treat `Marker`, `Protect`, `Magic Select`, and `Eraser` as the current visible focus-setting tools, not final edits.
 - Keep dormant `make_space` semantics available at the runtime layer, but do not advertise them as a current visible rail control.
 - Use direct affordances when the desired edit class is already obvious.
 - Use `Design review` when the goal is ambiguous, aesthetic, or multi-step.
@@ -34,7 +34,7 @@ An agent should prefer the loop:
 ## Current Surfaces
 
 ### 0. Agent Run
-Juggernaut now includes a first-class `Agent Run` shell surface for live experimentation.
+Cue now includes a first-class `Agent Run` shell surface for live experimentation.
 
 Current built-in controls:
 - enter a freeform goal
@@ -47,7 +47,7 @@ Current built-in controls:
 
 Current built-in execution path:
 - plans through the shared design-review planner router
-- executes visible `Marker`, `Highlight`, `Magic Select`, and `Eraser` actions through the observable driver
+- executes visible `Marker`, `Magic Select`, and `Eraser` actions through the observable driver
 - can request or accept `Design review`
 - can invoke seeded single-image jobs, direct affordances, custom tools, `Create Tool`, and PSD export
 
@@ -84,15 +84,13 @@ Agents should reason from what the affordance does, not from the internal type n
 ### 2. Focus And Scoping
 Current focus affordances correspond to the right-side communication rail:
 - `Marker`
-- `Highlight`
+- `Protect`
 - `Magic Select`
 - `Eraser`
 
 These are non-destructive communication operations.
 
 `Make Space` remains a dormant runtime affordance for compatibility, but it is not currently exposed in the visible communication rail.
-
-`Highlight` is not a no-edit constraint. It is a stronger review-focus signal that tells `Design review` which region and which circled images to prioritize.
 
 Use them when:
 - the target area is unclear
@@ -126,12 +124,12 @@ Current behavior:
 Agents should prefer `Create Tool` when:
 - the same edit would likely be reused within the session
 - a successful operation should become a named shortcut
-- the desired behavior fits Juggernaut's current local-edit tool schema
+- the desired behavior fits Cue's current local-edit tool schema
 
 Agents should not prefer `Create Tool` when:
 - an existing affordance already matches the job
 - the task is still ambiguous enough to need `Design review`
-- the desired behavior depends on provider-specific prompt hacking instead of a stable Juggernaut tool contract
+- the desired behavior depends on provider-specific prompt hacking instead of a stable Cue tool contract
 
 ## Direct Execution Vs Review
 
@@ -217,7 +215,7 @@ The result should be advisory guidance such as:
 - known caveats
 
 Good examples:
-- `Highlight -> Design Review -> Accept Proposal -> Export PSD`
+- `Protect -> Design Review -> Accept Proposal -> Export PSD`
 - `Remove People -> Polish -> Export PSD`
 - `make_space` (runtime-only, currently hidden) -> Relight -> Export PSD
 

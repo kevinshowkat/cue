@@ -147,7 +147,7 @@ fn build_tools_menu() -> Menu {
         CustomMenuItem::new(MENU_TOOLS_CREATE_TOOL.to_string(), "Create Tool");
     let slot_labels = [
         "Marker",
-        "Highlight",
+        "Protect",
         "Magic Select",
         "Make Space",
         "Eraser",
@@ -192,7 +192,7 @@ fn native_iconography_menu_items() -> [(&'static str, &'static str, &'static str
         (
             "oscillo_ink",
             MENU_SETTINGS_ICON_PACK_OSCILLO_INK,
-            "Cuphead",
+            "Oscillo / Cuphead",
         ),
         (
             "industrial_mono",
@@ -1708,7 +1708,7 @@ fn default_export_document_name(run_dir: &Path) -> String {
         .and_then(|value| value.to_str())
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("juggernaut-export")
+        .unwrap_or("cue-export")
         .to_string()
 }
 
@@ -1716,7 +1716,7 @@ fn default_export_limitations() -> Vec<String> {
     vec![
         "PSD export is flattened to a single bitmap composition with alpha; editable per-source PSD layers are not included in this March 8 slice."
             .to_string(),
-        "Export reconstructs canvas placement from Juggernaut run artifacts and does not preserve live tool semantics, masks, or effect-token re-editability."
+        "Export reconstructs canvas placement from Cue run artifacts and does not preserve live tool semantics, masks, or effect-token re-editability."
             .to_string(),
         "If the shell still requests export.html, the native exporter normalizes the output artifact to .psd and leaves a pointer note at the requested legacy path."
             .to_string(),
@@ -2368,7 +2368,7 @@ fn write_legacy_export_pointer(
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let body = format!(
-        "<!doctype html><html><body><h1>Juggernaut PSD Export</h1><p>PSD: {}</p><p>Receipt: {}</p><ul>{}</ul></body></html>",
+        "<!doctype html><html><body><h1>Cue PSD Export</h1><p>PSD: {}</p><p>Receipt: {}</p><ul>{}</ul></body></html>",
         psd_path.to_string_lossy(),
         receipt_path.to_string_lossy(),
         limitations
@@ -3697,7 +3697,7 @@ fn review_apply_openrouter_headers(
     if let Some(title) = review_first_non_empty(vars, &["OPENROUTER_X_TITLE"]) {
         request = request.header("X-Title", title);
     } else {
-        request = request.header("X-Title", "Juggernaut");
+        request = request.header("X-Title", "Cue");
     }
     request
 }

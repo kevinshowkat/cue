@@ -859,7 +859,7 @@ function ensureRailButton(root, slotKey) {
     const button = toolEl.__juggernautRailButton;
     if (button && !button.disabled && typeof button.invoke === "function") {
       Promise.resolve(button.invoke({ button, event, root })).catch((error) => {
-        console.error("Juggernaut shell affordance failed:", error);
+        console.error("Cue shell affordance failed:", error);
       });
       scheduleRailPressRelease(160);
       return;

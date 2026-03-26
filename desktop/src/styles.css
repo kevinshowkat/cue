@@ -149,6 +149,16 @@ body {
   backdrop-filter: blur(8px);
 }
 
+.boot-video-logo {
+  width: clamp(72px, 10vw, 96px);
+  height: auto;
+  display: block;
+  border-radius: 24px;
+  box-shadow:
+    0 24px 40px rgba(0, 0, 0, 0.28),
+    0 8px 18px rgba(0, 0, 0, 0.2);
+}
+
 .boot-video-mark {
   font-family: "Space Grotesk", sans-serif;
   font-size: clamp(22px, 3vw, 36px);
@@ -2983,23 +2993,9 @@ button.ghost:hover {
   transform: rotate(-45deg);
 }
 
-.toast[data-kind="error"] {
-  --toast-accent: rgba(255, 124, 132, 0.96);
-}
-
-.toast[data-kind="tip"] {
-  --toast-accent: rgba(255, 190, 92, 0.96);
-}
-
-.toast[data-kind="info"] {
-  --toast-accent: rgba(100, 210, 255, 0.94);
-}
-
 .toast[data-state="visible"] {
   opacity: 1;
   visibility: visible;
-  filter: saturate(1);
-  transform: translateY(0);
   transition-delay: 0s;
   transform: translateX(-50%) scale(1);
 }
@@ -3008,7 +3004,6 @@ button.ghost:hover {
 .toast[data-state="exiting"] {
   opacity: 0;
   visibility: visible;
-  transform: translateY(6px);
   transition-delay: 0s;
   transform: translateX(-50%) scale(0.9);
 }
@@ -8080,10 +8075,10 @@ button.ghost:hover {
 }
 
 .communication-tool.communication-tool-protect {
-  --communication-tool-tilt: -10deg;
-  --communication-tool-scale: 1.19;
-  --communication-tool-accent: rgba(255, 223, 74, 0.34);
-  --communication-tool-saturation: 1.12;
+  --communication-tool-tilt: 4deg;
+  --communication-tool-scale: 1.14;
+  --communication-tool-accent: rgba(122, 225, 255, 0.22);
+  --communication-tool-saturation: 0.98;
 }
 
 .communication-tool.communication-tool-magic-select {
@@ -10029,8 +10024,8 @@ button.ghost:hover {
   color: rgba(64, 108, 172, 0.96);
 }
 
-.timeline-card-glyph--highlight {
-  color: rgba(192, 152, 32, 0.98);
+.timeline-card-glyph--protect {
+  color: rgba(47, 129, 96, 0.96);
 }
 
 .timeline-card-glyph--magic {
@@ -10540,7 +10535,7 @@ button.ghost:hover {
   padding: 0;
 }
 
-/* Juggernaut launch-slice shell */
+/* Cue launch-slice shell */
 
 #top-metrics {
   display: none;
@@ -10549,10 +10544,10 @@ button.ghost:hover {
 .brand-strip {
   position: fixed;
   inset: 0 0 auto 0;
-  grid-template-columns: 1px minmax(0, 1fr) auto;
-  align-items: stretch;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
   min-height: var(--brand-strip-h);
-  padding: 0;
+  padding: 8px 14px 0;
   background: transparent;
   border-bottom: 0;
   backdrop-filter: none;
@@ -10564,54 +10559,50 @@ button.ghost:hover {
 }
 
 .juggernaut-brand {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  position: relative;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(30, 35, 44, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.74),
+    0 10px 24px rgba(30, 35, 44, 0.08);
   white-space: nowrap;
-  border: 0;
+  pointer-events: auto;
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  backdrop-filter: blur(18px) saturate(120%);
 }
 
 .juggernaut-brand-mark {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   position: relative;
-  display: grid;
-  place-items: center;
-}
-
-.juggernaut-brand-mark span {
-  position: absolute;
   display: block;
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(100, 210, 255, 0.62));
+  flex: 0 0 auto;
+}
+
+.juggernaut-brand-mark-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 9px;
   box-shadow:
-    0 0 18px rgba(100, 210, 255, 0.22),
-    0 10px 18px rgba(0, 0, 0, 0.26);
-}
-
-.juggernaut-brand-mark span:nth-child(1) {
-  width: 24px;
-  height: 8px;
-  transform: rotate(45deg);
-}
-
-.juggernaut-brand-mark span:nth-child(2) {
-  width: 24px;
-  height: 8px;
-  transform: rotate(-45deg);
-}
-
-.juggernaut-brand-mark span:nth-child(3) {
-  width: 8px;
-  height: 24px;
+    0 6px 14px rgba(30, 35, 44, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .juggernaut-brand-wordmark {
-  display: none;
+  display: block;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(25, 31, 40, 0.9);
+  text-transform: uppercase;
 }
 
 .stage {
@@ -12987,7 +12978,6 @@ body.juggernaut-shell .brand-strip .session-tab-strip-fork:active {
     font-size: 12px;
   }
 }
-
 /* Icon pack color themes */
 
 :root {
