@@ -181,7 +181,7 @@ test("Juggernaut runner and export controls live in the titlebar session actions
   const brandStripChunk = html.slice(brandStripStart, mainStart);
   assert.match(
     brandStripChunk,
-    /class=\"session-tab-strip-actions\"[^>]*role=\"group\"[^>]*aria-label=\"Session actions\"[\s\S]*id=\"session-tab-history\"[\s\S]*id=\"juggernaut-agent-runner-open\"[\s\S]*id=\"session-tab-design-review\"[\s\S]*id=\"juggernaut-export-psd\"/
+    /class=\"session-tab-strip-actions\"[^>]*role=\"group\"[^>]*aria-label=\"Session actions\"[\s\S]*id=\"juggernaut-agent-runner-open\"[\s\S]*id=\"session-tab-design-review\"[\s\S]*id=\"juggernaut-export-psd\"/
   );
   assert.doesNotMatch(html, /session-tab-strip-shell-head-placeholder/);
   assert.match(styles, /\.session-tab-runtime-action\s*\{/);

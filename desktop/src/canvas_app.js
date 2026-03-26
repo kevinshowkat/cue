@@ -690,7 +690,6 @@ const els = {
   brandStrip: document.querySelector(".brand-strip"),
   sessionTabStrip: document.getElementById("session-tab-strip"),
   sessionTabList: document.getElementById("session-tab-list"),
-  sessionTabHistory: document.getElementById("session-tab-history"),
   sessionTabNew: document.getElementById("session-tab-new"),
   sessionTabFork: document.getElementById("session-tab-fork"),
   sessionTabDesignReview: document.getElementById("session-tab-design-review"),
@@ -866,6 +865,10 @@ const els = {
   quickActions: document.getElementById("quick-actions"),
   timelineDock: document.getElementById("timeline-dock"),
   timelineShell: document.getElementById("timeline-shell"),
+  timelineToggle: document.getElementById("timeline-toggle"),
+  timelineToggleLabel: document.getElementById("timeline-toggle-label"),
+  timelineToggleSummary: document.getElementById("timeline-toggle-summary"),
+  timelineBody: document.getElementById("timeline-body"),
   timelinePrev: document.getElementById("timeline-prev"),
   timelineNext: document.getElementById("timeline-next"),
   timelineStrip: document.getElementById("timeline-strip"),
@@ -9902,17 +9905,39 @@ function syncActionProvenanceBadge(button, provenance) {
   return normalized;
 }
 
-function syncSessionTimelineHistoryButton() {
+function timelineShelfSummaryText(nodes = timelineSortedNodes(), headNode = currentTimelineHeadNode()) {
+  if (!Array.isArray(nodes) || !nodes.length) return "Upload an image to start your session history.";
+  const count = nodes.length;
+  const countLabel = `${count} state${count === 1 ? "" : "s"}`;
+  const summary = headNode ? timelineNodeSummary(headNode) : "Committed session history";
+  return `${countLabel} · ${summary}`;
+}
+
+function syncTimelineShelfToggle(nodes = timelineSortedNodes(), headNode = currentTimelineHeadNode()) {
   const timelineOpen = state.timelineOpen !== false;
-  if (!els.sessionTabHistory) return timelineOpen;
-  const historyTitleBase = timelineOpen ? "Hide History" : "Show History";
-  const historyTitle = appendActionProvenanceDescription(historyTitleBase, ACTION_PROVENANCE.LOCAL_ONLY);
-  syncActionProvenanceBadge(els.sessionTabHistory, ACTION_PROVENANCE.LOCAL_ONLY);
-  els.sessionTabHistory.title = historyTitle;
-  els.sessionTabHistory.setAttribute("aria-label", historyTitle);
-  els.sessionTabHistory.setAttribute("aria-pressed", timelineOpen ? "true" : "false");
-  els.sessionTabHistory.setAttribute("aria-expanded", timelineOpen ? "true" : "false");
-  els.sessionTabHistory.classList.toggle("is-open", timelineOpen);
+  const actionLabel = timelineOpen ? "Collapse history timeline" : "Expand history timeline";
+  const summary = timelineShelfSummaryText(nodes, headNode);
+  if (els.timelineToggle) {
+    els.timelineToggle.title = actionLabel;
+    els.timelineToggle.setAttribute("aria-label", `${actionLabel}. ${summary}`);
+    els.timelineToggle.setAttribute("aria-expanded", timelineOpen ? "true" : "false");
+  }
+  if (els.timelineToggleLabel) {
+    els.timelineToggleLabel.textContent = "History";
+  }
+  if (els.timelineToggleSummary) {
+    els.timelineToggleSummary.textContent = summary;
+  }
+  if (els.timelineDock) {
+    els.timelineDock.classList.toggle("is-collapsed", !timelineOpen);
+  }
+  if (els.timelineShell) {
+    els.timelineShell.classList.toggle("is-collapsed", !timelineOpen);
+  }
+  if (els.timelineBody) {
+    els.timelineBody.hidden = !timelineOpen;
+    els.timelineBody.setAttribute("aria-hidden", timelineOpen ? "false" : "true");
+  }
   return timelineOpen;
 }
 
@@ -10247,7 +10272,7 @@ function renderJuggernautShellChrome() {
     }
   }
   syncRuntimeStatusAffordances();
-  syncSessionTimelineHistoryButton();
+  syncTimelineDockVisibility();
 
   const toolHookReady = typeof state.juggernautShell.toolInvoker === "function";
   const exportHookReady = typeof state.juggernautShell.psdExportHandler === "function" || typeof invoke === "function";
@@ -32881,12 +32906,9 @@ function toggleTimeline(options = {}) {
 }
 
 function syncTimelineDockVisibility() {
-  const timelineOpen = syncSessionTimelineHistoryButton();
-  if (els.timelineDock) {
-    els.timelineDock.classList.toggle("hidden", !timelineOpen);
-    els.timelineDock.setAttribute("aria-hidden", timelineOpen ? "false" : "true");
-  }
-  return timelineOpen;
+  const nodes = timelineSortedNodes();
+  const headNode = currentTimelineHeadNode();
+  return syncTimelineShelfToggle(nodes, headNode);
 }
 
 function setTimelineOpen(open = true, { persist = false } = {}) {
@@ -33522,6 +33544,7 @@ function renderTimeline() {
   if (!strip) return false;
   const nodes = timelineSortedNodes();
   const headNode = currentTimelineHeadNode();
+  syncTimelineShelfToggle(nodes, headNode);
   const structureKey = [
     state.timelineVersion,
     state.timelineLatestNodeId || "",
@@ -45083,9 +45106,9 @@ function installSessionTabStripUi() {
     });
   }
 
-  if (els.sessionTabHistory && els.sessionTabHistory.dataset.bound !== "1") {
-    els.sessionTabHistory.dataset.bound = "1";
-    els.sessionTabHistory.addEventListener("click", () => {
+  if (els.timelineToggle && els.timelineToggle.dataset.bound !== "1") {
+    els.timelineToggle.dataset.bound = "1";
+    els.timelineToggle.addEventListener("click", () => {
       bumpInteraction();
       toggleTimeline({ persist: true });
     });

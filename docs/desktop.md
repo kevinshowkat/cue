@@ -7,7 +7,8 @@ There is no web app.
 ## Current Shell
 
 - One window with a brand strip, in-app session tabs, and one shared canvas surface.
-- Titlebar actions for `New session`, `Fork tab`, `History`, `Agent Run`, `Design Review`, and `Export`.
+- Titlebar actions for `New session`, `Fork tab`, `Agent Run`, `Design Review`, and `Export`.
+- A persistent history shelf sits directly under the brand strip; collapse keeps a visible stub instead of hiding timeline access completely.
 - Native `File` menu items for new/open/save/close/import/export/settings.
 - The empty-canvas hint is visual only; uploads come from the left-rail `Upload` action, `File > Import Photos...`, or drag-drop.
 
@@ -16,7 +17,7 @@ There is no web app.
 - **Run**: a folder under `~/brood_runs/` that stores imported files, artifacts, receipts, `events.jsonl`, `juggernaut-session.json`, and `session-timeline.json`.
 - **Session tab**: an isolated shell state bound to one run directory. Tabs can be created fresh, opened from disk, saved, closed, or forked from the current tab.
 - **Shared canvas**: only the active tab is attached to runtime/events at a time; switching tabs swaps session state into the shared surface.
-- **Visual timeline**: tab-local history toggled by the titlebar `History` button. It can restore prior committed states without re-running model work.
+- **Visual timeline**: tab-local history shown in a dedicated shelf under the titlebar. It can collapse to a visible stub and restore prior committed states without re-running model work.
 - **Communication overlay**: the `Marker`, `Highlight`, `Magic Select`, and `Eraser` tools used to scope `Design Review`; `Make Space` remains a dormant runtime affordance.
 - **Agent Run**: a compact goal-driven panel that can step or auto-run review, tool-preview/create, and export actions against the current tab.
 

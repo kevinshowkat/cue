@@ -112,18 +112,6 @@
           </div>
           <div class="session-tab-strip-actions" role="group" aria-label="Session actions">
             <button
-              id="session-tab-history"
-              class="session-tab-strip-action session-tab-runtime-action session-tab-history-action"
-              type="button"
-              aria-label="History"
-              aria-controls="timeline-dock"
-              aria-expanded="true"
-              aria-pressed="true"
-              title="History"
-            >
-              <span class="session-tab-action-icon" data-juggernaut-icon-slot="history" aria-hidden="true"></span>
-            </button>
-            <button
               id="juggernaut-agent-runner-open"
               class="session-tab-strip-action session-tab-runtime-action session-tab-runtime-icon-action"
               type="button"
@@ -259,28 +247,48 @@
       </div>
       <div id="timeline-dock" class="timeline-dock" role="group" aria-label="Session timeline">
         <div id="timeline-shell" class="timeline-shell">
-          <div class="timeline-track">
-            <button
-              id="timeline-prev"
-              class="timeline-arrow timeline-arrow--left is-hidden"
-              type="button"
-              aria-label="Show earlier timeline states"
-              tabindex="-1"
-            >
-              <span aria-hidden="true">‹</span>
-            </button>
-            <div id="timeline-strip" class="timeline-strip" aria-label="Timeline states"></div>
-            <button
-              id="timeline-next"
-              class="timeline-arrow timeline-arrow--right is-hidden"
-              type="button"
-              aria-label="Show later timeline states"
-              tabindex="-1"
-            >
-              <span aria-hidden="true">›</span>
-            </button>
+          <button
+            id="timeline-toggle"
+            class="timeline-toggle"
+            type="button"
+            aria-label="Collapse history timeline"
+            aria-controls="timeline-body"
+            aria-expanded="true"
+            title="Collapse history timeline"
+          >
+            <span class="timeline-toggle-grip" aria-hidden="true">
+              <span class="session-tab-action-icon timeline-toggle-icon" data-juggernaut-icon-slot="history" aria-hidden="true"></span>
+            </span>
+            <span class="timeline-toggle-copy">
+              <span id="timeline-toggle-label" class="timeline-toggle-label">History</span>
+              <span id="timeline-toggle-summary" class="timeline-toggle-summary">Upload an image to start your session history.</span>
+            </span>
+            <span class="timeline-toggle-chevron" aria-hidden="true">⌄</span>
+          </button>
+          <div id="timeline-body" class="timeline-body">
+            <div class="timeline-track">
+              <button
+                id="timeline-prev"
+                class="timeline-arrow timeline-arrow--left is-hidden"
+                type="button"
+                aria-label="Show earlier timeline states"
+                tabindex="-1"
+              >
+                <span aria-hidden="true">‹</span>
+              </button>
+              <div id="timeline-strip" class="timeline-strip" aria-label="Timeline states"></div>
+              <button
+                id="timeline-next"
+                class="timeline-arrow timeline-arrow--right is-hidden"
+                type="button"
+                aria-label="Show later timeline states"
+                tabindex="-1"
+              >
+                <span aria-hidden="true">›</span>
+              </button>
+            </div>
+            <div id="timeline-detail" class="timeline-detail muted" aria-live="polite"></div>
           </div>
-          <div id="timeline-detail" class="timeline-detail muted" aria-live="polite"></div>
         </div>
       </div>
       <main class="workspace">
