@@ -1766,13 +1766,17 @@ button.ghost:hover {
 
 .tool.has-action-provenance.selected,
 .tool.has-action-provenance.selected:hover,
-.tool.has-action-provenance.depressed {
-  border-color: rgba(102, 139, 242, 0.74);
-  border-top-color: rgba(224, 234, 255, 0.3);
-  border-left-color: rgba(202, 217, 255, 0.26);
-  background: rgba(53, 104, 235, 0.98);
+.tool.has-action-provenance.depressed,
+.tool.has-action-provenance:active {
+  border-color: rgba(72, 109, 214, 0.82);
+  border-top-color: rgba(205, 219, 255, 0.24);
+  border-left-color: rgba(188, 206, 255, 0.2);
+  background: rgba(37, 82, 194, 0.98);
   color: rgba(255, 255, 255, 0.98);
-  box-shadow: none;
+  box-shadow:
+    inset 0 2px 8px rgba(17, 42, 104, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  filter: none;
 }
 
 .tool.has-action-provenance .tool-icon {
@@ -10762,8 +10766,7 @@ button.ghost:hover {
 }
 
 .session-tab-runtime-action.has-action-provenance,
-.session-tab-runtime-action.has-action-provenance.is-ready,
-.session-tab-runtime-action.has-action-provenance.is-active-request {
+.session-tab-runtime-action.has-action-provenance.is-ready {
   border-color: rgba(111, 149, 255, 0.46);
   color: rgba(255, 255, 255, 0.98);
   background: rgba(53, 104, 235, 0.98);
@@ -10778,10 +10781,15 @@ button.ghost:hover {
     rgba(14, 22, 32, 0.90);
 }
 
+.session-tab-strip-action.has-action-provenance:active,
+.session-tab-runtime-action.has-action-provenance:active,
 .session-tab-runtime-action.has-action-provenance.is-active-request {
-  border-color: rgba(136, 167, 255, 0.66);
-  background: rgba(53, 104, 235, 0.98);
-  box-shadow: none;
+  border-color: rgba(118, 152, 255, 0.62);
+  background: rgba(37, 82, 194, 0.98);
+  box-shadow:
+    inset 0 2px 8px rgba(17, 42, 104, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  filter: none;
 }
 
 .session-tab-runtime-action.is-agent-runner-live::after {
@@ -11916,14 +11924,31 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenan
 body.juggernaut-shell .tool.has-action-provenance.selected,
 body.juggernaut-shell .tool.has-action-provenance.selected:hover,
 body.juggernaut-shell .tool.has-action-provenance.depressed,
+body.juggernaut-shell .tool.has-action-provenance:active,
 body.juggernaut-shell .juggernaut-tool-rail .tool.has-action-provenance.is-active-request,
 body.juggernaut-shell .juggernaut-tool-rail .tool.has-action-provenance.is-active-request:hover {
-  border-color: rgba(74, 116, 229, 0.42);
-  border-top-color: rgba(232, 238, 255, 0.84);
-  border-left-color: rgba(214, 226, 255, 0.74);
-  background: rgba(53, 104, 235, 0.98);
+  border-color: rgba(66, 102, 207, 0.48);
+  border-top-color: rgba(220, 230, 255, 0.76);
+  border-left-color: rgba(204, 218, 255, 0.66);
+  background: rgba(37, 82, 194, 0.98);
   color: rgba(255, 255, 255, 0.98);
-  box-shadow: none;
+  box-shadow:
+    inset 0 2px 8px rgba(17, 42, 104, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:active,
+body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:active,
+body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance.is-active-request {
+  border-color: rgba(76, 115, 223, 0.4);
+  border-top-color: rgba(222, 231, 255, 0.74);
+  border-left-color: rgba(208, 220, 255, 0.64);
+  background: rgba(37, 82, 194, 0.98);
+  color: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    inset 0 2px 8px rgba(17, 42, 104, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  filter: none;
 }
 
 body.juggernaut-shell .tool.has-action-provenance:disabled,

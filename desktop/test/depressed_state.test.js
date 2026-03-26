@@ -115,3 +115,18 @@ test("Model-backed blue buttons keep a visible inactive state when unavailable",
   assert.match(visualSystemCss, /\.juggernaut-tool-rail \.tool\.has-action-provenance\.is-selection-empty,\s*$/m);
   assert.match(visualSystemCss, /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-selection-empty\s*\{[\s\S]*opacity:\s*1;/);
 });
+
+test("Model-backed blue buttons darken and recess when active", () => {
+  assert.match(
+    css,
+    /\.tool\.has-action-provenance\.selected,\s*\.tool\.has-action-provenance\.selected:hover,\s*\.tool\.has-action-provenance\.depressed,\s*\.tool\.has-action-provenance:active\s*\{[\s\S]*background:\s*rgba\(37,\s*82,\s*194,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(17,\s*42,\s*104,\s*0\.42\)/
+  );
+  assert.match(
+    css,
+    /\.session-tab-strip-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(37,\s*82,\s*194,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(17,\s*42,\s*104,\s*0\.42\)/
+  );
+  assert.match(
+    visualSystemCss,
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-pressing\s*\{[\s\S]*background:\s*rgba\(37,\s*82,\s*194,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(17,\s*42,\s*104,\s*0\.36\)/
+  );
+});
