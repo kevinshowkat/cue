@@ -127,6 +127,7 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-history-action\[data-provenance="local_only"\]\[aria-pressed="true"\],/);
   assert.match(css, /\.session-tab-runtime-action\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*white-space:\s*nowrap/s);
+  assert.match(css, /#juggernaut-agent-runner-open svg\s*\{[\s\S]*transform:\s*translateX\(-0\.75px\);/);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-history-action,\s*body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\s*\{/);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-history-action\s*\{[\s\S]*width:\s*34px[\s\S]*padding:\s*0;/);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-runtime-icon-action\s*\{[\s\S]*width:\s*34px[\s\S]*padding:\s*0;/);

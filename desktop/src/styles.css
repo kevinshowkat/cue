@@ -11122,6 +11122,10 @@ button.ghost:hover {
   flex: 0 0 auto;
 }
 
+#juggernaut-agent-runner-open svg {
+  transform: translateX(-0.75px);
+}
+
 .session-tab-runtime-action.is-ready {
   border-color: rgba(82, 255, 148, 0.22);
   color: rgba(82, 255, 148, 0.98);
