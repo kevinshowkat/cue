@@ -5,9 +5,10 @@ import { createDesignReviewMemoryStore, readDesignReviewAccountMemory } from "..
 import { createDesignReviewPipeline } from "../src/design_review_pipeline.js";
 import { createUploadAnalysisCacheStore } from "../src/design_review_upload_analysis.js";
 
-test("design review pipeline plans, fans out previews, and records acceptance memory", async () => {
+test("design review pipeline plans proposals without rendering preview images and records acceptance memory", async () => {
   const memoryStore = createDesignReviewMemoryStore();
   const uploadAnalysisCache = createUploadAnalysisCacheStore();
+  let previewCalls = 0;
   const pipeline = createDesignReviewPipeline({
     providerRouter: {
       async runPlanner() {
@@ -36,10 +37,9 @@ test("design review pipeline plans, fans out previews, and records acceptance me
           }),
         };
       },
-      async runPreview({ proposal, outputPath }) {
-        return {
-          outputPath: outputPath || `/tmp/${proposal.proposalId}.png`,
-        };
+      async runPreview() {
+        previewCalls += 1;
+        throw new Error("preview rendering should stay disabled");
       },
       async runUploadAnalysis() {
         return {
@@ -74,7 +74,7 @@ test("design review pipeline plans, fans out previews, and records acceptance me
   assert.equal(result.proposals.length, 2);
   assert.equal(result.slots.length, 2);
   assert.equal(result.slots.every((slot) => slot.status === "ready"), true);
-  assert.ok(result.slots[0].outputPreviewRef.endsWith(".png"));
+  assert.equal(previewCalls, 0);
 
   const memory = pipeline.acceptProposal(result.proposals[0].proposalId, {
     stylePatterns: ["neutral card"],
@@ -162,59 +162,6 @@ test("design review pipeline ignores stale review completions after a newer revi
   assert.equal(secondResult.request.requestId, "review-2");
   assert.equal(secondResult.proposals[0].label, "Second review wins");
   assert.equal(pipeline.getState().request.requestId, "review-2");
-});
-
-test("design review pipeline preserves preview debug payloads on failed proposal slots", async () => {
-  const pipeline = createDesignReviewPipeline({
-    providerRouter: {
-      async runPlanner() {
-        return {
-          text: JSON.stringify({
-            proposals: [
-              {
-                label: "Swap background",
-                imageId: "img-1",
-                actionType: "background_replace",
-                why: "A cleaner backdrop will make the product read faster.",
-                previewBrief: "Preview a soft studio sweep background.",
-                applyBrief: "Replace the background only.",
-              },
-            ],
-          }),
-        };
-      },
-      async runPreview() {
-        const error = new Error("The review preview could not be prepared.");
-        error.debugInfo = {
-          tauriCommand: "run_design_review_provider_request",
-          route: {
-            kind: "preview",
-            provider: "google",
-          },
-          providerRequest: {
-            model: "gemini-3.1-flash-image-preview",
-          },
-        };
-        throw error;
-      },
-    },
-  });
-
-  const result = await pipeline.startReview({
-    request: {
-      requestId: "review-preview-debug",
-      primaryImageId: "img-1",
-      visibleCanvasRef: "/tmp/review-visible.png",
-      visibleCanvasContext: {
-        runDir: "/tmp/review-run",
-      },
-    },
-  });
-
-  assert.equal(result.status, "ready");
-  assert.equal(result.slots[0].status, "failed");
-  assert.equal(result.slots[0].debugInfo?.route?.kind, "preview");
-  assert.equal(result.slots[0].debugInfo?.providerRequest?.model, "gemini-3.1-flash-image-preview");
 });
 
 test("design review pipeline applies an accepted proposal and emits structured apply events", async () => {

@@ -2,7 +2,6 @@ import {
   buildDesignReviewPlannerPrompt,
   buildDesignReviewRequest,
   buildUploadAnalysisPrompt,
-  createDesignReviewPreviewJob,
   createDesignReviewSkeletonSlots,
   parseDesignReviewPlannerResponse,
 } from "./design_review_contract.js";
@@ -56,13 +55,6 @@ function freshState() {
     startedAt: null,
     completedAt: null,
   };
-}
-
-function previewFilePathForProposal(runDir = "", proposalId = "") {
-  const dir = String(runDir || "").trim();
-  const proposalKey = String(proposalId || "").trim().replace(/[^a-z0-9._:-]+/gi, "_");
-  if (!dir) return "";
-  return `${dir}/review-preview-${proposalKey || "proposal"}.png`;
 }
 
 function applyFilePathForProposal(runDir = "", proposalId = "") {
@@ -425,7 +417,7 @@ export function createDesignReviewPipeline({
         request,
         slots: initialSlots,
         proposals: [],
-        previewJobs: initialSlots.map((slot) => slot.previewJob),
+        previewJobs: [],
         plannerDebugInfo: null,
         activeApply: null,
         lastApplyEvent: null,
@@ -467,134 +459,27 @@ export function createDesignReviewPipeline({
         0,
         normalizedSlotCount
       );
-      const previewJobs = rankedProposals.map((proposal, index) =>
-        createDesignReviewPreviewJob({
-          request,
-          proposal,
-          rank: index + 1,
-          status: "queued",
-        })
-      );
       let nextSlots = initialSlots.slice(0, normalizedSlotCount).map((slot, index) => ({
         ...slot,
-        status: rankedProposals[index] ? "preview_pending" : "failed",
+        status: rankedProposals[index] ? "ready" : "failed",
         proposal: rankedProposals[index] ? { ...rankedProposals[index] } : null,
-        previewJob: previewJobs[index] ? { ...previewJobs[index] } : slot.previewJob,
         error: rankedProposals[index] ? null : "planner_returned_no_proposal",
         debugInfo: rankedProposals[index] ? null : plannerDebugInfo,
       }));
       setState({
         ...state,
-        status: rankedProposals.length ? "previewing" : "failed",
+        status: rankedProposals.length ? "ready" : "failed",
         proposals: rankedProposals,
-        previewJobs,
+        previewJobs: [],
         plannerDebugInfo,
         slots: nextSlots,
         errors: rankedProposals.length ? [] : ["planner_returned_no_proposal"],
+        completedAt: new Date().toISOString(),
       });
       if (!rankedProposals.length) {
         if (!isCurrentRun()) return cloneJson(state);
-        setState({
-          ...state,
-          completedAt: new Date().toISOString(),
-        });
         return cloneJson(state);
       }
-
-      await Promise.all(
-        rankedProposals.map(async (proposal, index) => {
-          if (!isCurrentRun()) return;
-          const rank = index + 1;
-          const previewJob = previewJobs[index];
-          const outputPath = previewFilePathForProposal(request.visibleCanvasContext?.runDir, proposal.proposalId);
-          if (!isCurrentRun()) return;
-          state = {
-            ...state,
-            previewJobs: state.previewJobs.map((job) =>
-              job.previewJobId === previewJob.previewJobId ? { ...job, status: "running" } : job
-            ),
-            slots: patchSlot(state.slots, rank, {
-              status: "preview_running",
-              previewJob: {
-                ...previewJob,
-                status: "running",
-              },
-            }),
-          };
-          emit();
-          try {
-            const previewResult = await providerRouter.runPreview({
-              request,
-              proposal,
-              inputImage: request.visibleCanvasRef
-                ? {
-                    path: request.visibleCanvasRef,
-                    imageId: proposal.imageId || request.primaryImageId || null,
-                  }
-                : null,
-              outputPath,
-            });
-            if (!isCurrentRun()) return;
-            state = {
-              ...state,
-              previewJobs: state.previewJobs.map((job) =>
-                job.previewJobId === previewJob.previewJobId
-                  ? {
-                      ...job,
-                      status: "succeeded",
-                      outputPreviewRef:
-                        readFirstString(previewResult?.outputPath, previewResult?.outputPreviewRef) || outputPath || null,
-                    }
-                  : job
-              ),
-              slots: patchSlot(state.slots, rank, {
-                status: "ready",
-                outputPreviewRef:
-                  readFirstString(previewResult?.outputPath, previewResult?.outputPreviewRef) || outputPath || null,
-                previewJob: {
-                  ...previewJob,
-                  status: "succeeded",
-                  outputPreviewRef:
-                    readFirstString(previewResult?.outputPath, previewResult?.outputPreviewRef) || outputPath || null,
-                },
-              }),
-            };
-            emit();
-          } catch (error) {
-            if (!isCurrentRun()) return;
-            state = {
-              ...state,
-              previewJobs: state.previewJobs.map((job) =>
-                job.previewJobId === previewJob.previewJobId
-                  ? {
-                      ...job,
-                      status: "failed",
-                      failureReason: String(error?.message || error || "preview_failed"),
-                    }
-                  : job
-              ),
-              slots: patchSlot(state.slots, rank, {
-                status: "failed",
-                error: String(error?.message || error || "preview_failed"),
-                debugInfo: cloneJson(error?.debugInfo || null),
-                previewJob: {
-                  ...previewJob,
-                  status: "failed",
-                  failureReason: String(error?.message || error || "preview_failed"),
-                  debugInfo: cloneJson(error?.debugInfo || null),
-                },
-              }),
-            };
-            emit();
-          }
-        })
-      );
-      if (!isCurrentRun()) return cloneJson(state);
-      setState({
-        ...state,
-        status: "ready",
-        completedAt: new Date().toISOString(),
-      });
       return cloneJson(state);
     },
     acceptProposal(proposalId, { stylePatterns = [], useCasePatterns = [], reviewState = null } = {}) {

@@ -128,8 +128,8 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 12. `Make Space` uses region-candidate selection semantics to say "preserve or create room here" for review and later execution.
 13. `Eraser` clears communication marks and region proposals only; it does not delete image pixels or committed edits.
 14. The user triggers `Design review` explicitly with the existing `Design review` button.
-15. Review analyzes the whole visible canvas plus the marked region or active region candidate, can infer the relevant image or region from mark overlap and intersection at review time, and immediately opens a floating proposal tray near that area with 2-3 preview skeleton slots.
-16. The planner/reviewer uses `GPT-5.4 vision`, preview rendering uses `gemini-3.1-flash-image-preview`, and accepting a proposal routes through the normal execution layer to produce a real single-image replacement edit in the active tab.
+15. Review analyzes the whole visible canvas plus the marked region or active region candidate, can infer the relevant image or region from mark overlap and intersection at review time, and immediately opens a floating proposal tray near that area with 2-3 proposal skeleton slots.
+16. The planner/reviewer uses `GPT-5.4 vision`, and accepting a proposal routes through the normal execution layer to produce a real single-image replacement edit in the active tab.
 17. If the active tab is busy, tab switching is blocked or deferred until the session reaches a safe boundary.
 18. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
 19. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
@@ -245,9 +245,8 @@ Notes:
 - Review-time targeting may infer the relevant image, images, or region from mark overlap and intersection instead of requiring marker-time attachment.
 - Review output is action-first: proposals describe likely edits to perform, not conversational critique.
 - The proposal tray floats near the marked region or active region candidate rather than opening as chat.
-- The tray reserves 2-3 preview slots immediately as skeletons while preview work starts.
+- The tray reserves 2-3 proposal slots immediately as skeletons while planning completes.
 - `GPT-5.4 vision` is the planner/reviewer for design-review reasoning.
-- `gemini-3.1-flash-image-preview` is the preview renderer for proposal thumbnails.
 - Final apply of any accepted proposal remains routed through the normal execution layer and receipt system, replacing the target image in place for the active tab when a valid target image is present.
 - When an accepted proposal depends on multiple images, final apply sends one editable target image plus any additional reference images needed for guidance, and replaces only the target image.
 - Upload-time analysis must never block `Design review`; review can run with cached context, fresh context, or no prior upload analysis.
@@ -434,37 +433,15 @@ Rules:
     markIds: ["mark_123"],
     regionCandidateId: "region_123" | null
   },
-  previewJobId: "preview_123",
   rank: 1,
-  status: "preview_pending"
+  status: "ready"
 }
 ```
 
 Rules:
 - Proposals are action-first and must resolve to an executable action intent or capability, not freeform critique alone.
 - `rationaleCodes` may explain ranking internally without exposing provider details in the main workflow.
-- `status` starts as `preview_pending`, then advances independently of final apply.
-
-`previewJob`:
-
-```text
-{
-  schemaVersion: "proposal-preview-job-v1",
-  previewJobId: "preview_123",
-  proposalId: "proposal_123",
-  renderer: "gemini-3.1-flash-image-preview",
-  planner: "gpt-5.4-vision",
-  inputImageId: "asset_123",
-  status: "queued" | "running" | "succeeded" | "failed",
-  outputPreviewRef: "previews/proposal_123.png" | null,
-  failureReason: null
-}
-```
-
-Rules:
-- The UI should instantiate 2-3 preview slots immediately as skeletons before any `previewJob` succeeds.
-- `planner` and `renderer` are explicit in the contract even though the visible main workflow stays provider-agnostic.
-- A completed `previewJob` never applies the edit by itself; acceptance routes through the normal execution layer.
+- `status` is `ready` once planning returns a valid proposal and advances independently of final apply.
 
 ### 12. 2D And 3D Outputs
 - 2D outputs: layered raster export plus native design-tool outputs.
@@ -513,7 +490,7 @@ Rules:
 - The app uses a glassy layered material system on macOS, with platform-appropriate equivalents on Windows and Linux.
 - Suggested edits appear as previews or icon cards, not chat bubbles.
 - The editing surface must feel closer to Photoshop or Figma than to a chatbot.
-- `Design review` proposals appear in a floating tray near the marked region, with 2-3 preview skeletons visible immediately.
+- `Design review` proposals appear in a floating tray near the marked region, with 2-3 proposal skeletons visible immediately.
 
 ## Technical Direction
 ### Baseline Architecture
@@ -555,7 +532,6 @@ Rules:
 - Local routing must remain compatible with no-network mode.
 - V1 design-review defaults:
   - planner/reviewer: `GPT-5.4 vision`
-  - preview renderer: `gemini-3.1-flash-image-preview`
 
 ## Export Targets
 ### Required Release Targets
@@ -604,7 +580,7 @@ Rules:
 - Blank-canvas marks are valid review input.
 - Review analyzes the visible canvas plus the marked region or active region candidate.
 - Review may infer the relevant image or region from overlap and intersection with the mark instead of relying on marker-time image attachment.
-- The proposal tray floats near the marked region and shows 2-3 preview slots immediately as skeletons.
+- The proposal tray floats near the marked region and shows 2-3 proposal slots immediately as skeletons.
 - Accepted proposals still execute through the normal execution layer and replace the target image in place when the review request resolves to an existing target image.
 - If the accepted proposal needs cross-image context, the apply request includes the target image plus additional reference images, but only the target image is mutated and replaced.
 
@@ -661,7 +637,7 @@ Rules:
 
 ### Milestone 2: Guided Intent Loop
 - Add live single-image intent inference, visual suggestions, and non-blocking proposal pipeline.
-- Add communication-driven design review with floating proposal trays and preview jobs.
+- Add communication-driven design review with floating proposal trays and planner-driven proposal cards.
 - Stabilize concurrent provider calls and queue behavior.
 
 ### Milestone 3: Tool Runtime

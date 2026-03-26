@@ -20,4 +20,5 @@ test("design review provider command runs on a blocking task instead of the imme
 
 test("design review provider sync dispatcher supports the final apply kind", () => {
   assert.match(mainRs, /"apply"\s*=>\s*run_design_review_apply_request\(&request,\s*&vars\)/);
+  assert.doesNotMatch(mainRs, /"preview"\s*=>\s*run_design_review_preview_request\(&request,\s*&vars\)/);
 });

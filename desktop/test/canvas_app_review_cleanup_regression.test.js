@@ -93,7 +93,7 @@ test("requestCommunicationDesignReview primes immediate communication-tray state
     buildCommunicationReviewPendingSlots: () => [
       { status: "preparing", title: "Preparing review context" },
       { status: "planning", title: "Planning actions" },
-      { status: "preview_pending", title: "Holding preview slots" },
+      { status: "planning", title: "Preparing proposals" },
     ],
     setCommunicationProposalTray: (next, meta) => {
       trayCalls.push({ next, meta });
@@ -121,7 +121,7 @@ test("requestCommunicationDesignReview primes immediate communication-tray state
   assert.deepEqual(trayCalls[0].next.anchor, buttonAnchor);
   assert.deepEqual(
     trayCalls[0].next.slots.map((slot) => slot.status),
-    ["preparing", "planning", "preview_pending"]
+    ["preparing", "planning", "planning"]
   );
   assert.equal(trayCalls[0].meta.render, false);
   assert.equal(trayCalls[0].meta.dispatch, false);

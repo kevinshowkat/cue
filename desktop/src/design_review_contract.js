@@ -2,12 +2,10 @@ const DESIGN_REVIEW_DEFAULT_SLOT_COUNT = 3;
 
 export const DESIGN_REVIEW_REQUEST_SCHEMA = "design-review-request-v1";
 export const DESIGN_REVIEW_PROPOSAL_SCHEMA = "design-review-proposal-v1";
-export const DESIGN_REVIEW_PREVIEW_JOB_SCHEMA = "proposal-preview-job-v1";
 export const DESIGN_REVIEW_APPLY_REQUEST_SCHEMA = "design-review-apply-request-v1";
 export const DESIGN_REVIEW_ACCOUNT_MEMORY_SCHEMA = "design-review-account-memory-v1";
 export const DESIGN_REVIEW_UPLOAD_ANALYSIS_SCHEMA = "design-review-upload-analysis-v1";
 export const DESIGN_REVIEW_PLANNER_MODEL = "gpt-5.4";
-export const DESIGN_REVIEW_PREVIEW_MODEL = "gemini-3.1-flash-image-preview";
 // Provider-facing Gemini model id for the final apply path (marketed as Nano Banana 2).
 export const DESIGN_REVIEW_FINAL_APPLY_MODEL = "gemini-3.1-flash-image-preview";
 export const DESIGN_REVIEW_TRIGGER = "design_review_button";
@@ -1352,43 +1350,6 @@ export function buildUploadAnalysisPrompt({
   ].join("\n\n");
 }
 
-export function buildDesignReviewPreviewPrompt({ request = {}, proposal = {} } = {}) {
-  const normalizedRequest = asRecord(request) || {};
-  const normalizedProposal = asRecord(proposal) || {};
-  const focusContract = resolveProposalFocusContract({
-    request: normalizedRequest,
-    proposal: normalizedProposal,
-  });
-  const negativeConstraints = uniqueStrings(
-    normalizedProposal.negativeConstraints || normalizedProposal.negative_constraints || [],
-    { limit: 8 }
-  );
-  const payload = {
-    requestId: normalizedRequest.requestId || null,
-    imageId: normalizedProposal.imageId || normalizedRequest.primaryImageId || null,
-    label: clampText(normalizedProposal.label, 90),
-    actionType: clampText(normalizedProposal.actionType, 96),
-    why: clampText(normalizedProposal.why, 220),
-    previewBrief: clampText(normalizedProposal.previewBrief, 240),
-    applyBrief: clampText(normalizedProposal.applyBrief, 220),
-    negativeConstraints,
-    protectedRegions: focusContract.protectedRegions,
-    reservedSpaceIntent: focusContract.reservedSpaceIntent,
-  };
-  return [
-    "Render a low-resolution visual preview for this Juggernaut proposal.",
-    "Preserve composition unless the proposal explicitly reframes it.",
-    "Treat negativeConstraints as hard limits.",
-    focusContract.protectedRegions.length ? "Treat protectedRegions as no-edit zones." : null,
-    focusContract.reservedSpaceIntent?.areas?.length
-      ? "When reservedSpaceIntent exists, preserve or create room in those areas without overwriting protected content."
-      : null,
-    JSON.stringify(payload, null, 2),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
 function buildDesignReviewApplyRequestSnapshot(request = {}) {
   const normalized = asRecord(request) || {};
   const visibleCanvasContext = asRecord(normalized.visibleCanvasContext) || {};
@@ -1686,7 +1647,7 @@ function normalizeProposal(rawProposal = {}, request = {}, { index = 0 } = {}) {
     preserveProtectedRegions: protectedRegionIds.length > 0,
     preserveReservedSpace: reservedSpaceAreaIds.length > 0,
     rank: Math.max(1, Number(raw.rank) || index + 1),
-    status: "preview_pending",
+    status: "ready",
   };
 }
 
@@ -1711,56 +1672,17 @@ export function parseDesignReviewPlannerResponse(raw, request = {}) {
   };
 }
 
-export function createDesignReviewPreviewJob({
-  request = {},
-  proposal = {},
-  rank = 1,
-  status = "queued",
-  outputPreviewRef = null,
-  failureReason = null,
-} = {}) {
-  const proposalId = readFirstString(proposal.proposalId) || nowId("proposal");
-  return {
-    schemaVersion: DESIGN_REVIEW_PREVIEW_JOB_SCHEMA,
-    previewJobId: `${proposalId}:preview:${rank}`,
-    proposalId,
-    renderer: DESIGN_REVIEW_PREVIEW_MODEL,
-    planner: DESIGN_REVIEW_PLANNER_MODEL,
-    inputImageId: readFirstString(proposal.imageId, request.primaryImageId) || null,
-    rank: Math.max(1, Number(rank) || 1),
-    status: readFirstString(status) || "queued",
-    focusInputIds: focusInputIdsFromList(proposal.focusInputs || request.focusInputs || []),
-    protectedRegionIds: protectedRegionIdsFromList(proposal.protectedRegions || request.protectedRegions || []),
-    reservedSpaceAreaIds: reservedSpaceAreaIdsFromIntent(
-      proposal.reservedSpaceIntent || request.reservedSpaceIntent || null
-    ),
-    outputPreviewRef: readFirstString(outputPreviewRef) || null,
-    failureReason: readFirstString(failureReason) || null,
-  };
-}
-
 export function createDesignReviewSkeletonSlots({
   request = {},
   slotCount = DESIGN_REVIEW_DEFAULT_SLOT_COUNT,
 } = {}) {
   const count = clamp(slotCount, 2, 3);
   return Array.from({ length: count }, (_, index) => {
-    const previewJob = createDesignReviewPreviewJob({
-      request,
-      proposal: {
-        proposalId: `${request.requestId || "review"}:skeleton:${index + 1}`,
-        imageId: request.primaryImageId || null,
-      },
-      rank: index + 1,
-      status: "queued",
-    });
     return {
       slotId: `${request.requestId || "review"}:slot:${index + 1}`,
       rank: index + 1,
       status: "skeleton",
       proposal: null,
-      previewJob,
-      outputPreviewRef: null,
       error: null,
     };
   });

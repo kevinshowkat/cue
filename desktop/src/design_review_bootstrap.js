@@ -1,4 +1,3 @@
-import { convertFileSrc } from "@tauri-apps/api/tauri";
 import { readBinaryFile, writeBinaryFile } from "@tauri-apps/api/fs";
 import { join } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/tauri";
@@ -413,9 +412,6 @@ function ensureReviewStyle() {
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
 }
-#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-media {
-  display: none;
-}
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-copy {
   gap: 4px;
 }
@@ -455,8 +451,8 @@ function ensureReviewStyle() {
 }
 .design-review-runtime-card {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   align-items: start;
 }
 .communication-proposal-slot.is-actionable {
@@ -469,31 +465,6 @@ function ensureReviewStyle() {
 .communication-proposal-slot.is-actionable:focus-visible {
   outline: 2px solid rgba(28, 118, 242, 0.52);
   outline-offset: 2px;
-}
-.design-review-runtime-media {
-  position: relative;
-  width: 76px;
-  height: 76px;
-  border-radius: 12px;
-  overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(247, 250, 253, 0.96), rgba(231, 237, 243, 0.98)),
-    radial-gradient(circle at 30% 22%, rgba(94, 161, 255, 0.12), transparent 44%);
-  box-shadow: inset 0 0 0 1px rgba(203, 212, 222, 0.9);
-}
-.design-review-runtime-media img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.design-review-runtime-media.is-skeleton::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(105deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0));
-  transform: translateX(-120%);
-  animation: communication-slot-shimmer 1.35s linear infinite;
 }
 .design-review-runtime-copy {
   display: grid;
@@ -929,16 +900,16 @@ function createPendingRuntimeReviewState(requestId = null) {
       },
       {
         rank: 2,
-        status: "preview_pending",
+        status: "planning",
         proposal: {
-          label: "Queue options",
+          label: "Rank options",
         },
       },
       {
         rank: 3,
-        status: "preview_pending",
+        status: "planning",
         proposal: {
-          label: "Render previews",
+          label: "Prepare proposals",
         },
       },
     ],
@@ -955,7 +926,7 @@ function collectReviewDebugPayload(state = {}) {
     .map((slot, index) => ({
       rank: Number(slot?.rank) || index + 1,
       label: readFirstString(slot?.proposal?.label, slot?.proposal?.title) || `Proposal ${index + 1}`,
-      failureStage: slot?.status === "apply_failed" ? "apply" : "preview",
+      failureStage: slot?.status === "apply_failed" ? "apply" : "review",
       error: readFirstString(slot?.error) || null,
       debugInfo: JSON.parse(JSON.stringify(slot?.apply?.debugInfo || slot?.debugInfo)),
     }));
@@ -1039,7 +1010,7 @@ export function mapDesignReviewStateToCommunicationTray(state = {}) {
       imageId: readFirstString(slot?.proposal?.imageId) || null,
       actionType: readFirstString(slot?.proposal?.actionType) || null,
       targetRegionId: readFirstString(slot?.proposal?.targetRegion?.regionCandidateId) || null,
-      previewStatus: readFirstString(slot?.previewJob?.status) || null,
+      previewStatus: readFirstString(slot?.status) || null,
     })),
   };
 }
@@ -1152,17 +1123,6 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
     const layout = document.createElement("div");
     layout.className = "design-review-runtime-card";
 
-    const media = document.createElement("div");
-    media.className = "design-review-runtime-media";
-    if (slot?.outputPreviewRef) {
-      const img = document.createElement("img");
-      img.src = convertFileSrc(slot.outputPreviewRef);
-      img.alt = "";
-      media.appendChild(img);
-    } else {
-      media.classList.add("is-skeleton");
-    }
-
     const copy = document.createElement("div");
     copy.className = "design-review-runtime-copy";
 
@@ -1217,7 +1177,7 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
       copy.appendChild(actions);
     }
 
-    layout.append(media, copy);
+    layout.append(copy);
     card.appendChild(layout);
     fragment.appendChild(card);
   });

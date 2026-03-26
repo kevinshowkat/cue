@@ -1815,8 +1815,7 @@ function communicationProposalDefaultLabel(index = 0, status = "skeleton") {
   const normalized = normalizeCommunicationProposalSlotStatus(status);
   if (normalized === "preparing") return "Preparing";
   if (normalized === "planning") return "Planning";
-  if (normalized === "preview_pending") return "Preview";
-  if (normalized === "preview_running") return "Rendering";
+  if (normalized === "preview_pending" || normalized === "preview_running") return "Planning";
   return `Proposal ${Math.max(0, Number(index) || 0) + 1}`;
 }
 
@@ -1824,8 +1823,7 @@ function communicationProposalDefaultTitle(status = "skeleton") {
   const normalized = normalizeCommunicationProposalSlotStatus(status);
   if (normalized === "preparing") return "Preparing review context";
   if (normalized === "planning") return "Planning actions";
-  if (normalized === "preview_pending") return "Holding preview slots";
-  if (normalized === "preview_running") return "Rendering previews";
+  if (normalized === "preview_pending" || normalized === "preview_running") return "Preparing proposals";
   if (normalized === "ready") return "Proposal ready";
   if (normalized === "failed") return "Review failed";
   return "Review warming up";
@@ -1835,10 +1833,9 @@ function communicationProposalDefaultCopy(status = "skeleton") {
   const normalized = normalizeCommunicationProposalSlotStatus(status);
   if (normalized === "preparing") return "Capturing the visible canvas and any marks.";
   if (normalized === "planning") return "Ranking action-first edit directions.";
-  if (normalized === "preview_pending") return "Preview renders will appear here as they start.";
-  if (normalized === "preview_running") return "Preview renders are in flight.";
-  if (normalized === "failed") return "The review preview could not be prepared.";
-  return "Waiting for planner and previews.";
+  if (normalized === "preview_pending" || normalized === "preview_running") return "Preparing proposal cards.";
+  if (normalized === "failed") return "The review proposals could not be prepared.";
+  return "Waiting for planner and proposals.";
 }
 
 function createCommunicationProposalSlot(index = 0, slot = {}) {
@@ -23141,11 +23138,11 @@ function installAgentObservableDriverRuntime() {
 
 function buildCommunicationReviewPendingSlots({ overallStatus = "preparing" } = {}) {
   const normalized = normalizeCommunicationProposalSlotStatus(overallStatus);
-  let slotStatuses = ["preparing", "planning", "preview_pending"];
+  let slotStatuses = ["preparing", "planning", "planning"];
   if (normalized === "planning") {
-    slotStatuses = ["planning", "planning", "preview_pending"];
+    slotStatuses = ["planning", "planning", "planning"];
   } else if (normalized === "preview_running" || normalized === "ready") {
-    slotStatuses = ["planning", "preview_running", "preview_running"];
+    slotStatuses = ["planning", "planning", "ready"];
   } else if (normalized === "failed") {
     slotStatuses = ["failed", "failed", "failed"];
   }

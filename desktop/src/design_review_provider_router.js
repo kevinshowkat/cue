@@ -1,14 +1,11 @@
 import {
   DESIGN_REVIEW_FINAL_APPLY_MODEL,
   DESIGN_REVIEW_PLANNER_MODEL,
-  DESIGN_REVIEW_PREVIEW_MODEL,
   buildDesignReviewApplyRequest,
-  buildDesignReviewPreviewPrompt,
   normalizeDesignReviewApplyModel,
 } from "./design_review_contract.js";
 
 const VALID_PLANNER_PROVIDERS = new Set(["openai", "openrouter"]);
-const VALID_PREVIEW_PROVIDERS = new Set(["google", "openrouter"]);
 const VALID_APPLY_PROVIDERS = new Set(["google", "openrouter"]);
 const DESIGN_REVIEW_PLANNER_PROVIDER_ERROR =
   "Edit proposals requires OPENAI_API_KEY or OPENROUTER_API_KEY.";
@@ -267,11 +264,9 @@ function withPlannerFallbackDebugInfo(result, { fallbackFromProvider = "", fallb
 export function resolveDesignReviewProviderSelection({
   keyStatus = {},
   preferredPlannerProvider = "",
-  preferredPreviewProvider = "",
 } = {}) {
   const status = asRecord(keyStatus) || {};
   const preferredPlanner = normalizeProviderPreference(preferredPlannerProvider, VALID_PLANNER_PROVIDERS);
-  const preferredPreview = normalizeProviderPreference(preferredPreviewProvider, VALID_PREVIEW_PROVIDERS);
 
   let plannerProvider = "missing";
   if (preferredPlanner === "openai" && status.openai) {
@@ -284,18 +279,9 @@ export function resolveDesignReviewProviderSelection({
     plannerProvider = "openrouter";
   }
 
-  const previewProvider =
-    (preferredPreview === "google" && status.gemini) || (preferredPreview === "openrouter" && status.openrouter)
-      ? preferredPreview
-      : status.gemini
-        ? "google"
-        : status.openrouter
-          ? "openrouter"
-          : "auto";
   const applyProvider = status.gemini ? "google" : status.openrouter ? "openrouter" : "missing";
   return {
     plannerProvider,
-    previewProvider,
     applyProvider,
   };
 }
@@ -305,7 +291,6 @@ export function createDesignReviewProviderRouter({
   keyStatus = {},
   getKeyStatus = null,
   preferredPlannerProvider = "",
-  preferredPreviewProvider = "",
 } = {}) {
   const preferredPlanner = normalizeProviderPreference(preferredPlannerProvider, VALID_PLANNER_PROVIDERS);
 
@@ -341,7 +326,6 @@ export function createDesignReviewProviderRouter({
     return resolveDesignReviewProviderSelection({
       keyStatus: liveKeyStatus,
       preferredPlannerProvider,
-      preferredPreviewProvider,
     });
   }
 
@@ -351,7 +335,6 @@ export function createDesignReviewProviderRouter({
     const fallbackSelection = resolveDesignReviewProviderSelection({
       keyStatus: liveKeyStatus,
       preferredPlannerProvider: "openrouter",
-      preferredPreviewProvider,
     });
     return fallbackSelection?.plannerProvider === "openrouter" ? "openrouter" : "";
   }
@@ -378,7 +361,6 @@ export function createDesignReviewProviderRouter({
     const providerSelection = resolveDesignReviewProviderSelection({
       keyStatus: liveKeyStatus,
       preferredPlannerProvider,
-      preferredPreviewProvider,
     });
     assertPlannerProviderAvailable(providerSelection);
     const plannerRequest = {
@@ -410,7 +392,6 @@ export function createDesignReviewProviderRouter({
       return resolveDesignReviewProviderSelection({
         keyStatus,
         preferredPlannerProvider,
-        preferredPreviewProvider,
       });
     },
     async runPlanner({ request = {}, prompt = "", images = [] } = {}) {
@@ -446,19 +427,6 @@ export function createDesignReviewProviderRouter({
         model: DESIGN_REVIEW_PLANNER_MODEL,
         image,
         prompt,
-      });
-    },
-    async runPreview({ request = {}, proposal = {}, inputImage = null, outputPath = "" } = {}) {
-      const providerSelection = await resolveProviderSelectionLive();
-      return runProviderRequest({
-        kind: "preview",
-        provider: providerSelection.previewProvider,
-        model: DESIGN_REVIEW_PREVIEW_MODEL,
-        requestId: request?.requestId || null,
-        inputImage,
-        outputPath,
-        prompt: buildDesignReviewPreviewPrompt({ request, proposal }),
-        proposal,
       });
     },
     async runApply({

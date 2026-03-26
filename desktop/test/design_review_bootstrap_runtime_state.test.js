@@ -282,8 +282,8 @@ test("review bootstrap collapses the runtime tray only while review work is busy
   assert.equal(shouldCollapseReviewTray({ status: "planning", slots: [] }), true);
   assert.equal(
     shouldCollapseReviewTray({
-      status: "previewing",
-      slots: [{ status: "preview_running" }],
+      status: "planning",
+      slots: [{ status: "planning" }],
     }),
     true
   );
@@ -537,10 +537,7 @@ test("review bootstrap shows only the active proposal card while apply is runnin
   assert.equal(tray.classList.contains("is-collapsed"), true);
   assert.equal(list.children.length, 1);
   assert.equal(list.children[0].dataset.slotIndex, "1");
-  assert.equal(
-    list.children[0].children[0].children[1].children[1].textContent,
-    "Swap the backdrop"
-  );
+  assert.equal(list.children[0].querySelector(".design-review-runtime-title")?.textContent, "Swap the backdrop");
 });
 
 test("review bootstrap seeds a pending runtime tray before async review work starts", () => {

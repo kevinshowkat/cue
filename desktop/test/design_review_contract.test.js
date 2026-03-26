@@ -186,7 +186,7 @@ test("design review planner response parser accepts fenced JSON and normalizes p
   assert.deepEqual(response.proposals[0].negativeConstraints, ["Do not change wardrobe", "Do not crop the face"]);
 });
 
-test("design review skeleton slots reserve 2-3 preview slots immediately", () => {
+test("design review skeleton slots reserve 2-3 proposal slots immediately", () => {
   const slots = createDesignReviewSkeletonSlots({
     request: {
       requestId: "review-2",
@@ -197,7 +197,7 @@ test("design review skeleton slots reserve 2-3 preview slots immediately", () =>
 
   assert.equal(slots.length, 3);
   assert.equal(slots.every((slot) => slot.status === "skeleton"), true);
-  assert.equal(slots.every((slot) => slot.previewJob.status === "queued"), true);
+  assert.equal(slots.every((slot) => slot.proposal === null), true);
 });
 
 test("design review planner prompt stays compact, restores canvas-scope constraints, and defines actions as edit intents", () => {

@@ -7,7 +7,7 @@ import {
   resolveDesignReviewProviderSelection,
 } from "../src/design_review_provider_router.js";
 
-test("design review provider selection prefers OpenAI for planning and preserves preview routing", () => {
+test("design review provider selection prefers OpenAI for planning and Gemini for final apply", () => {
   const selection = resolveDesignReviewProviderSelection({
     keyStatus: {
       openai: true,
@@ -17,8 +17,8 @@ test("design review provider selection prefers OpenAI for planning and preserves
   });
 
   assert.equal(selection.plannerProvider, "openai");
-  assert.equal(selection.previewProvider, "google");
   assert.equal(selection.applyProvider, "google");
+  assert.equal("previewProvider" in selection, false);
 });
 
 test("design review provider selection falls back to OpenRouter for planning when OpenAI is unavailable", () => {
@@ -57,6 +57,7 @@ test("design review provider router sends planner requests with the shared gpt-5
   assert.equal(requests[0].kind, "planner");
   assert.equal(requests[0].provider, "openai");
   assert.equal(requests[0].model, DESIGN_REVIEW_PLANNER_MODEL);
+  assert.equal(typeof router.runPreview, "undefined");
 });
 
 test("design review provider router exposes first-class goal-contract requests on the shared planner transport", async () => {

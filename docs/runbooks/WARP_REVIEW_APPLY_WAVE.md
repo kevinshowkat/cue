@@ -11,9 +11,8 @@ Use this when repointing Codex tabs to land the review-accept apply path.
 - Route the accepted proposal through a real Gemini final-apply call using Nano Banana 2.
 - Send Gemini one editable target image plus any additional reference images needed by the accepted proposal.
 - Replace the target uploaded image in place inside the active tab.
-- Keep the planner and preview split intact:
+- Keep the planner and final-apply split intact:
   - planner = `gpt-5.4`
-  - preview = `gemini-3.1-flash-image-preview`
   - final apply = Gemini Nano Banana 2
 
 ## 3. Create And Warm Worktrees
@@ -81,7 +80,7 @@ cd /Users/mainframe/Desktop/projects/juggernaut-review-apply-verify && codex
 
 ## 8. Success Criteria
 - Accepting a ready proposal triggers a real final apply request.
-- The final apply request uses Gemini Nano Banana 2, not the preview renderer.
+- The final apply request uses Gemini Nano Banana 2.
 - Cross-image proposals send all relevant reference images, but only one target image is edited and replaced.
 - The resulting image replaces the target uploaded image in place.
 - Replacement stays inside the active tab only.
