@@ -1268,11 +1268,14 @@
       let bootPrepStatusTimer = 0;
       let bootPrepStatusIndex = 0;
       let bootStatusQueue = bootPrepStatusQueue;
+      let bootProgressValue = 0;
 
       function setBootProgress(progress = 0) {
         if (!bootProgressBarEl) return;
         const normalized = Math.max(0, Math.min(100, Number(progress) || 0));
-        bootProgressBarEl.style.transform = `scaleX(${normalized / 100})`;
+        const next = Math.max(bootProgressValue, normalized);
+        bootProgressValue = next;
+        bootProgressBarEl.style.transform = `scaleX(${next / 100})`;
       }
 
       function setBootStatus(message = "", progress = null) {

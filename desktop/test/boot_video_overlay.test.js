@@ -28,7 +28,11 @@ test("startup boot overlay points at the local Desktop MP4 and gates reveal unti
   assert.match(html, /const APP_WINDOW_WIDTH = 1400;/);
   assert.match(html, /const APP_WINDOW_HEIGHT = 900;/);
   assert.match(html, /const bootProgressBarEl = document\.getElementById\("boot-video-progress-bar"\);/);
+  assert.match(html, /let bootProgressValue = 0;/);
   assert.match(html, /function setBootProgress\(progress = 0\)/);
+  assert.match(html, /const next = Math\.max\(bootProgressValue, normalized\);/);
+  assert.match(html, /bootProgressValue = next;/);
+  assert.match(html, /bootProgressBarEl\.style\.transform = `scaleX\(\$\{next \/ 100\}\)`;/);
   assert.match(html, /const bootReadyStatusQueue = \[/);
   assert.match(html, /let bootStatusQueue = bootPrepStatusQueue;/);
   assert.match(html, /function startBootPrepStatusCycle\(queue = bootPrepStatusQueue\)/);
