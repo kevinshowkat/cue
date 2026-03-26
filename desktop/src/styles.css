@@ -11123,7 +11123,7 @@ button.ghost:hover {
 }
 
 #juggernaut-agent-runner-open svg {
-  transform: translateX(-0.75px);
+  transform: translateX(0.75px);
 }
 
 .session-tab-runtime-action.is-ready {
