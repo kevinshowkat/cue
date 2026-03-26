@@ -1,15 +1,17 @@
 # PSD Export Slice
 
-This document defines the current PSD export contract for Cue's desktop shell.
+This document defines the current PSD export contract for Cue's desktop shell and notes the adjacent low-effort raster formats that now share the same native export pipeline.
 
 ## Contract
 
 - UI entrypoints:
   - titlebar `Export > PSD`
-  - native `File > Export Session...`
+  - titlebar `Export > PNG | JPG | WEBP | TIFF`
+  - native `File > Export Session...` (still defaults to PSD)
   - Agent Run `export_psd`
 - Export entrypoint: Tauri command `export_run`
-- Format: `.psd`
+- Formats supported by the native exporter: `.psd`, `.png`, `.jpg`, `.webp`, `.tiff`
+- This document focuses on the PSD contract specifically.
 - Destination: user-chosen save path from the native save dialog
 - Source artifact: flattened PNG render of the current visible canvas composition
 - Receipt output: JSON receipt from the native exporter, including timeline/export metadata
@@ -18,7 +20,7 @@ This document defines the current PSD export contract for Cue's desktop shell.
 
 - The export menu now writes a valid PSD file for the current canvas result.
 - The PSD preserves transparency from the flattened canvas render.
-- The titlebar export menu also offers flattened PNG, but this document covers the PSD path specifically.
+- The titlebar export menu also offers flattened PNG, JPG, WEBP, and TIFF through the same receipt-bearing native exporter.
 - The export receipt captures:
   - run directory
   - active image id
@@ -36,6 +38,7 @@ This document defines the current PSD export contract for Cue's desktop shell.
 - PSD output is flattened into a single bitmap composite rather than editable per-image PSD layers.
 - Effect-token state, mask semantics, and tool semantics are not reified as editable PSD structures in this slice.
 - Export dimensions follow Cue canvas world geometry in CSS pixels, not source DPI metadata.
+- JPG export flattens transparency onto white because the target format does not preserve alpha.
 
 ## Follow-Up
 

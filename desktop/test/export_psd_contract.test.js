@@ -39,18 +39,39 @@ test("PSD export limitations explicitly call out flattened fidelity", () => {
   assert.ok(limitations.some((entry) => /css pixels/i.test(String(entry))));
 });
 
-test("Export run invokes Tauri with a structured PSD request", () => {
-  assert.match(app, /const outPath = await chooseExportDestinationPath\(\{[\s\S]*format: "psd",[\s\S]*suggestedStem: stem,[\s\S]*stamp,[\s\S]*\}\);/);
-  assert.match(app, /const flattenedSourcePath =[\s\S]*join\(state\.runDir,\s*`export-\$\{stem\}-\$\{stamp\}\.flattened\.png`\)/);
-  assert.match(app, /const request = buildPsdExportRequest\(\{ outPath, flattenedSourcePath, composite \}\);/);
-  assert.match(app, /await invoke\("export_run", \{ request \}\);/);
+test("Export helpers normalize raster aliases and filter extensions", () => {
+  const normalizeExportFormat = loadNamedFunction("normalizeExportFormat");
+  globalThis.normalizeExportFormat = normalizeExportFormat;
+  try {
+    const exportFormatFilterExtensions = loadNamedFunction("exportFormatFilterExtensions");
+    assert.equal(normalizeExportFormat("jpeg"), "jpg");
+    assert.equal(normalizeExportFormat("tif"), "tiff");
+    assert.equal(normalizeExportFormat("webp"), "webp");
+    assert.deepEqual(exportFormatFilterExtensions("jpg"), ["jpg", "jpeg"]);
+    assert.deepEqual(exportFormatFilterExtensions("tiff"), ["tiff", "tif"]);
+  } finally {
+    delete globalThis.normalizeExportFormat;
+  }
 });
 
-test("Export prompts for a save path so the user can rename the file and keeps PNG receipts beside it", () => {
+test("Export run invokes Tauri with a structured raster request", () => {
+  assert.match(app, /async function exportRunInFormat\(format = "psd"\)/);
+  assert.match(app, /const normalizedFormat = normalizeExportFormat\(format\);/);
+  assert.match(app, /const outPath = await chooseExportDestinationPath\(\{[\s\S]*format: normalizedFormat,[\s\S]*suggestedStem: stem,[\s\S]*stamp,[\s\S]*\}\);/);
+  assert.match(app, /const flattenedSourcePath =[\s\S]*join\(state\.runDir,\s*`export-\$\{stem\}-\$\{stamp\}\.flattened\.png`\)/);
+  assert.match(app, /const request = buildPsdExportRequest\(\{[\s\S]*outPath,[\s\S]*flattenedSourcePath,[\s\S]*composite,[\s\S]*format: normalizedFormat,[\s\S]*\}\);/);
+  assert.match(app, /await invoke\("export_run", \{ request \}\);/);
+  assert.match(app, /async function exportRun\(\) \{\s*return exportRunInFormat\("psd"\);\s*\}/);
+  assert.match(app, /async function exportRunPng\(\) \{\s*return exportRunInFormat\("png"\);\s*\}/);
+  assert.match(app, /async function exportRunJpg\(\) \{\s*return exportRunInFormat\("jpg"\);\s*\}/);
+  assert.match(app, /async function exportRunWebp\(\) \{\s*return exportRunInFormat\("webp"\);\s*\}/);
+  assert.match(app, /async function exportRunTiff\(\) \{\s*return exportRunInFormat\("tiff"\);\s*\}/);
+});
+
+test("Export prompts for a save path so the user can rename the file across raster formats", () => {
   assert.match(app, /const suggestedName = `export-\$\{exportBaseStem\(suggestedStem\)\}-\$\{String\(stamp \|\| exportTimestampTag\(\)\)\}\$\{extension\}`;/);
-  assert.match(app, /const picked = await save\(\{[\s\S]*defaultPath,[\s\S]*filters: \[\{ name: label, extensions: \[extension\.replace\("\.", ""\)\] \}\],[\s\S]*\}\);/);
+  assert.match(app, /const extension = exportFormatExtension\(normalizedFormat\);/);
+  assert.match(app, /const label = exportFormatLabel\(normalizedFormat\);/);
+  assert.match(app, /const picked = await save\(\{[\s\S]*defaultPath,[\s\S]*filters: \[\{ name: label, extensions: exportFormatFilterExtensions\(normalizedFormat\) \}\],[\s\S]*\}\);/);
   assert.match(app, /const normalizedPath = normalizeExportPathExtension\(selectedPath,\s*extension\);/);
-  assert.match(app, /const outPath = await chooseExportDestinationPath\(\{[\s\S]*format: "png",[\s\S]*suggestedStem: stem,[\s\S]*stamp,[\s\S]*\}\);/);
-  assert.match(app, /const exportDir = typeof dirname === "function" \? await dirname\(outPath\)\.catch\(\(\) => ""\) : "";/);
-  assert.match(app, /outputDir: exportDir \|\| state\.runDir/);
 });

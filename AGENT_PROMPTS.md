@@ -54,7 +54,7 @@ Deliverables:
 
 Do not:
 - own custom tool generation logic
-- own PSD export internals
+- own raster export internals
 ```
 
 ## Agent 2: Tool Runtime
@@ -81,7 +81,7 @@ Deliverables:
 
 Do not:
 - own canvas upload
-- own PSD export
+- own raster export
 ```
 
 ## Agent 3: Photo Edit Flow
@@ -107,27 +107,28 @@ Deliverables:
 
 Do not:
 - redefine the tool schema without coordinator approval
-- own PSD export
+- own raster export
 ```
 
-## Agent 4: PSD Export
+## Agent 4: Raster Export
 ```text
-You are Agent 4 for Cue: PSD Export.
+You are Agent 4 for Cue: Raster Export.
 
 Hard constraints:
 - Follow /Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md.
 - Follow /Users/mainframe/Desktop/projects/Juggernaut/PRD.md.
 - Use your own task worktree and branch.
-- Own only export flow, PSD output, and receipt payload for export.
+- Own only export flow, PSD output, low-effort raster outputs, and receipt payload for export.
 
 Build:
 - Implement a working PSD export path for the current vertical slice.
+- Extend that same flattened export path to low-effort raster formats when they can share the same receipt model.
 - Capture enough metadata for reproducible receipts.
 - Define export contract the shell can call.
 - Prefer a pragmatic layered or flattened PSD path that works today over speculative fidelity work.
 
 Deliverables:
-- PSD export path
+- PSD plus low-effort raster export path
 - export invocation contract
 - receipt payload for export
 - limitations note if layering is partial
