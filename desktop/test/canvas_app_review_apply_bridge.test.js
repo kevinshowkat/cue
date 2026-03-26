@@ -1152,6 +1152,7 @@ test("communication tray host preserves runtime-owned review slots while still p
     requestAnimationFrame: (callback) => callback(),
     clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
     positionCommunicationProposalTrayElement,
+    hydrateCommunicationProposalTrayMedia() {},
   });
 
   renderCommunicationProposalTray();
@@ -1223,6 +1224,7 @@ test("communication tray host still rebuilds shell slots when the tray is no lon
     requestAnimationFrame: (callback) => callback(),
     clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
     positionCommunicationProposalTrayElement,
+    hydrateCommunicationProposalTrayMedia() {},
     document: {
       createDocumentFragment() {
         return {

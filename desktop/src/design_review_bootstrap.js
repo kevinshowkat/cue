@@ -411,17 +411,17 @@ function ensureReviewStyle() {
   word-break: break-word;
 }
 #communication-proposal-tray.is-design-review-runtime {
-  width: min(360px, calc(100vw - 40px));
-  min-width: 280px;
+  width: min(760px, calc(100vw - 48px));
+  min-width: min(320px, calc(100vw - 28px));
   overflow: hidden;
   border-color: rgba(203, 212, 222, 0.94);
   background:
-    radial-gradient(220px 126px at 18% -6%, rgba(255, 149, 92, 0.10), transparent 62%),
-    radial-gradient(220px 132px at 104% 10%, rgba(94, 161, 255, 0.10), transparent 66%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.985), rgba(246, 249, 252, 0.972));
+    radial-gradient(240px 146px at 16% -8%, rgba(255, 149, 92, 0.12), transparent 62%),
+    radial-gradient(260px 152px at 102% 8%, rgba(94, 161, 255, 0.12), transparent 66%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.988), rgba(243, 247, 252, 0.978));
   box-shadow:
-    0 22px 56px rgba(18, 28, 40, 0.14),
-    0 1px 0 rgba(255, 255, 255, 0.86) inset;
+    0 26px 68px rgba(18, 28, 40, 0.18),
+    0 1px 0 rgba(255, 255, 255, 0.88) inset;
   backdrop-filter: blur(22px) saturate(1.15);
 }
 #communication-proposal-tray.is-design-review-runtime.is-collapsed {
@@ -443,7 +443,7 @@ function ensureReviewStyle() {
 }
 #communication-proposal-tray.is-design-review-runtime .communication-proposal-tray-close {
   border-radius: 999px;
-  padding: 4px 10px;
+  padding: 5px 11px;
   background: rgba(233, 238, 244, 0.84);
   color: rgba(60, 77, 98, 0.78);
 }
@@ -453,23 +453,173 @@ function ensureReviewStyle() {
   min-width: 0;
   flex: 1 1 auto;
 }
+.design-review-runtime-surface {
+  margin-bottom: 12px;
+}
+.design-review-runtime-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.9fr);
+  gap: 12px;
+  padding: 12px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(238, 244, 251, 0.94));
+  box-shadow:
+    inset 0 0 0 1px rgba(191, 203, 218, 0.76),
+    0 18px 32px rgba(18, 30, 44, 0.08);
+}
+.design-review-runtime-stage-media {
+  position: relative;
+  overflow: hidden;
+  min-height: 240px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(28, 40, 54, 0.92), rgba(18, 28, 40, 0.96));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 20px 32px rgba(18, 30, 44, 0.18);
+}
+.design-review-runtime-stage-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 180ms ease;
+  background: rgba(16, 24, 34, 0.82);
+}
+.design-review-runtime-stage-image-original {
+  opacity: 0;
+}
+.design-review-runtime-stage[data-compare-mode="original"] .design-review-runtime-stage-image-original {
+  opacity: 1;
+}
+.design-review-runtime-stage[data-compare-mode="original"] .design-review-runtime-stage-image-proposal {
+  opacity: 0;
+}
+.design-review-runtime-overlay-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.design-review-runtime-overlay {
+  position: absolute;
+  border-radius: 14px;
+  backdrop-filter: blur(1px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.36);
+}
+.design-review-runtime-overlay-safe_area {
+  border: 2px dashed rgba(93, 212, 255, 0.94);
+  background: rgba(93, 212, 255, 0.12);
+}
+.design-review-runtime-overlay-protected {
+  border: 2px solid rgba(255, 188, 90, 0.94);
+  background: rgba(255, 188, 90, 0.12);
+}
+.design-review-runtime-overlay-badge {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(9, 16, 24, 0.78);
+  color: rgba(241, 248, 255, 0.96);
+}
+.design-review-runtime-stage-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  gap: 3px;
+  padding: 14px 14px 15px;
+  background:
+    linear-gradient(180deg, rgba(10, 16, 24, 0), rgba(10, 16, 24, 0.82) 38%, rgba(10, 16, 24, 0.92));
+  color: rgba(245, 250, 255, 0.96);
+  transition: opacity 180ms ease;
+}
+.design-review-runtime-stage[data-compare-mode="original"] .design-review-runtime-stage-caption {
+  opacity: 0;
+}
+.design-review-runtime-stage-caption-title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.22;
+}
+.design-review-runtime-stage-caption-copy {
+  font-size: 12px;
+  line-height: 1.38;
+  color: rgba(222, 232, 242, 0.86);
+}
+.design-review-runtime-stage-detail {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+.design-review-runtime-compare {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.design-review-runtime-chip {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 11px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: rgba(231, 237, 244, 0.96);
+  color: rgba(71, 86, 106, 0.84);
+}
+.design-review-runtime-chip.is-active {
+  background: rgba(28, 118, 242, 0.94);
+  color: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 8px 18px rgba(28, 118, 242, 0.18);
+}
+.design-review-runtime-chip:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .communication-proposal-slot-list {
   gap: 6px;
 }
 #communication-proposal-tray.is-design-review-runtime .communication-proposal-slot-list {
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(182px, 1fr));
+  gap: 10px;
 }
 #communication-proposal-tray.is-design-review-runtime .communication-proposal-slot {
-  padding: 7px 10px;
-  border-radius: 12px;
+  padding: 10px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(234, 241, 249, 0.96));
+  box-shadow: 0 14px 26px rgba(18, 30, 44, 0.08);
 }
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .communication-proposal-slot {
   padding: 7px 10px;
   border-radius: 12px;
 }
+#communication-proposal-tray.is-design-review-runtime .communication-proposal-slot.is-selected {
+  border-color: rgba(28, 118, 242, 0.44);
+  box-shadow:
+    0 18px 32px rgba(18, 30, 44, 0.10),
+    0 0 0 2px rgba(28, 118, 242, 0.18);
+}
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-card {
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
+}
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-surface,
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-card-preview {
+  display: none;
 }
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-copy {
   gap: 3px;
@@ -484,7 +634,8 @@ function ensureReviewStyle() {
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-why,
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-hint,
 #communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-detail-row,
-#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-actions {
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-actions,
+#communication-proposal-tray.is-design-review-runtime.is-collapsed .design-review-runtime-compare {
   display: none;
 }
 .design-review-runtime-meta {
@@ -512,15 +663,30 @@ function ensureReviewStyle() {
 .design-review-runtime-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0;
+  gap: 9px;
   align-items: start;
+}
+.design-review-runtime-card-preview {
+  position: relative;
+  overflow: hidden;
+  min-height: 118px;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(18, 28, 40, 0.92), rgba(12, 20, 30, 0.96));
+}
+.design-review-runtime-card-preview-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .communication-proposal-slot.is-actionable {
   cursor: pointer;
 }
 .communication-proposal-slot.is-actionable:hover {
-  border-color: rgba(28, 118, 242, 0.22);
-  box-shadow: 0 16px 28px rgba(17, 31, 48, 0.12);
+  border-color: rgba(28, 118, 242, 0.24);
+  box-shadow: 0 18px 30px rgba(17, 31, 48, 0.12);
 }
 .communication-proposal-slot.is-actionable:focus-visible {
   outline: 2px solid rgba(28, 118, 242, 0.52);
@@ -629,6 +795,14 @@ function ensureReviewStyle() {
 .design-review-runtime-action.design-review-runtime-action-secondary {
   background: rgba(233, 238, 244, 0.96);
   color: rgba(61, 78, 98, 0.84);
+}
+@media (max-width: 760px) {
+  .design-review-runtime-stage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #communication-proposal-tray.is-design-review-runtime .communication-proposal-slot-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 `;
   document.head.appendChild(style);
@@ -1058,35 +1232,57 @@ export function mapDesignReviewStateToCommunicationTray(state = {}) {
     focusInputCount: focusInputs.length,
     protectedRegionCount: protectedRegions.length,
     reservedSpaceAreaCount: reservedSpaceAreas.length,
-    slots: slots.map((slot, index) => ({
-      focusInputCount: Array.isArray(slot?.proposal?.focusInputs) ? slot.proposal.focusInputs.length : 0,
-      protectedRegionCount: Array.isArray(slot?.proposal?.protectedRegions)
-        ? slot.proposal.protectedRegions.length
-        : 0,
-      reservedSpaceAreaCount: Array.isArray(slot?.proposal?.reservedSpaceIntent?.areas)
-        ? slot.proposal.reservedSpaceIntent.areas.length
-        : 0,
-      preserveProtectedRegions:
-        slot?.proposal?.preserveProtectedRegions === true ||
-        Boolean(slot?.proposal?.protectedRegions?.length),
-      preserveReservedSpace:
-        slot?.proposal?.preserveReservedSpace === true ||
-        Boolean(slot?.proposal?.reservedSpaceIntent?.areas?.length),
-      slotId: readFirstString(slot?.slotId) || `design-review-slot-${index + 1}`,
-      status: communicationTraySlotStatus(slot?.status),
-      label: `Proposal ${Number(slot?.rank) || index + 1}`,
-      title: clampText(
-        slot?.proposal?.label ||
-          slot?.proposal?.title ||
-          (slot?.status === "failed" ? "Review failed" : "Review warming up"),
-        92
-      ),
-      copy: slotSummaryText(slot),
-      imageId: readFirstString(slot?.proposal?.imageId) || null,
-      actionType: readFirstString(slot?.proposal?.actionType) || null,
-      targetRegionId: readFirstString(slot?.proposal?.targetRegion?.regionCandidateId) || null,
-      previewStatus: readFirstString(slot?.status) || null,
-    })),
+    slots: slots.map((slot, index) => {
+      const preserveRegionIds = Array.from(
+        new Set(
+          (Array.isArray(slot?.preserveRegionIds)
+            ? slot.preserveRegionIds
+            : Array.isArray(slot?.proposal?.preserveRegionIds)
+              ? slot.proposal.preserveRegionIds
+              : []
+          )
+            .map((value) => readFirstString(value))
+            .filter(Boolean)
+        )
+      );
+      const rationaleCodes = Array.from(
+        new Set(
+          (Array.isArray(slot?.rationaleCodes)
+            ? slot.rationaleCodes
+            : Array.isArray(slot?.proposal?.rationaleCodes)
+              ? slot.proposal.rationaleCodes
+              : []
+          )
+            .map((value) => readFirstString(value))
+            .filter(Boolean)
+        )
+      );
+      return {
+        focusInputCount: Array.isArray(slot?.proposal?.focusInputs) ? slot.proposal.focusInputs.length : 0,
+        protectedRegionCount: Array.isArray(slot?.proposal?.protectedRegions)
+          ? slot.proposal.protectedRegions.length
+          : 0,
+        reservedSpaceAreaCount: Array.isArray(slot?.proposal?.reservedSpaceIntent?.areas)
+          ? slot.proposal.reservedSpaceIntent.areas.length
+          : 0,
+        slotId: readFirstString(slot?.slotId) || `design-review-slot-${index + 1}`,
+        proposalId: readFirstString(slot?.proposal?.proposalId) || null,
+        status: communicationTraySlotStatus(slot?.status),
+        label: `Proposal ${Number(slot?.rank) || index + 1}`,
+        title: clampText(
+          slot?.proposal?.label ||
+            slot?.proposal?.title ||
+            (slot?.status === "failed" ? "Review failed" : "Review warming up"),
+          92
+        ),
+        copy: slotSummaryText(slot),
+        previewImagePath: readFirstString(slot?.previewImagePath, slot?.proposal?.previewImagePath) || null,
+        changedRegionBounds: normalizeBounds(slot?.changedRegionBounds || slot?.proposal?.changedRegionBounds),
+        preserveRegionIds,
+        rationaleCodes,
+        previewStatus: readFirstString(slot?.status) || null,
+      };
+    }),
   };
 }
 
@@ -1105,7 +1301,211 @@ function slotCanAcceptProposal(slot = null, requestApplyLocked = false) {
   return !requestApplyLocked;
 }
 
-function renderCommunicationTrayDetails(state = {}, onAccept = null) {
+function normalizeReviewSurfaceUiState(rawState = null, fallbackState = null) {
+  const record =
+    asRecord(rawState) ||
+    asRecord(fallbackState) ||
+    {};
+  const compareMode = readFirstString(record?.compareMode).toLowerCase();
+  return {
+    selectedProposalId: readFirstString(record?.selectedProposalId) || null,
+    compareMode: compareMode === "original" ? "original" : "proposal",
+    showSafeAreas: Boolean(record?.showSafeAreas),
+  };
+}
+
+function reviewSurfaceSlotEntries(state = {}) {
+  const slots = Array.isArray(state?.slots) ? state.slots : [];
+  const slotEntries = slots.map((slot, index) => ({ index, slot }));
+  const activeApplyProposalId = readFirstString(state?.activeApply?.proposalId);
+  const activeApplyRunning = readFirstString(state?.activeApply?.status).toLowerCase() === "running";
+  const runningEntries = slotEntries.filter(
+    ({ slot }) => readFirstString(slot?.status).toLowerCase() === "apply_running"
+  );
+  if (activeApplyRunning || runningEntries.length) {
+    const applyingEntries = activeApplyProposalId
+      ? slotEntries.filter(
+          ({ slot }) => readFirstString(slot?.proposal?.proposalId) === activeApplyProposalId
+        )
+      : [];
+    return applyingEntries.length
+      ? applyingEntries
+      : runningEntries.length
+        ? runningEntries
+        : slotEntries;
+  }
+  return slotEntries;
+}
+
+function reviewSurfaceImageCatalog(state = {}) {
+  const context = asRecord(state?.request?.visibleCanvasContext) || {};
+  return Array.isArray(context.images)
+    ? context.images.filter((image) => asRecord(image))
+    : [];
+}
+
+function resolveReviewProposalSourceImage(state = {}, proposal = {}) {
+  const images = reviewSurfaceImageCatalog(state);
+  if (!images.length) return null;
+  const request = asRecord(state?.request) || {};
+  const targetImageId = readFirstString(
+    proposal?.imageId,
+    request?.primaryImageId,
+    request?.activeImageId,
+    request?.selectedImageIds?.[0]
+  );
+  if (targetImageId) {
+    const match = images.find((image) =>
+      readFirstString(image?.id, image?.imageId) === targetImageId
+    );
+    if (match) return match;
+  }
+  return images.find((image) => Boolean(readFirstString(image?.path, image?.imagePath))) || null;
+}
+
+function resolveReviewProposalMedia(state = {}, slot = {}) {
+  const proposal = asRecord(slot?.proposal) || {};
+  const sourceImage = resolveReviewProposalSourceImage(state, proposal);
+  const sourcePath =
+    readFirstString(
+      sourceImage?.path,
+      sourceImage?.imagePath,
+      state?.request?.visibleCanvasRef
+    ) || null;
+  const previewImagePath =
+    readFirstString(
+      slot?.previewImagePath,
+      proposal?.previewImagePath,
+      slot?.apply?.outputPath
+    ) || null;
+  const width = Number(sourceImage?.width) || null;
+  const height = Number(sourceImage?.height) || null;
+  return {
+    sourceImage,
+    sourcePath,
+    previewImagePath,
+    displayPath: previewImagePath || sourcePath,
+    width,
+    height,
+  };
+}
+
+function resolveReviewOverlayRects(state = {}, proposal = {}, sourceImage = null) {
+  const imageId = readFirstString(
+    proposal?.imageId,
+    sourceImage?.id,
+    sourceImage?.imageId,
+    state?.request?.primaryImageId
+  );
+  const width = Number(sourceImage?.width) || 0;
+  const height = Number(sourceImage?.height) || 0;
+  const preserveRegionIds = Array.from(
+    new Set(
+      (Array.isArray(proposal?.preserveRegionIds) ? proposal.preserveRegionIds : [])
+        .map((value) => readFirstString(value))
+        .filter(Boolean)
+    )
+  );
+  if (!imageId || width <= 0 || height <= 0 || !preserveRegionIds.length) return [];
+  const request = asRecord(state?.request) || {};
+  const preserveRegionById = new Map();
+  for (const entry of Array.isArray(request?.reservedSpaceIntent?.areas) ? request.reservedSpaceIntent.areas : []) {
+    const regionId = readFirstString(entry?.reservedSpaceId);
+    if (!regionId || preserveRegionById.has(regionId)) continue;
+    preserveRegionById.set(regionId, {
+      ...entry,
+      _reviewRegionId: regionId,
+      _reviewKind: "safe_area",
+      _reviewLabel: "Safe Area",
+    });
+  }
+  for (const entry of Array.isArray(request?.protectedRegions) ? request.protectedRegions : []) {
+    const regionId = readFirstString(entry?.protectedRegionId);
+    if (!regionId || preserveRegionById.has(regionId)) continue;
+    preserveRegionById.set(regionId, {
+      ...entry,
+      _reviewRegionId: regionId,
+      _reviewKind: "protected",
+      _reviewLabel: "Keep",
+    });
+  }
+  const out = [];
+  const pushRect = (entry = {}) => {
+    const bounds = normalizeBounds(entry?.bounds);
+    const entryImageId = readFirstString(entry?.imageId, imageId) || imageId;
+    if (!bounds || entryImageId !== imageId) return;
+    const left = Math.max(0, Math.min(100, (bounds.x / width) * 100));
+    const top = Math.max(0, Math.min(100, (bounds.y / height) * 100));
+    const rectWidth = Math.max(0.5, Math.min(100, (bounds.width / width) * 100));
+    const rectHeight = Math.max(0.5, Math.min(100, (bounds.height / height) * 100));
+    out.push({
+      id: readFirstString(entry?._reviewRegionId) || `preserve:${out.length + 1}`,
+      kind: readFirstString(entry?._reviewKind) || "protected",
+      label: readFirstString(entry?._reviewLabel) || "Keep",
+      left,
+      top,
+      width: rectWidth,
+      height: rectHeight,
+    });
+  };
+  preserveRegionIds.forEach((regionId) => {
+    const entry = preserveRegionById.get(regionId);
+    if (!entry) return;
+    pushRect(entry);
+  });
+  return out;
+}
+
+function resolveReviewSurfaceUi(state = {}, runtimeState = null, trayState = null) {
+  const visibleSlotEntries = reviewSurfaceSlotEntries(state);
+  const firstSelectableEntry =
+    visibleSlotEntries.find(({ slot }) => readFirstString(slot?.proposal?.proposalId)) || null;
+  const firstProposalId = readFirstString(firstSelectableEntry?.slot?.proposal?.proposalId) || null;
+  const shellUi =
+    asRecord(trayState?.ui) ||
+    asRecord(shellBridge()?.communicationReview?.getState?.()?.proposalTray?.ui) ||
+    asRecord(shellBridge()?.communicationReview?.state?.proposalTray?.ui) ||
+    null;
+  const baseUi = normalizeReviewSurfaceUiState(shellUi, runtimeState?.reviewSurfaceUi);
+  if (baseUi.selectedProposalId) {
+    const stillPresent = visibleSlotEntries.some(
+      ({ slot }) => readFirstString(slot?.proposal?.proposalId) === baseUi.selectedProposalId
+    );
+    if (!stillPresent) baseUi.selectedProposalId = firstProposalId;
+  } else {
+    baseUi.selectedProposalId = firstProposalId;
+  }
+  if (runtimeState && typeof runtimeState === "object") {
+    runtimeState.reviewSurfaceUi = baseUi;
+  }
+  return baseUi;
+}
+
+function updateReviewSurfaceUi(runtimeState = null, patch = {}, { state = null, onAccept = null } = {}) {
+  const current = normalizeReviewSurfaceUiState(runtimeState?.reviewSurfaceUi);
+  const nextUi = normalizeReviewSurfaceUiState({
+    ...current,
+    ...(asRecord(patch) || {}),
+  });
+  if (runtimeState && typeof runtimeState === "object") {
+    runtimeState.reviewSurfaceUi = nextUi;
+  }
+  const shell = shellBridge();
+  if (typeof shell?.setCommunicationProposalTrayUi === "function") {
+    shell.setCommunicationProposalTrayUi(nextUi);
+    return nextUi;
+  }
+  if (shell?.communicationReview && typeof shell.communicationReview.setTrayUi === "function") {
+    shell.communicationReview.setTrayUi(nextUi);
+    return nextUi;
+  }
+  if (state) {
+    renderCommunicationTrayDetails(state, onAccept, runtimeState);
+  }
+  return nextUi;
+}
+
+function renderCommunicationTrayDetails(state = {}, onAccept = null, runtimeState = null, trayState = null) {
   ensureReviewStyle();
   const tray = communicationTrayRoot();
   const list = communicationTraySlotList();
@@ -1136,41 +1536,212 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
     head.querySelector(".design-review-runtime-head-actions")?.remove();
   }
 
-  const slots = Array.isArray(state?.slots) ? state.slots : [];
   const requestApplyLocked = Boolean(
     readFirstString(state?.activeApply?.requestId) &&
     readFirstString(state?.activeApply?.requestId) ===
       readFirstString(state?.request?.requestId)
   );
-  const slotEntries = slots.map((slot, index) => ({ index, slot }));
-  const activeApplyProposalId = readFirstString(state?.activeApply?.proposalId);
-  const activeApplyRunning = readFirstString(state?.activeApply?.status).toLowerCase() === "running";
-  const runningEntries = slotEntries.filter(
-    ({ slot }) => readFirstString(slot?.status).toLowerCase() === "apply_running"
-  );
-  let visibleSlotEntries = slotEntries;
-  if (activeApplyRunning || runningEntries.length) {
-    const applyingEntries = activeApplyProposalId
-      ? slotEntries.filter(
-          ({ slot }) => readFirstString(slot?.proposal?.proposalId) === activeApplyProposalId
-        )
-      : [];
-    visibleSlotEntries = applyingEntries.length
-      ? applyingEntries
-      : runningEntries.length
-        ? runningEntries
-        : slotEntries;
+  const visibleSlotEntries = reviewSurfaceSlotEntries(state);
+  const surfaceUi = resolveReviewSurfaceUi(state, runtimeState, trayState);
+  const selectedEntry =
+    visibleSlotEntries.find(
+      ({ slot }) => readFirstString(slot?.proposal?.proposalId) === surfaceUi.selectedProposalId
+    ) || visibleSlotEntries[0] || null;
+  let surface = tray.querySelector(".design-review-runtime-surface");
+  if (!surface) {
+    surface = document.createElement("section");
+    surface.className = "design-review-runtime-surface";
+    if (typeof tray.insertBefore === "function") {
+      tray.insertBefore(surface, list);
+    } else {
+      tray.appendChild(surface);
+    }
   }
+  if (collapsed || !selectedEntry?.slot?.proposal) {
+    surface.replaceChildren();
+    surface.classList.add("hidden");
+  } else {
+    surface.classList.remove("hidden");
+    const selectedSlot = selectedEntry.slot;
+    const selectedProposal = selectedSlot.proposal;
+    const selectedCanApply = slotCanAcceptProposal(selectedSlot, requestApplyLocked);
+    const media = resolveReviewProposalMedia(state, selectedSlot);
+    const overlayRects = resolveReviewOverlayRects(state, selectedProposal, media.sourceImage);
+    const compareMode =
+      surfaceUi.compareMode === "original" && media.sourcePath ? "original" : "proposal";
+
+    const stage = document.createElement("div");
+    stage.className = "design-review-runtime-stage";
+    stage.dataset.compareMode = compareMode;
+
+    const mediaPanel = document.createElement("div");
+    mediaPanel.className = "design-review-runtime-stage-media";
+    if (media.width > 0 && media.height > 0) {
+      mediaPanel.style.aspectRatio = `${media.width} / ${media.height}`;
+    }
+
+    const proposalImage = document.createElement("img");
+    proposalImage.className = "design-review-runtime-stage-image design-review-runtime-stage-image-proposal";
+    proposalImage.alt = clampText(
+      selectedProposal?.label || selectedProposal?.title || "Proposal preview",
+      96
+    );
+    proposalImage.decoding = "async";
+    proposalImage.loading = "eager";
+    proposalImage.dataset.reviewImagePath = media.displayPath || "";
+
+    const originalImage = document.createElement("img");
+    originalImage.className = "design-review-runtime-stage-image design-review-runtime-stage-image-original";
+    originalImage.alt = "Original frame";
+    originalImage.decoding = "async";
+    originalImage.loading = "eager";
+    originalImage.dataset.reviewImagePath = media.sourcePath || media.displayPath || "";
+
+    mediaPanel.append(proposalImage, originalImage);
+
+    if (surfaceUi.showSafeAreas && overlayRects.length) {
+      const overlayLayer = document.createElement("div");
+      overlayLayer.className = "design-review-runtime-overlay-layer";
+      overlayRects.forEach((rect) => {
+        const overlay = document.createElement("div");
+        overlay.className = `design-review-runtime-overlay design-review-runtime-overlay-${rect.kind}`;
+        overlay.style.left = `${rect.left}%`;
+        overlay.style.top = `${rect.top}%`;
+        overlay.style.width = `${rect.width}%`;
+        overlay.style.height = `${rect.height}%`;
+        const badge = document.createElement("div");
+        badge.className = "design-review-runtime-overlay-badge";
+        badge.textContent = rect.label;
+        overlay.appendChild(badge);
+        overlayLayer.appendChild(overlay);
+      });
+      mediaPanel.appendChild(overlayLayer);
+    }
+
+    const caption = document.createElement("div");
+    caption.className = "design-review-runtime-stage-caption";
+    const captionTitle = document.createElement("div");
+    captionTitle.className = "design-review-runtime-stage-caption-title";
+    captionTitle.textContent = selectedProposal?.label || selectedProposal?.title || "Selected proposal";
+    const captionCopy = document.createElement("div");
+    captionCopy.className = "design-review-runtime-stage-caption-copy";
+    captionCopy.textContent = slotSummaryText(selectedSlot);
+    caption.append(captionTitle, captionCopy);
+    mediaPanel.appendChild(caption);
+
+    const detailPanel = document.createElement("div");
+    detailPanel.className = "design-review-runtime-stage-detail";
+
+    const summaryRow = document.createElement("div");
+    summaryRow.className = "design-review-runtime-row";
+    const selectedLabel = document.createElement("div");
+    selectedLabel.className = "design-review-runtime-label";
+    selectedLabel.textContent = `Proposal ${Number(selectedSlot?.rank) || selectedEntry.index + 1}`;
+    const selectedStatus = document.createElement("div");
+    selectedStatus.className = "design-review-runtime-status";
+    selectedStatus.textContent = slotStatusLabel(selectedSlot?.status);
+    summaryRow.append(selectedLabel, selectedStatus);
+
+    const selectedTitle = document.createElement("div");
+    selectedTitle.className = "design-review-runtime-title";
+    selectedTitle.textContent = clampText(
+      selectedProposal?.label || selectedProposal?.title || "Selected proposal",
+      108
+    );
+
+    const selectedWhy = document.createElement("div");
+    selectedWhy.className = `design-review-runtime-why${selectedSlot?.error ? " is-error" : ""}`;
+    selectedWhy.textContent = slotSummaryText(selectedSlot);
+
+    const compareBar = document.createElement("div");
+    compareBar.className = "design-review-runtime-compare";
+
+    const compareProposal = document.createElement("button");
+    compareProposal.type = "button";
+    compareProposal.className = "design-review-runtime-chip";
+    compareProposal.dataset.reviewSurfaceMode = "proposal";
+    compareProposal.classList.toggle("is-active", compareMode !== "original");
+    compareProposal.textContent = "Proposal";
+    compareProposal.addEventListener("click", () => {
+      updateReviewSurfaceUi(runtimeState, { compareMode: "proposal" }, { state, onAccept });
+    });
+
+    const compareOriginal = document.createElement("button");
+    compareOriginal.type = "button";
+    compareOriginal.className = "design-review-runtime-chip";
+    compareOriginal.dataset.reviewSurfaceMode = "original";
+    compareOriginal.classList.toggle("is-active", compareMode === "original");
+    compareOriginal.textContent = "Original";
+    compareOriginal.disabled = !media.sourcePath;
+    compareOriginal.addEventListener("click", () => {
+      if (!media.sourcePath) return;
+      updateReviewSurfaceUi(runtimeState, { compareMode: "original" }, { state, onAccept });
+    });
+
+    compareBar.append(compareProposal, compareOriginal);
+
+    if (overlayRects.length) {
+      const safeAreaToggle = document.createElement("button");
+      safeAreaToggle.type = "button";
+      safeAreaToggle.className = "design-review-runtime-chip";
+      safeAreaToggle.dataset.reviewSurfaceSafeArea = "1";
+      safeAreaToggle.classList.toggle("is-active", surfaceUi.showSafeAreas);
+      safeAreaToggle.textContent = "Safe Area";
+      safeAreaToggle.addEventListener("click", () => {
+        updateReviewSurfaceUi(
+          runtimeState,
+          { showSafeAreas: !surfaceUi.showSafeAreas },
+          { state, onAccept }
+        );
+      });
+      compareBar.appendChild(safeAreaToggle);
+    }
+
+    const surfaceActions = document.createElement("div");
+    surfaceActions.className = "design-review-runtime-actions";
+    const applySelected = document.createElement("button");
+    applySelected.type = "button";
+    applySelected.className = "design-review-runtime-action";
+    applySelected.textContent =
+      selectedSlot?.status === "apply_running"
+        ? "Applying…"
+        : selectedSlot?.status === "apply_succeeded"
+          ? "Applied"
+          : selectedSlot?.status === "apply_failed"
+            ? "Retry Apply"
+            : "Apply Selected";
+    applySelected.disabled = !selectedCanApply;
+    applySelected.addEventListener("click", () => {
+      if (!selectedCanApply) return;
+      if (typeof onAccept === "function") onAccept(selectedProposal);
+    });
+    surfaceActions.appendChild(applySelected);
+
+    detailPanel.append(summaryRow, selectedTitle, selectedWhy, compareBar, surfaceActions);
+    stage.append(mediaPanel, detailPanel);
+    surface.replaceChildren(stage);
+
+    const shell = shellBridge();
+    if (typeof shell?.hydrateCommunicationProposalTrayMedia === "function") {
+      shell.hydrateCommunicationProposalTrayMedia();
+    } else if (shell?.communicationReview && typeof shell.communicationReview.hydrateTrayMedia === "function") {
+      shell.communicationReview.hydrateTrayMedia();
+    }
+  }
+
   const fragment = document.createDocumentFragment();
   visibleSlotEntries.forEach(({ slot, index }) => {
     const card = document.createElement("div");
     const canAcceptSlot = slotCanAcceptProposal(slot, requestApplyLocked);
+    const canSelectSlot = Boolean(slot?.proposal);
+    const proposalId = readFirstString(slot?.proposal?.proposalId) || null;
     card.className = "communication-proposal-slot";
     card.dataset.slotIndex = String(index);
     card.setAttribute("role", "listitem");
     card.dataset.reviewStatus = readFirstString(slot?.status) || "skeleton";
-    card.classList.toggle("is-actionable", canAcceptSlot);
-    card.tabIndex = canAcceptSlot ? 0 : -1;
+    card.classList.toggle("is-actionable", canSelectSlot);
+    card.classList.toggle("is-selected", Boolean(proposalId && proposalId === surfaceUi.selectedProposalId));
+    card.tabIndex = canSelectSlot ? 0 : -1;
     card.classList.toggle(
       "is-skeleton",
       !["ready", "failed", "apply_running", "apply_succeeded", "apply_failed"].includes(
@@ -1181,23 +1752,44 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
       "is-failed",
       ["failed", "apply_failed"].includes(String(slot?.status || ""))
     );
+    const handleSelect = () => {
+      if (!canSelectSlot || !proposalId) return;
+      updateReviewSurfaceUi(runtimeState, { selectedProposalId: proposalId }, { state, onAccept });
+    };
     const handleAccept = () => {
       if (!canAcceptSlot) return;
       if (typeof onAccept === "function") onAccept(slot.proposal);
     };
-    if (canAcceptSlot) {
+    if (canSelectSlot) {
       card.addEventListener("click", () => {
-        handleAccept();
+        handleSelect();
       });
       card.addEventListener("keydown", (event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
-        handleAccept();
+        handleSelect();
       });
     }
 
     const layout = document.createElement("div");
     layout.className = "design-review-runtime-card";
+
+    const media = resolveReviewProposalMedia(state, slot);
+    if (media.displayPath) {
+      const preview = document.createElement("div");
+      preview.className = "design-review-runtime-card-preview";
+      if (media.width > 0 && media.height > 0) {
+        preview.style.aspectRatio = `${media.width} / ${media.height}`;
+      }
+      const previewImage = document.createElement("img");
+      previewImage.className = "design-review-runtime-card-preview-image";
+      previewImage.alt = clampText(slot?.proposal?.label || slot?.proposal?.title || `Proposal ${index + 1}`, 96);
+      previewImage.decoding = "async";
+      previewImage.loading = "lazy";
+      previewImage.dataset.reviewImagePath = media.displayPath;
+      preview.appendChild(previewImage);
+      layout.appendChild(preview);
+    }
 
     const copy = document.createElement("div");
     copy.className = "design-review-runtime-copy";
@@ -1313,6 +1905,7 @@ export function createFreshDesignReviewRuntimeState(sessionKey = "") {
     lastCommunicationPayload: null,
     lastReviewState: null,
     lastTrayAnchor: null,
+    reviewSurfaceUi: normalizeReviewSurfaceUiState(),
     activeRequestId: null,
     warmupTimer: null,
   };
@@ -1476,6 +2069,7 @@ function clearCommunicationTrayReviewDetails() {
   tray.classList.remove("is-design-review-runtime");
   tray.classList.remove("is-collapsed");
   tray.dataset.reviewStatus = "idle";
+  tray.querySelector(".design-review-runtime-surface")?.remove();
   const head = tray.querySelector(".communication-proposal-tray-head");
   const title = tray.querySelector(".communication-proposal-tray-title");
   const headGroup = head?.querySelector(".design-review-runtime-head") || null;
@@ -1497,9 +2091,13 @@ function syncCommunicationTray(runtimeState, state = {}, onAccept = null) {
     runtimeState.lastTrayAnchor
   );
   runtimeState.lastTrayAnchor = anchor || runtimeState.lastTrayAnchor || null;
-  renderCommunicationTrayDetails(state, (proposal) => {
-    if (typeof onAccept === "function") onAccept(proposal, runtimeState);
-  });
+  renderCommunicationTrayDetails(
+    state,
+    (proposal) => {
+      if (typeof onAccept === "function") onAccept(proposal, runtimeState);
+    },
+    runtimeState
+  );
   if (shell && typeof shell.showCommunicationProposalTray === "function" && trayState.requestId) {
     shell.showCommunicationProposalTray({
       visible: true,
@@ -1846,9 +2444,14 @@ export async function installDesignReviewBootstrap() {
       clearCommunicationTrayReviewDetails();
       return;
     }
-    renderCommunicationTrayDetails(runtimeState.lastReviewState, (proposal) => {
-      acceptProposal(proposal, runtimeState);
-    });
+    renderCommunicationTrayDetails(
+      runtimeState.lastReviewState,
+      (proposal) => {
+        acceptProposal(proposal, runtimeState);
+      },
+      runtimeState,
+      event?.detail?.tray || null
+    );
   });
   window.addEventListener(
     "drop",

@@ -23,8 +23,10 @@ test("design review bootstrap follows the communication review request path inst
 
 test("design review bootstrap keeps the integrated communication tray light and decorates it in place", () => {
   assert.match(bootstrap, /#communication-proposal-tray\.is-design-review-runtime/);
-  assert.match(bootstrap, /width:\s*min\(360px,\s*calc\(100vw - 40px\)\);/);
-  assert.match(bootstrap, /min-width:\s*280px;/);
+  assert.match(bootstrap, /width:\s*min\(760px,\s*calc\(100vw - 48px\)\);/);
+  assert.match(bootstrap, /min-width:\s*min\(320px,\s*calc\(100vw - 28px\)\);/);
+  assert.match(bootstrap, /design-review-runtime-stage/);
+  assert.match(bootstrap, /design-review-runtime-card-preview/);
   assert.match(bootstrap, /renderCommunicationTrayDetails/);
   assert.match(bootstrap, /communication-proposal-tray-title/);
   assert.doesNotMatch(bootstrap, /design-review-tray/);
@@ -49,16 +51,22 @@ test("design review bootstrap dispatches structured apply events and routes tray
   assert.match(bootstrap, /acceptProposal\(\{\s*proposalId = "",\s*proposalRank = 1\s*\}\s*=\s*\{\}\)/);
 });
 
-test("design review bootstrap makes proposal cards directly clickable for apply", () => {
+test("design review bootstrap keeps card clicks for selection and exposes explicit compare and apply controls", () => {
   assert.match(bootstrap, /function slotCanAcceptProposal\(slot = null, requestApplyLocked = false\)/);
-  assert.match(bootstrap, /card\.classList\.toggle\("is-actionable", canAcceptSlot\)/);
-  assert.match(bootstrap, /card\.tabIndex = canAcceptSlot \? 0 : -1/);
-  assert.match(bootstrap, /card\.addEventListener\("click", \(\) => \{\s*handleAccept\(\);/s);
+  assert.match(bootstrap, /card\.classList\.toggle\("is-actionable", canSelectSlot\)/);
+  assert.match(bootstrap, /card\.classList\.toggle\("is-selected"/);
+  assert.match(bootstrap, /card\.tabIndex = canSelectSlot \? 0 : -1/);
+  assert.match(bootstrap, /card\.addEventListener\("click", \(\) => \{\s*handleSelect\(\);/s);
   assert.match(bootstrap, /card\.addEventListener\("keydown", \(event\) => \{\s*if \(event\.key !== "Enter" && event\.key !== " "\) return;/s);
-  assert.doesNotMatch(bootstrap, /Click anywhere on this proposal to apply\./);
+  assert.match(bootstrap, /compareProposal\.dataset\.reviewSurfaceMode = "proposal"/);
+  assert.match(bootstrap, /compareOriginal\.dataset\.reviewSurfaceMode = "original"/);
+  assert.match(bootstrap, /previewImagePath/);
+  assert.match(bootstrap, /preserveRegionIds/);
+  assert.match(bootstrap, /selectedProposalId/);
+  assert.match(bootstrap, /setCommunicationProposalTrayUi/);
+  assert.match(bootstrap, /Apply Selected/);
   assert.match(bootstrap, /accept\.addEventListener\("click", \(event\) => \{\s*event\.stopPropagation\(\);/s);
-  assert.match(bootstrap, /: "Apply";/);
-  assert.doesNotMatch(bootstrap, /"Apply via Runtime"/);
+  assert.match(bootstrap, /: "Apply Selected";/);
 });
 
 test("design review bootstrap keeps tab-local review runtime state instead of one shared tray state", () => {

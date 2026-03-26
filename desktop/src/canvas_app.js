@@ -2192,6 +2192,19 @@ let communicationReviewBootstrapBridgeBound = false;
 let designReviewApplyBridgeBound = false;
 let communicationProposalTrayDismissTimer = null;
 
+function normalizeCommunicationProposalTrayUiState(rawState = null, fallbackState = null) {
+  const record =
+    (rawState && typeof rawState === "object" && !Array.isArray(rawState) && rawState) ||
+    (fallbackState && typeof fallbackState === "object" && !Array.isArray(fallbackState) && fallbackState) ||
+    {};
+  const compareMode = readFirstString(record.compareMode).toLowerCase();
+  return {
+    selectedProposalId: readFirstString(record.selectedProposalId) || null,
+    compareMode: compareMode === "original" ? "original" : "proposal",
+    showSafeAreas: Boolean(record.showSafeAreas),
+  };
+}
+
 function normalizeCommunicationProposalSlotStatus(rawStatus = "") {
   const value = String(rawStatus || "").trim().toLowerCase();
   if (value === "queued" || value === "idle" || value === "starting" || value === "capturing" || value === "warming") {
@@ -2253,19 +2266,54 @@ function communicationProposalDefaultCopy(status = "skeleton") {
 function createCommunicationProposalSlot(index = 0, slot = {}) {
   const slotIndex = Math.max(0, Number(index) || 0);
   const status = normalizeCommunicationProposalSlotStatus(slot?.status || "");
+  const changedRegionBounds =
+    slot?.changedRegionBounds && typeof slot.changedRegionBounds === "object" && !Array.isArray(slot.changedRegionBounds)
+      ? { ...slot.changedRegionBounds }
+      : slot?.proposal?.changedRegionBounds &&
+          typeof slot.proposal.changedRegionBounds === "object" &&
+          !Array.isArray(slot.proposal.changedRegionBounds)
+        ? { ...slot.proposal.changedRegionBounds }
+        : null;
+  const preserveRegionIds = Array.from(
+    new Set(
+      (Array.isArray(slot?.preserveRegionIds)
+        ? slot.preserveRegionIds
+        : Array.isArray(slot?.proposal?.preserveRegionIds)
+          ? slot.proposal.preserveRegionIds
+          : []
+      )
+        .map((value) => readFirstString(value))
+        .filter(Boolean)
+    )
+  );
+  const rationaleCodes = Array.from(
+    new Set(
+      (Array.isArray(slot?.rationaleCodes)
+        ? slot.rationaleCodes
+        : Array.isArray(slot?.proposal?.rationaleCodes)
+          ? slot.proposal.rationaleCodes
+          : []
+      )
+        .map((value) => readFirstString(value))
+        .filter(Boolean)
+    )
+  );
   return {
     slotId: String(slot?.slotId || `communication-slot-${slotIndex + 1}`).trim() || `communication-slot-${slotIndex + 1}`,
     index: slotIndex,
     status,
+    proposalId: readFirstString(slot?.proposalId, slot?.proposal?.proposalId) || null,
     label: String(slot?.label || communicationProposalDefaultLabel(slotIndex, status)).trim() ||
       communicationProposalDefaultLabel(slotIndex, status),
     title: String(slot?.title || communicationProposalDefaultTitle(status)).trim() ||
       communicationProposalDefaultTitle(status),
     copy: String(slot?.copy || slot?.previewBrief || slot?.why || communicationProposalDefaultCopy(status)).trim() ||
       communicationProposalDefaultCopy(status),
-    imageId: slot?.imageId ? String(slot.imageId) : null,
-    actionType: slot?.actionType ? String(slot.actionType) : null,
-    targetRegionId: slot?.targetRegionId ? String(slot.targetRegionId) : null,
+    previewImagePath: readFirstString(slot?.previewImagePath, slot?.proposal?.previewImagePath) || null,
+    changedRegionBounds,
+    preserveRegionIds,
+    rationaleCodes,
+    selected: Boolean(slot?.selected),
     previewStatus: slot?.previewStatus ? String(slot.previewStatus) : null,
   };
 }
@@ -2392,6 +2440,7 @@ function createFreshCommunicationState() {
       anchor: null,
       anchorLockCss: null,
       anchorLockSignature: "",
+      ui: normalizeCommunicationProposalTrayUiState(),
       slots: Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) =>
         createCommunicationProposalSlot(index, {})
       ),
@@ -11558,6 +11607,12 @@ function installJuggernautShellBridge() {
     showCommunicationProposalTray(next = {}) {
       return setCommunicationProposalTray(next, { source: "bridge" });
     },
+    setCommunicationProposalTrayUi(next = {}) {
+      return setCommunicationProposalTrayUi(next, { source: "bridge" });
+    },
+    hydrateCommunicationProposalTrayMedia() {
+      return hydrateCommunicationProposalTrayMedia();
+    },
     hideCommunicationProposalTray(meta = {}) {
       return hideCommunicationProposalTray({ ...meta, source: "bridge" });
     },
@@ -11577,6 +11632,12 @@ function installJuggernautShellBridge() {
       },
       showTray(next = {}) {
         return setCommunicationProposalTray(next, { source: "bridge_nested" });
+      },
+      setTrayUi(next = {}) {
+        return setCommunicationProposalTrayUi(next, { source: "bridge_nested" });
+      },
+      hydrateTrayMedia() {
+        return hydrateCommunicationProposalTrayMedia();
       },
       hideTray(meta = {}) {
         return hideCommunicationProposalTray({ ...meta, source: "bridge_nested" });
@@ -25074,13 +25135,20 @@ function buildCommunicationRegionsPayload() {
 
 function buildCommunicationProposalTraySnapshot() {
   const tray = state.communication?.proposalTray || createFreshCommunicationState().proposalTray;
+  const ui = normalizeCommunicationProposalTrayUiState(tray.ui);
   return {
     visible: Boolean(tray.visible),
     requestId: tray.requestId ? String(tray.requestId) : null,
     source: tray.source ? String(tray.source) : null,
     anchor: tray.anchor ? { ...tray.anchor } : null,
+    ui,
     slots: Array.isArray(tray.slots)
-      ? tray.slots.map((slot, index) => createCommunicationProposalSlot(index, slot))
+      ? tray.slots.map((slot, index) =>
+          createCommunicationProposalSlot(index, {
+            ...slot,
+            selected: ui.selectedProposalId && readFirstString(slot?.proposalId) === ui.selectedProposalId,
+          })
+        )
       : Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) => createCommunicationProposalSlot(index, {})),
   };
 }
@@ -25683,18 +25751,31 @@ function buildCommunicationProposalSlotsFromReviewState(reviewState = {}) {
   const overallStatus = normalizeCommunicationProposalSlotStatus(normalizedState.status || "preparing");
   const rawSlots = Array.isArray(normalizedState.slots) ? normalizedState.slots : [];
   if (!rawSlots.length) return buildCommunicationReviewPendingSlots({ overallStatus });
+  const trayUi = normalizeCommunicationProposalTrayUiState(
+    state.communication?.proposalTray?.ui,
+    normalizedState?.communication?.proposalTray?.ui
+  );
   return Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) => {
     const slot = rawSlots[index] || {};
     const proposal = slot?.proposal && typeof slot.proposal === "object" ? slot.proposal : null;
     const status = normalizeCommunicationProposalSlotStatus(slot?.status || overallStatus);
+    const proposalId = readFirstString(slot?.proposalId, proposal?.proposalId) || null;
     return createCommunicationProposalSlot(index, {
       status,
+      proposalId,
       label: slot?.rank ? `Proposal ${slot.rank}` : null,
       title: proposal?.label || slot?.label || communicationProposalDefaultTitle(status),
       copy: communicationProposalCopyFromReviewState(slot, status),
-      imageId: proposal?.primaryImageId || null,
-      actionType: proposal?.actionType || null,
-      targetRegionId: proposal?.targetRegionId || null,
+      previewImagePath: readFirstString(slot?.previewImagePath, proposal?.previewImagePath) || null,
+      changedRegionBounds:
+        proposal?.changedRegionBounds &&
+        typeof proposal.changedRegionBounds === "object" &&
+        !Array.isArray(proposal.changedRegionBounds)
+          ? { ...proposal.changedRegionBounds }
+          : null,
+      preserveRegionIds: Array.isArray(proposal?.preserveRegionIds) ? proposal.preserveRegionIds : [],
+      rationaleCodes: Array.isArray(proposal?.rationaleCodes) ? proposal.rationaleCodes : [],
+      selected: Boolean(proposalId && trayUi.selectedProposalId === proposalId),
       previewStatus: slot?.status || normalizedState.status || null,
     });
   });
@@ -25723,6 +25804,7 @@ function setCommunicationProposalTray(
   clearCommunicationProposalTrayDismissTimer();
   els.communicationProposalTray?.classList.remove("is-dismissing");
   const tray = state.communication.proposalTray || createFreshCommunicationState().proposalTray;
+  const previousRequestId = readFirstString(tray.requestId);
   const anchor = next?.anchor && typeof next.anchor === "object" ? { ...next.anchor } : resolveCommunicationReviewAnchor();
   tray.visible = next?.visible !== false;
   tray.requestId = next?.requestId ? String(next.requestId) : tray.requestId || null;
@@ -25734,11 +25816,73 @@ function setCommunicationProposalTray(
   tray.slots = Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) =>
     createCommunicationProposalSlot(index, Array.isArray(next?.slots) ? next.slots[index] || {} : tray.slots?.[index] || {})
   );
+  const requestChanged = previousRequestId !== readFirstString(tray.requestId);
+  const baseUi = normalizeCommunicationProposalTrayUiState(
+    requestChanged ? null : tray.ui
+  );
+  const selectableProposalId =
+    tray.slots.find((slot) => readFirstString(slot?.proposalId))?.proposalId || null;
+  const nextUi = normalizeCommunicationProposalTrayUiState(
+    next?.ui && typeof next.ui === "object"
+      ? {
+          ...baseUi,
+          ...next.ui,
+        }
+      : baseUi
+  );
+  if (nextUi.selectedProposalId) {
+    const stillPresent = tray.slots.some((slot) => readFirstString(slot?.proposalId) === nextUi.selectedProposalId);
+    if (!stillPresent) nextUi.selectedProposalId = selectableProposalId;
+  } else {
+    nextUi.selectedProposalId = selectableProposalId;
+  }
+  tray.ui = nextUi;
   state.communication.proposalTray = tray;
   if (render) {
     renderCommunicationChrome();
   }
   syncActiveTabReviewFlowState({ publish: true });
+  if (dispatch) {
+    dispatchJuggernautShellEvent(COMMUNICATION_PROPOSAL_TRAY_EVENT, {
+      source,
+      tray: buildCommunicationProposalTraySnapshot(),
+      context: buildJuggernautShellContext(),
+    });
+  }
+  if (shouldRequestRender) {
+    requestRender();
+  }
+  return tray;
+}
+
+function setCommunicationProposalTrayUi(
+  nextUi = {},
+  {
+    source = "review_runtime_ui",
+    render = true,
+    dispatch = true,
+    requestRender: shouldRequestRender = false,
+  } = {}
+) {
+  const tray = state.communication?.proposalTray || createFreshCommunicationState().proposalTray;
+  const candidateSlots = Array.isArray(tray.slots) ? tray.slots : [];
+  const selectableProposalId =
+    candidateSlots.find((slot) => readFirstString(slot?.proposalId))?.proposalId || null;
+  const mergedUi = normalizeCommunicationProposalTrayUiState({
+    ...normalizeCommunicationProposalTrayUiState(tray.ui),
+    ...(nextUi && typeof nextUi === "object" ? nextUi : {}),
+  });
+  if (mergedUi.selectedProposalId) {
+    const stillPresent = candidateSlots.some((slot) => readFirstString(slot?.proposalId) === mergedUi.selectedProposalId);
+    if (!stillPresent) mergedUi.selectedProposalId = selectableProposalId;
+  } else {
+    mergedUi.selectedProposalId = selectableProposalId;
+  }
+  tray.ui = mergedUi;
+  state.communication.proposalTray = tray;
+  if (render) {
+    renderCommunicationProposalTray();
+  }
   if (dispatch) {
     dispatchJuggernautShellEvent(COMMUNICATION_PROPOSAL_TRAY_EVENT, {
       source,
@@ -25804,6 +25948,23 @@ function dismissCommunicationProposalTrayAfterReviewApply({
   return true;
 }
 
+function hydrateCommunicationProposalTrayMedia(root = els.communicationProposalTray) {
+  const trayEl = root || els.communicationProposalTray;
+  if (!trayEl?.querySelectorAll) return false;
+  const media = Array.from(trayEl.querySelectorAll("img[data-review-image-path]"));
+  for (const imgEl of media) {
+    const path = readFirstString(imgEl?.dataset?.reviewImagePath);
+    if (!path) continue;
+    ensureImageUrl(path)
+      .then((url) => {
+        if (!url || !imgEl || readFirstString(imgEl?.dataset?.reviewImagePath) !== path) return;
+        imgEl.src = url;
+      })
+      .catch(() => {});
+  }
+  return media.length > 0;
+}
+
 function renderCommunicationProposalTray() {
   const trayEl = els.communicationProposalTray;
   const listEl = els.communicationProposalSlotList;
@@ -25851,6 +26012,7 @@ function renderCommunicationProposalTray() {
     }
     listEl.replaceChildren(fragment);
   }
+  hydrateCommunicationProposalTrayMedia(trayEl);
   const positioned = positionCommunicationProposalTrayElement(trayEl, anchor, anchorCss);
   if (!positioned) {
     trayEl.style.left = `${Math.round(Number(anchorCss.x) || 0)}px`;
@@ -25861,6 +26023,7 @@ function renderCommunicationProposalTray() {
   }
   requestAnimationFrame(() => {
     if (trayEl.classList.contains("hidden")) return;
+    hydrateCommunicationProposalTrayMedia(trayEl);
     positionCommunicationProposalTrayElement(trayEl, anchor, anchorCss);
   });
 }

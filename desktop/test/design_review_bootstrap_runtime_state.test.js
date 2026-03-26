@@ -57,6 +57,10 @@ function instantiateFunction(name, deps = {}) {
 function createRuntimeRegistry() {
   const asRecord = instantiateFunction("asRecord");
   const readFirstString = instantiateFunction("readFirstString");
+  const normalizeReviewSurfaceUiState = instantiateFunction("normalizeReviewSurfaceUiState", {
+    asRecord,
+    readFirstString,
+  });
   const resolveDesignReviewRuntimeSessionKey = instantiateFunction(
     "resolveDesignReviewRuntimeSessionKey",
     {
@@ -68,6 +72,7 @@ function createRuntimeRegistry() {
     "createFreshDesignReviewRuntimeState",
     {
       readFirstString,
+      normalizeReviewSurfaceUiState,
     }
   );
   const createDesignReviewRuntimeRegistry = instantiateFunction(
@@ -400,8 +405,12 @@ test("review bootstrap renders runtime tray details before shell positioning to 
 });
 
 test("review bootstrap shows only the active proposal card while apply is running and keeps the full tray format", () => {
+  const asRecord = instantiateFunction("asRecord");
   const readFirstString = instantiateFunction("readFirstString");
   const clampText = instantiateFunction("clampText");
+  const normalizeBounds = instantiateFunction("normalizeBounds", {
+    asRecord,
+  });
   const proposalEffectText = instantiateFunction("proposalEffectText", {
     clampText,
     readFirstString,
@@ -418,12 +427,40 @@ test("review bootstrap shows only the active proposal card while apply is runnin
     readFirstString,
   });
   const slotCanAcceptProposal = instantiateFunction("slotCanAcceptProposal");
+  const normalizeReviewSurfaceUiState = instantiateFunction("normalizeReviewSurfaceUiState", {
+    asRecord,
+    readFirstString,
+  });
+  const reviewSurfaceSlotEntries = instantiateFunction("reviewSurfaceSlotEntries", {
+    readFirstString,
+  });
+  const reviewSurfaceImageCatalog = instantiateFunction("reviewSurfaceImageCatalog", {
+    asRecord,
+  });
+  const resolveReviewProposalSourceImage = instantiateFunction("resolveReviewProposalSourceImage", {
+    readFirstString,
+    asRecord,
+    reviewSurfaceImageCatalog,
+  });
+  const resolveReviewProposalMedia = instantiateFunction("resolveReviewProposalMedia", {
+    asRecord,
+    readFirstString,
+    resolveReviewProposalSourceImage,
+  });
+  const resolveReviewOverlayRects = instantiateFunction("resolveReviewOverlayRects", {
+    readFirstString,
+    asRecord,
+    normalizeBounds,
+  });
 
   const createClassList = () => {
     const tokens = new Set();
     return {
       add(...names) {
         names.forEach((name) => tokens.add(String(name)));
+      },
+      remove(...names) {
+        names.forEach((name) => tokens.delete(String(name)));
       },
       toggle(name, force) {
         if (force === undefined) {
@@ -447,9 +484,15 @@ test("review bootstrap shows only the active proposal card while apply is runnin
       classList: createClassList(),
       dataset: {},
       attributes: {},
-      style: {},
+      style: {
+        setProperty(name, value) {
+          this[name] = value;
+        },
+      },
       children: [],
       textContent: "",
+      disabled: false,
+      listeners: {},
       parentElement: null,
       append(...children) {
         children.forEach((child) => {
@@ -470,10 +513,35 @@ test("review bootstrap shows only the active proposal card while apply is runnin
         this.children.unshift(child);
         return child;
       },
+      insertBefore(child, before) {
+        if (!child) return child;
+        child.parentElement = this;
+        const index = this.children.indexOf(before);
+        if (index < 0) {
+          this.children.push(child);
+        } else {
+          this.children.splice(index, 0, child);
+        }
+        return child;
+      },
       setAttribute(name, value) {
         this.attributes[name] = value;
       },
-      addEventListener() {},
+      addEventListener(name, handler) {
+        this.listeners[name] = handler;
+      },
+      dispatch(name, event = {}) {
+        const handler = this.listeners[name];
+        if (typeof handler === "function") {
+          handler({
+            preventDefault() {},
+            stopPropagation() {},
+            key: "",
+            target: this,
+            ...event,
+          });
+        }
+      },
       remove() {
         this.removed = true;
       },
@@ -518,6 +586,43 @@ test("review bootstrap shows only the active proposal card while apply is runnin
   tray.dataset.anchorKind = "titlebar_button";
   tray.appendChild(trayHead);
   const list = createNode("communication-proposal-slot-list");
+  tray.appendChild(list);
+  const trayUiCalls = [];
+  const shellBridge = () => ({
+    setCommunicationProposalTrayUi(next) {
+      trayUiCalls.push(next);
+      return next;
+    },
+    hydrateCommunicationProposalTrayMedia() {
+      return true;
+    },
+    communicationReview: {
+      getState() {
+        return {
+          proposalTray: {
+            ui: {
+              selectedProposalId: "proposal-2",
+              compareMode: "proposal",
+              showSafeAreas: false,
+            },
+          },
+        };
+      },
+    },
+  });
+  const updateReviewSurfaceUi = instantiateFunction("updateReviewSurfaceUi", {
+    asRecord,
+    normalizeReviewSurfaceUiState,
+    shellBridge,
+    renderCommunicationTrayDetails() {},
+  });
+  const resolveReviewSurfaceUi = instantiateFunction("resolveReviewSurfaceUi", {
+    asRecord,
+    readFirstString,
+    normalizeReviewSurfaceUiState,
+    reviewSurfaceSlotEntries,
+    shellBridge,
+  });
 
   const renderCommunicationTrayDetails = instantiateFunction("renderCommunicationTrayDetails", {
     document: {
@@ -542,9 +647,16 @@ test("review bootstrap shows only the active proposal card while apply is runnin
     communicationTraySlotList: () => list,
     shouldCollapseReviewTray,
     readFirstString,
+    normalizeReviewSurfaceUiState,
+    reviewSurfaceSlotEntries,
+    resolveReviewProposalSourceImage,
+    resolveReviewProposalMedia,
+    resolveReviewOverlayRects,
+    resolveReviewSurfaceUi,
+    updateReviewSurfaceUi,
+    shellBridge,
     EDIT_PROPOSALS_LABEL: "Design Review",
     slotCanAcceptProposal,
-    convertFileSrc: (value) => value,
     clampText,
     slotStatusLabel,
     slotSummaryText,
@@ -556,7 +668,29 @@ test("review bootstrap shows only the active proposal card while apply is runnin
 
   renderCommunicationTrayDetails({
     status: "ready",
-    request: { requestId: "review-1" },
+    request: {
+      requestId: "review-1",
+      primaryImageId: "img-1",
+      reservedSpaceIntent: {
+        areas: [
+          {
+            reservedSpaceId: "safe-1",
+            imageId: "img-1",
+            bounds: { x: 960, y: 72, width: 320, height: 180 },
+          },
+        ],
+      },
+      visibleCanvasContext: {
+        images: [
+          {
+            id: "img-1",
+            path: "/tmp/source-frame.png",
+            width: 1440,
+            height: 900,
+          },
+        ],
+      },
+    },
     activeApply: {
       requestId: "review-1",
       proposalId: "proposal-2",
@@ -579,6 +713,10 @@ test("review bootstrap shows only the active proposal card while apply is runnin
           proposalId: "proposal-2",
           label: "Swap the backdrop",
           previewBrief: "Replace the backdrop with a clean studio wall.",
+          previewImagePath: "/tmp/proposal-2.png",
+          preserveRegionIds: ["safe-1"],
+          changedRegionBounds: { x: 160, y: 120, width: 720, height: 520 },
+          rationaleCodes: ["copy_lane_available"],
         },
       },
       {
@@ -594,9 +732,23 @@ test("review bootstrap shows only the active proposal card while apply is runnin
   });
 
   assert.equal(tray.classList.contains("is-collapsed"), false);
+  assert.equal(Boolean(tray.querySelector(".design-review-runtime-stage")), true);
   assert.equal(list.children.length, 1);
   assert.equal(list.children[0].dataset.slotIndex, "1");
+  assert.equal(list.children[0].classList.contains("is-selected"), true);
   assert.equal(list.children[0].querySelector(".design-review-runtime-title")?.textContent, "Swap the backdrop");
+  const compareOriginal = tray
+    .querySelector(".design-review-runtime-compare")
+    ?.children.find?.((child) => child?.dataset?.reviewSurfaceMode === "original");
+  const safeAreaToggle = tray
+    .querySelector(".design-review-runtime-compare")
+    ?.children.find?.((child) => child?.dataset?.reviewSurfaceSafeArea === "1");
+  assert.equal(compareOriginal?.textContent, "Original");
+  assert.equal(safeAreaToggle?.textContent, "Safe Area");
+  compareOriginal?.dispatch("click");
+  safeAreaToggle?.dispatch("click");
+  assert.equal(trayUiCalls[0]?.compareMode, "original");
+  assert.equal(trayUiCalls[1]?.showSafeAreas, true);
 });
 
 test("review bootstrap seeds a pending runtime tray before async review work starts", () => {
@@ -719,7 +871,11 @@ test("review bootstrap builds structured Highlight and Make Space focus contract
 });
 
 test("review bootstrap tray payload exposes Protect and Make Space runtime counts", () => {
+  const asRecord = instantiateFunction("asRecord");
   const readFirstString = instantiateFunction("readFirstString");
+  const normalizeBounds = instantiateFunction("normalizeBounds", {
+    asRecord,
+  });
   const clampText = instantiateFunction("clampText");
   const proposalEffectText = instantiateFunction("proposalEffectText", {
     clampText,
@@ -736,6 +892,7 @@ test("review bootstrap tray payload exposes Protect and Make Space runtime count
     {
       readFirstString,
       clampText,
+      normalizeBounds,
       slotSummaryText,
       communicationTraySlotStatus,
     }
@@ -745,10 +902,21 @@ test("review bootstrap tray payload exposes Protect and Make Space runtime count
     request: {
       requestId: "review-focus-tray",
       reviewTool: "make_space",
+      primaryImageId: "img-safe",
       focusInputs: [{ focusInputId: "focus-1" }, { focusInputId: "focus-2" }],
       protectedRegions: [{ protectedRegionId: "protected-1" }],
       reservedSpaceIntent: {
         areas: [{ reservedSpaceId: "space-1" }],
+      },
+      visibleCanvasContext: {
+        images: [
+          {
+            id: "img-safe",
+            path: "/tmp/safe-area-source.png",
+            width: 1440,
+            height: 900,
+          },
+        ],
       },
     },
     status: "ready",
@@ -759,14 +927,16 @@ test("review bootstrap tray payload exposes Protect and Make Space runtime count
         proposal: {
           proposalId: "proposal-1",
           label: "Open space",
+          previewImagePath: "/tmp/proposal-open-space.png",
           previewBrief: "Create room on the right.",
+          changedRegionBounds: { x: 160, y: 120, width: 420, height: 300 },
+          preserveRegionIds: ["protected-1", "space-1"],
+          rationaleCodes: ["copy_lane_available", "subject_preserved"],
           focusInputs: [{ focusInputId: "focus-1" }, { focusInputId: "focus-2" }],
           protectedRegions: [{ protectedRegionId: "protected-1" }],
           reservedSpaceIntent: {
             areas: [{ reservedSpaceId: "space-1" }],
           },
-          preserveProtectedRegions: true,
-          preserveReservedSpace: true,
         },
       },
     ],
@@ -779,8 +949,12 @@ test("review bootstrap tray payload exposes Protect and Make Space runtime count
   assert.equal(tray.slots[0].focusInputCount, 2);
   assert.equal(tray.slots[0].protectedRegionCount, 1);
   assert.equal(tray.slots[0].reservedSpaceAreaCount, 1);
-  assert.equal(tray.slots[0].preserveProtectedRegions, true);
-  assert.equal(tray.slots[0].preserveReservedSpace, true);
+  assert.equal(tray.slots[0].previewImagePath, "/tmp/proposal-open-space.png");
+  assert.deepEqual(tray.slots[0].changedRegionBounds, { x: 160, y: 120, width: 420, height: 300 });
+  assert.deepEqual(tray.slots[0].preserveRegionIds, ["protected-1", "space-1"]);
+  assert.deepEqual(tray.slots[0].rationaleCodes, ["copy_lane_available", "subject_preserved"]);
+  assert.equal("sourcePath" in tray.slots[0], false);
+  assert.equal("compareAvailable" in tray.slots[0], false);
 });
 
 test("review bootstrap writes planner traces into the run directory", async () => {
