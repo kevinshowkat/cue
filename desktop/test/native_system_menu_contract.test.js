@@ -29,7 +29,7 @@ test("native system menu exposes a sync command for dynamic slot state", () => {
 test("native tools menu mirrors communication rail tools before custom tools", () => {
   assert.match(
     appSource,
-    /const NATIVE_MENU_COMMUNICATION_TOOLS = Object\.freeze\(\[[\s\S]*Marker[\s\S]*Protect[\s\S]*Magic Select[\s\S]*Make Space[\s\S]*Eraser[\s\S]*\]\);/
+    /const NATIVE_MENU_COMMUNICATION_TOOLS = Object\.freeze\(\[[\s\S]*Marker[\s\S]*Highlight[\s\S]*Magic Select[\s\S]*Make Space[\s\S]*Eraser[\s\S]*\]\);/
   );
   assert.match(
     appSource,

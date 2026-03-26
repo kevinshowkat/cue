@@ -66,7 +66,7 @@ The current Agent Run planner can directly plan:
 - `create_tool`
 - `export_psd`
 
-It does not yet plan `protect` or `make_space` directly. If you want to test those, pre-place them yourself, then let Agent Run continue from that scoped state.
+It does not yet plan `highlight` or `make_space` directly. If you want to test those, pre-place them yourself, then let Agent Run continue from that scoped state.
 
 Also note:
 
@@ -155,28 +155,28 @@ What to look for:
   - subject shifted or cropped badly
   - reserved area ignored
 
-### 5. Manual Protect Stress Test
+### 5. Manual Highlight Focus Test
 
 Manual pre-step:
 
-- before starting Agent Run, use `Protect` over:
+- before starting Agent Run, use `Highlight` over the area the next edit should prioritize:
   - Aragorn’s face
   - chest emblem area
   - sword hand
 
 Goal:
 
-`Improve the image while strictly preserving the protected parts, then export a PSD.`
+`Improve the image while clearly centering the edit on the highlighted parts, then export a PSD.`
 
 What to look for:
 
 - good first move:
   - `request_design_review`
-  - then a conservative proposal
+  - then a proposal that stays centered on the highlighted area
 - success signal:
-  - protected areas remain visually stable
+  - the edit clearly targets the highlighted region first
 - failure signal:
-  - face or hand altered despite protection
+  - the edit ignores the highlighted area
 
 ### 6. Create Tool Judgment
 

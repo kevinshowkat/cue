@@ -17,7 +17,7 @@ There is no web app.
 - **Session tab**: an isolated shell state bound to one run directory. Tabs can be created fresh, opened from disk, saved, closed, or forked from the current tab.
 - **Shared canvas**: only the active tab is attached to runtime/events at a time; switching tabs swaps session state into the shared surface.
 - **Visual timeline**: tab-local history toggled by the titlebar `History` button. It can restore prior committed states without re-running model work.
-- **Communication overlay**: the `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` tools used to scope `Design Review`.
+- **Communication overlay**: the `Marker`, `Highlight`, `Magic Select`, and `Eraser` tools used to scope `Design Review`; `Make Space` remains a dormant runtime affordance.
 - **Agent Run**: a compact goal-driven panel that can step or auto-run review, tool-preview/create, and export actions against the current tab.
 
 ## Current Primary Workflow

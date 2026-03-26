@@ -2983,9 +2983,23 @@ button.ghost:hover {
   transform: rotate(-45deg);
 }
 
+.toast[data-kind="error"] {
+  --toast-accent: rgba(255, 124, 132, 0.96);
+}
+
+.toast[data-kind="tip"] {
+  --toast-accent: rgba(255, 190, 92, 0.96);
+}
+
+.toast[data-kind="info"] {
+  --toast-accent: rgba(100, 210, 255, 0.94);
+}
+
 .toast[data-state="visible"] {
   opacity: 1;
   visibility: visible;
+  filter: saturate(1);
+  transform: translateY(0);
   transition-delay: 0s;
   transform: translateX(-50%) scale(1);
 }
@@ -2994,6 +3008,7 @@ button.ghost:hover {
 .toast[data-state="exiting"] {
   opacity: 0;
   visibility: visible;
+  transform: translateY(6px);
   transition-delay: 0s;
   transform: translateX(-50%) scale(0.9);
 }
@@ -8065,10 +8080,10 @@ button.ghost:hover {
 }
 
 .communication-tool.communication-tool-protect {
-  --communication-tool-tilt: 4deg;
-  --communication-tool-scale: 1.14;
-  --communication-tool-accent: rgba(122, 225, 255, 0.22);
-  --communication-tool-saturation: 0.98;
+  --communication-tool-tilt: -10deg;
+  --communication-tool-scale: 1.19;
+  --communication-tool-accent: rgba(255, 223, 74, 0.34);
+  --communication-tool-saturation: 1.12;
 }
 
 .communication-tool.communication-tool-magic-select {
@@ -10014,8 +10029,8 @@ button.ghost:hover {
   color: rgba(64, 108, 172, 0.96);
 }
 
-.timeline-card-glyph--protect {
-  color: rgba(47, 129, 96, 0.96);
+.timeline-card-glyph--highlight {
+  color: rgba(192, 152, 32, 0.98);
 }
 
 .timeline-card-glyph--magic {

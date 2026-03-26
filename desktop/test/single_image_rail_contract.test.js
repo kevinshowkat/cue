@@ -243,7 +243,7 @@ test("single-image rail: canonical affordance labels keep Remove People standard
   assert.equal(getSingleImageRailItem("new_background")?.label, "New Background");
   assert.equal(getSingleImageRailItem("polish")?.label, "Polish");
   assert.equal(getSingleImageRailItem("relight")?.label, "Relight");
-  assert.equal(getSingleImageRailItem("protect")?.label, "Protect");
+  assert.equal(getSingleImageRailItem("protect")?.label, "Highlight");
   assert.equal(getSingleImageRailItem("make_space")?.label, "Make Space");
 });
 

@@ -123,4 +123,3 @@ export function getJuggernautRailIconMarkup(toolId = "", packId = DEFAULT_JUGGER
   const packClass = `tool-icon-pack-${normalizedPackId.replace(/_/g, "-")}`;
   return `<span class="tool-icon tool-icon-mask ${toolClass} ${packClass}" aria-hidden="true" style="--tool-icon-mask:url('${escapeCssUrl(assetUrl)}')"></span>`;
 }
-

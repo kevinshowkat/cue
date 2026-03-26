@@ -601,7 +601,7 @@ test("review bootstrap seeds a pending runtime tray before async review work sta
   );
 });
 
-test("review bootstrap builds structured Protect and Make Space focus contracts from communication payloads", () => {
+test("review bootstrap builds structured Highlight and Make Space focus contracts from communication payloads", () => {
   const asRecord = instantiateFunction("asRecord");
   const readFirstString = instantiateFunction("readFirstString");
   const normalizeBounds = instantiateFunction("normalizeBounds", {
@@ -653,10 +653,11 @@ test("review bootstrap builds structured Protect and Make Space focus contracts 
         selectedImageIds: ["img-1"],
       },
       communication: {
-        tool: "protect",
+        tool: "highlight",
         marks: [
           {
-            id: "mark-protect",
+            id: "mark-highlight",
+            kind: "freehand_protect",
             imageId: "img-1",
             bounds: { x: 12, y: 20, width: 64, height: 88 },
           },
@@ -676,9 +677,10 @@ test("review bootstrap builds structured Protect and Make Space focus contracts 
         ],
         focusInputs: [
           {
-            focusInputId: "focus-protect-explicit",
-            kind: "protect",
+            focusInputId: "focus-highlight-explicit",
+            kind: "highlight",
             imageId: "img-1",
+            markIds: ["mark-highlight"],
             bounds: { x: 12, y: 20, width: 64, height: 88 },
           },
           {
@@ -686,13 +688,6 @@ test("review bootstrap builds structured Protect and Make Space focus contracts 
             kind: "make_space",
             imageId: "img-1",
             bounds: { x: 180, y: 22, width: 110, height: 96 },
-          },
-        ],
-        protectedRegions: [
-          {
-            protectedRegionId: "protected-explicit",
-            imageId: "img-1",
-            bounds: { x: 12, y: 20, width: 64, height: 88 },
           },
         ],
         reservedSpaceIntent: {
@@ -709,11 +704,11 @@ test("review bootstrap builds structured Protect and Make Space focus contracts 
     },
   });
 
-  assert.equal(request.reviewTool, "protect");
-  assert.deepEqual(request.focusInputIds, ["focus-protect-explicit", "focus-space-explicit"]);
-  assert.deepEqual(request.protectedRegionIds, ["protected-explicit"]);
+  assert.equal(request.reviewTool, "highlight");
+  assert.deepEqual(request.focusInputIds, ["focus-highlight-explicit", "focus-space-explicit"]);
+  assert.deepEqual(request.protectedRegionIds, []);
   assert.deepEqual(request.reservedSpaceAreaIds, ["space-explicit"]);
-  assert.equal(request.communicationReview?.tool, "protect");
+  assert.equal(request.communicationReview?.tool, "highlight");
   assert.equal(request.communicationReview?.focusInputs?.length, 2);
   assert.equal(request.communicationReview?.reservedSpaceIntent?.areas?.length, 1);
 });

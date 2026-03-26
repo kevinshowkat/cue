@@ -128,7 +128,7 @@ test("marker pointer down consumes blank-canvas drags and seeds a screen-space d
   assert.equal(calls.filter(([name]) => name === "stop").length, 1);
 });
 
-test("protect pointer down preserves a distinct draft kind for downstream commit/render", () => {
+test("highlight pointer down preserves a distinct draft kind for downstream commit/render", () => {
   const calls = [];
   const state = {
     canvasMode: "single",
@@ -389,7 +389,7 @@ test("blank-canvas marker commits stay in the canvas mark bucket in viewport-awa
   assert.equal(state.communication.lastAnchor?.markId, mark.id);
 });
 
-test("protect commits keep a distinct semantic kind and black stroke color", () => {
+test("highlight commits keep a distinct semantic kind and yellow stroke color", () => {
   const state = {
     communication: {
       markDraft: {
@@ -413,7 +413,7 @@ test("protect commits keep a distinct semantic kind and black stroke color", () 
     COMMUNICATION_MARK_MIN_DRAG_PX: 6,
     communicationCommittedPointsFromDraft: (draft) => draft.screenPoints,
     COMMUNICATION_MARK_STROKE: "rgba(220, 28, 28, 0.96)",
-    COMMUNICATION_PROTECT_STROKE: "rgba(0, 0, 0, 0.92)",
+    COMMUNICATION_PROTECT_STROKE: "rgba(255, 228, 76, 0.7)",
     COMMUNICATION_MARK_MAX_POINTS: 240,
     communicationMarksForImage: () => [],
     communicationCanvasMarks: () => state.communication.canvasMarks,
@@ -428,7 +428,7 @@ test("protect commits keep a distinct semantic kind and black stroke color", () 
   const mark = commitCommunicationMarkDraft();
 
   assert.equal(mark.kind, "freehand_protect");
-  assert.equal(mark.color, "rgba(0, 0, 0, 0.92)");
+  assert.equal(mark.color, "rgba(255, 228, 76, 0.7)");
   assert.equal(state.communication.canvasMarks.length, 1);
   assert.equal(state.communication.canvasMarks[0]?.id, mark.id);
 });
@@ -596,7 +596,7 @@ test("image-hit marker commits into the image mark bucket so zoom keeps the stro
   assert.equal(state.communication.marksByImageId.get("img-1")?.[0]?.id, mark.id);
 });
 
-test("communication overlay renders marker as a thick red stroke and protect as a thin black line", () => {
+test("communication overlay renders marker as a thick red stroke and highlight as a broad yellow pass", () => {
   const rendered = [];
   const state = {
     communication: {
@@ -615,7 +615,7 @@ test("communication overlay renders marker as a thick red stroke and protect as 
           {
             id: "protect-1",
             kind: "freehand_protect",
-            color: "rgba(0, 0, 0, 0.92)",
+            color: "rgba(255, 228, 76, 0.7)",
             points: [
               { x: 20, y: 20 },
               { x: 30, y: 30 },
@@ -648,13 +648,13 @@ test("communication overlay renders marker as a thick red stroke and protect as 
     communicationDraftPointsToCanvas: () => [],
     communicationMarkPointsToCanvas: (mark) => mark.points,
     COMMUNICATION_MARK_STROKE: "rgba(220, 28, 28, 0.96)",
-    COMMUNICATION_PROTECT_STROKE: "rgba(0, 0, 0, 0.92)",
+    COMMUNICATION_PROTECT_STROKE: "rgba(255, 228, 76, 0.7)",
     COMMUNICATION_MARK_DRAFT_SHOULDER_CSS_PX: 8.5,
     COMMUNICATION_MARK_DRAFT_CORE_CSS_PX: 5.75,
     COMMUNICATION_MARK_COMMITTED_SHOULDER_CSS_PX: 11.5,
     COMMUNICATION_MARK_COMMITTED_CORE_CSS_PX: 8.25,
-    COMMUNICATION_PROTECT_DRAFT_WIDTH_CSS_PX: 3,
-    COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX: 2,
+    COMMUNICATION_PROTECT_DRAFT_WIDTH_CSS_PX: 22,
+    COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX: 18,
     traceCommunicationMarkPath: () => true,
     communicationCanvasMarks: () => state.communication.canvasMarks,
     communicationCanvasCssScaleForImageId: () => 1,
@@ -675,8 +675,13 @@ test("communication overlay renders marker as a thick red stroke and protect as 
       globalAlpha: 1,
     },
     {
-      lineWidth: 2,
-      strokeStyle: "rgba(0, 0, 0, 0.92)",
+      lineWidth: 18,
+      strokeStyle: "rgba(255, 228, 76, 0.38)",
+      globalAlpha: 1,
+    },
+    {
+      lineWidth: 10,
+      strokeStyle: "rgba(255, 228, 76, 0.58)",
       globalAlpha: 1,
     },
   ]);
