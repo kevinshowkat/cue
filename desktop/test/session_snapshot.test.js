@@ -129,6 +129,155 @@ test("session snapshot keeps older payloads compatible when screenshot metadata 
   assert.equal(restored.session.timelineOpen, true);
 });
 
+test("session snapshot preserves screenshot-polish fork lineage and review trace state", () => {
+  const image = {
+    id: "img-hero",
+    path: "/tmp/run/hero-before.png",
+    label: "Hero",
+    img: new URL("https://example.com/hero.png"),
+  };
+  const payload = serializeSessionSnapshot({
+    label: "Approved Variant",
+    session: {
+      forkedFromTabId: "tab-root",
+      reviewFlowState: "ready",
+      runDir: "/tmp/run",
+      eventsPath: "/tmp/run/events.jsonl",
+      images: [image],
+      imagesById: new Map([["img-hero", image]]),
+      selectedIds: ["img-hero"],
+      activeId: "img-hero",
+      communication: {
+        marksByImageId: new Map(),
+        reviewHistory: [
+          {
+            reason: "review_apply_success",
+            requestId: "review-7",
+            selectedProposalId: "proposal-7",
+            apply: {
+              status: "succeeded",
+              receiptPath: "/tmp/run/receipt-review-apply.json",
+              outputPath: "/tmp/run/hero-approved.png",
+              timelineNodeId: "tl-000002",
+            },
+            targetBefore: {
+              id: "img-hero",
+              path: "/tmp/run/hero-before.png",
+            },
+            targetAfter: {
+              id: "img-hero",
+              path: "/tmp/run/hero-approved.png",
+            },
+          },
+        ],
+        proposalTray: {
+          visible: true,
+          requestId: "review-live",
+          source: "design_review_bootstrap_state",
+          anchor: {
+            kind: "titlebar_button",
+            role: "design_review_button",
+          },
+          slots: [{ status: "apply_succeeded", title: "Swap background" }],
+        },
+      },
+      designReviewApply: {
+        status: "running",
+        sessionKey: "tab:tab-approved",
+        tabId: "tab-approved",
+        requestId: "review-live",
+        selectedProposalId: "proposal-live",
+        targetImageId: "img-hero",
+        referenceImageIds: ["img-ref-a", "img-ref-b"],
+        outputPath: "/tmp/run/hero-approved.png",
+        provider: "google",
+        requestedModel: "gemini-2.5-flash-image",
+        normalizedModel: "gemini-2.5-flash-image",
+        costTotalUsd: 0.14,
+        latencyPerImageS: 2.9,
+        startedAt: 1000,
+        completedAt: 0,
+        proposal: {
+          proposalId: "proposal-live",
+          label: "Swap background",
+          actionType: "background_replace",
+          previewImagePath: "/tmp/run/review-preview-live.png",
+          changedRegionBounds: { x: 64, y: 48, width: 640, height: 320 },
+          preserveRegionIds: ["region-character"],
+          rationaleCodes: ["mark_on_subject_edge", "background_separable"],
+        },
+        request: {
+          requestId: "review-live",
+          primaryImageId: "img-hero",
+        },
+      },
+      sessionTools: [
+        {
+          toolId: "polish",
+          label: "Polish",
+          shortLabel: "Polish",
+          description: "Polish the approved screenshot.",
+          execution: {
+            kind: "local_edit",
+            operation: "polish",
+          },
+        },
+      ],
+      toolRegistry: {
+        list() {
+          return [];
+        },
+      },
+    },
+  });
+
+  const restored = deserializeSessionSnapshot(payload);
+
+  assert.equal(restored.label, "Approved Variant");
+  assert.equal(restored.session.forkedFromTabId, "tab-root");
+  assert.equal(restored.session.reviewFlowState, "ready");
+  assert.equal(restored.session.activeId, "img-hero");
+  assert.equal(restored.session.communication.reviewHistory[0].reason, "review_apply_success");
+  assert.equal(restored.session.communication.reviewHistory[0].selectedProposalId, "proposal-7");
+  assert.equal(
+    restored.session.communication.reviewHistory[0].apply.receiptPath,
+    "/tmp/run/receipt-review-apply.json"
+  );
+  assert.equal(
+    restored.session.communication.reviewHistory[0].targetAfter.path,
+    "/tmp/run/hero-approved.png"
+  );
+  assert.equal(restored.session.communication.proposalTray.visible, true);
+  assert.equal(restored.session.communication.proposalTray.requestId, "review-live");
+  assert.equal(
+    restored.session.communication.proposalTray.source,
+    "design_review_bootstrap_state"
+  );
+  assert.equal(restored.session.designReviewApply.status, "running");
+  assert.equal(restored.session.designReviewApply.selectedProposalId, "proposal-live");
+  assert.deepEqual(restored.session.designReviewApply.referenceImageIds, ["img-ref-a", "img-ref-b"]);
+  assert.equal(restored.session.designReviewApply.provider, "google");
+  assert.equal(restored.session.designReviewApply.normalizedModel, "gemini-2.5-flash-image");
+  assert.equal(restored.session.designReviewApply.costTotalUsd, 0.14);
+  assert.equal(
+    restored.session.designReviewApply.proposal.previewImagePath,
+    "/tmp/run/review-preview-live.png"
+  );
+  assert.deepEqual(restored.session.designReviewApply.proposal.changedRegionBounds, {
+    x: 64,
+    y: 48,
+    width: 640,
+    height: 320,
+  });
+  assert.deepEqual(restored.session.designReviewApply.proposal.preserveRegionIds, ["region-character"]);
+  assert.deepEqual(restored.session.designReviewApply.proposal.rationaleCodes, [
+    "mark_on_subject_edge",
+    "background_separable",
+  ]);
+  assert.equal(restored.session.sessionTools[0].toolId, "polish");
+  assert.equal(typeof restored.session.toolRegistry.list, "function");
+});
+
 test("session snapshot rejects unsupported schemas", () => {
   assert.throws(
     () =>

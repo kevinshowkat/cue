@@ -1,0 +1,132 @@
+{
+  "runDir": "/runs/screenshot-polish",
+  "timelineHeadNodeId": "tl-000002",
+  "timelineNodes": [
+    {
+      "nodeId": "tl-000001",
+      "action": "Import"
+    },
+    {
+      "nodeId": "tl-000002",
+      "action": "Swap background"
+    }
+  ],
+  "exportComposite": {
+    "width": 1280,
+    "height": 720,
+    "boundsCss": {
+      "x": 0,
+      "y": 0,
+      "w": 1280,
+      "h": 720
+    },
+    "sourceImages": [
+      {
+        "id": "img-hero",
+        "path": "/runs/screenshot-polish/approved.png",
+        "receiptPath": "/runs/screenshot-polish/receipt-review-apply.json",
+        "label": "Approved Hero",
+        "kind": "engine",
+        "timelineNodeId": "tl-000002",
+        "sourceReceiptMeta": {
+          "operation": "design_review_apply",
+          "action": "Swap background",
+          "screenshotPolish": {
+            "selectedProposalId": "proposal-7",
+            "approvedProposalId": "proposal-7",
+            "previewImagePath": "/runs/screenshot-polish/review-preview-7.png",
+            "changedRegionBounds": {
+              "x": 96,
+              "y": 144,
+              "width": 720,
+              "height": 384
+            },
+            "preserveRegionIds": [
+              "region-character"
+            ],
+            "rationaleCodes": [
+              "mark_on_subject_edge",
+              "background_separable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "reviewApplyReceiptInput": {
+    "runDir": "/runs/screenshot-polish",
+    "outputPath": "/runs/screenshot-polish/hero-approved.png",
+    "targetBefore": {
+      "id": "img-hero",
+      "path": "/runs/screenshot-polish/hero-before.png",
+      "receiptPath": "/runs/screenshot-polish/receipt-import.json"
+    },
+    "targetImageId": "img-hero",
+    "referenceImageIds": [
+      "img-ref-a",
+      "img-ref-b"
+    ],
+    "selectedProposalId": "proposal-7",
+    "proposal": {
+      "proposalId": "proposal-7",
+      "label": "Swap background",
+      "actionType": "background_replace",
+      "applyBrief": "Replace the background only.",
+      "previewImagePath": "/runs/screenshot-polish/review-preview-7.png",
+      "changedRegionBounds": {
+        "x": 96,
+        "y": 144,
+        "width": 720,
+        "height": 384
+      },
+      "preserveRegionIds": [
+        "region-character"
+      ],
+      "rationaleCodes": [
+        "mark_on_subject_edge",
+        "background_separable"
+      ],
+      "negativeConstraints": [
+        "Do not alter the character"
+      ],
+      "targetRegion": {
+        "markIds": [
+          "mark-1"
+        ]
+      }
+    },
+    "request": {
+      "requestId": "review-7",
+      "visibleCanvasContext": {
+        "images": [
+          {
+            "id": "img-hero",
+            "path": "/runs/screenshot-polish/hero-before.png"
+          },
+          {
+            "id": "img-ref-a",
+            "path": "/runs/screenshot-polish/ref-a.png"
+          },
+          {
+            "id": "img-ref-b",
+            "path": "/runs/screenshot-polish/ref-b.png"
+          }
+        ]
+      }
+    },
+    "debugInfo": {
+      "route": {
+        "provider": "google",
+        "normalizedModel": "gemini-2.5-flash-image"
+      },
+      "providerRequest": {
+        "model": "gemini-2.5-flash-image"
+      }
+    },
+    "provider": "google",
+    "requestedModel": "gemini-2.5-flash-image",
+    "normalizedModel": "gemini-2.5-flash-image",
+    "costTotalUsd": 0.12,
+    "latencyPerImageS": 2.8
+  }
+}

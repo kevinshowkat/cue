@@ -94,6 +94,7 @@ export function captureSessionTimelineSnapshot(session = null) {
     lastTipText: typeof current.lastTipText === "string" ? current.lastTipText : null,
     lastDirectorText: current.lastDirectorText ? String(current.lastDirectorText) : null,
     lastDirectorMeta: cloneStructured(asObject(current.lastDirectorMeta)),
+    designReviewApply: cloneStructured(asObject(current.designReviewApply)),
     lastCostLatency: cloneStructured(asObject(current.lastCostLatency)),
   };
   return serializeSessionValue(snapshot);

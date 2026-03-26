@@ -2,6 +2,8 @@
 
 This document defines the current PSD export contract for Cue's desktop shell and notes the adjacent low-effort raster formats that now share the same native export pipeline.
 
+For the screenshot-polish slice, export is the final handoff step for the currently approved tab state. It exports the current visible composition and current timeline head, not an approval gallery or side-by-side compare bundle.
+
 ## Contract
 
 - UI entrypoints:
@@ -15,6 +17,9 @@ This document defines the current PSD export contract for Cue's desktop shell an
 - Destination: user-chosen save path from the native save dialog
 - Source artifact: flattened PNG render of the current visible canvas composition
 - Receipt output: JSON receipt from the native exporter, including timeline/export metadata
+- Receipt contract ids:
+  - PSD: `juggernaut.psd_export.v1`
+  - raster: `juggernaut.raster_export.v1`
 
 ## What Ships Now
 
@@ -26,12 +31,22 @@ This document defines the current PSD export contract for Cue's desktop shell an
   - active image id
   - canvas mode
   - source image paths
-  - source receipt references when present
+  - source receipt references and source receipt summaries when present
   - per-image rects and transforms
   - z-order
   - timeline nodes
+  - current timeline head id
   - action sequence
   - output and source hashes
+
+## Traceability
+
+- Export requests carry the current timeline schema version, head node id, action sequence, export bounds, and flattened output size.
+- Each source image entry can include the image's prior receipt path plus any receipt metadata already attached to that image in the session.
+- When the source image came from screenshot polish, receipt-facing `screenshotPolish` metadata may include `approvedProposalId` only as an alias derived from the runtime `selectedProposalId`.
+- Native export receipts add sha256 hashes for the flattened source image, final output, source assets, and any attached source receipts.
+- Native export receipts also summarize source image count, timeline node count, fidelity, and the exporter contract id that wrote the file.
+- PNG, JPG, WEBP, and TIFF now reuse the same receipt-bearing exporter, so screenshot-polish traceability is consistent across all currently shipped raster outputs.
 
 ## Known Limitations
 
@@ -39,6 +54,7 @@ This document defines the current PSD export contract for Cue's desktop shell an
 - Effect-token state, mask semantics, and tool semantics are not reified as editable PSD structures in this slice.
 - Export dimensions follow Cue canvas world geometry in CSS pixels, not source DPI metadata.
 - JPG export flattens transparency onto white because the target format does not preserve alpha.
+- Export does not currently package a dedicated compare artifact, approval manifest, or metadata-entry payload alongside the image.
 
 ## Follow-Up
 

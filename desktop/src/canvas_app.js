@@ -2424,9 +2424,15 @@ function createFreshDesignReviewApplyState() {
 function cloneDesignReviewApplyState(value = null) {
   const current = asRecord(value) || {};
   const fresh = createFreshDesignReviewApplyState();
+  const cloned = cloneToolRuntimeValue(current);
+  if (cloned && typeof cloned === "object") {
+    delete cloned.proposalId;
+    delete cloned.proposal_id;
+    delete cloned.selected_proposal_id;
+  }
   return {
     ...fresh,
-    ...cloneToolRuntimeValue(current),
+    ...cloned,
     status: readFirstString(current.status, fresh.status) || "idle",
     sessionKey: readFirstString(current.sessionKey, current.session_id) || null,
     tabId: readFirstString(current.tabId, current.tab_id) || null,
@@ -25403,11 +25409,23 @@ function buildCommunicationReviewHistoryEntry({
   if (!marks.length && !stamps.length && !regionSelections.length && !proposal && !request && !hasScreenshotPolish) {
     return null;
   }
+  const selectedProposalId =
+    readFirstString(
+      normalizedDetail?.selectedProposalId,
+      normalizedDetail?.selected_proposal_id,
+      normalizedDetail?.proposalId,
+      normalizedDetail?.proposal_id,
+      proposal?.proposalId,
+      proposal?.id,
+      screenshotPolish.selectedProposalId,
+      screenshotPolish.proposalId
+    ) || null;
   return {
     archivedAt: new Date().toISOString(),
     reason: String(reason || "review_apply_success").trim() || "review_apply_success",
     requestId: readFirstString(normalizedDetail?.requestId, request?.requestId, state.communication?.proposalTray?.requestId) || null,
-    proposalId: readFirstString(normalizedDetail?.proposalId, proposal?.proposalId) || null,
+    proposalId: screenshotPolish.proposalId || selectedProposalId,
+    selectedProposalId,
     anchor: cloneToolRuntimeValue(resolveCommunicationReviewAnchor()),
     resolvedTarget: cloneToolRuntimeValue(resolveCommunicationReviewTarget()),
     marks,
@@ -26606,6 +26624,16 @@ function normalizeDesignReviewApplyEventDetail(detail = {}, { fallbackState = nu
         : fallback.debugInfo
           ? cloneToolRuntimeValue(fallback.debugInfo)
           : null;
+  const selectedProposalId =
+    readFirstString(
+      record.selectedProposalId,
+      record.selected_proposal_id,
+      record.proposalId,
+      record.proposal_id,
+      proposal?.proposalId,
+      proposal?.id,
+      fallback.selectedProposalId
+    ) || null;
   return {
     ...fallback,
     status: readFirstString(status, record.status, fallback.status) || "idle",
@@ -26621,17 +26649,7 @@ function normalizeDesignReviewApplyEventDetail(detail = {}, { fallbackState = nu
       ) || null,
     proposalId:
       readFirstString(record.proposalId, record.proposal_id, proposal?.proposalId, proposal?.id, fallback.proposalId) || null,
-    selectedProposalId:
-      readFirstString(
-        record.selectedProposalId,
-        record.selected_proposal_id,
-        record.proposalId,
-        record.proposal_id,
-        fallback.selectedProposalId,
-        fallback.proposalId,
-        proposal?.proposalId,
-        proposal?.id
-      ) || null,
+    selectedProposalId,
     targetImageId,
     referenceImageIds,
     previewImagePath:
@@ -27278,6 +27296,7 @@ async function applyAcceptedDesignReviewOutputToSessionRecord(record = null, det
     targetBefore: targetSnapshot,
     targetImageId: targetId,
     referenceImageIds: normalized.referenceImageIds,
+    selectedProposalId: normalized.selectedProposalId,
     proposal: normalized.proposal,
     request: normalized.request,
     debugInfo: normalized.debugInfo,
@@ -27425,6 +27444,7 @@ async function applyAcceptedDesignReviewOutput(detail = {}) {
     targetBefore: targetSnapshot,
     targetImageId: targetId,
     referenceImageIds: normalized.referenceImageIds,
+    selectedProposalId: normalized.selectedProposalId,
     proposal: normalized.proposal,
     request: normalized.request,
     debugInfo: normalized.debugInfo,
@@ -37587,6 +37607,7 @@ async function writeDesignReviewApplyReceipt({
   targetBefore = null,
   targetImageId = null,
   referenceImageIds = [],
+  selectedProposalId = null,
   proposal = null,
   request = null,
   debugInfo = null,
@@ -37600,9 +37621,23 @@ async function writeDesignReviewApplyReceipt({
   if (!resolvedRunDir || !outputPath) return null;
   const receiptPath = `${resolvedRunDir}/receipt-review-apply-${Date.now()}.json`;
   const actionLabel = readFirstString(proposal?.label, proposal?.actionType) || "Apply Proposal";
+  const resolvedSelectedProposalId = readFirstString(selectedProposalId, proposal?.proposalId, proposal?.id) || null;
   const referencePaths = uniqueStringList(
     referenceImageIds.map((imageId) => resolveDesignReviewApplyRequestImagePath(request, imageId))
   );
+  const screenshotPolishMetadata = {
+    selectedProposalId: resolvedSelectedProposalId,
+    approvedProposalId: resolvedSelectedProposalId,
+    previewImagePath: readFirstString(proposal?.previewImagePath, proposal?.preview_image_path) || null,
+    changedRegionBounds:
+      asRecord(proposal?.changedRegionBounds)
+        ? cloneToolRuntimeValue(proposal.changedRegionBounds)
+        : asRecord(proposal?.changed_region_bounds)
+          ? cloneToolRuntimeValue(proposal.changed_region_bounds)
+          : null,
+    preserveRegionIds: uniqueStringList(proposal?.preserveRegionIds || proposal?.preserve_region_ids || []),
+    rationaleCodes: uniqueStringList(proposal?.rationaleCodes || proposal?.rationale_codes || []),
+  };
   const payload = {
     schema_version: 1,
     request: {
@@ -37626,6 +37661,7 @@ async function writeDesignReviewApplyReceipt({
         action: actionLabel,
         request_id: readFirstString(request?.requestId) || null,
         proposal_id: readFirstString(proposal?.proposalId, proposal?.id) || null,
+        screenshotPolish: cloneToolRuntimeValue(screenshotPolishMetadata),
         proposal_label: readFirstString(proposal?.label) || null,
         action_type: readFirstString(proposal?.actionType) || null,
         target_image_id: readFirstString(targetImageId) || null,
@@ -37674,6 +37710,7 @@ async function writeDesignReviewApplyReceipt({
       action: actionLabel,
       request_id: readFirstString(request?.requestId) || null,
       proposal_id: readFirstString(proposal?.proposalId, proposal?.id) || null,
+      screenshotPolish: cloneToolRuntimeValue(screenshotPolishMetadata),
       proposal_label: readFirstString(proposal?.label) || null,
       action_type: readFirstString(proposal?.actionType) || null,
       target_image_id: readFirstString(targetImageId) || null,

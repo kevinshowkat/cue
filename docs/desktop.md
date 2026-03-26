@@ -4,6 +4,8 @@ Cue is a Tauri desktop app with its strongest verification on macOS today. The r
 
 There is no web app.
 
+The current productized story is a screenshot-polish slice: bring one still image into a session tab, guide a review with marks or region picks, accept one approved edit, preserve lineage through tabs/history/receipts, and export a presentable flattened asset.
+
 ## Current Shell
 
 - One window with a brand strip, in-app session tabs, and one shared canvas surface.
@@ -19,6 +21,7 @@ There is no web app.
 - **Shared canvas**: only the active tab is attached to runtime/events at a time; switching tabs swaps session state into the shared surface.
 - **Visual timeline**: tab-local history shown in a dedicated shelf under the titlebar. It can collapse to a visible stub and restore prior committed states without re-running model work.
 - **Communication overlay**: the `Marker`, `Highlight`, `Magic Select`, `Stamp`, and `Eraser` tools used to scope `Design Review`; `Make Space` remains a dormant runtime affordance.
+- **Communication overlay**: the visible tools are `Marker`, `Highlight`, `Magic Select`, `Stamp`, and `Eraser`; `Make Space` remains a dormant runtime affordance that is still part of the underlying contract but not surfaced as a current shell control.
 - **Agent Run**: a compact goal-driven panel that can step or auto-run review, tool-preview/create, and export actions against the current tab.
 
 ## Current Primary Workflow
@@ -29,10 +32,18 @@ There is no web app.
 4. Trigger `Design Review` when the edit is ambiguous, aesthetic, or multi-step.
 5. Accept a proposal to run a real in-place single-image apply.
 6. Optionally preview or create a reusable tool from the current edit pattern.
-7. Use `History` to inspect or restore earlier tab-local states.
+7. Use `Fork tab` or `History` to preserve and compare variants before export.
 8. Export PSD, PNG, JPG, WEBP, or TIFF with a receipt.
 
 The primary Cue wedge is still single-image-first even though older Brood-derived multi-image actions remain available in the runtime.
+
+## Compare Today
+
+- Compare is currently manual and tab-based.
+- `Fork tab` preserves the current state as a sibling variant before another edit lands.
+- `History` rewinds or restores committed states inside one tab.
+- Reopening a saved run restores the saved timeline/session state rather than rebuilding from raw artifacts alone.
+- There is no dedicated side-by-side before/after viewer or approval gallery yet.
 
 ## Left Rail And Review
 
@@ -41,7 +52,7 @@ The primary Cue wedge is still single-image-first even though older Brood-derive
 - `Remove People` is currently exposed as an extra direct single-image affordance outside the three dynamic slots.
 - `New Background` remains part of the seeded job library, but it is hidden in the current visible rail.
 - `Design Review` consumes the visible canvas plus marks or region candidates and returns proposal cards in the communication tray.
-- Accepting a proposal routes through the normal execution layer and replaces the target image in place.
+- Accepting a proposal routes through the normal execution layer, tracks the chosen card as `selectedProposalId`, replaces the target image in place, and writes a review-apply receipt plus a timeline entry.
 - Busy tabs block switching, closing, or forking until they reach a safe boundary.
 
 ## Persistence And Files
@@ -49,6 +60,8 @@ The primary Cue wedge is still single-image-first even though older Brood-derive
 - Imported files land in `run_dir/inputs/`.
 - Session saves write `run_dir/juggernaut-session.json`.
 - Timeline persistence writes `run_dir/session-timeline.json`.
+- Saved session/timeline state preserves tab lineage plus the review/apply trace state needed to reopen or manually compare variants later.
+- Design-review planner traces are persisted into the run directory as `design-review-planner-*.json`.
 - Receipts continue to live alongside run artifacts as `receipt-*.json` or export-specific receipt payloads.
 - Legacy `brood` on-disk paths, local-storage keys, and runtime env names are still read during the transition, but Cue now writes canonical `cue` names.
 
@@ -57,7 +70,9 @@ The primary Cue wedge is still single-image-first even though older Brood-derive
 - The titlebar export menu offers PSD, PNG, JPG, WEBP, and TIFF.
 - `File > Export Session...` currently routes to PSD export.
 - Both export routes open a save dialog and remember the last export directory.
-- Export receipts include the current timeline head and timeline schema version.
+- Export always reflects the current visible tab state and current timeline head.
+- Export receipts include the current timeline head, timeline schema version, action sequence, source image lineage, and content hashes.
+- Screenshot-polish receipts keep `selectedProposalId` in runtime/apply state and may expose `approvedProposalId` only inside receipt-facing `screenshotPolish` metadata as an alias of that same chosen proposal.
 - PSD is currently a flattened bitmap composition with alpha rather than fully editable per-image layers.
 - PNG, WEBP, and TIFF are also flattened and do not preserve editable tool semantics.
 - JPG is flattened and composites transparency onto white because the format does not preserve alpha.
@@ -68,6 +83,7 @@ Older Brood-era capabilities such as multi-image blends, DNA/Soul token flows, a
 
 ## See Also
 
+- [docs/features/screenshot-polish-mvp/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/screenshot-polish-mvp/README.md)
 - [docs/features/visual-timeline/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/visual-timeline/README.md)
 - [docs/features/shell-canvas-integration.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/shell-canvas-integration.md)
 - [docs/psd-export-slice.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/psd-export-slice.md)

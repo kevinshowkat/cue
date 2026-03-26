@@ -1,12 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
 const app = readFileSync(appPath, "utf8");
+const screenshotPolishFixture = JSON.parse(
+  readFileSync(join(here, "fixtures", "screenshot_polish", "traceability_fixture.json"), "utf8")
+);
 
 function extractFunctionSource(name) {
   const markers = [`async function ${name}(`, `function ${name}(`];
@@ -659,6 +662,7 @@ test("review apply success replaces the target image in place and records a time
     phase: "succeeded",
     sessionKey: "tab:tab-a",
     requestId: "review-1",
+    selectedProposalId: "proposal-1",
     proposal: {
       proposalId: "proposal-1",
       label: "Swap background",
@@ -694,6 +698,13 @@ test("review apply success replaces the target image in place and records a time
   assert.equal(harness.receiptCalls.length, 1);
   assert.equal(harness.receiptCalls[0].targetImageId, "img-1");
   assert.deepEqual(harness.receiptCalls[0].referenceImageIds, ["img-2"]);
+  assert.equal(harness.receiptCalls[0].selectedProposalId, "proposal-1");
+  assert.equal(harness.receiptCalls[0].proposal?.actionType, "background_replace");
+  assert.equal(harness.receiptCalls[0].request?.requestId, "review-1");
+  assert.equal(harness.receiptCalls[0].provider, "google");
+  assert.equal(harness.receiptCalls[0].normalizedModel, "gemini-3.1-flash-image-preview");
+  assert.equal(harness.receiptCalls[0].costTotalUsd, 0.12);
+  assert.equal(harness.receiptCalls[0].latencyPerImageS, 3.4);
   assert.equal(harness.replaceCalls.length, 1);
   assert.equal(harness.replaceCalls[0].targetId, "img-1");
   assert.equal(harness.replaceCalls[0].options.path, "/tmp/out.png");
@@ -714,6 +725,13 @@ test("review apply success replaces the target image in place and records a time
   assert.equal(harness.screenshotPolishCalls.length, 1);
   assert.equal(harness.archiveCalls.length, 1);
   assert.equal(harness.archiveCalls[0].targetBefore.id, "img-1");
+  assert.equal(harness.archiveCalls[0].targetBefore.path, "/tmp/source.png");
+  assert.equal(harness.archiveCalls[0].targetAfter.path, "/tmp/out.png");
+  assert.equal(harness.archiveCalls[0].targetAfter.receiptPath, "/runs/a/receipt-review-apply.json");
+  assert.equal(harness.archiveCalls[0].receiptPath, "/runs/a/receipt-review-apply.json");
+  assert.equal(harness.archiveCalls[0].outputPath, "/tmp/out.png");
+  assert.equal(harness.archiveCalls[0].timelineNodeId, "tl-2");
+  assert.equal(harness.archiveCalls[0].detail.selectedProposalId, "proposal-1");
   assert.equal(harness.clearVisibleCalls, 1);
   assert.deepEqual(harness.removeImageCalls, ["img-2"]);
   assert.equal(harness.state.imagesById.has("img-2"), false);
@@ -782,6 +800,7 @@ test("background review apply completion updates the owning tab session without 
     phase: "succeeded",
     sessionKey: "tab:tab-a",
     requestId: "review-1",
+    selectedProposalId: "proposal-1",
     proposal: {
       proposalId: "proposal-1",
       label: "Swap background",
@@ -876,6 +895,14 @@ test("background review apply completion keeps magic select armed in the owning 
   });
 
   assert.equal(ok, true);
+  assert.equal(harness.receiptCalls.length, 1);
+  assert.equal(harness.receiptCalls[0].runDir, "/runs/a");
+  assert.equal(harness.receiptCalls[0].selectedProposalId, "proposal-1");
+  assert.equal(harness.session.imagesById.get("img-1")?.path, "/tmp/out.png");
+  assert.equal(harness.session.imagesById.get("img-1")?.receiptPath, "/runs/a/receipt-review-apply.json");
+  assert.equal(harness.session.imagesById.get("img-1")?.timelineNodeId, "tl-2");
+  assert.equal(harness.session.imagesById.get("img-1")?.source, "design_review_apply");
+  assert.equal(harness.session.imagesById.has("img-2"), false);
   assert.equal(harness.session.communication.tool, "magic_select");
   assert.equal(harness.session.communication.proposalTray.visible, false);
 });
@@ -1086,7 +1113,7 @@ test("review apply detail falls back to request-visible reference images and par
   const normalized = normalizeDesignReviewApplyEventDetail({
     requestId: "review-1",
     proposalId: "proposal-1",
-    selectedProposalId: "proposal-1",
+    selectedProposalId: "proposal-2",
     previewImagePath: "/tmp/preview.png",
     changedRegionBounds: { x: 4, y: 5, w: 32, h: 16 },
     preserveRegionIds: ["subject", "product"],
@@ -1110,13 +1137,89 @@ test("review apply detail falls back to request-visible reference images and par
 
   assert.deepEqual(normalized.referenceImageIds, ["img-ref-a", "img-ref-b"]);
   assert.equal(normalized.proposalId, "proposal-1");
-  assert.equal(normalized.selectedProposalId, "proposal-1");
+  assert.equal(normalized.selectedProposalId, "proposal-2");
   assert.equal(normalized.previewImagePath, "/tmp/preview.png");
   assert.deepEqual(normalized.changedRegionBounds, { x: 4, y: 5, w: 32, h: 16 });
   assert.deepEqual(normalized.preserveRegionIds, ["subject", "product"]);
   assert.deepEqual(normalized.rationaleCodes, ["preserve_subject", "tighten_background"]);
   assert.equal(normalized.startedAt, Date.parse("2026-03-09T18:15:20.000Z"));
   assert.equal(normalized.completedAt, Date.parse("2026-03-09T18:15:24.000Z"));
+});
+
+test("design review apply receipt records screenshot-polish lineage and model cost metadata", async () => {
+  const writes = [];
+  const cloneToolRuntimeValue = (value) => (value == null ? value : JSON.parse(JSON.stringify(value)));
+  const asRecord = instantiateFunction("asRecord");
+  const readFirstString = instantiateFunction("readFirstString");
+  const readFirstNumber = instantiateFunction("readFirstNumber");
+  const uniqueStringList = instantiateFunction("uniqueStringList", { readFirstString, Set });
+  const resolveDesignReviewApplyRequestImagePath = instantiateFunction(
+    "resolveDesignReviewApplyRequestImagePath",
+    { readFirstString }
+  );
+  const writeDesignReviewApplyReceipt = instantiateFunction("writeDesignReviewApplyReceipt", {
+    readFirstString,
+    readFirstNumber,
+    uniqueStringList,
+    resolveDesignReviewApplyRequestImagePath,
+    extname,
+    asRecord,
+    cloneToolRuntimeValue,
+    state: {
+      runDir: "/runs/screenshot-polish",
+    },
+    writeTextFile: async (path, text) => {
+      writes.push({ path, text });
+    },
+  });
+
+  const receiptPath = await writeDesignReviewApplyReceipt(screenshotPolishFixture.reviewApplyReceiptInput);
+
+  assert.match(receiptPath, /^\/runs\/screenshot-polish\/receipt-review-apply-\d+\.json$/);
+  assert.equal(writes.length, 1);
+
+  const payload = JSON.parse(writes[0].text);
+  assert.equal(payload.request.mode, "design_review_apply");
+  assert.equal(payload.request.prompt, "Replace the background only.");
+  assert.equal(payload.request.inputs.init_image, "/runs/screenshot-polish/hero-before.png");
+  assert.deepEqual(payload.request.inputs.reference_images, [
+    "/runs/screenshot-polish/ref-a.png",
+    "/runs/screenshot-polish/ref-b.png",
+  ]);
+  assert.equal(payload.request.metadata.action, "Swap background");
+  assert.equal(payload.request.metadata.action_type, "background_replace");
+  assert.equal(payload.request.metadata.proposal_id, "proposal-7");
+  assert.equal(payload.request.metadata.screenshotPolish.selectedProposalId, "proposal-7");
+  assert.equal(payload.request.metadata.screenshotPolish.approvedProposalId, "proposal-7");
+  assert.equal(
+    payload.request.metadata.screenshotPolish.previewImagePath,
+    "/runs/screenshot-polish/review-preview-7.png"
+  );
+  assert.deepEqual(payload.request.metadata.screenshotPolish.changedRegionBounds, {
+    x: 96,
+    y: 144,
+    width: 720,
+    height: 384,
+  });
+  assert.deepEqual(payload.request.metadata.screenshotPolish.preserveRegionIds, ["region-character"]);
+  assert.deepEqual(payload.request.metadata.screenshotPolish.rationaleCodes, [
+    "mark_on_subject_edge",
+    "background_separable",
+  ]);
+  assert.equal(payload.request.metadata.target_image_id, "img-hero");
+  assert.deepEqual(payload.request.metadata.reference_image_ids, ["img-ref-a", "img-ref-b"]);
+  assert.deepEqual(payload.request.metadata.target_region, { markIds: ["mark-1"] });
+  assert.equal(payload.resolved.provider, "google");
+  assert.equal(payload.resolved.model, "gemini-2.5-flash-image");
+  assert.equal(payload.provider_response.output_path, "/runs/screenshot-polish/hero-approved.png");
+  assert.equal(payload.provider_response.debug_info.route.provider, "google");
+  assert.equal(payload.result_metadata.operation, "design_review_apply");
+  assert.equal(payload.result_metadata.proposal_id, "proposal-7");
+  assert.equal(payload.result_metadata.screenshotPolish.selectedProposalId, "proposal-7");
+  assert.equal(payload.result_metadata.screenshotPolish.approvedProposalId, "proposal-7");
+  assert.equal(payload.result_metadata.target_image_id, "img-hero");
+  assert.equal(payload.result_metadata.cost_total_usd, 0.12);
+  assert.equal(payload.result_metadata.latency_per_image_s, 2.8);
 });
 
 test("entering multi-canvas normalizes the edit tool back to pan", () => {

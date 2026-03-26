@@ -180,3 +180,122 @@ test("timeline serialization preserves head selection and chronological ordering
   );
   assert.equal(resolveSessionTimelineHeadNode(restored)?.nodeId, "tl-000002");
 });
+
+test("timeline snapshots preserve screenshot-polish compare context while clearing live drafts", () => {
+  const image = {
+    id: "img-hero",
+    path: "/tmp/run/hero-approved.png",
+    label: "Hero Approved",
+    img: new URL("https://example.com/hero-approved.png"),
+  };
+
+  const snapshot = captureSessionTimelineSnapshot({
+    label: "Approved Variant",
+    labelManual: true,
+    forkedFromTabId: "tab-root",
+    reviewFlowState: "ready",
+    images: [image],
+    imagesById: new Map([["img-hero", image]]),
+    activeId: "img-hero",
+    selectedIds: ["img-hero"],
+    communication: {
+      tool: "marker",
+      markDraft: { imageId: "img-hero", points: [{ x: 2, y: 3 }] },
+      eraseDraft: { imageId: "img-hero", points: [{ x: 4, y: 5 }] },
+      marksByImageId: new Map([["img-hero", [{ id: "mark-1" }]]]),
+      canvasMarks: [{ id: "canvas-mark-1", imageId: "img-hero" }],
+      regionProposalsByImageId: new Map([["img-hero", [{ id: "region-1" }]]]),
+      reviewHistory: [
+        {
+          reason: "review_apply_success",
+          requestId: "review-7",
+          selectedProposalId: "proposal-7",
+          apply: {
+            status: "succeeded",
+            receiptPath: "/tmp/run/receipt-review-apply.json",
+            timelineNodeId: "tl-000002",
+          },
+          targetAfter: {
+            id: "img-hero",
+            path: "/tmp/run/hero-approved.png",
+          },
+        },
+      ],
+      proposalTray: {
+        visible: true,
+        requestId: "review-7",
+        source: "design_review_bootstrap_state",
+        slots: [{ status: "apply_succeeded", title: "Swap background" }],
+      },
+      lastAnchor: { kind: "mark", imageId: "img-hero" },
+    },
+    designReviewApply: {
+      status: "running",
+      sessionKey: "tab:tab-approved",
+      tabId: "tab-approved",
+      requestId: "review-7",
+      selectedProposalId: "proposal-7",
+      targetImageId: "img-hero",
+      referenceImageIds: ["img-ref-a", "img-ref-b"],
+      proposal: {
+        proposalId: "proposal-7",
+        previewImagePath: "/tmp/run/review-preview-7.png",
+        changedRegionBounds: { x: 96, y: 144, width: 720, height: 384 },
+        preserveRegionIds: ["region-character"],
+        rationaleCodes: ["mark_on_subject_edge", "background_separable"],
+      },
+    },
+    lastCostLatency: {
+      provider: "google",
+      model: "gemini-2.5-flash-image",
+      cost_total_usd: 0.14,
+    },
+  });
+
+  const restored = restoreSessionTimelineSnapshot(snapshot, {
+    runDir: "/tmp/run",
+    eventsPath: "/tmp/run/events.jsonl",
+  });
+
+  assert.equal(restored.forkedFromTabId, "tab-root");
+  assert.equal(restored.reviewFlowState, "ready");
+  assert.equal(restored.communication.markDraft, null);
+  assert.equal(restored.communication.eraseDraft, null);
+  assert.equal(restored.communication.proposalTray.visible, true);
+  assert.equal(restored.communication.proposalTray.requestId, "review-7");
+  assert.equal(
+    restored.communication.proposalTray.source,
+    "design_review_bootstrap_state"
+  );
+  assert.equal(
+    restored.communication.reviewHistory[0].apply.receiptPath,
+    "/tmp/run/receipt-review-apply.json"
+  );
+  assert.equal(
+    restored.communication.reviewHistory[0].apply.timelineNodeId,
+    "tl-000002"
+  );
+  assert.equal(restored.communication.reviewHistory[0].selectedProposalId, "proposal-7");
+  assert.equal(
+    restored.communication.reviewHistory[0].targetAfter.path,
+    "/tmp/run/hero-approved.png"
+  );
+  assert.equal(restored.designReviewApply.selectedProposalId, "proposal-7");
+  assert.equal(
+    restored.designReviewApply.proposal.previewImagePath,
+    "/tmp/run/review-preview-7.png"
+  );
+  assert.deepEqual(restored.designReviewApply.proposal.changedRegionBounds, {
+    x: 96,
+    y: 144,
+    width: 720,
+    height: 384,
+  });
+  assert.deepEqual(restored.designReviewApply.proposal.preserveRegionIds, ["region-character"]);
+  assert.deepEqual(restored.designReviewApply.proposal.rationaleCodes, [
+    "mark_on_subject_edge",
+    "background_separable",
+  ]);
+  assert.equal(restored.lastCostLatency.provider, "google");
+  assert.equal(restored.lastCostLatency.model, "gemini-2.5-flash-image");
+});

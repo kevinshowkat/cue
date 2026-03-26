@@ -7,6 +7,9 @@ import { dirname, join } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
 const app = readFileSync(appPath, "utf8");
+const screenshotPolishFixture = JSON.parse(
+  readFileSync(join(here, "fixtures", "screenshot_polish", "traceability_fixture.json"), "utf8")
+);
 
 function loadNamedFunction(name) {
   const pattern = new RegExp(
@@ -206,5 +209,63 @@ test("PSD export request omits screenshot-polish trace when another image is act
     globalThis.exportPsdLimitations = previousGlobals.exportPsdLimitations;
     globalThis.exportRasterFormatLimitations = previousGlobals.exportRasterFormatLimitations;
     globalThis.normalizeExportFormat = previousGlobals.normalizeExportFormat;
+  }
+});
+
+test("Export requests carry screenshot-polish lineage across timeline and source receipts", () => {
+  const normalizeExportFormat = loadNamedFunction("normalizeExportFormat");
+  globalThis.normalizeExportFormat = normalizeExportFormat;
+  globalThis.collectExportTimelineNodes = () => screenshotPolishFixture.timelineNodes;
+  globalThis.SESSION_TIMELINE_SCHEMA_VERSION = 1;
+  globalThis.state = {
+    runDir: screenshotPolishFixture.runDir,
+    canvasMode: "multi",
+    timelineHeadNodeId: screenshotPolishFixture.timelineHeadNodeId,
+  };
+  globalThis.getVisibleActiveId = () => "img-hero";
+  globalThis.exportPsdLimitations = () => ["PSD flattened"];
+  globalThis.exportRasterFormatLimitations = (format) => [`${format} flattened`];
+
+  try {
+    const buildPsdExportRequest = loadNamedFunction("buildPsdExportRequest");
+    const request = buildPsdExportRequest({
+      outPath: "/tmp/screenshot-polish.webp",
+      flattenedSourcePath: `${screenshotPolishFixture.runDir}/export-approved.flattened.png`,
+      format: "webp",
+      composite: screenshotPolishFixture.exportComposite,
+    });
+
+    assert.equal(request.format, "webp");
+    assert.equal(request.runDir, screenshotPolishFixture.runDir);
+    assert.equal(request.activeImageId, "img-hero");
+    assert.equal(request.timelineSchemaVersion, 1);
+    assert.equal(request.timelineHeadNodeId, screenshotPolishFixture.timelineHeadNodeId);
+    assert.deepEqual(request.actionSequence, ["Import", "Swap background"]);
+    assert.equal(
+      request.sourceImages[0].receiptPath,
+      "/runs/screenshot-polish/receipt-review-apply.json"
+    );
+    assert.equal(request.sourceImages[0].timelineNodeId, screenshotPolishFixture.timelineHeadNodeId);
+    assert.equal(request.sourceImages[0].sourceReceiptMeta.operation, "design_review_apply");
+    assert.equal(
+      request.sourceImages[0].sourceReceiptMeta.screenshotPolish.selectedProposalId,
+      "proposal-7"
+    );
+    assert.equal(
+      request.sourceImages[0].sourceReceiptMeta.screenshotPolish.approvedProposalId,
+      "proposal-7"
+    );
+    assert.deepEqual(request.limitations, ["webp flattened"]);
+  } finally {
+    delete globalThis.normalizeExportFormat;
+    delete globalThis.collectExportTimelineNodes;
+    delete globalThis.SESSION_TIMELINE_SCHEMA_VERSION;
+    delete globalThis.state;
+    delete globalThis.getVisibleActiveId;
+    delete globalThis.exportPsdLimitations;
+    delete globalThis.exportRasterFormatLimitations;
+  }
+});
+
   }
 });

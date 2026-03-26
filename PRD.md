@@ -91,6 +91,34 @@ As of **2026-03-26**, the repo focus is to harden and document the launchable Ma
 
 Cross-platform parity and native `.ai` / `.fig` round-trip remain release requirements, but they are not yet complete in the current slice.
 
+## Screenshot Polish Phase
+For the current repo phase, `screenshot polish` means turning one rough still image into a presentable approved still without requiring design vocabulary. In practice that can be a gameplay capture, UI screenshot, product still, or any other single image the user wants to clean up before sharing.
+
+Full screenshot-polish MVP target:
+
+- import one still into a session
+- point to what should change with marks or region picks
+- run `Design Review` and choose from a small set of proposals
+- accept one proposal into a traced in-place apply
+- preserve the baseline and approved variants for compare before export
+- capture lightweight publishing metadata
+- export a receipt-backed asset
+
+Currently landed increment:
+
+- session tabs, tab forks, and visual timeline restore for manual compare and rollback
+- communication-guided review proposals and accepted single-image apply
+- review/apply planner traces plus review/apply receipts with target/reference/provider lineage
+- saved session/timeline reopen from run artifacts
+- flattened PSD plus flattened PNG/JPG/WEBP/TIFF export with receipt-backed timeline lineage
+
+Not yet landed in this increment:
+
+- dedicated metadata-entry UI for title, caption, destination, or release notes
+- dedicated side-by-side compare or approval-gallery UX
+- editable layered PSD export
+- native `.ai` / `.fig` export and round-trip
+
 ## Historical Sprint 0 Goal (March 8, 2026)
 By **5:30 PM America/Los_Angeles on Sunday, March 8, 2026**, the goal was to produce a launchable vertical slice on the current Mac that:
 
@@ -450,6 +478,9 @@ Rules:
   title: "Separate subject from background",
   capability: "subject_isolation",
   actionIntent: "cut_out_subject",
+  previewImagePath: "artifacts/review_preview_123.png" | null,
+  changedRegionBounds: { x: 24, y: 18, width: 120, height: 96 } | null,
+  preserveRegionIds: ["protect_123"],
   rationaleCodes: ["mark_on_subject_edge", "background_separable"],
   targetRef: {
     markIds: ["mark_123"],
@@ -466,10 +497,15 @@ Rules:
 
 Rules:
 - Proposals are action-first and must resolve to an executable action intent or capability, not freeform critique alone.
+- `previewImagePath`, when present, points to the proposal preview artifact for that proposal only.
+- `changedRegionBounds` describes the bounded area the proposal expects to change on the visible image.
+- `preserveRegionIds` carries the protected region ids the proposal must keep intact.
 - `rationaleCodes` may explain ranking internally without exposing provider details in the main workflow.
 - `status` is `ready` once planning returns a valid proposal and advances independently of final apply.
 - `previewStatus` is optional media state and does not gate proposal selection.
 - `selectedPreviewStatus` is request-local compare state for the currently selected proposal and does not replace final apply by default.
+- Runtime and apply state must use `selectedProposalId` for the currently chosen proposal.
+- Receipt-facing `screenshotPolish` metadata may include `approvedProposalId` only as an alias derived from `selectedProposalId`.
 
 ### 12. 2D And 3D Outputs
 - 2D outputs: layered raster export plus native design-tool outputs.
