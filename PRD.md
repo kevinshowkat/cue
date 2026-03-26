@@ -17,8 +17,8 @@ Juggernaut is a text-free-first, image-first desktop design workstation for non-
 - V1 primary rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots.
 - Product split:
   - left rail = deterministic precomputed action library
-  - bottom rail = communication layer for complex or non-prebaked changes
-- V1 bottom communication rail tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
+  - right rail = communication layer for complex or non-prebaked changes
+- V1 right-side communication rail tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
 - V1 shell model: single-window, Warp-style session tabs over one shared canvas surface.
 - `Create Tool` remains core product value, but for the single-image-first wedge it moves to a secondary follow-on surface such as `Save Shortcut`.
 - Icon system: custom iconography generated from the same pipeline family used for Oscillo bookend icon generation, with the starting reference at `../oscillo/scripts/generate_bookend_overlays.py`.
@@ -93,7 +93,7 @@ By **5:30 PM America/Los_Angeles on Sunday, March 8, 2026**, produce a launchabl
 This is a same-day launch slice, not the full release bar. Cross-platform parity and native `.ai`/`.fig` remain release requirements unless scope is later renegotiated.
 
 ## V1 Outcome
-Users can open the app, keep multiple isolated runs in one window through session tabs, swap the active run into a shared canvas surface, drop in one image, use the left rail for deterministic precomputed actions and the bottom rail for complex communication-driven edits, see intent-aware suggested rail jobs, apply seeded single-image edits, request action-first design review proposals against the visible canvas plus any marks, accept a proposal to run a real single-image edit that replaces the target image in place, optionally save a reusable shortcut after a successful edit, and export a usable 2D asset with a reproducibility receipt. Multi-image flows are deferred from the primary v1 loop until the single-image wedge is stable.
+Users can open the app, keep multiple isolated runs in one window through session tabs, swap the active run into a shared canvas surface, drop in one image, use the left rail for deterministic precomputed actions and the right rail for complex communication-driven edits, see intent-aware suggested rail jobs, apply seeded single-image edits, request action-first design review proposals against the visible canvas plus any marks, accept a proposal to run a real single-image edit that replaces the target image in place, optionally save a reusable shortcut after a successful edit, and export a usable 2D asset with a reproducibility receipt. Multi-image flows are deferred from the primary v1 loop until the single-image wedge is stable.
 
 ## V1 Primary Wedge
 - One image in.
@@ -102,8 +102,8 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 - One active run/session tab attached at a time.
 - No multi-image flows in the primary loop.
 - Left rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library.
-- Bottom rail shape: communication-only rail for complex or non-prebaked changes.
-- Bottom communication rail v1 tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
+- Right rail shape: communication-only rail for complex or non-prebaked changes.
+- Right-side communication rail v1 tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
 - `Create Tool` remains in the product, but enters as a secondary follow-on capability through `Save Shortcut` or a secondary dialog after useful edits.
 
 ## V1 Non-Goals
@@ -117,12 +117,12 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 1. The user launches the app from the dock and lands on a single-window shell with a shared canvas surface and an in-app session tab strip.
 2. `New Run` creates a new run in a new tab instead of wiping the current one, and `Open Run` opens an existing run in a new tab.
 3. The user switches tabs to swap the selected run/session into the shared canvas surface.
-4. The native system menu mirrors the session shell: `File` exposes new/open/save/close/export session actions, `Tools` mirrors the bottom communication tools plus visible custom tools, and `Shortcuts` mirrors the left rail actions.
+4. The native system menu mirrors the session shell: `File` exposes new/open/save/close/export session actions, `Tools` mirrors the right-side communication tools plus visible custom tools, and `Shortcuts` mirrors the left rail actions.
 5. The user drags one image onto the active session canvas.
 6. After first-use cloud-analysis consent, the system may opportunistically analyze the uploaded image through the design-review upload-analysis path, cache that analysis by image hash, and use it to improve future suggestions without blocking editing or design review.
 7. The left rail keeps two stable icon-only anchors: `Upload` and `Select`.
 8. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the deterministic precomputed action library, while any action that may incur model cost shows a top-right sapphire-blue dot.
-9. The bottom rail exposes `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` as the communication layer for complex or non-prebaked changes.
+9. The right rail exposes `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` as the communication layer for complex or non-prebaked changes.
 10. `Marker` lets the user place transient Photoshop-style freehand highlighter marks that are raw and pointer-faithful, without arrowheads, without prior image selection, and without requiring an image under the pointer.
 11. `Protect` uses the same visible freehand marking behavior as `Marker`, but its semantics are "do not change this area" when review or apply consumes the focus contract.
 12. `Magic Select` lets the user click an image and cycle through 2-3 proposed candidate regions for communication and review.
@@ -225,8 +225,8 @@ Notes:
 - `Select` is the deterministic local entry into region-aware variants of jobs that need explicit user scope.
 
 ### 5. Bottom Communication Rail
-- The bottom rail is the communication layer for complex or non-prebaked changes that do not map cleanly to a single left-rail action.
-- Bottom communication rail v1 contains exactly 5 tools:
+- The right rail is the communication layer for complex or non-prebaked changes that do not map cleanly to a single left-rail action.
+- Right-side communication rail v1 contains exactly 5 tools:
   - `Marker`
   - `Protect`
   - `Magic Select`
@@ -339,7 +339,7 @@ Unavailable capability policy:
 - Provider resolution details belong in settings, receipts, diagnostics, or deeper follow-on surfaces, not the primary rail.
 
 ### 11. Communication And Review Contracts
-The bottom communication rail and `Design review` flow share the following contracts.
+The right-side communication rail and `Design review` flow share the following contracts.
 
 `communicationMark`:
 
@@ -488,7 +488,7 @@ Rules:
 ## UX Requirements
 - Primary workspace is visually driven and text-free in normal operation.
 - Left rail is vertical, icon-only, and always visible.
-- Left rail represents precomputed actions; bottom rail represents communication input for complex or non-prebaked changes.
+- Left rail represents precomputed actions; right rail represents communication input for complex or non-prebaked changes.
 - Custom iconography should be generated or derived from the Oscillo bookend icon pipeline rather than assembled from stock icon packs.
 - The app uses a glassy layered material system on macOS, with platform-appropriate equivalents on Windows and Linux.
 - Suggested edits appear as previews or icon cards, not chat bubbles.
@@ -556,10 +556,10 @@ Rules:
 
 ### Core UX
 - The main workspace includes a left vertical icon-only rail.
-- The main workspace includes a bottom communication rail.
+- The main workspace includes a right-side communication rail.
 - The main workspace includes an in-app session tab strip using a single shared canvas surface.
 - The left rail keeps stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library.
-- The bottom communication rail contains `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` in v1.
+- The right-side communication rail contains `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` in v1.
 - The main editing workflow requires no text labels to operate.
 - The primary wedge is one image in and one usable asset out.
 - No multi-image action is required in the primary loop.
@@ -629,7 +629,7 @@ Rules:
 - Fork or adapt `../brood` into a Juggernaut desktop shell.
 - Achieve launchable single-image upload-to-canvas loop.
 - Land the primary rail contract with stable anchors and 3 dynamic job slots.
-- Land the bottom communication rail contract for `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`, and explicit `Design review`.
+- Land the right-side communication rail contract for `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`, and explicit `Design review`.
 - Wire at least one working single-image edit path.
 - Expose a follow-on `Save Shortcut` / `Create Tool` surface after a useful edit.
 - Export to PSD.

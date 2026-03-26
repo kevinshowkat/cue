@@ -36,7 +36,8 @@
   --jg-rail-button-size: 54px;
   --jg-rail-gap: 12px;
   --jg-rail-pad: 12px;
-  --jg-communication-shell-width: min(620px, calc(100vw - 48px));
+  --jg-communication-shell-width: min(434px, calc(100vw - 48px));
+  --jg-communication-shell-gutter: 18px;
   --jg-system-font-stack: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --jg-system-strip-font-stack: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Courier New", monospace;
   --jg-system-strip-height: 26px;
@@ -692,6 +693,14 @@ button.ghost:hover {
   gap: 0;
   padding: 12px;
   overflow: hidden;
+}
+
+.workspace-shell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .toolrail {
@@ -2813,7 +2822,7 @@ button.ghost:hover {
   align-items: center;
   justify-content: center;
   width: auto;
-  max-width: min(584px, calc(var(--jg-communication-shell-width) - 36px));
+  max-width: min(584px, calc(100% - 36px));
   min-height: var(--jg-system-strip-height);
   padding: 0;
   border: 0;
@@ -7799,6 +7808,9 @@ button.ghost:hover {
   z-index: 12;
   width: var(--jg-communication-shell-width);
   transform: translateX(-50%);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
   pointer-events: none;
   isolation: isolate;
   overflow: visible;
@@ -7808,7 +7820,7 @@ button.ghost:hover {
   position: relative;
   display: flex;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: space-between;
   gap: 10px;
   width: 100%;
   height: 214px;
@@ -7872,8 +7884,8 @@ button.ghost:hover {
   --communication-tool-lift: 0px;
   --communication-tool-accent: rgba(255, 255, 255, 0.14);
   --communication-tool-saturation: 0.92;
-  width: 96px;
-  min-width: 96px;
+  width: 90px;
+  min-width: 90px;
   height: 188px;
   min-height: 188px;
   padding: 6px 0 0;
@@ -7897,8 +7909,8 @@ button.ghost:hover {
 .communication-tool svg {
   position: relative;
   z-index: 1;
-  width: 60px;
-  height: 352px;
+  width: 56px;
+  height: 336px;
   margin: -4px 0 0;
   transform: translateY(var(--communication-tool-lift)) rotate(var(--communication-tool-tilt)) scale(var(--communication-tool-scale));
   transform-origin: center 72%;
@@ -8023,7 +8035,7 @@ button.ghost:hover {
 
 @media (max-width: 900px) {
   :root {
-    --jg-communication-shell-width: min(560px, calc(100vw - 28px));
+    --jg-communication-shell-width: min(392px, calc(100vw - 28px));
     --jg-system-strip-height: 24px;
     --jg-system-strip-bottom: 6px;
     --jg-system-strip-gap: 4px;
@@ -8043,7 +8055,7 @@ button.ghost:hover {
     left: 50%;
     right: auto;
     bottom: var(--jg-system-strip-bottom);
-    width: min(532px, calc(var(--jg-communication-shell-width) - 28px));
+    width: min(532px, calc(100% - 28px));
     height: var(--jg-system-strip-height);
     padding: 0 16px 0 34px;
     border-radius: 999px;
@@ -11551,6 +11563,29 @@ body.juggernaut-shell .workspace {
   padding: 0;
 }
 
+body.juggernaut-shell .workspace-shell {
+  position: fixed;
+  inset: 0;
+}
+
+body.juggernaut-shell .stage {
+  position: absolute;
+  inset: 0;
+}
+
+body.juggernaut-shell .communication-shell {
+  position: absolute;
+  right: 18px;
+  left: auto;
+  bottom: calc(var(--jg-system-strip-bottom) + var(--jg-system-strip-height) + var(--jg-system-strip-gap));
+  width: var(--jg-communication-shell-width);
+  height: auto;
+  padding: 0;
+  transform: none;
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+
 body.juggernaut-shell .brand-strip {
   position: fixed;
   inset: 0 0 auto 0;
@@ -11634,6 +11669,27 @@ body.juggernaut-shell .brand-strip {
   .canvas-wrap {
     margin: 0;
     border-radius: 0;
+  }
+
+  body.juggernaut-shell .workspace-shell {
+    display: block;
+  }
+
+  body.juggernaut-shell .stage {
+    position: absolute;
+    inset: 0;
+  }
+
+  body.juggernaut-shell .communication-shell {
+    position: absolute;
+    right: auto;
+    left: 50%;
+    bottom: calc(var(--jg-system-strip-bottom) + var(--jg-system-strip-height) + var(--jg-system-strip-gap));
+    width: var(--jg-communication-shell-width);
+    height: auto;
+    padding: 0;
+    transform: translateX(-50%);
+    justify-content: center;
   }
 }
 

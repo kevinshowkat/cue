@@ -1,11 +1,11 @@
 {
   "schemaVersion": "juggernaut-agent-affordances-v1",
-  "lastUpdated": "2026-03-13",
+  "lastUpdated": "2026-03-26",
   "notes": [
     "This manifest is a first-pass machine-readable catalog for agent-operated Juggernaut workflows.",
     "Affordances are agent-facing descriptions of what operations do; execution types remain internal stable runtime identifiers.",
     "Provider and model details belong primarily to route profiles and receipts, not to the semantic identity of an affordance.",
-    "The current visible communication rail exposes Marker, Protect, Magic Select, and Eraser; make_space remains documented as a dormant runtime affordance."
+    "The current visible right-side communication rail exposes Marker, Protect, Magic Select, and Eraser; make_space remains documented as a dormant runtime affordance."
   ],
   "executionTypes": [
     {
@@ -364,7 +364,7 @@
       "id": "marker",
       "label": "Marker",
       "surface": "focus",
-      "source": "bottom_rail",
+      "source": "right_rail",
       "whatItDoes": "Adds a temporary highlight mark that says look here or change this.",
       "whenToUse": [
         "guide design review",
@@ -388,7 +388,7 @@
       "id": "protect",
       "label": "Protect",
       "surface": "focus",
-      "source": "bottom_rail",
+      "source": "right_rail",
       "whatItDoes": "Adds a visible protected-region mark that says do not edit this area.",
       "whenToUse": [
         "preserving a face or product detail",
@@ -412,7 +412,7 @@
       "id": "magic_select",
       "label": "Magic Select",
       "surface": "focus",
-      "source": "bottom_rail",
+      "source": "right_rail",
       "whatItDoes": "Proposes 2-3 candidate target regions near a clicked area.",
       "whenToUse": [
         "narrowing edit scope",
@@ -461,7 +461,7 @@
       "id": "eraser",
       "label": "Eraser",
       "surface": "focus",
-      "source": "bottom_rail",
+      "source": "right_rail",
       "whatItDoes": "Clears communication marks and region proposals.",
       "whenToUse": [
         "resetting review guidance",

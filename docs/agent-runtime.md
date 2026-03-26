@@ -74,7 +74,7 @@ These are agent-facing affordances. Internally they resolve to stable `execution
 Agents should reason from what the affordance does, not from the internal type name.
 
 ### 2. Focus And Scoping
-Current focus affordances correspond to the bottom communication rail:
+Current focus affordances correspond to the right-side communication rail:
 - `Marker`
 - `Protect`
 - `Magic Select`

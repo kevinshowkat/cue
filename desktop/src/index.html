@@ -373,16 +373,17 @@
         </div>
       </div>
       <main class="workspace">
-        <section class="stage" aria-label="Canvas">
-          <div class="juggernaut-shell-chrome" aria-label="Juggernaut shell">
-            <div id="action-grid" class="action-grid juggernaut-tool-rail" role="toolbar" aria-label="Juggernaut left rail"></div>
-            <div id="custom-tool-dock" class="custom-tool-dock" role="toolbar" aria-label="Custom tools"></div>
-            <div id="juggernaut-selection-status" class="sr-only" aria-live="polite">
-              Drop an image to begin
-            </div>
-            <div class="juggernaut-shell-head" aria-hidden="true">
-              <div id="top-metrics" class="top-metrics hidden" aria-label="Session metrics ribbon">
-                <span id="top-metric-tokens" class="top-metric-chip" data-heat="nodata">
+        <div class="workspace-shell">
+          <section class="stage" aria-label="Canvas">
+            <div class="juggernaut-shell-chrome" aria-label="Juggernaut shell">
+              <div id="action-grid" class="action-grid juggernaut-tool-rail" role="toolbar" aria-label="Juggernaut left rail"></div>
+              <div id="custom-tool-dock" class="custom-tool-dock" role="toolbar" aria-label="Custom tools"></div>
+              <div id="juggernaut-selection-status" class="sr-only" aria-live="polite">
+                Drop an image to begin
+              </div>
+              <div class="juggernaut-shell-head" aria-hidden="true">
+                <div id="top-metrics" class="top-metrics hidden" aria-label="Session metrics ribbon">
+                  <span id="top-metric-tokens" class="top-metric-chip" data-heat="nodata">
                   <span class="top-metric-chip-label">TOK</span>
                   <span id="top-metric-tokens-value" class="top-metric-chip-value">
                     <span class="top-metric-token-in">↓ ··········</span>
@@ -462,159 +463,6 @@
                   <div class="communication-proposal-slot-title">Review warming up</div>
                   <div class="communication-proposal-slot-copy">Waiting for planner and proposals.</div>
                 </div>
-              </div>
-            </div>
-            <div id="communication-shell" class="communication-shell">
-              <div id="communication-rail" class="communication-rail" role="toolbar" aria-label="Communication rail">
-              <button
-                id="communication-tool-marker"
-                class="communication-tool communication-tool-marker"
-                type="button"
-                data-communication-tool="marker"
-                aria-label="Marker"
-                title="Marker"
-              >
-                <svg class="communication-icon communication-icon-marker" viewBox="0 0 24 48" aria-hidden="true">
-                  <path
-                    d="M10.05 4.05h3.9c.75 0 1.35.6 1.35 1.35V38.1c0 1.82-1.48 3.3-3.3 3.3s-3.3-1.48-3.3-3.3V5.4c0-.75.6-1.35 1.35-1.35Z"
-                    fill="rgba(14, 18, 24, 0.98)"
-                  />
-                  <path
-                    d="M9.55 6.05h4.9v2.25h-4.9z"
-                    fill="rgba(24, 29, 36, 0.94)"
-                  />
-                  <path
-                    d="M12 1.95c.49 0 .92.23 1.22.68l1.14 1.68c.19.28.29.6.29.94v.8H9.35v-.8c0-.34.1-.66.29-.94l1.14-1.68c.3-.45.73-.68 1.22-.68Z"
-                    fill="rgba(216, 52, 52, 0.96)"
-                  />
-                  <path
-                    d="M9.8 30.45h4.4"
-                    fill="none"
-                    stroke="rgba(255, 255, 255, 0.12)"
-                    stroke-width="0.9"
-                    stroke-linecap="round"
-                  />
-                </svg>
-                <span class="communication-tool-label">Marker</span>
-              </button>
-              <button
-                id="communication-tool-protect"
-                class="communication-tool communication-tool-protect"
-                type="button"
-                data-communication-tool="protect"
-                aria-label="Protect"
-                title="Protect"
-              >
-                <svg class="communication-icon communication-icon-protect" viewBox="0 0 24 48" aria-hidden="true">
-                  <path
-                    d="M10.05 8.15h3.9c.75 0 1.35.6 1.35 1.35v29.15c0 1.82-1.48 3.3-3.3 3.3s-3.3-1.48-3.3-3.3V9.5c0-.75.6-1.35 1.35-1.35Z"
-                    fill="rgba(18, 41, 66, 0.98)"
-                  />
-                  <path
-                    d="M10.55 28.05h2.9"
-                    fill="none"
-                    stroke="rgba(255, 255, 255, 0.24)"
-                    stroke-width="0.95"
-                    stroke-linecap="round"
-                  />
-                  <path
-                    d="M10.55 32.15h2.9"
-                    fill="none"
-                    stroke="rgba(255, 255, 255, 0.18)"
-                    stroke-width="0.95"
-                    stroke-linecap="round"
-                  />
-                  <path
-                    d="M10.85 6.55h2.3v1.7h-2.3z"
-                    fill="rgba(196, 207, 220, 0.94)"
-                  />
-                  <path
-                    d="M12 2.15 13.25 6.55h-2.5z"
-                    fill="rgba(216, 224, 232, 0.96)"
-                  />
-                  <path
-                    d="M12 1.75c.38 0 .68.3.68.68 0 .34-.3.63-.68.63s-.68-.29-.68-.63c0-.38.3-.68.68-.68Z"
-                    fill="rgba(23, 31, 40, 0.98)"
-                  />
-                  <path
-                    d="M15.15 4.1 17.05 4.78c.43.15.65.62.5 1.05l-2.02 5.54c-.15.43-.62.65-1.05.5l-1.25-.46c-.43-.16-.65-.63-.49-1.06l2.01-5.54c.16-.43.63-.65 1.06-.49Z"
-                    fill="rgba(96, 192, 232, 0.94)"
-                  />
-                  <path
-                    d="M14.7 5.55 16.5 6.2"
-                    fill="none"
-                    stroke="rgba(255, 255, 255, 0.4)"
-                    stroke-width="0.9"
-                    stroke-linecap="round"
-                  />
-                  <path
-                    d="M13.75 8.15 15.25 8.7"
-                    fill="none"
-                    stroke="rgba(15, 42, 66, 0.5)"
-                    stroke-width="0.9"
-                    stroke-linecap="round"
-                  />
-                </svg>
-                <span class="communication-tool-label">Protect</span>
-              </button>
-              <button
-                id="communication-tool-magic-select"
-                class="communication-tool communication-tool-magic-select"
-                type="button"
-                data-communication-tool="magic_select"
-                aria-label="Magic Select"
-                title="Magic Select"
-              >
-                <svg class="communication-icon communication-icon-magic-select" viewBox="0 0 24 48" aria-hidden="true">
-                  <path
-                    d="M12 2.25 12.85 4.18 14.78 5.03 12.85 5.88 12 7.82 11.15 5.88 9.22 5.03 11.15 4.18Z"
-                    fill="rgba(255, 95, 190, 0.9)"
-                  />
-                  <path
-                    d="M11.15 7.4h1.7v34.4h-1.7z"
-                    fill="rgba(32, 40, 49, 0.96)"
-                  />
-                  <circle
-                    cx="12"
-                    cy="24.5"
-                    r="3.05"
-                    fill="none"
-                    stroke="rgba(255, 95, 190, 0.82)"
-                    stroke-width="1.55"
-                  />
-                  <path
-                    d="M16.1 26.5 16.7 27.85 18.05 28.45 16.7 29.05 16.1 30.4 15.5 29.05 14.15 28.45 15.5 27.85Z"
-                    fill="rgba(100, 210, 255, 0.88)"
-                  />
-                </svg>
-                <span class="communication-tool-label">Magic Select</span>
-              </button>
-              <button
-                id="communication-tool-eraser"
-                class="communication-tool communication-tool-eraser"
-                type="button"
-                data-communication-tool="eraser"
-                aria-label="Eraser"
-                title="Eraser"
-              >
-                <svg class="communication-icon communication-icon-eraser" viewBox="0 0 24 48" aria-hidden="true">
-                  <rect x="9.1" y="2.45" width="5.8" height="3.75" rx="1.45" fill="rgba(241, 132, 157, 0.96)" />
-                  <rect x="9.35" y="5.95" width="5.3" height="1.95" rx="0.8" fill="rgba(212, 201, 185, 0.98)" />
-                  <path
-                    d="M10 7.6h4c.86 0 1.55.69 1.55 1.55V38.4c0 1.71-1.39 3.1-3.1 3.1h-.9c-1.71 0-3.1-1.39-3.1-3.1V9.15c0-.86.69-1.55 1.55-1.55Z"
-                    fill="rgba(224, 170, 88, 0.98)"
-                  />
-                  <path
-                    d="M10.3 22.55h3.4M10.3 27.25h3.4"
-                    fill="none"
-                    stroke="rgba(176, 120, 48, 0.88)"
-                    stroke-width="1.1"
-                    stroke-linecap="round"
-                  />
-                  <path d="M10.9 41.5 12 43.7l1.1-2.2" fill="rgba(249, 229, 194, 0.94)" />
-                </svg>
-                <span class="communication-tool-label">Eraser</span>
-              </button>
               </div>
             </div>
             <div id="image-menu" class="canvas-menu hidden image-menu" role="menu" aria-label="Image menu">
@@ -1066,11 +914,165 @@
                 </div>
                 <div class="canvas-bumper canvas-bumper--right" aria-hidden="true"></div>
               </div>
-            <div id="spawnbar" class="spawnbar hidden" aria-live="polite"></div>
-            <div id="toast" class="toast" data-state="hidden" aria-live="polite" aria-hidden="true"></div>
+              <div id="spawnbar" class="spawnbar hidden" aria-live="polite"></div>
+              <div id="toast" class="toast" data-state="hidden" aria-live="polite" aria-hidden="true"></div>
+            </div>
+            <div id="filmstrip" class="filmstrip hidden" aria-label="Filmstrip"></div>
+          </section>
+          <div id="communication-shell" class="communication-shell">
+            <div id="communication-rail" class="communication-rail" role="toolbar" aria-label="Communication rail">
+              <button
+              id="communication-tool-marker"
+              class="communication-tool communication-tool-marker"
+              type="button"
+              data-communication-tool="marker"
+              aria-label="Marker"
+              title="Marker"
+            >
+              <svg class="communication-icon communication-icon-marker" viewBox="0 0 24 48" aria-hidden="true">
+                <path
+                  d="M10.05 4.05h3.9c.75 0 1.35.6 1.35 1.35V38.1c0 1.82-1.48 3.3-3.3 3.3s-3.3-1.48-3.3-3.3V5.4c0-.75.6-1.35 1.35-1.35Z"
+                  fill="rgba(14, 18, 24, 0.98)"
+                />
+                <path
+                  d="M9.55 6.05h4.9v2.25h-4.9z"
+                  fill="rgba(24, 29, 36, 0.94)"
+                />
+                <path
+                  d="M12 1.95c.49 0 .92.23 1.22.68l1.14 1.68c.19.28.29.6.29.94v.8H9.35v-.8c0-.34.1-.66.29-.94l1.14-1.68c.3-.45.73-.68 1.22-.68Z"
+                  fill="rgba(216, 52, 52, 0.96)"
+                />
+                <path
+                  d="M9.8 30.45h4.4"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.12)"
+                  stroke-width="0.9"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span class="communication-tool-label">Marker</span>
+            </button>
+            <button
+              id="communication-tool-protect"
+              class="communication-tool communication-tool-protect"
+              type="button"
+              data-communication-tool="protect"
+              aria-label="Protect"
+              title="Protect"
+            >
+              <svg class="communication-icon communication-icon-protect" viewBox="0 0 24 48" aria-hidden="true">
+                <path
+                  d="M10.05 8.15h3.9c.75 0 1.35.6 1.35 1.35v29.15c0 1.82-1.48 3.3-3.3 3.3s-3.3-1.48-3.3-3.3V9.5c0-.75.6-1.35 1.35-1.35Z"
+                  fill="rgba(18, 41, 66, 0.98)"
+                />
+                <path
+                  d="M10.55 28.05h2.9"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.24)"
+                  stroke-width="0.95"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M10.55 32.15h2.9"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.18)"
+                  stroke-width="0.95"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M10.85 6.55h2.3v1.7h-2.3z"
+                  fill="rgba(196, 207, 220, 0.94)"
+                />
+                <path
+                  d="M12 2.15 13.25 6.55h-2.5z"
+                  fill="rgba(216, 224, 232, 0.96)"
+                />
+                <path
+                  d="M12 1.75c.38 0 .68.3.68.68 0 .34-.3.63-.68.63s-.68-.29-.68-.63c0-.38.3-.68.68-.68Z"
+                  fill="rgba(23, 31, 40, 0.98)"
+                />
+                <path
+                  d="M15.15 4.1 17.05 4.78c.43.15.65.62.5 1.05l-2.02 5.54c-.15.43-.62.65-1.05.5l-1.25-.46c-.43-.16-.65-.63-.49-1.06l2.01-5.54c.16-.43.63-.65 1.06-.49Z"
+                  fill="rgba(96, 192, 232, 0.94)"
+                />
+                <path
+                  d="M14.7 5.55 16.5 6.2"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.4)"
+                  stroke-width="0.9"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M13.75 8.15 15.25 8.7"
+                  fill="none"
+                  stroke="rgba(15, 42, 66, 0.5)"
+                  stroke-width="0.9"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span class="communication-tool-label">Protect</span>
+            </button>
+            <button
+              id="communication-tool-magic-select"
+              class="communication-tool communication-tool-magic-select"
+              type="button"
+              data-communication-tool="magic_select"
+              aria-label="Magic Select"
+              title="Magic Select"
+            >
+              <svg class="communication-icon communication-icon-magic-select" viewBox="0 0 24 48" aria-hidden="true">
+                <path
+                  d="M12 2.25 12.85 4.18 14.78 5.03 12.85 5.88 12 7.82 11.15 5.88 9.22 5.03 11.15 4.18Z"
+                  fill="rgba(255, 95, 190, 0.9)"
+                />
+                <path
+                  d="M11.15 7.4h1.7v34.4h-1.7z"
+                  fill="rgba(32, 40, 49, 0.96)"
+                />
+                <circle
+                  cx="12"
+                  cy="24.5"
+                  r="3.05"
+                  fill="none"
+                  stroke="rgba(255, 95, 190, 0.82)"
+                  stroke-width="1.55"
+                />
+                <path
+                  d="M16.1 26.5 16.7 27.85 18.05 28.45 16.7 29.05 16.1 30.4 15.5 29.05 14.15 28.45 15.5 27.85Z"
+                  fill="rgba(100, 210, 255, 0.88)"
+                />
+              </svg>
+              <span class="communication-tool-label">Magic Select</span>
+            </button>
+            <button
+              id="communication-tool-eraser"
+              class="communication-tool communication-tool-eraser"
+              type="button"
+              data-communication-tool="eraser"
+              aria-label="Eraser"
+              title="Eraser"
+            >
+              <svg class="communication-icon communication-icon-eraser" viewBox="0 0 24 48" aria-hidden="true">
+                <rect x="9.1" y="2.45" width="5.8" height="3.75" rx="1.45" fill="rgba(241, 132, 157, 0.96)" />
+                <rect x="9.35" y="5.95" width="5.3" height="1.95" rx="0.8" fill="rgba(212, 201, 185, 0.98)" />
+                <path
+                  d="M10 7.6h4c.86 0 1.55.69 1.55 1.55V38.4c0 1.71-1.39 3.1-3.1 3.1h-.9c-1.71 0-3.1-1.39-3.1-3.1V9.15c0-.86.69-1.55 1.55-1.55Z"
+                  fill="rgba(224, 170, 88, 0.98)"
+                />
+                <path
+                  d="M10.3 22.55h3.4M10.3 27.25h3.4"
+                  fill="none"
+                  stroke="rgba(176, 120, 48, 0.88)"
+                  stroke-width="1.1"
+                  stroke-linecap="round"
+                />
+                <path d="M10.9 41.5 12 43.7l1.1-2.2" fill="rgba(249, 229, 194, 0.94)" />
+              </svg>
+              <span class="communication-tool-label">Eraser</span>
+            </button>
           </div>
-		          <div id="filmstrip" class="filmstrip hidden" aria-label="Filmstrip"></div>
-	        </section>
+        </div>
+      </div>
       </main>
       <div id="settings-drawer" class="drawer hidden" aria-label="Settings">
         <div class="drawer-header">

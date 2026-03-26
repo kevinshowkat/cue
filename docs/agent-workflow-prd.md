@@ -176,7 +176,7 @@ Initial direct affordances map to the current seeded single-image jobs:
 These should be exposed to agents primarily by behavioral descriptions, not only by internal capability IDs.
 
 ### Focus And Scoping Affordances
-Initial focus affordances map to the current bottom communication rail:
+Initial focus affordances map to the current right-side communication rail:
 - `Marker`
 - `Protect`
 - `Magic Select`
