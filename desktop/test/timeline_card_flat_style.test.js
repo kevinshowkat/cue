@@ -19,3 +19,18 @@ test("timeline shell chrome stays flat without shadows in the shell theme", () =
   assert.match(css, /body\.juggernaut-shell \.timeline-arrow\s*\{[\s\S]*box-shadow:\s*none;/);
   assert.match(css, /body\.juggernaut-shell \.timeline-card-seq\s*\{[\s\S]*box-shadow:\s*none;/);
 });
+
+test("selected timeline glyphs keep semantic colors for the current state", () => {
+  assert.match(
+    css,
+    /\.timeline-card\.selected \.timeline-card-glyph--highlight,\s*\.timeline-card\.selected \.timeline-card-glyph--protect\s*\{[\s\S]*color:\s*rgba\(214,\s*176,\s*54,\s*0\.98\);/
+  );
+  assert.match(
+    css,
+    /body\.juggernaut-shell \.timeline-card\.selected \.timeline-card-glyph--highlight,\s*body\.juggernaut-shell \.timeline-card\.selected \.timeline-card-glyph--protect\s*\{[\s\S]*color:\s*rgba\(214,\s*176,\s*54,\s*0\.98\);/
+  );
+  assert.match(
+    css,
+    /body\.juggernaut-shell \.timeline-card\.selected \.timeline-card-glyph--erase,\s*body\.juggernaut-shell \.timeline-card\.selected \.timeline-card-glyph--delete\s*\{[\s\S]*color:\s*rgba\(181,\s*96,\s*87,\s*0\.98\);/
+  );
+});
