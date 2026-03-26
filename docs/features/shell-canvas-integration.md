@@ -14,7 +14,8 @@ Not owned here:
 ## Visible shell surfaces
 
 - Top shell status: `#juggernaut-selection-status`
-- PSD export button: `#juggernaut-export-psd`
+- Export menu toggle: `#juggernaut-export-psd`
+- Export format menu: `#juggernaut-export-menu`
 - Left rail root: `#action-grid`
 - Empty-canvas upload surface: `#drop-hint`
 
@@ -32,6 +33,7 @@ Available methods:
 
 - `registerToolInvoker(fn)`
 - `registerPsdExportHandler(fn)`
+- `requestExport(meta?)`
 - `requestToolInvocation(toolKey, meta?)`
 - `requestPsdExport(meta?)`
 - `importImages()`
@@ -91,14 +93,18 @@ Current shell rail tool keys:
 }
 ```
 
+`requestExport(meta?)` accepts `format: "psd" | "png"` and routes PNG through the built-in flattened canvas export path. Both export routes now open a save dialog with a suggested filename so the user can choose the destination and rename the file before writing it. `registerPsdExportHandler(fn)` remains PSD-only for compatibility.
+
 ## Events
 
 The shell emits browser events for observers/integration glue:
 
 - `juggernaut:shell-ready`
 - `juggernaut:tool-requested`
+- `juggernaut:export-requested`
 - `juggernaut:export-psd-requested`
 - `juggernaut:apply-tool`
+- `juggernaut:export`
 - `juggernaut:export-psd`
 
 `juggernaut:apply-tool` and `juggernaut:export-psd` are cancelable and remain available for compatibility with the in-progress shell code already present in `canvas_app.js`.

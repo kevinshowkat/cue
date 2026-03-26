@@ -46,7 +46,11 @@ test("Session tab strip seeds a visible launch tab and exposes the Design Review
   );
   assert.match(
     html,
-    /id=\"juggernaut-export-psd\"[^>]*class=\"session-tab-strip-action session-tab-runtime-action\"[^>]*title=\"Export PSD\"[\s\S]*<span>Export PSD<\/span>/
+    /id=\"juggernaut-export-psd\"[^>]*class=\"session-tab-strip-action session-tab-runtime-action session-tab-action-menu-toggle\"[^>]*title=\"Export\"[\s\S]*<span>Export<\/span>/
+  );
+  assert.match(
+    html,
+    /id=\"juggernaut-export-menu\"[^>]*role=\"menu\"[^>]*aria-label=\"Export formats\"[\s\S]*id=\"juggernaut-export-format-psd\"[\s\S]*<span class=\"session-tab-action-menu-item-label\">PSD<\/span>[\s\S]*id=\"juggernaut-export-format-png\"[\s\S]*<span class=\"session-tab-action-menu-item-label\">PNG<\/span>/
   );
   const brandStripStart = html.indexOf('<div class="brand-strip"');
   const mainStart = html.indexOf("<main", brandStripStart);
@@ -86,6 +90,8 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*padding:\s*0 14px/s);
   assert.match(css, /\.session-tab-runtime-action\.is-ready\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\.is-pending-hook\s*\{/);
+  assert.match(css, /\.session-tab-action-menu-panel\s*\{/);
+  assert.match(css, /\.session-tab-action-menu-item\s*\{/);
   assert.match(css, /@keyframes\s+sessionTabBusyPulse/);
   assert.match(css, /@keyframes\s+sessionTabReviewPulse/);
 });

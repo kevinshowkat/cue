@@ -279,7 +279,7 @@ export const JUGGERNAUT_RAIL_ICON_BLUEPRINTS = Object.freeze([
   }),
   Object.freeze({
     toolId: "export_psd",
-    label: "Export PSD",
+    label: "Export",
     semanticRole: "deliver",
     notes: "Downstream release arrow framed by a lifted shoulder and base rule.",
     parts: Object.freeze([

@@ -114,10 +114,10 @@ cd /Users/mainframe/Desktop/projects/juggernaut-agent-verify && codex
 3. Start `verify` after replay traces exist and at least one end-to-end flow is runnable.
 
 ## 9. First Flows To Ship
-- `Marker -> Design Review -> Accept Proposal -> Export PSD`
-- `Protect -> Remove People -> Export PSD`
-- `Make Space -> Relight -> Export PSD`
-- `Remove People -> Polish -> Export PSD`
+- `Marker -> Design Review -> Accept Proposal -> Export -> PSD`
+- `Protect -> Remove People -> Export -> PSD`
+- `Make Space -> Relight -> Export -> PSD`
+- `Remove People -> Polish -> Export -> PSD`
 
 ## 10. Success Criteria
 - Agents can drive visible `Marker`, `Magic Select`, and `Eraser` actions through stable tool-driver APIs.

@@ -110,7 +110,7 @@
     },
     {
       "tool_id": "export_psd",
-      "label": "Export PSD",
+      "label": "Export",
       "semantic_role": "deliver",
       "notes": "Downstream release arrow framed by a lifted shoulder and base rule.",
       "asset": "./export_psd.svg"

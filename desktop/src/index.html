@@ -157,25 +157,64 @@
               </svg>
               <span>Agent Run</span>
             </button>
-            <button
-              id="juggernaut-export-psd"
-              class="session-tab-strip-action session-tab-runtime-action"
-              type="button"
-              aria-label="Export PSD"
-              title="Export PSD"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M12 4v11m0 0-4-4m4 4 4-4M5 18.5h14"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.9"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              <span>Export PSD</span>
-            </button>
+            <div class="session-tab-action-menu">
+              <button
+                id="juggernaut-export-psd"
+                class="session-tab-strip-action session-tab-runtime-action session-tab-action-menu-toggle"
+                type="button"
+                aria-label="Export"
+                title="Export"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-controls="juggernaut-export-menu"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M12 4v11m0 0-4-4m4 4 4-4M5 18.5h14"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.9"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span>Export</span>
+                <svg class="session-tab-action-menu-caret" viewBox="0 0 12 12" aria-hidden="true">
+                  <path
+                    d="M3 4.5 6 7.5 9 4.5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div id="juggernaut-export-menu" class="session-tab-action-menu-panel hidden" role="menu" aria-label="Export formats">
+                <button
+                  id="juggernaut-export-format-psd"
+                  class="session-tab-action-menu-item"
+                  type="button"
+                  role="menuitem"
+                  data-export-format="psd"
+                  title="Export Photoshop (.psd)"
+                >
+                  <span class="session-tab-action-menu-item-label">PSD</span>
+                  <span class="session-tab-action-menu-item-meta">Photoshop export with receipt</span>
+                </button>
+                <button
+                  id="juggernaut-export-format-png"
+                  class="session-tab-action-menu-item"
+                  type="button"
+                  role="menuitem"
+                  data-export-format="png"
+                  title="Export flattened PNG (.png)"
+                >
+                  <span class="session-tab-action-menu-item-label">PNG</span>
+                  <span class="session-tab-action-menu-item-meta">Flattened canvas image</span>
+                </button>
+              </div>
+            </div>
             <button
               id="session-tab-design-review"
               class="session-tab-strip-action session-tab-strip-review"

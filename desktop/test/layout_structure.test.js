@@ -19,6 +19,7 @@ test("Juggernaut shell: stage chrome carries the left rail, custom tools, and wo
   assert.match(html, /id=\"session-tab-open\"/);
   assert.match(html, /id=\"juggernaut-agent-runner-open\"/);
   assert.match(html, /id=\"juggernaut-export-psd\"/);
+  assert.match(html, /id=\"juggernaut-export-menu\"/);
   assert.match(html, /id=\"session-tab-design-review\"/);
   assert.match(html, /id=\"top-metrics\"[^>]*class=\"top-metrics hidden\"/);
   assert.match(html, /id=\"juggernaut-selection-status\"[^>]*class=\"sr-only\"/);
