@@ -12,17 +12,19 @@ Category claim:
 The desktop app is image-first: import images, run Abilities, and inspect results in the bottom HUD.
 
 ## Core Concepts
-- **Run**: a folder on disk (created under `~/brood_runs/`) that stores inputs, artifacts, receipts, and `events.jsonl`.
+- **Run**: a folder on disk (created under `~/brood_runs/`) that stores inputs, artifacts, receipts, `events.jsonl`, saved session state, and `session-timeline.json` when the run has recorded timeline history.
 - **Unit**: the currently selected image (shown on the canvas in single view).
+- **Session Timeline**: a compact dock under the tab strip that records committed session-state boundaries for the active tab and can restore any saved head without re-running model work.
 - **Views**:
-  - `Single view`: one image on the canvas, with a filmstrip to browse artifacts.
+  - `Single view`: one image on the canvas, with a filmstrip to browse artifacts and the docked session timeline for rewind/restore.
   - `Multi view`: tiled layout of all images in the run (used for 2-photo actions).
 
 ## Basic Workflow
 1. Click **New Run** (creates a run directory and starts the engine).
 2. Click **Import Photos** or drag-drop onto the canvas (copies files into `run_dir/inputs/`).
 3. Use **Abilities** (right panel) to generate edits/variants.
-4. Use **Export** to write `run_dir/export.html` for a lightweight shareable viewer.
+4. Use the session timeline under the tab strip to move backward or forward across committed run states.
+5. Use **Export** to write `run_dir/export.html` for a lightweight shareable viewer from the currently selected timeline head.
 
 ## Abilities
 

@@ -41,6 +41,7 @@ function loadAttachActiveTabRuntimeHarness({ runDir = "/runs/tab-a", ptySpawned 
     "const renderCustomToolDock = record('renderCustomToolDock');",
     "const renderSelectionMeta = record('renderSelectionMeta');",
     "const renderFilmstrip = record('renderFilmstrip');",
+    "const renderTimeline = record('renderTimeline');",
     "function chooseSpawnNodes() { calls.push({ name: 'chooseSpawnNodes', args: [] }); renderQuickActions(); }",
     "const renderQuickActions = record('renderQuickActions');",
     "const renderSessionApiCallsReadout = record('renderSessionApiCallsReadout');",

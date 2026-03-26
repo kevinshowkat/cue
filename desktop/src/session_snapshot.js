@@ -155,6 +155,14 @@ export function rehydrateSessionSnapshotSession(rawSession = {}) {
     freeformZOrder,
     timelineNodes,
     timelineNodesById,
+    timelineHeadNodeId: current.timelineHeadNodeId ? String(current.timelineHeadNodeId) : null,
+    timelineLatestNodeId: current.timelineLatestNodeId ? String(current.timelineLatestNodeId) : null,
+    timelineNextSeq: Math.max(
+      1,
+      Number(current.timelineNextSeq) || 0,
+      timelineNodes.length ? Math.max(...timelineNodes.map((node) => Math.max(1, Number(node?.seq) || 1))) + 1 : 1
+    ),
+    timelineOpen: current.timelineOpen !== false,
     toolRegistry,
     sessionTools: toolRegistry.list(),
     eventsDecoder: new TextDecoder("utf-8"),

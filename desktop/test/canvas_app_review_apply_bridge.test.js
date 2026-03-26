@@ -516,6 +516,7 @@ function buildBackgroundReviewApplyHarness({
       record.busy = options.busy ?? record.busy;
       return record;
     },
+    persistSessionTimelineForSession: async () => "/runs/a/session-timeline.json",
     createFreshDesignReviewApplyState,
     basename,
     DESIGN_REVIEW_APPLY_SOURCE: "design_review_apply",

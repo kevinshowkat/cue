@@ -127,6 +127,14 @@ import {
   serializeSessionSnapshot,
 } from "./session_snapshot.js";
 import {
+  SESSION_TIMELINE_FILENAME,
+  SESSION_TIMELINE_SCHEMA_VERSION,
+  captureSessionTimelineSnapshot,
+  deserializeSessionTimeline,
+  restoreSessionTimelineSnapshot,
+  serializeSessionTimeline,
+} from "./session_timeline.js";
+import {
   buildNativeSystemMenuPayload,
   NATIVE_SHORTCUT_SLOT_COUNT,
   NATIVE_TOOLS_SLOT_COUNT,
@@ -829,6 +837,9 @@ const els = {
   timelineToggle: document.getElementById("timeline-toggle"),
   timelineOverlay: document.getElementById("timeline-overlay"),
   timelineClose: document.getElementById("timeline-close"),
+  timelineShell: document.getElementById("timeline-shell"),
+  timelinePrev: document.getElementById("timeline-prev"),
+  timelineNext: document.getElementById("timeline-next"),
   timelineStrip: document.getElementById("timeline-strip"),
   timelineDetail: document.getElementById("timeline-detail"),
   openrouterOnboardingModal: document.getElementById("openrouter-onboarding-modal"),
@@ -2079,7 +2090,8 @@ const state = {
   lastRenderedFilmstripKey: "",
   lastRenderedFilmstripSelectionKey: "",
   lastRenderedFilmstripActiveId: null,
-  lastRenderedTimelineKey: "",
+  lastRenderedTimelineStructureKey: "",
+  lastRenderedTimelineViewKey: "",
   lastRenderedSpawnNodesKey: "",
   lastRenderedQuickActionsKey: "",
   lastRenderedCustomToolDockKey: "",
@@ -2097,9 +2109,18 @@ const state = {
     pinAssistant: readJuggernautRuntimeChromePreference(JUGGERNAUT_RUNTIME_PIN_ASSISTANT_LS_KEY, false),
     showDiagnostics: readJuggernautRuntimeChromePreference(JUGGERNAUT_RUNTIME_SHOW_DIAGNOSTICS_LS_KEY, false),
   },
-  timelineNodes: [], // [{ nodeId, imageId, path, receiptPath, label, action, parents, createdAt }]
+  timelineNodes: [], // [{ nodeId, seq, kind, action, parents, snapshot, ... }]
   timelineNodesById: new Map(), // nodeId -> node
-  timelineOpen: false,
+  timelineHeadNodeId: null,
+  timelineLatestNodeId: null,
+  timelineNextSeq: 1,
+  timelineOpen: true,
+  timelineCarouselGesture: null,
+  timelineCarouselWheel: { delta: 0, lastAt: 0 },
+  timelineSuppressClickUntil: 0,
+  lastTimelineCenteredNodeId: null,
+  timelineCarouselChromeFrame: 0,
+  timelinePreviewNodeId: null,
   imageMenuTargetId: null,
   // Canvas rendering modes:
   // - "multi": freeform spatial canvas (primary mode; multiple images can be arranged on the canvas)
@@ -2846,7 +2867,10 @@ function createFreshTabSession({ runDir = null, eventsPath = null } = {}) {
     selectedIds: [],
     timelineNodes: [],
     timelineNodesById: new Map(),
-    timelineOpen: false,
+    timelineHeadNodeId: null,
+    timelineLatestNodeId: null,
+    timelineNextSeq: 1,
+    timelineOpen: true,
     canvasMode: "multi",
     freeformRects: new Map(),
     freeformZOrder: [],
@@ -22317,6 +22341,19 @@ function handleCommunicationCanvasPointerDown(event, p, pCss) {
   if (behaviorTool === "eraser") {
     const erased = eraseCommunicationAtCanvasPoint(p);
     if (erased) {
+      const previewPath =
+        erased.imageId && typeof state !== "undefined" && state?.imagesById instanceof Map
+          ? state.imagesById.get(erased.imageId)?.path || null
+          : null;
+      recordTimelineNode({
+        imageId: erased.imageId || null,
+        action: erased.kind === "region" ? "Erase Region" : "Erase Mark",
+        kind: "annotation",
+        visualMode: "icon",
+        label: erased.kind === "region" ? "Region" : "Mark",
+        previewImageId: erased.imageId || null,
+        previewPath,
+      });
       invalidateActiveTabPreview("selection_overlay_change");
       dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
         source: "canvas_eraser",
@@ -23995,28 +24032,40 @@ function updateDesignReviewApplyCostLatencyForSession(session = null, detail = {
   return true;
 }
 
-function recordTimelineNodeInSession(session = null, { imageId, path, receiptPath = null, label = null, action = null, parents = [] } = {}) {
+function recordTimelineNodeInSession(
+  session = null,
+  {
+    imageId,
+    path,
+    receiptPath = null,
+    label = null,
+    action = null,
+    kind = null,
+    detail = null,
+    visualMode = null,
+    parents = null,
+    previewImageId = null,
+    previewPath = null,
+    receiptPaths = null,
+  } = {}
+) {
   const current = session && typeof session === "object" ? session : null;
-  if (!current || !imageId || !path) return null;
-  if (!Array.isArray(current.timelineNodes)) current.timelineNodes = [];
-  if (!(current.timelineNodesById instanceof Map)) current.timelineNodesById = new Map();
-  const nodeId = _timelineMakeNodeId();
-  const parentIds = Array.isArray(parents)
-    ? Array.from(new Set(parents.map((value) => String(value || "")).filter(Boolean)))
-    : [];
-  const node = {
-    nodeId,
-    imageId: String(imageId),
-    path: String(path),
-    receiptPath: receiptPath ? String(receiptPath) : null,
-    label: label ? String(label) : basename(path),
-    action: action ? String(action) : null,
-    parents: parentIds,
-    createdAt: Date.now(),
-  };
-  current.timelineNodes.push(node);
-  current.timelineNodesById.set(nodeId, node);
-  return nodeId;
+  if (!current) return null;
+  const node = buildTimelineNodeForSession(current, {
+    imageId,
+    path,
+    receiptPath,
+    label,
+    action,
+    kind,
+    detail,
+    visualMode,
+    parents,
+    previewImageId,
+    previewPath,
+    receiptPaths,
+  });
+  return applyTimelineNodeToSession(current, node, imageId);
 }
 
 function replaceImageInSessionRecord(
@@ -24266,7 +24315,12 @@ async function applyAcceptedDesignReviewOutputToSessionRecord(record = null, det
     receiptPath,
     label: targetSnapshot.label || basename(outputPath),
     action: actionLabel,
+    kind: "image_result",
+    visualMode: "thumbnail",
     parents: targetSnapshot.timelineNodeId ? [targetSnapshot.timelineNodeId] : [],
+    previewImageId: targetId,
+    previewPath: outputPath,
+    receiptPaths: receiptPath ? [receiptPath] : [],
   });
   const item = session.imagesById.get(targetId) || null;
   if (item) {
@@ -24296,6 +24350,7 @@ async function applyAcceptedDesignReviewOutputToSessionRecord(record = null, det
     busy: false,
     reviewFlowState: "",
   });
+  persistSessionTimelineForSession(session).catch(() => {});
   return true;
 }
 
@@ -24372,7 +24427,12 @@ async function applyAcceptedDesignReviewOutput(detail = {}) {
     receiptPath,
     label: targetSnapshot.label || basename(outputPath),
     action: actionLabel,
+    kind: "image_result",
+    visualMode: "thumbnail",
     parents: targetSnapshot.timelineNodeId ? [targetSnapshot.timelineNodeId] : [],
+    previewImageId: targetId,
+    previewPath: outputPath,
+    receiptPaths: receiptPath ? [receiptPath] : [],
   });
   const item = state.imagesById.get(targetId) || null;
   if (item) {
@@ -30141,6 +30201,15 @@ function deleteActiveCircle() {
   state.circlesByImageId.set(sel.imageId, next);
   hideMarkPanel();
   scheduleVisualPromptWrite();
+  recordTimelineNode({
+    imageId: sel.imageId,
+    action: "Erase Mark",
+    kind: "annotation",
+    visualMode: "icon",
+    label: "Circle Mark",
+    previewImageId: sel.imageId,
+    previewPath: state.imagesById.get(sel.imageId)?.path || null,
+  });
   requestRender();
   return true;
 }
@@ -31602,7 +31671,12 @@ async function executeSingleImageRailSubjectIsolation({ route, imageId, target }
       receiptPath,
       label: targetSnapshot.label || basename(outputPath),
       action: label,
+      kind: "image_result",
+      visualMode: "thumbnail",
       parents: targetSnapshot.timelineNodeId ? [targetSnapshot.timelineNodeId] : [],
+      previewImageId: targetId,
+      previewPath: outputPath,
+      receiptPaths: receiptPath ? [receiptPath] : [],
     });
     const item = state.imagesById.get(targetId) || null;
     if (item) {
@@ -32358,184 +32432,921 @@ function updateFilmstripThumb(item) {
   syncFilmstripRenderSignature();
 }
 
-function _timelineMakeNodeId() {
-  return `tl-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+function timelineSortedNodes(nodes = state.timelineNodes) {
+  return Array.from(Array.isArray(nodes) ? nodes : []).sort((a, b) => {
+    const aSeq = Math.max(0, Number(a?.seq) || 0);
+    const bSeq = Math.max(0, Number(b?.seq) || 0);
+    if (aSeq !== bSeq) return aSeq - bSeq;
+    return Math.max(0, Number(a?.createdAt) || 0) - Math.max(0, Number(b?.createdAt) || 0);
+  });
 }
 
-function recordTimelineNode({ imageId, path, receiptPath = null, label = null, action = null, parents = [] } = {}) {
-  if (!imageId || !path) return null;
-  const nodeId = _timelineMakeNodeId();
-  const parentIds = Array.isArray(parents)
-    ? Array.from(new Set(parents.map((p) => String(p || "")).filter(Boolean)))
-    : [];
-  const node = {
-    nodeId,
-    imageId: String(imageId),
-    path: String(path),
-    receiptPath: receiptPath ? String(receiptPath) : null,
-    label: label ? String(label) : basename(path),
-    action: action ? String(action) : null,
-    parents: parentIds,
+function currentTimelineHeadNode() {
+  const headNodeId = String(state.timelineHeadNodeId || "").trim();
+  if (headNodeId && state.timelineNodesById instanceof Map && state.timelineNodesById.has(headNodeId)) {
+    return state.timelineNodesById.get(headNodeId) || null;
+  }
+  const nodes = timelineSortedNodes();
+  return nodes[nodes.length - 1] || null;
+}
+
+function _timelineMakeNodeId(seq = 1) {
+  return `tl-${String(Math.max(1, Number(seq) || 1)).padStart(6, "0")}`;
+}
+
+function timelineActionKey(action = null, kind = null) {
+  const normalized = String(action || "").trim().toLowerCase();
+  if (normalized.includes("protect")) return "protect";
+  if (normalized.includes("magic")) return "magic";
+  if (normalized.includes("erase region")) return "erase";
+  if (normalized.includes("erase mark")) return "erase";
+  if (normalized.includes("delete")) return "delete";
+  if (normalized.includes("annotate")) return "annotate";
+  if (normalized.includes("circle")) return "circle";
+  if (normalized.includes("resize")) return "resize";
+  if (normalized.includes("rotate")) return "rotate";
+  if (normalized.includes("skew")) return "skew";
+  if (normalized.includes("move")) return "move";
+  if (normalized.includes("mark")) return "mark";
+  if (normalized.includes("import") || normalized.includes("upload") || normalized.includes("add image")) return "import";
+  if (
+    normalized.includes("generate") ||
+    normalized.includes("recast") ||
+    normalized.includes("variation") ||
+    normalized.includes("review") ||
+    normalized.includes("bridge") ||
+    normalized.includes("combine") ||
+    normalized.includes("swap dna") ||
+    normalized.includes("subject isolation") ||
+    normalized.includes("cut out")
+  ) {
+    return "result";
+  }
+  if (kind === "image_result") return "result";
+  if (kind === "transform") return "move";
+  if (kind === "annotation") return "mark";
+  if (kind === "delete") return "delete";
+  return "state";
+}
+
+function timelineKindForAction(actionKey = "state", explicitKind = null) {
+  if (explicitKind) return String(explicitKind);
+  if (actionKey === "import" || actionKey === "result") return "image_result";
+  if (actionKey === "move" || actionKey === "resize" || actionKey === "rotate" || actionKey === "skew") {
+    return "transform";
+  }
+  if (actionKey === "delete") return "delete";
+  if (actionKey === "mark" || actionKey === "protect" || actionKey === "magic" || actionKey === "erase" || actionKey === "annotate" || actionKey === "circle") {
+    return "annotation";
+  }
+  return "state";
+}
+
+function timelineVisualModeForAction(actionKey = "state", explicitVisualMode = null) {
+  if (explicitVisualMode) return String(explicitVisualMode);
+  return actionKey === "import" || actionKey === "result" ? "thumbnail" : "icon";
+}
+
+function timelineImagesByIdForSession(session = null) {
+  return session?.imagesById instanceof Map ? session.imagesById : new Map();
+}
+
+function timelinePreviewPathForSession(session = null, { path = null, previewPath = null, previewImageId = null, imageId = null } = {}) {
+  const directPreviewPath = String(previewPath || "").trim();
+  if (directPreviewPath) return directPreviewPath;
+  const directPath = String(path || "").trim();
+  if (directPath) return directPath;
+  const imagesById = timelineImagesByIdForSession(session);
+  const previewId = String(previewImageId || imageId || session?.activeId || "").trim();
+  if (previewId && imagesById.has(previewId)) {
+    const item = imagesById.get(previewId) || null;
+    const itemPath = String(item?.path || "").trim();
+    if (itemPath) return itemPath;
+  }
+  const images = Array.isArray(session?.images) ? session.images : [];
+  for (const item of images) {
+    const itemPath = String(item?.path || "").trim();
+    if (itemPath) return itemPath;
+  }
+  return null;
+}
+
+function timelineImageIdsForSession(session = null) {
+  return uniqueStringList(
+    (Array.isArray(session?.images) ? session.images : []).map((item) => String(item?.id || "").trim())
+  );
+}
+
+function buildTimelineNodeForSession(
+  session = null,
+  {
+    imageId = null,
+    path = null,
+    receiptPath = null,
+    label = null,
+    action = null,
+    kind = null,
+    detail = null,
+    visualMode = null,
+    parents = null,
+    previewImageId = null,
+    previewPath = null,
+    receiptPaths = null,
+  } = {}
+) {
+  const nextSeq = Math.max(1, Number(session?.timelineNextSeq) || 1);
+  const actionKey = timelineActionKey(action, kind);
+  const resolvedKind = timelineKindForAction(actionKey, kind);
+  const resolvedPreviewImageId = String(previewImageId || imageId || session?.activeId || "").trim() || null;
+  const resolvedPreviewPath = timelinePreviewPathForSession(session, {
+    path,
+    previewPath,
+    previewImageId: resolvedPreviewImageId,
+    imageId,
+  });
+  const resolvedParents = uniqueStringList(
+    Array.isArray(parents) ? parents : session?.timelineHeadNodeId ? [session.timelineHeadNodeId] : []
+  );
+  const resolvedLabel =
+    String(label || "").trim() ||
+    (resolvedPreviewPath ? basename(resolvedPreviewPath) : "") ||
+    (action ? String(action) : "") ||
+    "State";
+  return {
+    nodeId: _timelineMakeNodeId(nextSeq),
+    seq: nextSeq,
     createdAt: Date.now(),
+    kind: resolvedKind,
+    action: action ? String(action) : null,
+    visualMode: timelineVisualModeForAction(actionKey, visualMode),
+    label: resolvedLabel,
+    detail: detail ? String(detail) : null,
+    parents: resolvedParents,
+    imageIds: timelineImageIdsForSession(session),
+    previewImageId: resolvedPreviewImageId,
+    previewPath: resolvedPreviewPath,
+    receiptPaths: uniqueStringList([receiptPath, ...(Array.isArray(receiptPaths) ? receiptPaths : [])]),
+    snapshot: captureSessionTimelineSnapshot(session),
   };
-  state.timelineNodes.push(node);
-  state.timelineNodesById.set(nodeId, node);
+}
+
+function applyTimelineNodeToSession(session = null, node = null, imageId = null) {
+  const current = session && typeof session === "object" ? session : null;
+  if (!current || !node?.nodeId) return null;
+  if (!Array.isArray(current.timelineNodes)) current.timelineNodes = [];
+  if (!(current.timelineNodesById instanceof Map)) current.timelineNodesById = new Map();
+  current.timelineNodes.push(node);
+  current.timelineNodesById.set(node.nodeId, node);
+  current.timelineHeadNodeId = node.nodeId;
+  current.timelineLatestNodeId = node.nodeId;
+  current.timelineNextSeq = Math.max(1, Number(node.seq) || 1) + 1;
+  current.timelineOpen = true;
+  const normalizedImageId = String(imageId || "").trim();
+  if (normalizedImageId && current.imagesById?.has?.(normalizedImageId)) {
+    const item = current.imagesById.get(normalizedImageId) || null;
+    if (item) item.timelineNodeId = node.nodeId;
+  }
+  return node.nodeId;
+}
+
+function recordTimelineNode({
+  imageId = null,
+  path = null,
+  receiptPath = null,
+  label = null,
+  action = null,
+  kind = null,
+  detail = null,
+  visualMode = null,
+  parents = null,
+  previewImageId = null,
+  previewPath = null,
+  receiptPaths = null,
+} = {}) {
+  const node = buildTimelineNodeForSession(state, {
+    imageId,
+    path,
+    receiptPath,
+    label,
+    action,
+    kind,
+    detail,
+    visualMode,
+    parents,
+    previewImageId,
+    previewPath,
+    receiptPaths,
+  });
+  const nodeId = applyTimelineNodeToSession(state, node, imageId);
+  if (!nodeId) return null;
   markActiveTabUiDirty({ timeline: true, quickActions: true, publishTabs: true });
-  if (state.timelineOpen) renderTimeline();
+  syncActiveTabRecord({ capture: true, publish: true });
+  persistActiveSessionTimeline();
+  renderTimeline();
   return nodeId;
 }
 
 function ensureTimelineNodeForImageItem(item) {
   if (!item || !item.id || !item.path) return null;
   if (item.timelineNodeId && state.timelineNodesById.has(item.timelineNodeId)) return item.timelineNodeId;
-  const action = item.timelineAction || item.kind || null;
-  const parents = Array.isArray(item.timelineParents) ? item.timelineParents : [];
+  const action = item.timelineAction || item.kind || "Import";
+  const parents = Array.isArray(item.timelineParents) ? item.timelineParents : null;
   const nodeId = recordTimelineNode({
     imageId: item.id,
     path: item.path,
     receiptPath: item.receiptPath || null,
     label: item.label || null,
     action,
+    kind: "image_result",
+    visualMode: "thumbnail",
     parents,
+    previewImageId: item.id,
+    previewPath: item.path,
+    receiptPaths: item.receiptPath ? [item.receiptPath] : [],
   });
   item.timelineNodeId = nodeId;
-  // Clear one-shot metadata (keeps `state.images` objects tidy).
   if ("timelineAction" in item) delete item.timelineAction;
   if ("timelineParents" in item) delete item.timelineParents;
   return nodeId;
 }
 
 function openTimeline() {
-  if (!els.timelineOverlay) return;
   state.timelineOpen = true;
-  els.timelineOverlay.classList.remove("hidden");
   renderTimeline();
 }
 
 function closeTimeline() {
-  if (!els.timelineOverlay) return;
-  state.timelineOpen = false;
-  els.timelineOverlay.classList.add("hidden");
-  state.lastRenderedTimelineKey = "closed";
+  state.timelineOpen = true;
+  renderTimeline();
 }
 
-function timelineRenderSignature() {
-  if (!state.timelineOpen) return "closed";
-  return [
-    state.timelineVersion,
-    getActiveImage()?.timelineNodeId || "",
-    Array.from(state.timelineNodes || [])
-      .map(
-        (node) =>
-          `${node?.nodeId || ""}:${node?.imageId || ""}:${node?.path || ""}:${node?.label || ""}:${node?.action || ""}:${node?.createdAt || 0}:${Array.isArray(node?.parents) ? node.parents.join(",") : ""}`
-      )
-      .join("|"),
-  ].join("||");
+function timelineGlyphSvgMarkup(actionKey = "state") {
+  if (actionKey === "protect") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8 18.5 6v5.2c0 4.1-2.4 7.2-6.5 9-4.1-1.8-6.5-4.9-6.5-9V6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>';
+  }
+  if (actionKey === "magic") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 18 9-9m0 0 1.8-3.8L20.6 7 16.8 8.8M9.1 5.4v2.2M5.2 9.3H7.4M16.6 15.8v2.1M14.8 17.6h2.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+  if (actionKey === "erase") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 16.5 5.8-8.1a1.8 1.8 0 0 1 2.9-.1l2.3 3a1.8 1.8 0 0 1 0 2.2l-4.2 5.4H9.8a2 2 0 0 1-1.8-2.4Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M5.2 18.9h13.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+  }
+  if (actionKey === "annotate") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5.2" y="6" width="13.6" height="12" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8.4 9.4h7.2M8.4 12.2h7.2M8.4 15h4.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  }
+  if (actionKey === "circle") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 8.8v6.4M8.8 12h6.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  }
+  if (actionKey === "delete") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.4 8.2h9.2m-8.1 0 .6 9.3a1.7 1.7 0 0 0 1.7 1.6h2.4a1.7 1.7 0 0 0 1.7-1.6l.6-9.3M9.5 6.1h5M10.5 4.9h3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+  if (actionKey === "resize") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h8v8H8zM5.2 5.2l2.1 2.1m9.5 9.5 2.1 2.1M18.9 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+  if (actionKey === "rotate") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.8 8.2V4.8h-3.4M17.2 12a5.2 5.2 0 1 1-2-4.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+  if (actionKey === "skew") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7.2h8.2l1.8 9.6H8.8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M5.2 18.4h13.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+  }
+  if (actionKey === "move") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.6v14.8M4.6 12h14.8M8.4 8.4 12 4.6l3.6 3.8M8.4 15.6 12 19.4l3.6-3.8M15.6 8.4 19.4 12l-3.8 3.6M8.4 8.4 4.6 12l3.8 3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+  if (actionKey === "mark" || actionKey === "state") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 15.8c2.1-5.1 4.2-7.7 6.3-7.7 1.9 0 3.1 2.1 4.5 2.1 1.1 0 2-.8 3.2-2.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.4 18.4h11.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+  }
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.8v4.5l2.8 2.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 }
 
-function renderTimeline() {
-  if (!state.timelineOpen) return false;
-  const nextKey = timelineRenderSignature();
-  if (state.lastRenderedTimelineKey === nextKey) return false;
-  state.lastRenderedTimelineKey = nextKey;
-  const strip = els.timelineStrip;
+function timelineNodeLabel(node = null) {
+  if (!node) return "Timeline";
+  return (
+    String(node.label || "").trim() ||
+    String(node.action || "").trim() ||
+    (node.previewPath ? basename(node.previewPath) : "") ||
+    "State"
+  );
+}
+
+function timelineNodeSummary(node = null) {
+  if (!node) return "Committed session history";
+  const parts = [];
+  const action = String(node.action || "").trim();
+  const label = timelineNodeLabel(node);
+  const imageCount = Array.isArray(node.imageIds) ? node.imageIds.length : 0;
+  if (action) parts.push(action);
+  if (label && label !== action) parts.push(label);
+  if (imageCount) parts.push(`${imageCount} image${imageCount === 1 ? "" : "s"}`);
+  return parts.join(" · ") || "Committed session history";
+}
+
+function timelineNodeAriaLabel(node = null, { current = false, future = false } = {}) {
+  const pieces = [];
+  pieces.push(timelineNodeSummary(node));
+  if (current) pieces.push("Current state");
+  else if (future) pieces.push("Future state");
+  return pieces.join(". ");
+}
+
+function timelineDetailText(headNode = currentTimelineHeadNode()) {
+  const headNodeId = String(headNode?.nodeId || "").trim() || null;
+  const previewNodeId = String(state.timelinePreviewNodeId || "").trim();
+  const previewNode =
+    previewNodeId && state.timelineNodesById instanceof Map
+      ? state.timelineNodesById.get(previewNodeId) || null
+      : null;
+  if (!previewNode) return headNode ? timelineNodeSummary(headNode) : "Timeline";
+  const previewSummary = timelineNodeSummary(previewNode);
+  if (previewNodeId === headNodeId) return `Current state · ${previewSummary}`;
+  return `Change to · ${previewSummary}`;
+}
+
+function syncTimelineDetailText(headNode = currentTimelineHeadNode()) {
   const detail = els.timelineDetail;
-  if (!strip) return false;
-  strip.innerHTML = "";
-
-  const nodes = Array.from(state.timelineNodes || []).sort((a, b) => (a?.createdAt || 0) - (b?.createdAt || 0));
-  if (!nodes.length) {
-    const empty = document.createElement("div");
-    empty.className = "muted";
-    empty.textContent = "No timeline yet.";
-    strip.appendChild(empty);
-    if (detail) detail.textContent = "";
-    return true;
-  }
-
-  const activeNodeId = getActiveImage()?.timelineNodeId || null;
-  let activeNode = activeNodeId ? state.timelineNodesById.get(activeNodeId) : null;
-  if (!activeNode && activeNodeId) {
-    activeNode = nodes.find((n) => n?.nodeId === activeNodeId) || null;
-  }
-
-  const frag = document.createDocumentFragment();
-  for (const node of nodes) {
-    if (!node?.nodeId || !node.path) continue;
-    const card = document.createElement("div");
-    card.className = "timeline-card" + (activeNodeId && node.nodeId === activeNodeId ? " selected" : "");
-    card.dataset.nodeId = node.nodeId;
-    card.tabIndex = 0;
-    const img = document.createElement("img");
-    img.alt = node.label || basename(node.path) || "Timeline item";
-    img.loading = "lazy";
-    img.decoding = "async";
-    img.src = THUMB_PLACEHOLDER_SRC;
-    ensureImageUrl(node.path)
-      .then((url) => {
-        if (url) img.src = url;
-      })
-      .catch(() => {});
-    card.appendChild(img);
-    const meta = document.createElement("div");
-    meta.className = "timeline-meta";
-    const action = document.createElement("div");
-    action.className = "timeline-action";
-    action.textContent = node.action ? String(node.action) : "artifact";
-    const name = document.createElement("div");
-    name.textContent = node.label || basename(node.path);
-    meta.appendChild(action);
-    meta.appendChild(name);
-    card.appendChild(meta);
-    frag.appendChild(card);
-  }
-  strip.appendChild(frag);
-
-  if (detail) {
-    if (!activeNode) {
-      detail.textContent = "Select a point in time to jump back.";
-    } else {
-      const pieces = [];
-      pieces.push(activeNode.action ? `Action: ${activeNode.action}` : "Action: (unknown)");
-      pieces.push(`File: ${basename(activeNode.path)}`);
-      if (activeNode.parents?.length) pieces.push(`Parents: ${activeNode.parents.length}`);
-      detail.textContent = pieces.join("\n");
+  if (!detail) return false;
+  if (state.timelinePreviewNodeId) {
+    const previewNodeId = String(state.timelinePreviewNodeId || "").trim();
+    if (!(state.timelineNodesById instanceof Map) || !state.timelineNodesById.has(previewNodeId)) {
+      state.timelinePreviewNodeId = null;
     }
+  }
+  const nextDetail = timelineDetailText(headNode);
+  if (detail.textContent === nextDetail) return false;
+  detail.textContent = nextDetail;
+  return true;
+}
+
+const TIMELINE_CAROUSEL_PAGE_RATIO = 0.82;
+const TIMELINE_CAROUSEL_GESTURE_LOCK_PX = 12;
+const TIMELINE_CAROUSEL_GESTURE_THRESHOLD_PX = 38;
+const TIMELINE_CAROUSEL_WHEEL_THRESHOLD_PX = 34;
+const TIMELINE_CAROUSEL_CLICK_SUPPRESS_MS = 240;
+const TIMELINE_CAROUSEL_EDGE_EPSILON_PX = 4;
+
+function timelineNowMs() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+function timelineNodeStructureKey(node = null) {
+  return [
+    node?.nodeId || "",
+    node?.seq || 0,
+    node?.kind || "",
+    node?.action || "",
+    node?.visualMode || "",
+    node?.label || "",
+    node?.detail || "",
+    node?.previewPath || "",
+    node?.previewImageId || "",
+    Array.isArray(node?.parents) ? node.parents.join(",") : "",
+    Array.isArray(node?.imageIds) ? node.imageIds.join(",") : "",
+    Array.isArray(node?.receiptPaths) ? node.receiptPaths.join(",") : "",
+    node?.createdAt || 0,
+  ].join(":");
+}
+
+function timelineStructureSignature(nodes = timelineSortedNodes()) {
+  return Array.from(Array.isArray(nodes) ? nodes : [])
+    .map((node) => timelineNodeStructureKey(node))
+    .join("|");
+}
+
+function timelineViewSignature(headNode = currentTimelineHeadNode()) {
+  return [
+    String(headNode?.nodeId || "").trim(),
+    Math.max(0, Number(headNode?.seq) || 0),
+  ].join(":");
+}
+
+function timelineCardStateForNode(node = null, headNode = currentTimelineHeadNode()) {
+  const headNodeId = String(headNode?.nodeId || "").trim() || null;
+  const headSeq = Math.max(0, Number(headNode?.seq) || 0);
+  const current = headNodeId === String(node?.nodeId || "").trim();
+  const future = !current && Math.max(0, Number(node?.seq) || 0) > headSeq;
+  return { current, future };
+}
+
+function timelineCarouselAnchors(strip = els.timelineStrip) {
+  if (!strip?.querySelectorAll) return [];
+  const maxScroll = Math.max(0, Number(strip.scrollWidth || 0) - Number(strip.clientWidth || 0));
+  const anchors = new Set([0, maxScroll]);
+  const cards = Array.from(strip.querySelectorAll(".timeline-card[data-node-id]"));
+  for (const card of cards) {
+    const left = Math.max(0, Math.round(Number(card?.offsetLeft) || 0));
+    anchors.add(Math.min(maxScroll, left));
+  }
+  return Array.from(anchors)
+    .filter((left) => Number.isFinite(left))
+    .sort((a, b) => a - b);
+}
+
+function timelineCarouselTargetLeft(strip = els.timelineStrip, direction = 0) {
+  const normalizedDirection = Number(direction) > 0 ? 1 : Number(direction) < 0 ? -1 : 0;
+  if (!strip || !normalizedDirection) return 0;
+  const maxScroll = Math.max(0, Number(strip.scrollWidth || 0) - Number(strip.clientWidth || 0));
+  if (maxScroll <= 0) return 0;
+  const currentLeft = Math.min(maxScroll, Math.max(0, Number(strip.scrollLeft) || 0));
+  const anchors = timelineCarouselAnchors(strip);
+  if (!anchors.length) return currentLeft;
+  const pageWidth = Math.max(1, Math.round(Number(strip.clientWidth || 0) * TIMELINE_CAROUSEL_PAGE_RATIO));
+  const currentIndex = anchors.reduce((best, anchor, index) => (anchor <= currentLeft + 4 ? index : best), 0);
+  if (normalizedDirection > 0) {
+    const desired = Math.min(maxScroll, currentLeft + pageWidth);
+    let target = anchors.find((anchor) => anchor >= desired - 4);
+    if (target == null || target <= currentLeft + 4) {
+      target = anchors[Math.min(anchors.length - 1, currentIndex + 1)] ?? maxScroll;
+    }
+    return Math.min(maxScroll, Math.max(0, Number(target) || 0));
+  }
+  const desired = Math.max(0, currentLeft - pageWidth);
+  let target = Array.from(anchors)
+    .reverse()
+    .find((anchor) => anchor <= desired + 4);
+  if (target == null || target >= currentLeft - 4) {
+    target = anchors[Math.max(0, currentIndex - 1)] ?? 0;
+  }
+  return Math.min(maxScroll, Math.max(0, Number(target) || 0));
+}
+
+function timelineCarouselDirectionState(strip = els.timelineStrip) {
+  const maxScroll = Math.max(0, Number(strip?.scrollWidth || 0) - Number(strip?.clientWidth || 0));
+  const currentLeft = Math.min(maxScroll, Math.max(0, Number(strip?.scrollLeft) || 0));
+  const hasOverflow = Boolean(strip && maxScroll > TIMELINE_CAROUSEL_EDGE_EPSILON_PX);
+  return {
+    hasOverflow,
+    currentLeft,
+    maxScroll,
+    canPageLeft: hasOverflow && currentLeft > TIMELINE_CAROUSEL_EDGE_EPSILON_PX,
+    canPageRight: hasOverflow && currentLeft < maxScroll - TIMELINE_CAROUSEL_EDGE_EPSILON_PX,
+  };
+}
+
+function syncTimelineCarouselOverflow(strip = els.timelineStrip) {
+  const { hasOverflow, canPageLeft, canPageRight } = timelineCarouselDirectionState(strip);
+  strip?.classList?.toggle("is-scrollable", hasOverflow);
+  els.timelineShell?.classList?.toggle("is-scrollable", hasOverflow);
+  if (els.timelinePrev) {
+    els.timelinePrev.classList.toggle("is-hidden", !canPageLeft);
+    els.timelinePrev.disabled = !canPageLeft;
+    els.timelinePrev.tabIndex = canPageLeft ? 0 : -1;
+  }
+  if (els.timelineNext) {
+    els.timelineNext.classList.toggle("is-hidden", !canPageRight);
+    els.timelineNext.disabled = !canPageRight;
+    els.timelineNext.tabIndex = canPageRight ? 0 : -1;
+  }
+  return hasOverflow;
+}
+
+function scheduleTimelineCarouselChromeSync() {
+  if (Number(state.timelineCarouselChromeFrame) > 0) return;
+  const run = () => {
+    state.timelineCarouselChromeFrame = 0;
+    syncTimelineCarouselOverflow();
+  };
+  if (typeof requestAnimationFrame === "function") {
+    state.timelineCarouselChromeFrame = requestAnimationFrame(run);
+    return;
+  }
+  run();
+}
+
+function centerTimelineCardInStrip(card = null, strip = els.timelineStrip, { behavior = "smooth", force = false } = {}) {
+  if (!card || !strip) return false;
+  const maxScroll = Math.max(0, Number(strip.scrollWidth || 0) - Number(strip.clientWidth || 0));
+  if (maxScroll <= 0) return false;
+  const currentLeft = Math.min(maxScroll, Math.max(0, Number(strip.scrollLeft) || 0));
+  const cardLeft = Math.max(0, Number(card.offsetLeft) || 0);
+  const cardWidth = Math.max(1, Number(card.offsetWidth) || 0);
+  const visibleLeft = currentLeft + 6;
+  const visibleRight = currentLeft + Math.max(0, Number(strip.clientWidth || 0)) - 6;
+  if (!force && cardLeft >= visibleLeft && cardLeft + cardWidth <= visibleRight) return false;
+  const targetLeft = Math.min(
+    maxScroll,
+    Math.max(0, Math.round(cardLeft - Math.max(0, (Number(strip.clientWidth || 0) - cardWidth) / 2)))
+  );
+  if (Math.abs(targetLeft - currentLeft) <= 2) return false;
+  if (typeof strip.scrollTo === "function") {
+    strip.scrollTo({ left: targetLeft, behavior });
+  } else {
+    strip.scrollLeft = targetLeft;
   }
   return true;
 }
 
-async function jumpToTimelineNode(nodeId) {
-  const node = nodeId ? state.timelineNodesById.get(nodeId) : null;
-  if (!node) return;
+function scrollTimelineCarousel(direction = 0, { behavior = "smooth" } = {}) {
+  const strip = els.timelineStrip;
+  const targetLeft = timelineCarouselTargetLeft(strip, direction);
+  if (!strip) return false;
+  const currentLeft = Math.max(0, Number(strip.scrollLeft) || 0);
+  if (Math.abs(targetLeft - currentLeft) <= 2) return false;
+  if (typeof strip.scrollTo === "function") {
+    strip.scrollTo({ left: targetLeft, behavior });
+  } else {
+    strip.scrollLeft = targetLeft;
+  }
+  return true;
+}
 
-  const imgItem = state.imagesById.get(node.imageId) || null;
-  if (!imgItem) {
-    showToast("Timeline item no longer in canvas.", "error", 2400);
-    return;
+function suppressTimelineCardClick() {
+  state.timelineSuppressClickUntil = timelineNowMs() + TIMELINE_CAROUSEL_CLICK_SUPPRESS_MS;
+}
+
+function shouldSuppressTimelineCardClick() {
+  return timelineNowMs() < Math.max(0, Number(state.timelineSuppressClickUntil) || 0);
+}
+
+function resetTimelineCarouselGesture() {
+  const pointerId = state.timelineCarouselGesture?.pointerId;
+  if (pointerId != null && typeof els.timelineShell?.releasePointerCapture === "function") {
+    try {
+      els.timelineShell.releasePointerCapture(pointerId);
+    } catch (_) {}
+  }
+  els.timelineShell?.classList?.remove("is-swiping");
+  state.timelineCarouselGesture = null;
+}
+
+function beginTimelineCarouselGesture(event) {
+  if (!els.timelineStrip || !syncTimelineCarouselOverflow()) return;
+  if (event?.pointerType === "mouse" && Number(event?.button) !== 0) return;
+  if (event?.target?.closest && event.target.closest(".timeline-arrow")) return;
+  state.timelineCarouselGesture = {
+    pointerId: event?.pointerId ?? null,
+    startX: Number(event?.clientX) || 0,
+    startY: Number(event?.clientY) || 0,
+    dragging: false,
+  };
+  if (event?.pointerId != null && typeof els.timelineShell?.setPointerCapture === "function") {
+    try {
+      els.timelineShell.setPointerCapture(event.pointerId);
+    } catch (_) {}
+  }
+}
+
+function updateTimelineCarouselGesture(event) {
+  const gesture = state.timelineCarouselGesture;
+  if (!gesture) return false;
+  if (gesture.pointerId != null && event?.pointerId != null && gesture.pointerId !== event.pointerId) return false;
+  const dx = (Number(event?.clientX) || 0) - gesture.startX;
+  const dy = (Number(event?.clientY) || 0) - gesture.startY;
+  if (!gesture.dragging) {
+    if (Math.abs(dx) < TIMELINE_CAROUSEL_GESTURE_LOCK_PX && Math.abs(dy) < TIMELINE_CAROUSEL_GESTURE_LOCK_PX) {
+      return false;
+    }
+    if (Math.abs(dx) <= Math.abs(dy)) {
+      resetTimelineCarouselGesture();
+      return false;
+    }
+    gesture.dragging = true;
+    els.timelineShell?.classList?.add("is-swiping");
+  }
+  event?.preventDefault?.();
+  return true;
+}
+
+function finishTimelineCarouselGesture(event) {
+  const gesture = state.timelineCarouselGesture;
+  if (!gesture) return false;
+  if (gesture.pointerId != null && event?.pointerId != null && gesture.pointerId !== event.pointerId) return false;
+  const dx = (Number(event?.clientX) || 0) - gesture.startX;
+  const dy = (Number(event?.clientY) || 0) - gesture.startY;
+  const shouldSlide =
+    gesture.dragging &&
+    Math.abs(dx) >= TIMELINE_CAROUSEL_GESTURE_THRESHOLD_PX &&
+    Math.abs(dx) > Math.abs(dy);
+  resetTimelineCarouselGesture();
+  if (!shouldSlide) return false;
+  const moved = scrollTimelineCarousel(dx < 0 ? 1 : -1);
+  if (moved) {
+    suppressTimelineCardClick();
+    event?.preventDefault?.();
+  }
+  return moved;
+}
+
+function handleTimelineCarouselWheel(event) {
+  if (!els.timelineStrip || !syncTimelineCarouselOverflow()) return false;
+  const deltaX = Number(event?.deltaX) || 0;
+  const deltaY = Number(event?.deltaY) || 0;
+  const usesHorizontalGesture = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : 0;
+  const delta = usesHorizontalGesture || (event?.shiftKey ? deltaY : 0);
+  if (!delta) {
+    state.timelineCarouselWheel.delta = 0;
+    return false;
+  }
+  const now = timelineNowMs();
+  if (now - (Number(state.timelineCarouselWheel?.lastAt) || 0) > 220) {
+    state.timelineCarouselWheel.delta = 0;
+  }
+  state.timelineCarouselWheel.lastAt = now;
+  state.timelineCarouselWheel.delta += delta;
+  if (Math.abs(state.timelineCarouselWheel.delta) < TIMELINE_CAROUSEL_WHEEL_THRESHOLD_PX) {
+    return false;
+  }
+  const direction = state.timelineCarouselWheel.delta > 0 ? 1 : -1;
+  state.timelineCarouselWheel.delta = 0;
+  const moved = scrollTimelineCarousel(direction);
+  if (moved) {
+    suppressTimelineCardClick();
+    event?.preventDefault?.();
+  }
+  return moved;
+}
+
+function buildTimelineCard(node = null, headNode = currentTimelineHeadNode()) {
+  if (!node?.nodeId) return null;
+  const { current, future } = timelineCardStateForNode(node, headNode);
+  const actionKey = timelineActionKey(node.action, node.kind);
+  const usesThumbnail =
+    String(node.visualMode || "").trim() === "thumbnail" &&
+    String(node.previewPath || "").trim();
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = `timeline-card ${usesThumbnail ? "timeline-card--thumb" : "timeline-card--icon"}${current ? " selected" : ""}${future ? " is-future" : ""}`;
+  card.dataset.nodeId = node.nodeId;
+  card.dataset.seq = String(Math.max(1, Number(node.seq) || 1));
+  card.dataset.structureKey = timelineNodeStructureKey(node);
+  card.setAttribute("aria-label", timelineNodeAriaLabel(node, { current, future }));
+  card.title = timelineNodeSummary(node);
+  const seq = document.createElement("span");
+  seq.className = "timeline-card-seq";
+  seq.textContent = card.dataset.seq;
+  card.appendChild(seq);
+  const visual = document.createElement("span");
+  visual.className = "timeline-card-visual";
+  if (usesThumbnail) {
+    const img = document.createElement("img");
+    img.alt = timelineNodeLabel(node);
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.src = THUMB_PLACEHOLDER_SRC;
+    ensureImageUrl(node.previewPath)
+      .then((url) => {
+        if (url) img.src = url;
+      })
+      .catch(() => {});
+    visual.appendChild(img);
+  } else {
+    const glyph = document.createElement("span");
+    glyph.className = `timeline-card-glyph timeline-card-glyph--${actionKey}`;
+    glyph.innerHTML = timelineGlyphSvgMarkup(actionKey);
+    visual.appendChild(glyph);
+  }
+  card.appendChild(visual);
+  return card;
+}
+
+function rebuildTimelineStrip(nodes = timelineSortedNodes(), headNode = currentTimelineHeadNode()) {
+  const strip = els.timelineStrip;
+  if (!strip) return false;
+  if (!nodes.length) {
+    const currentEmpty = strip.querySelector(".timeline-empty");
+    if (!currentEmpty || String(currentEmpty.textContent || "").trim() !== "History appears here after the first committed change.") {
+      strip.replaceChildren();
+      const empty = document.createElement("div");
+      empty.className = "timeline-empty muted";
+      empty.textContent = "History appears here after the first committed change.";
+      strip.appendChild(empty);
+    }
+    state.lastTimelineCenteredNodeId = null;
+    scheduleTimelineCarouselChromeSync();
+    return true;
   }
 
+  for (const empty of Array.from(strip.querySelectorAll(".timeline-empty"))) {
+    empty.remove();
+  }
+
+  const desiredNodeIds = new Set();
+  const existingCards = Array.from(strip.querySelectorAll(".timeline-card[data-node-id]"));
+  const existingById = new Map();
+  for (const card of existingCards) {
+    const nodeId = String(card.dataset?.nodeId || "").trim();
+    if (!nodeId) continue;
+    existingById.set(nodeId, card);
+  }
+
+  for (const node of nodes) {
+    const nodeId = String(node?.nodeId || "").trim();
+    if (!nodeId) continue;
+    desiredNodeIds.add(nodeId);
+  }
+
+  for (const card of existingCards) {
+    const nodeId = String(card.dataset?.nodeId || "").trim();
+    if (!nodeId || desiredNodeIds.has(nodeId)) continue;
+    card.remove();
+    existingById.delete(nodeId);
+  }
+
+  let referenceNode = strip.firstChild;
+  for (const node of nodes) {
+    const nodeId = String(node?.nodeId || "").trim();
+    if (!nodeId) continue;
+    const structureKey = timelineNodeStructureKey(node);
+    let card = existingById.get(nodeId) || null;
+    if (!card) {
+      card = buildTimelineCard(node, headNode);
+      if (!card) continue;
+      existingById.set(nodeId, card);
+    } else if (String(card.dataset?.structureKey || "") !== structureKey) {
+      const replacement = buildTimelineCard(node, headNode);
+      if (!replacement) continue;
+      if (card.parentNode === strip) {
+        strip.replaceChild(replacement, card);
+        if (referenceNode === card) referenceNode = replacement;
+      }
+      existingById.set(nodeId, replacement);
+      card = replacement;
+    }
+    if (card.parentNode !== strip) {
+      strip.insertBefore(card, referenceNode);
+    } else if (card !== referenceNode) {
+      strip.insertBefore(card, referenceNode);
+    } else {
+      referenceNode = card.nextSibling;
+      continue;
+    }
+    referenceNode = card.nextSibling;
+  }
+
+  syncTimelineCarouselOverflow(strip);
+  return true;
+}
+
+function syncTimelineViewState(nodes = timelineSortedNodes(), headNode = currentTimelineHeadNode()) {
+  const strip = els.timelineStrip;
+  if (!strip) return false;
+  const headNodeId = String(headNode?.nodeId || "").trim() || null;
+  let changed = false;
+  const cards = Array.from(strip.querySelectorAll(".timeline-card[data-node-id]"));
+  for (const card of cards) {
+    const nodeId = String(card.dataset?.nodeId || "").trim();
+    if (!nodeId) continue;
+    const node = state.timelineNodesById instanceof Map ? state.timelineNodesById.get(nodeId) || null : null;
+    if (!node) continue;
+    const { current, future } = timelineCardStateForNode(node, headNode);
+    if (card.classList.contains("selected") !== current) {
+      card.classList.toggle("selected", current);
+      changed = true;
+    }
+    if (card.classList.contains("is-future") !== future) {
+      card.classList.toggle("is-future", future);
+      changed = true;
+    }
+    const nextAria = timelineNodeAriaLabel(node, { current, future });
+    if (card.getAttribute("aria-label") !== nextAria) {
+      card.setAttribute("aria-label", nextAria);
+      changed = true;
+    }
+  }
+  changed = syncTimelineDetailText(headNode) || changed;
+  const selectedCard = headNodeId
+    ? cards.find((card) => String(card.dataset?.nodeId || "").trim() === headNodeId) || null
+    : null;
+  if (selectedCard && headNodeId) {
+    centerTimelineCardInStrip(selectedCard, strip, {
+      behavior: state.lastTimelineCenteredNodeId === headNodeId ? "auto" : "smooth",
+      force: headNodeId !== state.lastTimelineCenteredNodeId,
+    });
+    state.lastTimelineCenteredNodeId = headNodeId;
+  } else if (!headNodeId) {
+    state.lastTimelineCenteredNodeId = null;
+  }
+  scheduleTimelineCarouselChromeSync();
+  return changed;
+}
+
+function renderTimeline() {
+  const strip = els.timelineStrip;
+  if (!strip) return false;
+  const nodes = timelineSortedNodes();
+  const headNode = currentTimelineHeadNode();
+  const structureKey = [
+    state.timelineVersion,
+    state.timelineLatestNodeId || "",
+    state.timelineNextSeq || 1,
+    timelineStructureSignature(nodes),
+  ].join("||");
+  const viewKey = timelineViewSignature(headNode);
+  let changed = false;
+  if (state.lastRenderedTimelineStructureKey !== structureKey) {
+    state.lastRenderedTimelineStructureKey = structureKey;
+    state.lastRenderedTimelineViewKey = "";
+    rebuildTimelineStrip(nodes, headNode);
+    changed = true;
+  }
+  if (state.lastRenderedTimelineViewKey !== viewKey) {
+    state.lastRenderedTimelineViewKey = viewKey;
+    syncTimelineViewState(nodes, headNode);
+    changed = true;
+  } else if (!changed) {
+    scheduleTimelineCarouselChromeSync();
+  }
+  return changed;
+}
+
+function currentTimelineRestoreBlockReason() {
+  if (state.pointer?.active || state.gestureZoom?.active) return "manipulating_canvas";
+  if (state.designReviewApply?.status === "running") return "review_apply";
+  if (state.motherIdle?.commitMutationInFlight) return "assistant_mutation";
+  if (state.pendingReplace) return "visible_mutation";
+  return null;
+}
+
+function currentTimelineRestoreBlockMessage(reason = currentTimelineRestoreBlockReason()) {
+  const normalized = String(reason || "").trim();
+  if (normalized === "manipulating_canvas") return "Finish the current canvas gesture before rewinding the timeline.";
+  if (normalized === "review_apply") return "Wait for the accepted review edit to finish before rewinding the timeline.";
+  if (normalized === "assistant_mutation" || normalized === "visible_mutation") {
+    return "Wait for the active canvas mutation to finish before rewinding the timeline.";
+  }
+  return "Timeline restore is blocked while the canvas is mutating.";
+}
+
+async function jumpToLegacyTimelineNode(node = null) {
+  if (!node?.imageId || !node?.previewPath) return false;
+  const imgItem = state.imagesById.get(String(node.imageId || "")) || null;
+  if (!imgItem) return false;
   if (state.activeId !== imgItem.id) {
     await setActiveImage(imgItem.id, {
       source: "timeline",
-      reason: "timeline_jump",
+      reason: "timeline_jump_legacy",
     }).catch(() => {});
   }
-
-  if (imgItem.path !== node.path) {
+  if (imgItem.path !== node.previewPath) {
     const ok = await replaceImageInPlace(imgItem.id, {
-      path: node.path,
-      receiptPath: node.receiptPath || null,
+      path: node.previewPath,
+      receiptPath: Array.isArray(node.receiptPaths) ? node.receiptPaths[0] || null : null,
       kind: imgItem.kind,
       clearVision: true,
       source: "timeline",
-      reason: "timeline_jump",
+      reason: "timeline_jump_legacy",
     });
-    if (!ok) return;
+    if (!ok) return false;
+  }
+  imgItem.timelineNodeId = node.nodeId;
+  state.timelineHeadNodeId = node.nodeId;
+  syncActiveTabRecord({ capture: true, publish: true });
+  persistActiveSessionTimeline();
+  renderTimeline();
+  return true;
+}
+
+async function jumpToTimelineNode(nodeId) {
+  const normalizedNodeId = String(nodeId || "").trim();
+  if (!normalizedNodeId || normalizedNodeId === String(state.timelineHeadNodeId || "").trim()) return;
+  const node = state.timelineNodesById instanceof Map ? state.timelineNodesById.get(normalizedNodeId) || null : null;
+  if (!node) return;
+  const blockReason = currentTimelineRestoreBlockReason();
+  if (blockReason) {
+    showToast(currentTimelineRestoreBlockMessage(blockReason), "tip", 2200);
+    return;
+  }
+  if (!node.snapshot) {
+    const restoredLegacy = await jumpToLegacyTimelineNode(node);
+    if (!restoredLegacy) {
+      showToast("That timeline state cannot be restored.", "error", 2400);
+    }
+    return;
   }
 
-  imgItem.timelineNodeId = node.nodeId;
+  const restoredSession = restoreSessionTimelineSnapshot(node.snapshot, {
+    runDir: state.runDir || null,
+    eventsPath: state.eventsPath || null,
+  });
+  restoredSession.timelineNodes = Array.from(state.timelineNodes || []);
+  restoredSession.timelineNodesById = state.timelineNodesById instanceof Map ? state.timelineNodesById : new Map();
+  restoredSession.timelineHeadNodeId = node.nodeId;
+  restoredSession.timelineLatestNodeId = state.timelineLatestNodeId || node.nodeId;
+  restoredSession.timelineNextSeq = Math.max(1, Number(state.timelineNextSeq) || Math.max(1, Number(node.seq) || 1) + 1);
+  restoredSession.timelineOpen = true;
+  bindTabSessionToState(restoredSession);
+  syncSessionToolsFromRegistry();
+  renderCreateToolPreview();
+  renderCustomToolDock();
+  renderSelectionMeta();
+  renderFilmstrip();
+  chooseSpawnNodes();
+  renderSessionApiCallsReadout();
+  updateEmptyCanvasHint();
+  syncIntentModeClass();
+  syncJuggernautShellState();
+  renderMotherMoodStatus();
   renderTimeline();
+  for (const item of state.images || []) {
+    ensureCanvasImageLoaded(item);
+  }
+  const activeItem = state.activeId ? state.imagesById.get(state.activeId) || null : null;
+  if (activeItem?.path) {
+    await setEngineActiveImage(activeItem.path).catch(() => {});
+  }
+  syncActiveTabRecord({ capture: true, publish: true });
+  persistActiveSessionTimeline();
+  requestRender();
 }
 
 const USER_ACTIVE_IMAGE_EVENT_SOURCES = new Set(["user_select", "filmstrip_click", "timeline"]);
@@ -32639,7 +33450,7 @@ function addImage(item, { select = false } = {}) {
   syncMotherPortrait();
 }
 
-async function removeImageFromCanvas(imageId) {
+async function removeImageFromCanvas(imageId, { recordTimeline = false, action = "Delete Image" } = {}) {
   const id = String(imageId || "");
   if (!id) return false;
   if (state.motherResultDetailsOpenId === id) {
@@ -32647,6 +33458,10 @@ async function removeImageFromCanvas(imageId) {
   }
   const item = state.imagesById.get(id) || null;
   if (!item) return false;
+  const removedNodeParentId = item.timelineNodeId ? String(item.timelineNodeId) : null;
+  const removedPath = item.path ? String(item.path) : null;
+  const removedLabel = item.label ? String(item.label) : removedPath ? basename(removedPath) : "Deleted image";
+  const removedReceiptPath = item.receiptPath ? String(item.receiptPath) : null;
   recordUserEvent("image_remove", {
     image_id: id,
     file: item?.path ? basename(item.path) : null,
@@ -32768,6 +33583,19 @@ async function removeImageFromCanvas(imageId) {
     renderHudReadout();
     motherIdleSyncFromInteraction({ userInteraction: false });
     requestRender();
+    if (recordTimeline) {
+      recordTimelineNode({
+        action,
+        kind: "delete",
+        visualMode: "icon",
+        label: removedLabel,
+        detail: removedPath ? basename(removedPath) : removedLabel,
+        parents: removedNodeParentId ? [removedNodeParentId] : null,
+        previewImageId: id,
+        previewPath: removedPath,
+        receiptPaths: removedReceiptPath ? [removedReceiptPath] : [],
+      });
+    }
     syncActiveTabRecord({ capture: false, publish: true });
     return true;
   }
@@ -32781,6 +33609,19 @@ async function removeImageFromCanvas(imageId) {
   renderHudReadout();
   motherIdleSyncFromInteraction({ userInteraction: false });
   requestRender();
+  if (recordTimeline) {
+    recordTimelineNode({
+      action,
+      kind: "delete",
+      visualMode: "icon",
+      label: removedLabel,
+      detail: removedPath ? basename(removedPath) : removedLabel,
+      parents: removedNodeParentId ? [removedNodeParentId] : null,
+      previewImageId: id,
+      previewPath: removedPath,
+      receiptPaths: removedReceiptPath ? [removedReceiptPath] : [],
+    });
+  }
   syncActiveTabRecord({ capture: false, publish: true });
   return true;
 }
@@ -34166,16 +35007,41 @@ function polygonBounds(points = []) {
 }
 
 function collectExportTimelineNodes() {
-  return Array.from(state.timelineNodes || [])
-    .sort((a, b) => (a?.createdAt || 0) - (b?.createdAt || 0))
+  const headNodeId = String(state.timelineHeadNodeId || "").trim();
+  return timelineSortedNodes(state.timelineNodes)
     .map((node) => ({
       nodeId: node?.nodeId ? String(node.nodeId) : null,
-      imageId: node?.imageId ? String(node.imageId) : null,
-      path: node?.path ? String(node.path) : null,
-      receiptPath: node?.receiptPath ? String(node.receiptPath) : null,
+      seq: Math.max(1, Number(node?.seq) || 1),
+      kind: node?.kind ? String(node.kind) : null,
+      imageId:
+        Array.isArray(node?.imageIds) && node.imageIds.length
+          ? String(node.imageIds[node.imageIds.length - 1] || "")
+          : node?.previewImageId
+            ? String(node.previewImageId)
+            : node?.imageId
+              ? String(node.imageId)
+            : null,
+      path: node?.previewPath ? String(node.previewPath) : node?.path ? String(node.path) : null,
+      receiptPath:
+        Array.isArray(node?.receiptPaths) && node.receiptPaths.length
+          ? String(node.receiptPaths[node.receiptPaths.length - 1] || "")
+          : node?.receiptPath
+            ? String(node.receiptPath)
+          : null,
       label: node?.label ? String(node.label) : null,
       action: node?.action ? String(node.action) : null,
       parents: Array.isArray(node?.parents) ? node.parents.map((parent) => String(parent || "")).filter(Boolean) : [],
+      imageIds: Array.isArray(node?.imageIds) ? node.imageIds.map((imageId) => String(imageId || "")).filter(Boolean) : [],
+      previewImageId: node?.previewImageId ? String(node.previewImageId) : node?.imageId ? String(node.imageId) : null,
+      previewPath: node?.previewPath ? String(node.previewPath) : node?.path ? String(node.path) : null,
+      receiptPaths: Array.isArray(node?.receiptPaths)
+        ? node.receiptPaths.map((path) => String(path || "")).filter(Boolean)
+        : node?.receiptPath
+          ? [String(node.receiptPath)]
+          : [],
+      visualMode: node?.visualMode ? String(node.visualMode) : null,
+      detail: node?.detail ? String(node.detail) : null,
+      isHead: headNodeId ? headNodeId === String(node?.nodeId || "") : false,
       createdAt: typeof node?.createdAt === "number" ? node.createdAt : null,
       createdAtIso: isoFromMs(node?.createdAt),
     }));
@@ -34348,6 +35214,8 @@ function buildPsdExportRequest({ outPath, flattenedSourcePath, composite }) {
     flattenedSizePx: composite ? { width: composite.width, height: composite.height } : null,
     sourceImages: Array.isArray(composite?.sourceImages) ? composite.sourceImages : [],
     timelineNodes,
+    timelineSchemaVersion: SESSION_TIMELINE_SCHEMA_VERSION,
+    timelineHeadNodeId: state.timelineHeadNodeId ? String(state.timelineHeadNodeId) : null,
     actionSequence: timelineNodes.map((node) => node?.action).filter(Boolean),
     limitations: exportPsdLimitations(),
   };
@@ -34360,6 +35228,8 @@ function buildPngExportReceiptMeta({ outPath, composite }) {
     out_path: outPath,
     canvas_mode: state.canvasMode,
     active_image_id: getVisibleActiveId() ? String(getVisibleActiveId()) : null,
+    timeline_schema_version: SESSION_TIMELINE_SCHEMA_VERSION,
+    timeline_head_node_id: state.timelineHeadNodeId ? String(state.timelineHeadNodeId) : null,
     export_bounds_css: composite?.boundsCss || null,
     flattened_size_px: composite ? { width: composite.width, height: composite.height } : null,
     source_image_ids: Array.isArray(composite?.sourceImages)
@@ -34402,7 +35272,12 @@ async function saveCanvasAsArtifact(
         receiptPath,
         label: label || basename(imagePath),
         action: label || operation,
+        kind: "image_result",
+        visualMode: "thumbnail",
         parents: parentNodeId ? [parentNodeId] : [],
+        previewImageId: id,
+        previewPath: imagePath,
+        receiptPaths: receiptPath ? [receiptPath] : [],
       });
       const item = state.imagesById.get(id) || null;
       if (item && nodeId) item.timelineNodeId = nodeId;
@@ -35890,6 +36765,98 @@ async function sessionSnapshotPathForRunDir(runDir = "") {
   }
 }
 
+async function sessionTimelinePathForRunDir(runDir = "") {
+  const targetRunDir = String(runDir || "").trim();
+  if (!targetRunDir) return "";
+  try {
+    return await join(targetRunDir, SESSION_TIMELINE_FILENAME);
+  } catch {
+    return `${targetRunDir}/${SESSION_TIMELINE_FILENAME}`;
+  }
+}
+
+function buildSessionTimelinePayloadFromSession(session = null, { runDir = null } = {}) {
+  const current = session && typeof session === "object" ? session : {};
+  return serializeSessionTimeline({
+    runDir: runDir || current.runDir || null,
+    headNodeId: current.timelineHeadNodeId || null,
+    latestNodeId: current.timelineLatestNodeId || null,
+    nextSeq: current.timelineNextSeq || 1,
+    updatedAt: new Date().toISOString(),
+    nodes: Array.isArray(current.timelineNodes) ? current.timelineNodes : [],
+  });
+}
+
+async function writeSessionTimelineForRunDir(runDir = "", payload = null) {
+  const outPath = await sessionTimelinePathForRunDir(runDir);
+  if (!outPath || !payload || typeof payload !== "object") return null;
+  await writeTextFile(outPath, JSON.stringify(payload, null, 2));
+  return outPath;
+}
+
+async function persistSessionTimelineForSession(session = null) {
+  const current = session && typeof session === "object" ? session : null;
+  const runDir = String(current?.runDir || "").trim();
+  if (!runDir) return null;
+  const payload = buildSessionTimelinePayloadFromSession(current, { runDir });
+  try {
+    return await writeSessionTimelineForRunDir(runDir, payload);
+  } catch (error) {
+    console.warn("session timeline write failed", error);
+    return null;
+  }
+}
+
+async function persistActiveSessionTimeline() {
+  const activeSession = captureActiveTabSession(
+    createFreshTabSession({
+      runDir: state.runDir || null,
+      eventsPath: state.eventsPath || null,
+    })
+  );
+  return await persistSessionTimelineForSession(activeSession);
+}
+
+async function loadSessionTimelineFromPath(path = "") {
+  const targetPath = String(path || "").trim();
+  if (!targetPath) return null;
+  const raw = await readTextFile(targetPath);
+  return deserializeSessionTimeline(JSON.parse(raw));
+}
+
+function restoreSessionFromTimelineRecord(timeline = null, { runDir = null, eventsPath = null } = {}) {
+  const current = timeline && typeof timeline === "object" ? timeline : null;
+  if (!current || !Array.isArray(current.nodes) || !current.nodes.length) return null;
+  const nodes = timelineSortedNodes(current.nodes);
+  const headNodeId = String(current.headNodeId || current.latestNodeId || nodes[nodes.length - 1]?.nodeId || "").trim();
+  const headNode =
+    nodes.find((node) => String(node?.nodeId || "").trim() === headNodeId) ||
+    nodes[nodes.length - 1] ||
+    null;
+  if (!headNode?.snapshot) return null;
+  const restoredSession = restoreSessionTimelineSnapshot(headNode.snapshot, {
+    runDir: runDir || current.runDir || null,
+    eventsPath,
+  });
+  restoredSession.timelineNodes = nodes;
+  restoredSession.timelineNodesById = new Map(
+    nodes
+      .filter((node) => node?.nodeId)
+      .map((node) => [String(node.nodeId), node])
+  );
+  restoredSession.timelineHeadNodeId = headNode.nodeId;
+  restoredSession.timelineLatestNodeId =
+    String(current.latestNodeId || "").trim() ||
+    (nodes[nodes.length - 1]?.nodeId || headNode.nodeId);
+  restoredSession.timelineNextSeq = Math.max(
+    1,
+    Number(current.nextSeq) || 0,
+    nodes.length ? Math.max(...nodes.map((node) => Math.max(1, Number(node?.seq) || 1))) + 1 : 1
+  );
+  restoredSession.timelineOpen = true;
+  return restoredSession;
+}
+
 function buildNativeMenuFileState() {
   const blockReason = currentTabSwitchBlockReason();
   const hasActiveTab = Boolean(String(state.activeTabId || "").trim());
@@ -36034,6 +37001,7 @@ async function saveActiveSessionSnapshot({ source = "menu" } = {}) {
   const session = record.session && typeof record.session === "object" ? record.session : captureActiveTabSession();
   const outPath = await sessionSnapshotPathForRunDir(session.runDir || state.runDir || "");
   if (!outPath) return { ok: false, reason: "missing_run_dir" };
+  const timelineOutPath = await persistSessionTimelineForSession(session);
   const payload = serializeSessionSnapshot({
     session,
     label: sessionTabDisplayLabel(record, DEFAULT_UNTITLED_TAB_TITLE),
@@ -36041,7 +37009,7 @@ async function saveActiveSessionSnapshot({ source = "menu" } = {}) {
   await writeTextFile(outPath, JSON.stringify(payload, null, 2));
   showToast(`Saved session to ${basename(outPath)}.`, "tip", 2200);
   queueNativeSystemMenuSync();
-  return { ok: true, outPath };
+  return { ok: true, outPath, timelineOutPath };
 }
 
 async function loadSessionSnapshotFromPath(path = "") {
@@ -36115,7 +37083,10 @@ function captureActiveTabSession(session = null) {
   next.selectedIds = Array.isArray(state.selectedIds) ? state.selectedIds.slice() : [];
   next.timelineNodes = Array.isArray(state.timelineNodes) ? state.timelineNodes : [];
   next.timelineNodesById = state.timelineNodesById instanceof Map ? state.timelineNodesById : new Map();
-  next.timelineOpen = Boolean(state.timelineOpen);
+  next.timelineHeadNodeId = state.timelineHeadNodeId ? String(state.timelineHeadNodeId) : null;
+  next.timelineLatestNodeId = state.timelineLatestNodeId ? String(state.timelineLatestNodeId) : null;
+  next.timelineNextSeq = Math.max(1, Number(state.timelineNextSeq) || 1);
+  next.timelineOpen = state.timelineOpen !== false;
   next.canvasMode = String(state.canvasMode || "multi");
   next.freeformRects = state.freeformRects instanceof Map ? state.freeformRects : new Map();
   next.freeformZOrder = Array.isArray(state.freeformZOrder) ? state.freeformZOrder.slice() : [];
@@ -36223,7 +37194,10 @@ function bindTabSessionToState(session = null) {
   state.selectedIds = Array.isArray(current.selectedIds) ? current.selectedIds.slice() : [];
   state.timelineNodes = Array.isArray(current.timelineNodes) ? current.timelineNodes : [];
   state.timelineNodesById = current.timelineNodesById instanceof Map ? current.timelineNodesById : new Map();
-  state.timelineOpen = Boolean(current.timelineOpen);
+  state.timelineHeadNodeId = current.timelineHeadNodeId ? String(current.timelineHeadNodeId) : null;
+  state.timelineLatestNodeId = current.timelineLatestNodeId ? String(current.timelineLatestNodeId) : null;
+  state.timelineNextSeq = Math.max(1, Number(current.timelineNextSeq) || 1);
+  state.timelineOpen = current.timelineOpen !== false;
   state.canvasMode = String(current.canvasMode || "multi");
   state.freeformRects = current.freeformRects instanceof Map ? current.freeformRects : new Map();
   state.freeformZOrder = Array.isArray(current.freeformZOrder) ? current.freeformZOrder.slice() : [];
@@ -36892,9 +37866,29 @@ async function openExistingRun() {
     runDir: selected,
     eventsPath: defaultEventsPath,
   });
+  let restoredTimeline = null;
   let restoredSnapshot = null;
+  const timelinePath = await sessionTimelinePathForRunDir(selected);
+  if (timelinePath && (await exists(timelinePath).catch(() => false))) {
+    try {
+      restoredTimeline = await loadSessionTimelineFromPath(timelinePath);
+      const restoredFromTimeline = restoreSessionFromTimelineRecord(restoredTimeline, {
+        runDir: selected,
+        eventsPath: defaultEventsPath,
+      });
+      if (restoredFromTimeline) {
+        session = restoredFromTimeline;
+      } else {
+        restoredTimeline = null;
+      }
+    } catch (error) {
+      console.warn("run session timeline restore failed", error);
+      showToast("Saved timeline could not be restored. Falling back to the session snapshot.", "tip", 3200);
+      restoredTimeline = null;
+    }
+  }
   const snapshotPath = await sessionSnapshotPathForRunDir(selected);
-  if (snapshotPath && (await exists(snapshotPath).catch(() => false))) {
+  if (!restoredTimeline && snapshotPath && (await exists(snapshotPath).catch(() => false))) {
     try {
       restoredSnapshot = await loadSessionSnapshotFromPath(snapshotPath);
       if (restoredSnapshot?.session) {
@@ -36930,6 +37924,10 @@ async function openExistingRun() {
   const activation = await activateTab(tabId, { spawnEngine: false, reason: "open_run_tab" });
   if (!activation?.ok) return activation;
   if (activation?.hydration) await activation.hydration;
+  if (restoredTimeline) {
+    showToast(`Opened ${tabLabel} from the saved session timeline.`, "tip", 3200);
+    return { ok: true, tabId, activeTabId: state.activeTabId || null, restoredTimeline: true };
+  }
   if (restoredSnapshot?.session) {
     showToast(`Opened ${tabLabel} from the saved session snapshot.`, "tip", 3200);
     return { ok: true, tabId, activeTabId: state.activeTabId || null, restoredSnapshot: true };
@@ -37619,7 +38617,12 @@ async function handleEventLegacy(event) {
             receiptPath: event.receipt_path || null,
             label: basename(path),
             action: actionLabel,
+            kind: "image_result",
+            visualMode: "thumbnail",
             parents: parentNodeId ? [parentNodeId] : [],
+            previewImageId: targetId,
+            previewPath: path,
+            receiptPaths: event.receipt_path ? [event.receipt_path] : [],
           });
           const item = state.imagesById.get(targetId) || null;
           if (item && nodeId) item.timelineNodeId = nodeId;
@@ -42657,6 +43660,15 @@ function installCanvasHandlers() {
 			          },
 			        });
 		      }
+          recordTimelineNode({
+            imageId,
+            action: kind === POINTER_KINDS.FREEFORM_MOVE ? "Move" : "Resize",
+            kind: "transform",
+            visualMode: "icon",
+            label: state.imagesById.get(imageId)?.label || basename(state.imagesById.get(imageId)?.path || ""),
+            previewImageId: imageId,
+            previewPath: state.imagesById.get(imageId)?.path || null,
+          });
 		    }
         if (moved && (kind === POINTER_KINDS.FREEFORM_ROTATE || kind === POINTER_KINDS.FREEFORM_SKEW) && imageId) {
           invalidateActiveTabPreview("layout_transform");
@@ -42672,6 +43684,15 @@ function installCanvasHandlers() {
               skew_start_deg: transformStartSkewXDeg,
             });
           }
+          recordTimelineNode({
+            imageId,
+            action: kind === POINTER_KINDS.FREEFORM_ROTATE ? "Rotate" : "Skew",
+            kind: "transform",
+            visualMode: "icon",
+            label: state.imagesById.get(imageId)?.label || basename(state.imagesById.get(imageId)?.path || ""),
+            previewImageId: imageId,
+            previewPath: state.imagesById.get(imageId)?.path || null,
+          });
         }
 
 			    if (kind === POINTER_KINDS.FREEFORM_IMPORT) {
@@ -42801,6 +43822,15 @@ function installCanvasHandlers() {
           if (kind === COMMUNICATION_POINTER_KINDS.MARKER) {
             const mark = commitCommunicationMarkDraft();
             if (mark) {
+              recordTimelineNode({
+                imageId: mark.imageId || null,
+                action: mark.kind === "freehand_protect" ? "Protect" : "Mark",
+                kind: "annotation",
+                visualMode: "icon",
+                label: mark.imageId ? state.imagesById.get(mark.imageId)?.label || "Mark" : "Canvas Mark",
+                previewImageId: mark.imageId || null,
+                previewPath: mark.imageId ? state.imagesById.get(mark.imageId)?.path || null : null,
+              });
               if (
                 state.communication?.proposalTray?.visible &&
                 !communicationTrayAnchorPinnedToTitlebar(state.communication?.proposalTray?.anchor)
@@ -42857,6 +43887,17 @@ function installCanvasHandlers() {
               ) {
                 state.communication.proposalTray.anchor = state.communication.lastAnchor;
               }
+              if (group) {
+                recordTimelineNode({
+                  imageId: targetImageId,
+                  action: "Magic Select",
+                  kind: "annotation",
+                  visualMode: "icon",
+                  label: state.imagesById.get(targetImageId)?.label || "Magic Select",
+                  previewImageId: targetImageId,
+                  previewPath: state.imagesById.get(targetImageId)?.path || null,
+                });
+              }
               invalidateActiveTabPreview("selection_overlay_change");
               dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
                 source: "communication_magic_select",
@@ -42874,7 +43915,7 @@ function installCanvasHandlers() {
           }
 			    if (state.tool === "annotate") {
 			      const img = getActiveImage();
-	          if (img && state.circleDraft && state.circleDraft.imageId === img.id) {
+	        if (img && state.circleDraft && state.circleDraft.imageId === img.id) {
 	            const draft = state.circleDraft;
 	            state.circleDraft = null;
             const r = Math.max(0, Number(draft?.r) || 0);
@@ -42895,6 +43936,15 @@ function installCanvasHandlers() {
               invalidateActiveTabPreview("selection_overlay_change");
               showMarkPanelForCircle(entry);
               scheduleVisualPromptWrite();
+              recordTimelineNode({
+                imageId: img.id,
+                action: "Circle Mark",
+                kind: "annotation",
+                visualMode: "icon",
+                label: img.label || basename(img.path || ""),
+                previewImageId: img.id,
+                previewPath: img.path || null,
+              });
 	            } else {
 	              invalidateActiveTabPreview("selection_overlay_change");
 	              hideMarkPanel();
@@ -42912,6 +43962,15 @@ function installCanvasHandlers() {
                   invalidateActiveTabPreview("selection_overlay_change");
 		          showAnnotatePanelForBox();
               scheduleVisualPromptWrite();
+              recordTimelineNode({
+                imageId: img.id,
+                action: "Annotate Box",
+                kind: "annotation",
+                visualMode: "icon",
+                label: img.label || basename(img.path || ""),
+                previewImageId: img.id,
+                previewPath: img.path || null,
+              });
 		        } else {
 		          state.annotateBox = null;
                   invalidateActiveTabPreview("selection_overlay_change");
@@ -44382,12 +45441,88 @@ function installUi() {
       }
     });
   }
+  if (els.timelineShell) {
+    els.timelineShell.addEventListener("pointerdown", (event) => {
+      beginTimelineCarouselGesture(event);
+    });
+    els.timelineShell.addEventListener("pointermove", (event) => {
+      updateTimelineCarouselGesture(event);
+    });
+    const finishTimelineShellGesture = (event) => {
+      if (finishTimelineCarouselGesture(event)) {
+        bumpInteraction();
+      }
+    };
+    els.timelineShell.addEventListener("pointerup", finishTimelineShellGesture);
+    els.timelineShell.addEventListener("pointercancel", () => {
+      resetTimelineCarouselGesture();
+    });
+    els.timelineShell.addEventListener(
+      "wheel",
+      (event) => {
+        if (handleTimelineCarouselWheel(event)) {
+          bumpInteraction();
+        }
+      },
+      { passive: false }
+    );
+  }
+  if (els.timelinePrev) {
+    els.timelinePrev.addEventListener("click", () => {
+      if (els.timelinePrev.disabled) return;
+      bumpInteraction();
+      scrollTimelineCarousel(-1);
+    });
+  }
+  if (els.timelineNext) {
+    els.timelineNext.addEventListener("click", () => {
+      if (els.timelineNext.disabled) return;
+      bumpInteraction();
+      scrollTimelineCarousel(1);
+    });
+  }
   if (els.timelineStrip) {
+    els.timelineStrip.addEventListener("scroll", () => {
+      scheduleTimelineCarouselChromeSync();
+    });
+    els.timelineStrip.addEventListener("pointerover", (event) => {
+      const card = event?.target?.closest ? event.target.closest(".timeline-card[data-node-id]") : null;
+      if (!card || !els.timelineStrip.contains(card)) return;
+      const nodeId = String(card.dataset?.nodeId || "").trim();
+      if (!nodeId || state.timelinePreviewNodeId === nodeId) return;
+      state.timelinePreviewNodeId = nodeId;
+      syncTimelineDetailText();
+    });
+    els.timelineStrip.addEventListener("pointerleave", () => {
+      if (!state.timelinePreviewNodeId) return;
+      state.timelinePreviewNodeId = null;
+      syncTimelineDetailText();
+    });
+    els.timelineStrip.addEventListener("focusin", (event) => {
+      const card = event?.target?.closest ? event.target.closest(".timeline-card[data-node-id]") : null;
+      if (!card || !els.timelineStrip.contains(card)) return;
+      const nodeId = String(card.dataset?.nodeId || "").trim();
+      if (!nodeId || state.timelinePreviewNodeId === nodeId) return;
+      state.timelinePreviewNodeId = nodeId;
+      syncTimelineDetailText();
+    });
+    els.timelineStrip.addEventListener("focusout", (event) => {
+      const related = event?.relatedTarget;
+      if (related && els.timelineStrip.contains(related)) return;
+      if (!state.timelinePreviewNodeId) return;
+      state.timelinePreviewNodeId = null;
+      syncTimelineDetailText();
+    });
     els.timelineStrip.addEventListener("click", (event) => {
+      if (shouldSuppressTimelineCardClick()) {
+        event.preventDefault();
+        return;
+      }
       const card = event?.target?.closest ? event.target.closest(".timeline-card[data-node-id]") : null;
       if (!card || !els.timelineStrip.contains(card)) return;
       const nodeId = card.dataset?.nodeId;
       if (!nodeId) return;
+      state.timelinePreviewNodeId = null;
       bumpInteraction();
       jumpToTimelineNode(nodeId).catch((err) => console.error(err));
     });
@@ -44399,6 +45534,7 @@ function installUi() {
       const nodeId = card.dataset?.nodeId;
       if (!nodeId) return;
       event.preventDefault();
+      state.timelinePreviewNodeId = null;
       bumpInteraction();
       jumpToTimelineNode(nodeId).catch((err) => console.error(err));
     });
@@ -44784,7 +45920,10 @@ function installUi() {
         const targetId = state.imageMenuTargetId;
         hideImageMenu();
         if (targetId) {
-          removeImageFromCanvas(targetId).catch((err) => console.error(err));
+          removeImageFromCanvas(targetId, {
+            recordTimeline: true,
+            action: "Delete Image",
+          }).catch((err) => console.error(err));
         }
       }
     });
@@ -45024,7 +46163,10 @@ function installUi() {
       Promise.resolve()
         .then(async () => {
           for (const id of ordered) {
-            await removeImageFromCanvas(id).catch(() => {});
+            await removeImageFromCanvas(id, {
+              recordTimeline: true,
+              action: "Delete Image",
+            }).catch(() => {});
           }
         })
         .catch(() => {});

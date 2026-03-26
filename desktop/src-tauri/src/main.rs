@@ -1472,6 +1472,10 @@ struct ExportTimelineNodePayload {
     #[serde(default)]
     node_id: Option<String>,
     #[serde(default)]
+    seq: Option<u32>,
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
     image_id: Option<String>,
     #[serde(default)]
     path: Option<String>,
@@ -1483,6 +1487,20 @@ struct ExportTimelineNodePayload {
     action: Option<String>,
     #[serde(default)]
     parents: Vec<String>,
+    #[serde(default)]
+    image_ids: Vec<String>,
+    #[serde(default)]
+    preview_image_id: Option<String>,
+    #[serde(default)]
+    preview_path: Option<String>,
+    #[serde(default)]
+    receipt_paths: Vec<String>,
+    #[serde(default)]
+    visual_mode: Option<String>,
+    #[serde(default)]
+    detail: Option<String>,
+    #[serde(default)]
+    is_head: Option<bool>,
     #[serde(default)]
     created_at: Option<i64>,
     #[serde(default)]
@@ -1512,6 +1530,10 @@ struct ExportPsdRequest {
     source_images: Vec<ExportSourceImagePayload>,
     #[serde(default)]
     timeline_nodes: Vec<ExportTimelineNodePayload>,
+    #[serde(default)]
+    timeline_schema_version: Option<u32>,
+    #[serde(default)]
+    timeline_head_node_id: Option<String>,
     #[serde(default)]
     action_sequence: Vec<String>,
     #[serde(default)]
@@ -1601,6 +1623,8 @@ struct ResolvedExportPsdRequest {
     flattened_size_px: Option<ExportSizePayload>,
     source_images: Vec<ExportSourceImagePayload>,
     timeline_nodes: Vec<ExportTimelineNodePayload>,
+    timeline_schema_version: Option<u32>,
+    timeline_head_node_id: Option<String>,
     action_sequence: Vec<String>,
     edit_receipts: Vec<ExportEditReceiptPayload>,
     limitations: Vec<String>,
@@ -2174,6 +2198,8 @@ fn resolve_provided_export_request(
         flattened_size_px: request.flattened_size_px,
         source_images: request.source_images,
         timeline_nodes: request.timeline_nodes,
+        timeline_schema_version: request.timeline_schema_version,
+        timeline_head_node_id: request.timeline_head_node_id,
         action_sequence: if request.action_sequence.is_empty() {
             derive_action_sequence(&edit_receipts)
         } else {
@@ -2228,6 +2254,8 @@ fn resolve_legacy_export_request(
         flattened_size_px,
         source_images,
         timeline_nodes: Vec::new(),
+        timeline_schema_version: None,
+        timeline_head_node_id: None,
         action_sequence: derive_action_sequence(&edit_receipts),
         edit_receipts,
         limitations: merge_limitations(&default_export_limitations(), &extra_limits),
@@ -2332,12 +2360,21 @@ fn build_export_receipt_payload(
         .map(|node| {
             serde_json::json!({
                 "node_id": node.node_id,
+                "seq": node.seq,
+                "kind": node.kind,
                 "image_id": node.image_id,
                 "path": node.path,
                 "receipt_path": node.receipt_path,
                 "label": node.label,
                 "action": node.action,
                 "parents": node.parents,
+                "image_ids": node.image_ids,
+                "preview_image_id": node.preview_image_id,
+                "preview_path": node.preview_path,
+                "receipt_paths": node.receipt_paths,
+                "visual_mode": node.visual_mode,
+                "detail": node.detail,
+                "is_head": node.is_head,
                 "created_at": node.created_at,
                 "created_at_iso": node.created_at_iso,
             })
@@ -2379,6 +2416,8 @@ fn build_export_receipt_payload(
                 "document_name": request.document_name,
                 "canvas_mode": request.canvas_mode,
                 "active_image_id": request.active_image_id,
+                "timeline_schema_version": request.timeline_schema_version,
+                "timeline_head_node_id": request.timeline_head_node_id,
                 "action_sequence": request.action_sequence,
                 "limitations": limitations,
                 "export_bounds_css": request.export_bounds_css,
@@ -2427,6 +2466,8 @@ fn build_export_receipt_payload(
             "source_image_count": request.source_images.len(),
             "source_images": source_images,
             "timeline_nodes": timeline_nodes,
+            "timeline_schema_version": request.timeline_schema_version,
+            "timeline_head_node_id": request.timeline_head_node_id,
             "edit_receipts": edit_receipts,
         },
         "provider_response": {
@@ -2456,6 +2497,8 @@ fn build_export_receipt_payload(
             "document_name": request.document_name,
             "source_image_count": request.source_images.len(),
             "timeline_node_count": request.timeline_nodes.len(),
+            "timeline_schema_version": request.timeline_schema_version,
+            "timeline_head_node_id": request.timeline_head_node_id,
             "editable_layer_count": 0,
             "fidelity": "partial_flattened",
             "canvas_mode": request.canvas_mode,

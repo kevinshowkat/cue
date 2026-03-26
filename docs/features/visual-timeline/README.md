@@ -1,55 +1,74 @@
-# Visual Timeline / Lineage
+# Visual Timeline
 
-## Problem
-Brood edits frequently replace the active image "in place" (e.g. background replace, crop, annotate). This keeps the canvas clean, but it also means:
+## Purpose
+Juggernaut's timeline is a first-class, tab-local session history for a run. It records committed visible state changes, lets the user jump to any recorded state in either direction, and persists that state across save/reopen without re-running model work.
 
-- Users cannot easily jump back to earlier versions of an image.
-- There's no explicit lineage showing what action produced what output (especially for multi-image actions).
+This replaces the earlier lineage-overlay concept that swapped image paths in place.
 
 ## UX
-- A Timeline is available from **Settings** via the `Open Timeline` button.
-- The Timeline appears as a filmstrip-like overlay containing thumbnails of the run's "points in time".
-- Clicking a timeline card jumps the corresponding image back to that version (by swapping the image path in place).
-- The Timeline is hidden by default and only rendered/visible when opened.
+- The timeline is a compact horizontal dock under the tab strip.
+- Nodes stay in chronological order even after the user rewinds to an older head.
+- Image-result steps render thumbnail cards.
+- Session-state steps render action glyphs for moves, marks, protect, magic select, erase, annotate, circle, delete, and related local mutations.
+- When the tray overflows, fixed left/right arrow buttons appear at the outer edges and advance the carousel by page-sized steps.
+- The current state summary is rendered under the strip instead of to its side.
+- Hovering or focusing a card previews the state you would change to in the detail line under the strip.
+- The selected head node is highlighted.
+- Future nodes remain visible and clickable after rewind.
+- Clicking the current head is a no-op.
 
-## Implementation
+## Persistence Contract
+- Run directories persist timeline state in `session-timeline.json`.
+- The file records `schemaVersion`, `runDir`, `headNodeId`, `latestNodeId`, `nextSeq`, `updatedAt`, and `nodes`.
+- Each node carries chronological metadata plus the full restorable snapshot needed to rebuild the tab-local session state for that step.
+- Timeline persistence is the primary open-run restore path when the file exists.
+- `Save Session` writes both the session snapshot and the canonical timeline file.
+
 Primary files:
+- `desktop/src/session_timeline.js`
+- `desktop/src/session_snapshot.js`
 - `desktop/src/canvas_app.js`
 - `desktop/src/index.html`
 - `desktop/src/styles.css`
 
-### Data Model
-Timeline nodes live entirely in the desktop frontend state:
+## Snapshot / Restore Model
+- `captureSessionTimelineSnapshot()` captures the committed session state needed for exact replay.
+- `restoreSessionTimelineSnapshot()` rebuilds the session from a recorded node snapshot.
+- `jumpToTimelineNode(nodeId)` restores the chosen snapshot, updates the active tab session, rerenders dependent shell surfaces, and persists the new head pointer.
+- Restore is blocked only for active unsafe mutations such as live pointer gestures or an in-flight accepted review apply.
+- Timeline restore never requires a network call.
 
-- `state.timelineNodes`: array of nodes
-- `state.timelineNodesById`: map for lookup
-- `item.timelineNodeId`: the currently checked-out node for each canvas image slot
+## Recording Rules
+The timeline records one logical node per committed user-visible change, including:
 
-Each node records:
-- `nodeId`: unique timeline node id
-- `imageId`: which canvas image slot the node belongs to
-- `path`, `receiptPath`
-- `action`: best-effort label for what produced it (e.g. Combine / Bridge / Recast)
-- `parents`: parent node ids (lineage)
-- `createdAt`: timestamp
+- imports and added image artifacts
+- delete image
+- move, resize, rotate, and skew commits
+- mark, protect, erase mark, erase region, magic select, annotate box, and circle commits
+- accepted design review apply results
+- prompt-generate, recast, bridge/combine-style model results, and other image-result commits
+- local deterministic artifact saves that change visible canvas state
 
-### Recording Lineage
-- `addImage(...)` calls `ensureTimelineNodeForImageItem(...)` which records a node for new images.
-- Engine artifacts (`artifact_created`) now attach `timelineAction` and `timelineParents` to the new image before `addImage(...)`.
-- In-place engine edits (`pendingReplace`) record a new node after `replaceImageInPlace(...)` succeeds, with the previous node as a parent.
-- Local artifacts recorded via `saveCanvasAsArtifact(...)` similarly write timeline nodes (including for in-place replacements).
+Internal cleanup that does not change visible state is not recorded as its own node.
 
-### Rendering / Navigation
-- Timeline overlay markup: `#timeline-overlay` (hidden by default).
-- `renderTimeline()` builds the strip from `state.timelineNodes` and highlights the active node.
-- `jumpToTimelineNode(nodeId)` selects the owning image slot and swaps the image back to the historical `path`.
+## Export / Reopen Behavior
+- Opening an existing run restores from `session-timeline.json` first, then falls back to older session/receipt recovery paths only when timeline data is absent or unreadable.
+- Export uses the currently selected timeline head, not automatically the latest node.
+- PSD export requests and export receipts carry the timeline schema version and current head node id.
 
 ## Testing
-Standard regression set:
-- `cd rust_engine && cargo test`
-- `cd desktop && npm run build`
+Regression coverage lives in:
+- `desktop/test/session_timeline.test.js`
+- `desktop/test/session_snapshot.test.js`
+- `desktop/test/juggernaut_launch_slice_flow.test.js`
+- `desktop/test/tabbed_sessions_v1_contract.test.js`
+- `desktop/test/tab_spawn_engine_regression.test.js`
+- `desktop/test/observable_agent_replay_flows.test.js`
+- `desktop/test/communication_marker_regression.test.js`
 
-## Notes / Follow-Ups
-- This is a first-pass lineage system. It records parents, but the UI currently presents a chronological filmstrip (not a full DAG graph).
-- We can extend the detail view to show parent thumbnails and add a "branch" visualization later.
-
+Key scenarios covered:
+- snapshot capture / restore roundtrip
+- backward and forward node jumps
+- restoring earlier import states and later annotation states
+- session reopen from persisted timeline data
+- export metadata tied to the current head

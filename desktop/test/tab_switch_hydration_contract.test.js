@@ -172,7 +172,8 @@ test("deferred hydration surfaces are individually gated by stable render signat
 
   assert.match(renderFilmstripSource, /state\.lastRenderedFilmstripKey === nextDataKey/);
   assert.match(renderFilmstripSource, /state\.lastRenderedFilmstripSelectionKey === nextSelectionKey/);
-  assert.match(renderTimelineSource, /state\.lastRenderedTimelineKey === nextKey/);
+  assert.match(renderTimelineSource, /state\.lastRenderedTimelineStructureKey !== structureKey/);
+  assert.match(renderTimelineSource, /state\.lastRenderedTimelineViewKey !== viewKey/);
   assert.match(chooseSpawnNodesSource, /state\.lastRenderedSpawnNodesKey === nextKey/);
   assert.match(quickActionsSignatureSource, /juggernautActiveToolId\(\)/);
   assert.match(renderQuickActionsSource, /state\.lastRenderedQuickActionsKey === nextKey/);

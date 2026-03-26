@@ -192,6 +192,7 @@ function createHarness(flow) {
   const state = {
     runDir,
     canvasMode: "single",
+    timelineHeadNodeId: "tl-initial",
   };
   const visibleCanvasRef = join(runDir, "visible-canvas.png");
   writeArtifactFile(visibleCanvasRef, "visible-canvas");
@@ -290,6 +291,7 @@ function createHarness(flow) {
     resolveDesignReviewApplyRequestImagePath,
   });
   const buildPsdExportRequest = instantiateCanvasAppFunction("buildPsdExportRequest", {
+    SESSION_TIMELINE_SCHEMA_VERSION: 1,
     collectExportTimelineNodes: () =>
       Array.from(timelineNodes)
         .sort((a, b) => (a?.createdAt || 0) - (b?.createdAt || 0))
@@ -339,6 +341,7 @@ function createHarness(flow) {
     if (item) {
       item.timelineNodeId = nodeId;
     }
+    state.timelineHeadNodeId = nodeId;
     return node;
   }
 

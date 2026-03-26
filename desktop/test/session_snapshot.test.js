@@ -30,6 +30,9 @@ test("session snapshot round-trips maps and rebuilds session indexes", () => {
       freeformZOrder: ["missing", "img-a"],
       timelineNodes: [sharedNode],
       timelineNodesById: new Map([["node-a", sharedNode]]),
+      timelineHeadNodeId: "node-a",
+      timelineLatestNodeId: "node-a",
+      timelineNextSeq: 2,
       communication: {
         marksByImageId: new Map([["img-a", [{ id: "mark-a" }]]]),
       },
@@ -67,6 +70,10 @@ test("session snapshot round-trips maps and rebuilds session indexes", () => {
   assert.deepEqual(restored.session.freeformZOrder, ["img-a"]);
   assert.ok(restored.session.timelineNodesById instanceof Map);
   assert.equal(restored.session.timelineNodesById.get("node-a"), restored.session.timelineNodes[0]);
+  assert.equal(restored.session.timelineHeadNodeId, "node-a");
+  assert.equal(restored.session.timelineLatestNodeId, "node-a");
+  assert.equal(restored.session.timelineNextSeq, 2);
+  assert.equal(restored.session.timelineOpen, true);
   assert.ok(restored.session.communication.marksByImageId instanceof Map);
   assert.equal(restored.session.sessionTools[0].toolId, "mono");
   assert.equal(typeof restored.session.toolRegistry.list, "function");
