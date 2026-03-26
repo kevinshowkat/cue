@@ -9892,10 +9892,6 @@ button.ghost:hover {
   align-content: center;
 }
 
-.timeline-dock.is-collapsed {
-  width: min(32vw, 420px);
-}
-
 .timeline-toggle {
   width: 100%;
   min-width: 0;
@@ -10294,19 +10290,11 @@ button.ghost:hover {
   .timeline-dock {
     width: min(54vw, 680px);
   }
-
-  .timeline-dock.is-collapsed {
-    width: min(48vw, 420px);
-  }
 }
 
 @media (max-width: 720px) {
   .timeline-dock {
     top: calc(var(--brand-strip-h) + 6px);
-    width: calc(100vw - 24px);
-  }
-
-  .timeline-dock.is-collapsed {
     width: calc(100vw - 24px);
   }
 
