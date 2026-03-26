@@ -10198,6 +10198,7 @@ button.ghost:hover {
   object-fit: cover;
   display: block;
   background: rgba(192, 204, 220, 0.38);
+  transition: filter 140ms ease, opacity 140ms ease;
 }
 
 .timeline-card-glyph {
@@ -10205,6 +10206,7 @@ button.ghost:hover {
   height: 22px;
   display: grid;
   place-items: center;
+  transition: color 140ms ease, opacity 140ms ease;
 }
 
 .timeline-card-glyph svg {
@@ -10270,6 +10272,58 @@ button.ghost:hover {
 .timeline-card.selected .timeline-card-glyph--annotate,
 .timeline-card.selected .timeline-card-glyph--circle {
   color: rgba(105, 72, 154, 0.98);
+}
+
+.timeline-card:hover .timeline-card-glyph--mark,
+.timeline-card:focus-visible .timeline-card-glyph--mark {
+  color: rgba(55, 112, 194, 0.98);
+}
+
+.timeline-card:hover .timeline-card-glyph--highlight,
+.timeline-card:hover .timeline-card-glyph--protect,
+.timeline-card:focus-visible .timeline-card-glyph--highlight,
+.timeline-card:focus-visible .timeline-card-glyph--protect {
+  color: rgba(214, 176, 54, 0.98);
+}
+
+.timeline-card:hover .timeline-card-glyph--magic,
+.timeline-card:focus-visible .timeline-card-glyph--magic {
+  color: rgba(156, 102, 58, 0.98);
+}
+
+.timeline-card:hover .timeline-card-glyph--erase,
+.timeline-card:hover .timeline-card-glyph--delete,
+.timeline-card:focus-visible .timeline-card-glyph--erase,
+.timeline-card:focus-visible .timeline-card-glyph--delete {
+  color: rgba(183, 80, 80, 0.98);
+}
+
+.timeline-card:hover .timeline-card-glyph--move,
+.timeline-card:hover .timeline-card-glyph--resize,
+.timeline-card:hover .timeline-card-glyph--rotate,
+.timeline-card:hover .timeline-card-glyph--skew,
+.timeline-card:focus-visible .timeline-card-glyph--move,
+.timeline-card:focus-visible .timeline-card-glyph--resize,
+.timeline-card:focus-visible .timeline-card-glyph--rotate,
+.timeline-card:focus-visible .timeline-card-glyph--skew {
+  color: rgba(78, 92, 147, 0.98);
+}
+
+.timeline-card:hover .timeline-card-glyph--annotate,
+.timeline-card:hover .timeline-card-glyph--circle,
+.timeline-card:focus-visible .timeline-card-glyph--annotate,
+.timeline-card:focus-visible .timeline-card-glyph--circle {
+  color: rgba(105, 72, 154, 0.98);
+}
+
+.timeline-card:hover img,
+.timeline-card:focus-visible img {
+  filter: saturate(1.08) contrast(1.04) brightness(1.01);
+}
+
+.timeline-card.is-inactive:hover img,
+.timeline-card.is-inactive:focus-visible img {
+  filter: grayscale(0) saturate(1.08) contrast(1.04) brightness(1.01);
 }
 
 .timeline-detail {
@@ -14326,6 +14380,58 @@ body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--resize,
 body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--rotate,
 body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--skew {
   color: rgba(93, 107, 136, 0.98);
+}
+
+body.juggernaut-shell .timeline-card:hover .timeline-card-glyph--mark,
+body.juggernaut-shell .timeline-card:focus-visible .timeline-card-glyph--mark {
+  color: rgba(79, 111, 151, 0.96);
+}
+
+body.juggernaut-shell .timeline-card:hover .timeline-card-glyph--highlight,
+body.juggernaut-shell .timeline-card:hover .timeline-card-glyph--protect,
+body.juggernaut-shell .timeline-card:focus-visible .timeline-card-glyph--highlight,
+body.juggernaut-shell .timeline-card:focus-visible .timeline-card-glyph--protect {
+  color: rgba(214, 176, 54, 0.98);
+}
+
+body.juggernaut-shell .timeline-card:hover .timeline-card-glyph--magic,
+body.juggernaut-shell .timeline-card:focus-visible .timeline-card-glyph--magic {
+  color: rgba(155, 103, 64, 0.96);
+}
+
+body.juggernaut-shell .timeline-card:hover .timeline-card-glyph--annotate,
+body.juggernaut-shell .timeline-card:hover .timeline-card-glyph--circle,
+body.juggernaut-shell .timeline-card:focus-visible .timeline-card-glyph--annotate,
+body.juggernaut-shell .timeline-card:focus-visible .timeline-card-glyph--circle {
+  color: rgba(110, 83, 154, 0.96);
+}
+
+body.juggernaut-shell .timeline-card:hover .timeline-card-glyph--erase,
+body.juggernaut-shell .timeline-card:hover .timeline-card-glyph--delete,
+body.juggernaut-shell .timeline-card:focus-visible .timeline-card-glyph--erase,
+body.juggernaut-shell .timeline-card:focus-visible .timeline-card-glyph--delete {
+  color: rgba(181, 96, 87, 0.98);
+}
+
+body.juggernaut-shell .timeline-card:hover .timeline-card-glyph--move,
+body.juggernaut-shell .timeline-card:hover .timeline-card-glyph--resize,
+body.juggernaut-shell .timeline-card:hover .timeline-card-glyph--rotate,
+body.juggernaut-shell .timeline-card:hover .timeline-card-glyph--skew,
+body.juggernaut-shell .timeline-card:focus-visible .timeline-card-glyph--move,
+body.juggernaut-shell .timeline-card:focus-visible .timeline-card-glyph--resize,
+body.juggernaut-shell .timeline-card:focus-visible .timeline-card-glyph--rotate,
+body.juggernaut-shell .timeline-card:focus-visible .timeline-card-glyph--skew {
+  color: rgba(93, 107, 136, 0.98);
+}
+
+body.juggernaut-shell .timeline-card:hover img,
+body.juggernaut-shell .timeline-card:focus-visible img {
+  filter: saturate(1.08) contrast(1.04) brightness(1.01);
+}
+
+body.juggernaut-shell .timeline-card.is-inactive:hover img,
+body.juggernaut-shell .timeline-card.is-inactive:focus-visible img {
+  filter: grayscale(0) saturate(1.08) contrast(1.04) brightness(1.01);
 }
 
 body.juggernaut-shell .timeline-empty {
