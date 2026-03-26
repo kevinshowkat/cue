@@ -9892,10 +9892,6 @@ button.ghost:hover {
   align-content: center;
 }
 
-.timeline-dock.is-collapsed {
-  width: min(32vw, 420px);
-}
-
 .timeline-toggle {
   width: 100%;
   min-width: 0;
@@ -10246,6 +10242,36 @@ button.ghost:hover {
   color: rgba(112, 77, 146, 0.96);
 }
 
+.timeline-card.selected .timeline-card-glyph--mark {
+  color: rgba(55, 112, 194, 0.98);
+}
+
+.timeline-card.selected .timeline-card-glyph--highlight,
+.timeline-card.selected .timeline-card-glyph--protect {
+  color: rgba(214, 176, 54, 0.98);
+}
+
+.timeline-card.selected .timeline-card-glyph--magic {
+  color: rgba(156, 102, 58, 0.98);
+}
+
+.timeline-card.selected .timeline-card-glyph--erase,
+.timeline-card.selected .timeline-card-glyph--delete {
+  color: rgba(183, 80, 80, 0.98);
+}
+
+.timeline-card.selected .timeline-card-glyph--move,
+.timeline-card.selected .timeline-card-glyph--resize,
+.timeline-card.selected .timeline-card-glyph--rotate,
+.timeline-card.selected .timeline-card-glyph--skew {
+  color: rgba(78, 92, 147, 0.98);
+}
+
+.timeline-card.selected .timeline-card-glyph--annotate,
+.timeline-card.selected .timeline-card-glyph--circle {
+  color: rgba(105, 72, 154, 0.98);
+}
+
 .timeline-detail {
   min-width: 0;
   width: 100%;
@@ -10264,19 +10290,11 @@ button.ghost:hover {
   .timeline-dock {
     width: min(54vw, 680px);
   }
-
-  .timeline-dock.is-collapsed {
-    width: min(48vw, 420px);
-  }
 }
 
 @media (max-width: 720px) {
   .timeline-dock {
     top: calc(var(--brand-strip-h) + 6px);
-    width: calc(100vw - 24px);
-  }
-
-  .timeline-dock.is-collapsed {
     width: calc(100vw - 24px);
   }
 
@@ -14278,6 +14296,36 @@ body.juggernaut-shell .timeline-card-glyph--resize,
 body.juggernaut-shell .timeline-card-glyph--rotate,
 body.juggernaut-shell .timeline-card-glyph--skew {
   color: var(--jg-pack-ink-muted);
+}
+
+body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--mark {
+  color: rgba(79, 111, 151, 0.96);
+}
+
+body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--highlight,
+body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--protect {
+  color: rgba(214, 176, 54, 0.98);
+}
+
+body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--magic {
+  color: rgba(155, 103, 64, 0.96);
+}
+
+body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--annotate,
+body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--circle {
+  color: rgba(110, 83, 154, 0.96);
+}
+
+body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--erase,
+body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--delete {
+  color: rgba(181, 96, 87, 0.98);
+}
+
+body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--move,
+body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--resize,
+body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--rotate,
+body.juggernaut-shell .timeline-card.selected .timeline-card-glyph--skew {
+  color: rgba(93, 107, 136, 0.98);
 }
 
 body.juggernaut-shell .timeline-empty {
