@@ -102,12 +102,11 @@ export function renderActionProvenanceBadge(provenance = "", { className = "" } 
   ]
     .filter(Boolean)
     .join(" ");
-  const stripClasses = [
-    "action-provenance-cost-strip",
-    `action-provenance-cost-strip--${normalized.replace(/_/g, "-")}`,
+  const dotClasses = [
+    "action-provenance-model-dot",
     normalizeText(className),
   ]
     .filter(Boolean)
     .join(" ");
-  return `<span class="${affordanceClasses}" data-provenance="${normalized}" aria-hidden="true"><span class="${stripClasses}" data-provenance="${normalized}"></span></span>`;
+  return `<span class="${affordanceClasses}" data-provenance="${normalized}" aria-hidden="true"><span class="${dotClasses}" data-provenance="${normalized}"></span></span>`;
 }
