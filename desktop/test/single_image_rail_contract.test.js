@@ -16,7 +16,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const railSource = readFileSync(join(here, "..", "src", "juggernaut_shell", "rail.js"), "utf8");
 const appSource = readFileSync(join(here, "..", "src", "canvas_app.js"), "utf8");
-const seededJobIds = new Set(["cut_out", "remove", "new_background", "reframe", "variants"]);
+const seededJobIds = new Set(["cut_out", "remove", "reframe", "variants"]);
 
 test("single-image rail: contract renders 3 anchors plus 3 dynamic slots", () => {
   const rail = buildSingleImageRailButtons({
@@ -34,11 +34,9 @@ test("single-image rail: contract renders 3 anchors plus 3 dynamic slots", () =>
       "upload",
       "select",
       "cut_out",
-      "new_background",
       "variants",
+      "reframe",
       "remove_people",
-      "polish",
-      "relight",
     ]
   );
   assert.equal(rail.visibleDynamicJobs.length, SINGLE_IMAGE_RAIL_DYNAMIC_SLOT_COUNT);
@@ -46,14 +44,12 @@ test("single-image rail: contract renders 3 anchors plus 3 dynamic slots", () =>
   assert.equal(rail.buttons[1].label, "Upload");
   assert.equal(rail.buttons[2].label, "Select");
   assert.equal(rail.buttons[3].label, "Cut Out");
-  assert.equal(rail.buttons[4].label, "New Background");
-  assert.equal(rail.buttons[5].label, "Variants");
+  assert.equal(rail.buttons[4].label, "Variants");
+  assert.equal(rail.buttons[5].label, "Reframe");
   assert.equal(rail.buttons[6].label, "Remove People");
-  assert.equal(rail.buttons[7].label, "Polish");
-  assert.equal(rail.buttons[8].label, "Relight");
   assert.equal(rail.buttons[0].provenance, "local_only");
   assert.equal(rail.buttons[3].provenance, "external_model");
-  assert.equal(rail.buttons[7].provenance, "local_first");
+  assert.equal(rail.buttons[6].provenance, "external_model");
   assert.equal(rail.buttons[0].hotkey, "");
   assert.equal(rail.buttons[1].hotkey, "1");
   assert.equal(rail.buttons[2].hotkey, "2");
@@ -68,7 +64,7 @@ test("single-image rail: mock ranked jobs stay inside the approved seeded set an
     busy: false,
   });
 
-  assert.equal(ranked.length, 5);
+  assert.equal(ranked.length, 4);
   for (const job of ranked) {
     assert.ok(seededJobIds.has(job.jobId));
     assert.equal(job.enabled, false);
@@ -81,9 +77,9 @@ test("single-image rail: mock ranked jobs stay inside the approved seeded set an
 
 test("single-image rail: visible jobs stay sticky when the sticky key still exists and state does not worsen", () => {
   const previousVisibleJobs = [
-    { jobId: "new_background", stickyKey: "new_background", enabled: true, disabledReason: "" },
     { jobId: "variants", stickyKey: "variants", enabled: true, disabledReason: "" },
     { jobId: "reframe", stickyKey: "reframe", enabled: true, disabledReason: "" },
+    { jobId: "remove", stickyKey: "remove", enabled: true, disabledReason: "" },
   ];
   const rankedJobs = [
     {
@@ -96,17 +92,6 @@ test("single-image rail: visible jobs stay sticky when the sticky key still exis
       confidence: 0.99,
       reasonCodes: ["higher_confidence"],
       stickyKey: "cut_out",
-    },
-    {
-      jobId: "new_background",
-      label: "New Background",
-      capability: "background_replace",
-      requiresSelection: false,
-      enabled: true,
-      disabledReason: "",
-      confidence: 0.7,
-      reasonCodes: [],
-      stickyKey: "new_background",
     },
     {
       jobId: "variants",
@@ -130,6 +115,17 @@ test("single-image rail: visible jobs stay sticky when the sticky key still exis
       reasonCodes: [],
       stickyKey: "reframe",
     },
+    {
+      jobId: "remove",
+      label: "Remove",
+      capability: "targeted_remove",
+      requiresSelection: true,
+      enabled: true,
+      disabledReason: "",
+      confidence: 0.66,
+      reasonCodes: [],
+      stickyKey: "remove",
+    },
   ];
 
   const rail = buildSingleImageRailButtons({
@@ -143,7 +139,7 @@ test("single-image rail: visible jobs stay sticky when the sticky key still exis
 
   assert.deepEqual(
     rail.visibleDynamicJobs.map((job) => job.jobId),
-    ["new_background", "variants", "reframe"]
+    ["variants", "reframe", "remove"]
   );
 });
 
@@ -155,8 +151,8 @@ test("single-image rail: worsening enabled state drops the old sticky item", () 
     rerank: true,
     previousVisibleJobs: [
       { jobId: "remove", stickyKey: "remove", enabled: true, disabledReason: "" },
-      { jobId: "new_background", stickyKey: "new_background", enabled: true, disabledReason: "" },
       { jobId: "variants", stickyKey: "variants", enabled: true, disabledReason: "" },
+      { jobId: "reframe", stickyKey: "reframe", enabled: true, disabledReason: "" },
     ],
     rankedJobs: [
       {
@@ -182,17 +178,6 @@ test("single-image rail: worsening enabled state drops the old sticky item", () 
         stickyKey: "cut_out",
       },
       {
-        jobId: "new_background",
-        label: "New Background",
-        capability: "background_replace",
-        requiresSelection: false,
-        enabled: true,
-        disabledReason: "",
-        confidence: 0.75,
-        reasonCodes: [],
-        stickyKey: "new_background",
-      },
-      {
         jobId: "variants",
         label: "Variants",
         capability: "identity_preserving_variation",
@@ -203,12 +188,23 @@ test("single-image rail: worsening enabled state drops the old sticky item", () 
         reasonCodes: [],
         stickyKey: "variants",
       },
+      {
+        jobId: "reframe",
+        label: "Reframe",
+        capability: "crop_or_outpaint",
+        requiresSelection: false,
+        enabled: true,
+        disabledReason: "",
+        confidence: 0.73,
+        reasonCodes: [],
+        stickyKey: "reframe",
+      },
     ],
   });
 
   assert.deepEqual(
     rail.visibleDynamicJobs.map((job) => job.jobId),
-    ["new_background", "variants", "cut_out"]
+    ["variants", "reframe", "cut_out"]
   );
 });
 
@@ -244,6 +240,9 @@ test("single-image rail: capability success history is retained for ranking cont
 
 test("single-image rail: canonical affordance labels keep Remove People standardized", () => {
   assert.equal(getSingleImageRailItem("remove_people")?.label, "Remove People");
+  assert.equal(getSingleImageRailItem("new_background")?.label, "New Background");
+  assert.equal(getSingleImageRailItem("polish")?.label, "Polish");
+  assert.equal(getSingleImageRailItem("relight")?.label, "Relight");
   assert.equal(getSingleImageRailItem("protect")?.label, "Protect");
   assert.equal(getSingleImageRailItem("make_space")?.label, "Make Space");
 });
@@ -296,10 +295,8 @@ test("single-image rail: direct affordances use shell bridge state for enablemen
     assert.equal(buttons.remove_people.disabled, false);
     assert.equal(buttons.remove_people.label, "Remove People");
     assert.equal(buttons.remove_people.provenance, "external_model");
-    assert.equal(buttons.polish.disabled, false);
-    assert.equal(buttons.polish.provenance, "local_first");
-    assert.equal(buttons.relight.disabled, false);
-    assert.equal(buttons.relight.provenance, "local_first");
+    assert.equal(buttons.polish, undefined);
+    assert.equal(buttons.relight, undefined);
   } finally {
     globalThis.window = originalWindow;
   }
@@ -351,8 +348,8 @@ test("single-image rail: affordances disable cleanly when no image or busy state
     });
     const noImageButtons = Object.fromEntries(noImage.buttons.map((button) => [button.toolId, button]));
     assert.equal(noImageButtons.remove_people.disabledReason, "unavailable_in_current_mode");
-    assert.equal(noImageButtons.polish.disabledReason, "unavailable_in_current_mode");
-    assert.equal(noImageButtons.relight.disabledReason, "unavailable_in_current_mode");
+    assert.equal(noImageButtons.polish, undefined);
+    assert.equal(noImageButtons.relight, undefined);
 
     const busyRail = buildSingleImageRailButtons({
       hasImage: true,
@@ -362,8 +359,8 @@ test("single-image rail: affordances disable cleanly when no image or busy state
     });
     const busyButtons = Object.fromEntries(busyRail.buttons.map((button) => [button.toolId, button]));
     assert.equal(busyButtons.remove_people.disabledReason, "busy");
-    assert.equal(busyButtons.polish.disabledReason, "busy");
-    assert.equal(busyButtons.relight.disabledReason, "busy");
+    assert.equal(busyButtons.polish, undefined);
+    assert.equal(busyButtons.relight, undefined);
   } finally {
     globalThis.window = originalWindow;
   }

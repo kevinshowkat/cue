@@ -24,14 +24,9 @@ export const SINGLE_IMAGE_RAIL_MOCK_ADAPTER = Object.freeze({
 });
 
 const DISABLED_REASON_SET = new Set(SINGLE_IMAGE_RAIL_ALLOWED_DISABLED_REASONS);
-const DEFAULT_DYNAMIC_ORDER = Object.freeze([
-  "cut_out",
-  "remove",
-  "new_background",
-  "reframe",
-  "variants",
-]);
-const SHELL_DIRECT_AFFORDANCE_ORDER = Object.freeze(["remove_people", "polish", "relight"]);
+const DEFAULT_DYNAMIC_ORDER = Object.freeze(["cut_out", "remove", "reframe", "variants"]);
+const SHELL_DIRECT_AFFORDANCE_ORDER = Object.freeze(["remove_people"]);
+const HIDDEN_LEFT_RAIL_TOOL_IDS = new Set(["new_background", "polish", "relight"]);
 const COMMUNICATION_TOOL_EVENT = "juggernaut:communication-state-changed";
 
 const RAIL_LABELS = Object.freeze({
@@ -153,17 +148,19 @@ export const SINGLE_IMAGE_RAIL_INVENTORY = Object.freeze([
   Object.freeze({ key: "move", label: "Move", kind: "anchor", requiresSelection: false, provenance: ACTION_PROVENANCE.LOCAL_ONLY }),
   Object.freeze({ key: "upload", label: "Upload", kind: "anchor", requiresSelection: false, provenance: ACTION_PROVENANCE.LOCAL_ONLY }),
   Object.freeze({ key: "select", label: "Select", kind: "anchor", requiresSelection: false, provenance: ACTION_PROVENANCE.LOCAL_ONLY }),
-  ...Object.values(SEEDED_JOB_LIBRARY).map((job) =>
-    Object.freeze({
-      key: job.jobId,
-      label: job.label,
-      kind: "job",
-      capability: job.capability,
-      requiresSelection: job.requiresSelection,
-      stickyKey: job.stickyKey,
-      provenance: job.provenance,
-    })
-  ),
+  ...Object.values(SEEDED_JOB_LIBRARY)
+    .filter((job) => !HIDDEN_LEFT_RAIL_TOOL_IDS.has(job.jobId))
+    .map((job) =>
+      Object.freeze({
+        key: job.jobId,
+        label: job.label,
+        kind: "job",
+        capability: job.capability,
+        requiresSelection: job.requiresSelection,
+        stickyKey: job.stickyKey,
+        provenance: job.provenance,
+      })
+    ),
   ...SHELL_DIRECT_AFFORDANCE_ORDER.map((toolId) => SHELL_AFFORDANCE_LIBRARY[toolId]).map((tool) =>
     Object.freeze({
       key: tool.jobId,
@@ -396,6 +393,15 @@ function fillDynamicSlots(dynamic = []) {
     used.add(jobId);
   }
   return out.slice(0, SINGLE_IMAGE_RAIL_DYNAMIC_SLOT_COUNT);
+}
+
+function isVisibleDynamicJobId(jobId = "") {
+  const key = String(jobId || "").trim();
+  return Boolean(key) && !HIDDEN_LEFT_RAIL_TOOL_IDS.has(key) && Boolean(SEEDED_JOB_LIBRARY[key]);
+}
+
+function filterVisibleDynamicJobs(jobs = []) {
+  return (Array.isArray(jobs) ? jobs : []).filter((job) => isVisibleDynamicJobId(job?.jobId));
 }
 
 function chooseVisibleDynamicJobs({ candidates = [], previousVisibleJobs = [] } = {}) {
@@ -686,9 +692,9 @@ export function getSingleImageRailMockRankedJobs({
 } = {}) {
   let order = DEFAULT_DYNAMIC_ORDER.slice();
   if (hasRegionSelection) {
-    order = ["remove", "cut_out", "new_background", "reframe", "variants"];
+    order = ["remove", "cut_out", "reframe", "variants"];
   } else if (hasImage) {
-    order = ["cut_out", "new_background", "variants", "reframe", "remove"];
+    order = ["cut_out", "variants", "reframe", "remove"];
   }
 
   return order.map((jobId, index) => {
@@ -731,7 +737,7 @@ export function getSingleImageRailMockRankedJobs({
       },
       index
     );
-  });
+  }).filter(Boolean);
 }
 
 export function buildSingleImageRailButtons({
@@ -747,21 +753,24 @@ export function buildSingleImageRailButtons({
   adapter = SINGLE_IMAGE_RAIL_MOCK_ADAPTER,
 } = {}) {
   const anchors = buildAnchorButtons({ hasImage, activeToolId });
-  const baseJobs = Array.isArray(rankedJobs) && rankedJobs.length
-    ? rankedJobs.map((job, index) => normalizeRankedJob(job, index)).filter(Boolean)
-    : getSingleImageRailMockRankedJobs({
-        hasImage,
-        hasRegionSelection,
-        busy,
-        toolHookReady,
-      });
+  const baseJobs = filterVisibleDynamicJobs(
+    Array.isArray(rankedJobs) && rankedJobs.length
+      ? rankedJobs.map((job, index) => normalizeRankedJob(job, index)).filter(Boolean)
+      : getSingleImageRailMockRankedJobs({
+          hasImage,
+          hasRegionSelection,
+          busy,
+          toolHookReady,
+        })
+  );
+  const previousVisibleDynamicJobs = filterVisibleDynamicJobs(previousVisibleJobs);
 
   const visibleDynamicJobs = rerank
     ? chooseVisibleDynamicJobs({
         candidates: baseJobs,
-        previousVisibleJobs,
+        previousVisibleJobs: previousVisibleDynamicJobs,
       })
-    : fillDynamicSlots(previousVisibleJobs.length ? previousVisibleJobs : baseJobs);
+    : fillDynamicSlots(previousVisibleDynamicJobs.length ? previousVisibleDynamicJobs : baseJobs);
   const dynamicButtons = buildDynamicButtons(visibleDynamicJobs, { runningToolId });
   const affordanceButtons = buildAffordanceButtons({ hasImage, busy });
 

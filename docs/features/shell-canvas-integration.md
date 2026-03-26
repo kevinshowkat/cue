@@ -58,12 +58,18 @@ Each `register...` call stores the handler and returns an unregister function.
 Current shell rail tool keys:
 
 - `upload`
-- `select_subject`
-- `background_swap`
-- `cleanup`
-- `style_bridge`
-- `variations`
-- `create_tool`
+- `select`
+- `cut_out`
+- `remove`
+- `reframe`
+- `variants`
+- `remove_people`
+
+Runtime-only image actions remain invokable for non-rail callers, but they are not currently exposed in the visible left rail:
+
+- `new_background`
+- `polish`
+- `relight`
 
 `context` comes from `getCanvasSnapshot()` and includes:
 
