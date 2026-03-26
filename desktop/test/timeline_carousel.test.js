@@ -273,6 +273,24 @@ test("timeline detail text previews hovered target states and falls back to the 
   assert.equal(timelineDetailText(headNode), "Current state: Imported A.jpg");
 });
 
+test("timeline shelf summary uses guidance when expanded and latest-state detail when collapsed", () => {
+  const state = { timelineOpen: true };
+  const timelineShelfSummaryText = instantiateFunction("timelineShelfSummaryText", {
+    state,
+    timelineSortedNodes: () => [],
+    currentTimelineHeadNode: () => null,
+    timelineNodeSummary: (node) => `${node.action} ${node.label}`,
+  });
+  const nodes = [{ nodeId: "tl-1" }, { nodeId: "tl-2" }];
+  const headNode = { nodeId: "tl-2", action: "Moved", label: "A.jpg" };
+
+  assert.equal(timelineShelfSummaryText(nodes, headNode), "2 states · Select a state to rewind");
+  assert.equal(
+    timelineShelfSummaryText(nodes, headNode, { timelineOpen: false }),
+    "2 states · Moved A.jpg"
+  );
+});
+
 test("timeline detail text is empty when no head node exists", () => {
   const timelineDetailText = instantiateFunction("timelineDetailText", {
     state: {

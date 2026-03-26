@@ -9905,10 +9905,15 @@ function syncActionProvenanceBadge(button, provenance) {
   return normalized;
 }
 
-function timelineShelfSummaryText(nodes = timelineSortedNodes(), headNode = currentTimelineHeadNode()) {
+function timelineShelfSummaryText(
+  nodes = timelineSortedNodes(),
+  headNode = currentTimelineHeadNode(),
+  { timelineOpen = state.timelineOpen !== false } = {}
+) {
   if (!Array.isArray(nodes) || !nodes.length) return "Upload an image to start your session history.";
   const count = nodes.length;
   const countLabel = `${count} state${count === 1 ? "" : "s"}`;
+  if (timelineOpen) return `${countLabel} · Select a state to rewind`;
   const summary = headNode ? timelineNodeSummary(headNode) : "Committed session history";
   return `${countLabel} · ${summary}`;
 }
@@ -9916,7 +9921,7 @@ function timelineShelfSummaryText(nodes = timelineSortedNodes(), headNode = curr
 function syncTimelineShelfToggle(nodes = timelineSortedNodes(), headNode = currentTimelineHeadNode()) {
   const timelineOpen = state.timelineOpen !== false;
   const actionLabel = timelineOpen ? "Collapse history timeline" : "Expand history timeline";
-  const summary = timelineShelfSummaryText(nodes, headNode);
+  const summary = timelineShelfSummaryText(nodes, headNode, { timelineOpen });
   if (els.timelineToggle) {
     els.timelineToggle.title = actionLabel;
     els.timelineToggle.setAttribute("aria-label", `${actionLabel}. ${summary}`);
