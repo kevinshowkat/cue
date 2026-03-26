@@ -12412,6 +12412,10 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenan
   padding-right: 12px;
 }
 
+body.juggernaut-shell .brand-strip .session-tab-runtime-icon-action.has-action-provenance {
+  padding-right: 0;
+}
+
 body.juggernaut-shell .brand-strip .session-tab-strip-new {
   border-color: rgba(30, 35, 44, 0.12);
   border-top-color: rgba(255, 255, 255, 1);
