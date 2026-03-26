@@ -32911,6 +32911,9 @@ function toggleTimeline(options = {}) {
 }
 
 function syncTimelineDockVisibility() {
+  if (els.timelineDock) {
+    els.timelineDock.classList.remove("hidden");
+  }
   const nodes = timelineSortedNodes();
   const headNode = currentTimelineHeadNode();
   return syncTimelineShelfToggle(nodes, headNode);

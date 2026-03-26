@@ -291,6 +291,71 @@ test("timeline shelf summary uses guidance when expanded and latest-state detail
   );
 });
 
+test("syncTimelineDockVisibility restores the dock after tab-switch suspension", () => {
+  const state = { timelineOpen: true };
+  const timelineDock = {
+    classList: createFakeClassList(["hidden"]),
+  };
+  const timelineShell = {
+    classList: createFakeClassList(["is-collapsed"]),
+  };
+  const timelineBody = {
+    hidden: true,
+    ariaHidden: "true",
+    setAttribute(name, value) {
+      if (name === "aria-hidden") this.ariaHidden = value;
+    },
+  };
+  const timelineToggle = {
+    title: "",
+    attributes: new Map(),
+    setAttribute(name, value) {
+      this.attributes.set(name, value);
+    },
+  };
+  const timelineToggleLabel = { textContent: "" };
+  const timelineToggleSummary = { textContent: "" };
+  const els = {
+    timelineDock,
+    timelineShell,
+    timelineBody,
+    timelineToggle,
+    timelineToggleLabel,
+    timelineToggleSummary,
+  };
+  const headNode = { nodeId: "tl-1", action: "Moved", label: "A.jpg" };
+  const nodes = [headNode];
+  const timelineShelfSummaryText = instantiateFunction("timelineShelfSummaryText", {
+    state,
+    timelineSortedNodes: () => nodes,
+    currentTimelineHeadNode: () => headNode,
+    timelineNodeSummary: (node) => `${node.action} ${node.label}`,
+  });
+  const syncTimelineShelfToggle = instantiateFunction("syncTimelineShelfToggle", {
+    timelineSortedNodes: () => nodes,
+    currentTimelineHeadNode: () => headNode,
+    timelineShelfSummaryText,
+    state,
+    els,
+  });
+  const syncTimelineDockVisibility = instantiateFunction("syncTimelineDockVisibility", {
+    timelineSortedNodes: () => nodes,
+    currentTimelineHeadNode: () => headNode,
+    syncTimelineShelfToggle,
+    els,
+  });
+
+  assert.equal(syncTimelineDockVisibility(), true);
+  assert.equal(timelineDock.classList.contains("hidden"), false);
+  assert.equal(timelineDock.classList.contains("is-collapsed"), false);
+  assert.equal(timelineShell.classList.contains("is-collapsed"), false);
+  assert.equal(timelineBody.hidden, false);
+  assert.equal(timelineBody.ariaHidden, "false");
+  assert.equal(timelineToggle.attributes.get("aria-expanded"), "true");
+  assert.equal(timelineToggleLabel.textContent, "History");
+  assert.equal(timelineToggleSummary.textContent, "1 state · Select a state to rewind");
+});
+
 test("timeline detail text is empty when no head node exists", () => {
   const timelineDetailText = instantiateFunction("timelineDetailText", {
     state: {
