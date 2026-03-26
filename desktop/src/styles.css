@@ -36,6 +36,12 @@
   --jg-rail-button-size: 54px;
   --jg-rail-gap: 12px;
   --jg-rail-pad: 12px;
+  --jg-communication-shell-width: min(620px, calc(100vw - 48px));
+  --jg-system-font-stack: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --jg-system-strip-font-stack: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Courier New", monospace;
+  --jg-system-strip-height: 26px;
+  --jg-system-strip-bottom: 8px;
+  --jg-system-strip-gap: 6px;
 }
 
 * {
@@ -2734,86 +2740,53 @@ button.ghost:hover {
 }
 
 .toast {
-  --toast-accent: rgba(100, 210, 255, 0.92);
   position: absolute;
-  left: calc(var(--jg-shell-inset, 18px) + var(--jg-rail-width, 74px) + 18px);
-  right: calc(var(--jg-shell-inset, 18px) + 18px);
-  bottom: 14px;
-  z-index: 13;
-  height: 44px;
-  padding: 0 18px 0 38px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.26);
-  background:
-    radial-gradient(180px 84px at 0% 50%, color-mix(in srgb, var(--toast-accent) 18%, transparent), transparent 72%),
-    radial-gradient(220px 90px at 100% 0%, rgba(255, 255, 255, 0.18), transparent 74%),
-    linear-gradient(180deg, rgba(248, 251, 255, 0.76), rgba(227, 235, 244, 0.62));
-  color: rgba(16, 28, 44, 0.92);
-  font-family: "Space Grotesk", sans-serif;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 44px;
-  letter-spacing: 0.01em;
-  box-shadow:
-    0 18px 34px rgba(7, 15, 24, 0.14),
-    0 4px 14px color-mix(in srgb, var(--toast-accent) 14%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.74),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(24px) saturate(1.3);
+  left: 50%;
+  right: auto;
+  bottom: var(--jg-system-strip-bottom);
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  max-width: min(584px, calc(var(--jg-communication-shell-width) - 36px));
+  min-height: var(--jg-system-strip-height);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgba(128, 134, 143, 0.96);
+  font-family: var(--jg-system-strip-font-stack);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0.015em;
+  text-align: center;
+  box-shadow: none;
+  backdrop-filter: none;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.68);
   pointer-events: none;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   opacity: 0;
   visibility: hidden;
-  filter: saturate(0.88);
-  transform: translateY(8px);
+  transform: translateX(-50%);
   transition:
-    opacity 180ms ease,
-    transform 180ms ease,
-    filter 180ms ease,
-    visibility 0ms linear 180ms;
+    opacity 220ms ease,
+    visibility 0ms linear 220ms;
 }
 
 .toast::before {
-  content: "";
-  position: absolute;
-  left: 18px;
-  top: 50%;
-  width: 8px;
-  height: 8px;
-  margin-top: -4px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  background:
-    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.84), transparent 44%),
-    radial-gradient(circle at 65% 70%, color-mix(in srgb, var(--toast-accent) 88%, white 12%), color-mix(in srgb, var(--toast-accent) 52%, transparent) 72%);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--toast-accent) 16%, transparent),
-    0 6px 12px color-mix(in srgb, var(--toast-accent) 16%, transparent);
+  content: none;
 }
 
 .toast::after {
   content: none;
 }
 
-.toast[data-kind="error"] {
-  --toast-accent: rgba(255, 124, 132, 0.96);
-}
-
-.toast[data-kind="tip"] {
-  --toast-accent: rgba(255, 190, 92, 0.96);
-}
-
-.toast[data-kind="info"] {
-  --toast-accent: rgba(100, 210, 255, 0.94);
-}
-
 .toast[data-state="visible"] {
   opacity: 1;
   visibility: visible;
-  filter: saturate(1);
-  transform: translateY(0);
   transition-delay: 0s;
 }
 
@@ -2821,7 +2794,6 @@ button.ghost:hover {
 .toast[data-state="exiting"] {
   opacity: 0;
   visibility: visible;
-  transform: translateY(6px);
   transition-delay: 0s;
 }
 
@@ -7759,9 +7731,9 @@ button.ghost:hover {
 .communication-shell {
   position: absolute;
   left: 50%;
-  bottom: -56px;
+  bottom: calc(var(--jg-system-strip-bottom) + var(--jg-system-strip-height) + var(--jg-system-strip-gap));
   z-index: 12;
-  width: min(620px, calc(100vw - 48px));
+  width: var(--jg-communication-shell-width);
   transform: translateX(-50%);
   pointer-events: none;
   isolation: isolate;
@@ -7986,9 +7958,15 @@ button.ghost:hover {
 }
 
 @media (max-width: 900px) {
+  :root {
+    --jg-communication-shell-width: min(560px, calc(100vw - 28px));
+    --jg-system-strip-height: 24px;
+    --jg-system-strip-bottom: 6px;
+    --jg-system-strip-gap: 4px;
+  }
+
   .communication-shell {
-    bottom: -48px;
-    width: min(560px, calc(100vw - 28px));
+    width: var(--jg-communication-shell-width);
   }
 
   .communication-rail {
@@ -7998,13 +7976,14 @@ button.ghost:hover {
   }
 
   .toast {
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
-    height: 42px;
+    left: 50%;
+    right: auto;
+    bottom: var(--jg-system-strip-bottom);
+    width: min(532px, calc(var(--jg-communication-shell-width) - 28px));
+    height: var(--jg-system-strip-height);
     padding: 0 16px 0 34px;
-    border-radius: 14px;
-    line-height: 42px;
+    border-radius: 999px;
+    line-height: var(--jg-system-strip-height);
   }
 
   .communication-rail::before {
