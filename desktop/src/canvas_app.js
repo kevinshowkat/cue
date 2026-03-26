@@ -631,6 +631,7 @@ const els = {
   sessionTabList: document.getElementById("session-tab-list"),
   sessionTabOpen: document.getElementById("session-tab-open"),
   sessionTabNew: document.getElementById("session-tab-new"),
+  sessionTabFork: document.getElementById("session-tab-fork"),
   sessionTabDesignReview: document.getElementById("session-tab-design-review"),
   appMenuToggle: document.getElementById("app-menu-toggle"),
   appMenu: document.getElementById("app-menu"),
@@ -2780,6 +2781,7 @@ function createFreshTabSession({ runDir = null, eventsPath = null } = {}) {
   return {
     label: null,
     labelManual: false,
+    forkedFromTabId: null,
     reviewFlowState: "",
     runDir,
     eventsPath,
@@ -22000,7 +22002,7 @@ async function commitCommunicationImageEraseDraft(draft = null) {
   const item = state.imagesById.get(imageId) || null;
   if (!item?.path) return null;
   await ensureRun();
-  const sourceImg = item.img || await loadImage(item.path);
+  const sourceImg = readSessionRuntimeImageHandle(item) || await loadImage(item.path);
   if (!sourceImg) return null;
   const width = Math.max(1, Number(sourceImg.naturalWidth || item.width) || 1);
   const height = Math.max(1, Number(sourceImg.naturalHeight || item.height) || 1);
@@ -23925,6 +23927,17 @@ async function loadImage(path) {
   return await rec.imgPromise;
 }
 
+function readSessionRuntimeImageHandle(entry = null) {
+  const img = entry?.img;
+  if (!img || typeof img !== "object") return null;
+  const naturalWidth = Number(img.naturalWidth);
+  const naturalHeight = Number(img.naturalHeight);
+  if (!Number.isFinite(naturalWidth) || naturalWidth <= 0) return null;
+  if (!Number.isFinite(naturalHeight) || naturalHeight <= 0) return null;
+  if (typeof img.complete === "boolean" && !img.complete) return null;
+  return img;
+}
+
 function clearImageCache() {
   for (const value of state.imageCache.values()) {
     const url = value?.url;
@@ -25504,7 +25517,8 @@ function setCanvasMode(_mode) {
 
 function ensureCanvasImageLoaded(item) {
   if (!item || !item.path) return;
-  if (item.img) return;
+  if (readSessionRuntimeImageHandle(item)) return;
+  if (item.img) item.img = null;
   if (item.imgLoading) return;
   item.imgLoading = true;
   loadImage(item.path)
@@ -26611,6 +26625,99 @@ async function runPromptGenerateFromPanel() {
 
 function cloneToolRuntimeValue(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function cloneSessionValue(value, seen = new Map()) {
+  if (value == null || typeof value !== "object") return value;
+  if (typeof structuredClone === "function") {
+    try {
+      return structuredClone(value);
+    } catch {
+      // Fall through to the manual clone for browser objects structuredClone cannot handle.
+    }
+  }
+  if (seen.has(value)) return seen.get(value);
+  if (value instanceof Map) {
+    const next = new Map();
+    seen.set(value, next);
+    for (const [key, entry] of value.entries()) {
+      next.set(cloneSessionValue(key, seen), cloneSessionValue(entry, seen));
+    }
+    return next;
+  }
+  if (value instanceof Set) {
+    const next = new Set();
+    seen.set(value, next);
+    for (const entry of value.values()) {
+      next.add(cloneSessionValue(entry, seen));
+    }
+    return next;
+  }
+  if (Array.isArray(value)) {
+    const next = [];
+    seen.set(value, next);
+    for (const entry of value) {
+      next.push(cloneSessionValue(entry, seen));
+    }
+    return next;
+  }
+  const next = {};
+  seen.set(value, next);
+  for (const [key, entry] of Object.entries(value)) {
+    next[key] = cloneSessionValue(entry, seen);
+  }
+  return next;
+}
+
+function rehydrateForkedTabSessionImageRuntime(session = null, sourceSession = null) {
+  const current = session && typeof session === "object" ? session : null;
+  if (!current) return current;
+
+  const collectSourceHandles = (entries = []) => {
+    const byId = new Map();
+    const byPath = new Map();
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") continue;
+      const handle = readSessionRuntimeImageHandle(entry);
+      if (!handle) continue;
+      const id = String(entry.id || "").trim();
+      const path = String(entry.path || "").trim();
+      if (id && !byId.has(id)) byId.set(id, handle);
+      if (path && !byPath.has(path)) byPath.set(path, handle);
+    }
+    return { byId, byPath };
+  };
+
+  const applyHandles = (entries = [], handles = null) => {
+    const seen = new Set();
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object" || seen.has(entry)) continue;
+      seen.add(entry);
+      const id = String(entry.id || "").trim();
+      const path = String(entry.path || "").trim();
+      entry.img =
+        (id && handles?.byId instanceof Map ? handles.byId.get(id) : null) ||
+        (path && handles?.byPath instanceof Map ? handles.byPath.get(path) : null) ||
+        null;
+      entry.imgLoading = false;
+    }
+  };
+
+  const sourceImages = [
+    ...(Array.isArray(sourceSession?.images) ? sourceSession.images : []),
+    ...(sourceSession?.imagesById instanceof Map ? Array.from(sourceSession.imagesById.values()) : []),
+  ];
+  const targetImages = [
+    ...(Array.isArray(current.images) ? current.images : []),
+    ...(current.imagesById instanceof Map ? Array.from(current.imagesById.values()) : []),
+  ];
+  applyHandles(targetImages, collectSourceHandles(sourceImages));
+
+  const sourceDrafts = Array.isArray(sourceSession?.motherIdle?.drafts) ? sourceSession.motherIdle.drafts : [];
+  const targetDrafts = Array.isArray(current.motherIdle?.drafts) ? current.motherIdle.drafts : [];
+  applyHandles(targetDrafts, collectSourceHandles(sourceDrafts));
+
+  return current;
 }
 
 function syncSessionToolsFromRegistry() {
@@ -33169,7 +33276,7 @@ async function buildPsdExportComposite() {
       if (!imageId || !isVisibleCanvasImageId(imageId)) continue;
       const item = state.imagesById.get(imageId) || null;
       if (!item?.path) continue;
-      const img = item.img || await loadImage(item.path);
+      const img = readSessionRuntimeImageHandle(item) || await loadImage(item.path);
       const rect = state.freeformRects.get(imageId) || null;
       if (!img || !rect) continue;
       const transform = readFreeformRectTransform(rect);
@@ -33201,7 +33308,7 @@ async function buildPsdExportComposite() {
     }
   } else {
     const item = getActiveImage() || visibleImages[0] || null;
-    const img = item?.img || (item?.path ? await loadImage(item.path) : null);
+    const img = readSessionRuntimeImageHandle(item) || (item?.path ? await loadImage(item.path) : null);
     if (item?.path && img) {
       const w = Math.max(1, img.naturalWidth || item.width || 1);
       const h = Math.max(1, img.naturalHeight || item.height || 1);
@@ -34524,6 +34631,106 @@ function sessionTabDisplayLabel(record = null, fallback = DEFAULT_UNTITLED_TAB_T
   return sessionTabAutomaticLabelForRecord(record, fallback);
 }
 
+function sessionTabForkSourceId(record = null) {
+  const direct = String(record?.forkedFromTabId || "").trim();
+  if (direct) return direct;
+  const nested = String(record?.session?.forkedFromTabId || "").trim();
+  return nested || "";
+}
+
+function sessionTabForkLabelSuffix(sequence = 1) {
+  const normalized = Math.max(1, Number(sequence) || 1);
+  return normalized > 1 ? ` (Fork ${normalized})` : " (Fork)";
+}
+
+function buildSessionTabForkLabel(record = null) {
+  const sourceTitle = sessionTabDisplayLabel(record, DEFAULT_UNTITLED_TAB_TITLE);
+  const existingLabels = new Set(
+    tabbedSessions.tabsOrder
+      .map((tabId) => sessionTabDisplayLabel(tabbedSessions.getTab(tabId), DEFAULT_UNTITLED_TAB_TITLE))
+      .filter(Boolean)
+  );
+  for (let sequence = 1; sequence < 1000; sequence += 1) {
+    const suffix = sessionTabForkLabelSuffix(sequence);
+    const baseMax = Math.max(0, SESSION_TAB_TITLE_MAX_LENGTH - suffix.length);
+    const baseLabel =
+      normalizeSessionTabTitleInput(sourceTitle, baseMax) ||
+      normalizeSessionTabTitleInput(DEFAULT_UNTITLED_TAB_TITLE, baseMax) ||
+      DEFAULT_UNTITLED_TAB_TITLE;
+    const candidate = `${baseLabel}${suffix}`;
+    if (!existingLabels.has(candidate)) return candidate;
+  }
+  return normalizeSessionTabTitleInput(`${sourceTitle} Fork`, SESSION_TAB_TITLE_MAX_LENGTH) || DEFAULT_UNTITLED_TAB_TITLE;
+}
+
+function createForkedTabSession(session = null, { label = null } = {}) {
+  const source = session && typeof session === "object" ? session : createFreshTabSession();
+  const sourceSessionTools =
+    Array.isArray(source.sessionTools) && source.sessionTools.length
+      ? source.sessionTools
+      : source.toolRegistry && typeof source.toolRegistry.list === "function"
+        ? source.toolRegistry.list()
+        : [];
+  const cloned =
+    cloneSessionValue({
+      ...source,
+      toolRegistry: null,
+      sessionTools: sourceSessionTools,
+      eventsDecoder: null,
+    }) || {};
+  const next = {
+    ...createFreshTabSession(),
+    ...cloned,
+  };
+  rehydrateForkedTabSessionImageRuntime(next, source);
+  next.forkedFromTabId = String(cloned.forkedFromTabId || source.forkedFromTabId || "").trim() || null;
+  next.label = typeof label === "string" && label ? label : typeof cloned.label === "string" ? cloned.label : null;
+  next.labelManual = Boolean(label) || Boolean(cloned.labelManual);
+  next.reviewFlowState = normalizeSessionTabReviewFlowState(cloned.reviewFlowState);
+  next.communication = cloned.communication && typeof cloned.communication === "object" ? cloned.communication : createFreshCommunicationState();
+  next.designReviewApply = cloneDesignReviewApplyState(cloned.designReviewApply);
+  next.promptGenerateDraft =
+    cloned.promptGenerateDraft && typeof cloned.promptGenerateDraft === "object"
+      ? cloned.promptGenerateDraft
+      : { prompt: "", model: "" };
+  next.promptGenerateDraftAnchor =
+    cloned.promptGenerateDraftAnchor && typeof cloned.promptGenerateDraftAnchor === "object"
+      ? cloned.promptGenerateDraftAnchor
+      : null;
+  next.customToolDraft =
+    cloned.customToolDraft && typeof cloned.customToolDraft === "object"
+      ? cloned.customToolDraft
+      : { name: "", description: "" };
+  next.toolRegistry = createInSessionToolRegistry(Array.isArray(cloned.sessionTools) ? cloned.sessionTools : sourceSessionTools);
+  next.sessionTools = next.toolRegistry.list();
+  next.lastToolInvocation = cloned.lastToolInvocation ? cloneToolRuntimeValue(cloned.lastToolInvocation) : null;
+  next.toolInvocationSeq = Math.max(1, Number(cloned.toolInvocationSeq) || 1);
+  next.wheelMenu = {
+    open: false,
+    hideTimer: null,
+    anchorCss: cloned.wheelMenu?.anchorCss && typeof cloned.wheelMenu.anchorCss === "object" ? cloned.wheelMenu.anchorCss : null,
+    anchorWorld:
+      cloned.wheelMenu?.anchorWorld && typeof cloned.wheelMenu.anchorWorld === "object" ? cloned.wheelMenu.anchorWorld : null,
+  };
+  next.mother = createTabMotherState();
+  next.motherIdle = createTabMotherIdleState();
+  next.intent = createTabIntentState();
+  next.intentAmbient = createTabIntentAmbientState();
+  next.alwaysOnVision = createTabAlwaysOnVisionState();
+  next.runDir = null;
+  next.eventsPath = null;
+  next.eventsByteOffset = 0;
+  next.eventsTail = "";
+  next.eventsDecoder = new TextDecoder("utf-8");
+  next.fallbackToFullRead = false;
+  next.fallbackLineOffset = 0;
+  next.lastStatusText = "Engine: idle";
+  next.lastStatusError = false;
+  next.tabPreviewState = normalizeTabPreviewState(cloned.tabPreviewState);
+  next.tabUiMeta = normalizeTabUiMeta(cloned.tabUiMeta);
+  return next;
+}
+
 function normalizeSessionTabReviewFlowState(value = "") {
   const normalized = String(value || "").trim().toLowerCase();
   if (["planning", "ready", "applying", "failed"].includes(normalized)) return normalized;
@@ -34727,6 +34934,9 @@ function captureActiveTabSession(session = null) {
   const next = session && typeof session === "object" ? session : createFreshTabSession();
   next.label = state.activeTabId ? tabbedSessions.getTab(state.activeTabId)?.label || next.label || null : next.label || null;
   next.labelManual = Boolean(state.activeTabId ? tabbedSessions.getTab(state.activeTabId)?.labelManual : next.labelManual);
+  next.forkedFromTabId =
+    String(state.activeTabId ? tabbedSessions.getTab(state.activeTabId)?.forkedFromTabId || next.forkedFromTabId || "" : next.forkedFromTabId || "").trim() ||
+    null;
   next.reviewFlowState = currentSessionTabReviewFlowState();
   next.runDir = state.runDir || null;
   next.eventsPath = state.eventsPath || null;
@@ -35355,6 +35565,59 @@ async function closeTab(tabId) {
     disposeTabPreviewCacheEntry(previewEntry);
   }
   return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: getTabsSnapshot().tabs };
+}
+
+async function forkActiveTab() {
+  const activeTabId = String(state.activeTabId || "").trim();
+  const activeTab = activeTabId ? tabbedSessions.getTab(activeTabId) : null;
+  if (!activeTabId || !activeTab) {
+    return { ok: false, reason: "missing_tab", activeTabId: state.activeTabId || null };
+  }
+  const blockReason = currentTabSwitchBlockReason();
+  if (blockReason) {
+    showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
+    return { ok: false, reason: blockReason, activeTabId: state.activeTabId || null };
+  }
+  if (String(sessionTabRenameState.tabId || "").trim() === activeTabId) {
+    commitSessionTabRename(activeTabId, sessionTabRenameState.draft);
+  }
+  syncActiveTabRecord({ capture: true, publish: true });
+  const sourceRecord = tabbedSessions.getTab(activeTabId) || activeTab;
+  const sourceLabel = sessionTabDisplayLabel(sourceRecord, DEFAULT_UNTITLED_TAB_TITLE);
+  const forkLabel = buildSessionTabForkLabel(sourceRecord);
+  const session = createForkedTabSession(sourceRecord.session || createFreshTabSession(), { label: forkLabel });
+  session.forkedFromTabId = activeTabId;
+  const tabId = createTabId();
+  const sourceIndex = tabbedSessions.tabsOrder.indexOf(activeTabId);
+  const insertIndex = sourceIndex >= 0 ? sourceIndex + 1 : tabbedSessions.tabsOrder.length;
+  tabbedSessions.upsertTab(
+    {
+      tabId,
+      label: forkLabel,
+      labelManual: true,
+      forkedFromTabId: activeTabId,
+      runDir: null,
+      eventsPath: null,
+      session,
+      busy: false,
+      reviewFlowState: session.reviewFlowState,
+      tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
+      thumbnailPath: session.tabUiMeta?.thumbnailPath || null,
+    },
+    { activate: false, index: insertIndex }
+  );
+  const activation = await activateTab(tabId, { spawnEngine: false, reason: "fork_tab" });
+  if (!activation?.ok) {
+    tabbedSessions.closeTab(tabId, { activateNeighbor: false });
+    return activation;
+  }
+  showToast(`Forked ${sourceLabel} into ${forkLabel}.`, "tip", 2600);
+  return {
+    ok: true,
+    tabId,
+    sourceTabId: activeTabId,
+    activeTabId: state.activeTabId || null,
+  };
 }
 
 async function ensureRun() {
@@ -38656,6 +38919,7 @@ function renderMotherRoleGlyphs(octx, { ms = 1, mox = 0, moy = 0 } = {}) {
   // Offer-stage ghost preview (staged only; no mutation).
   if (phase === MOTHER_IDLE_STATES.OFFERING) {
     const draft = motherV2CurrentDraft();
+    const draftImg = readSessionRuntimeImageHandle(draft);
     const policy = String(idle.intent?.placement_policy || "adjacent");
     const targets = Array.isArray(idle.intent?.target_ids) ? idle.intent.target_ids : [];
     const targetId = targets.length ? String(targets[0] || "") : state.activeId ? String(state.activeId) : null;
@@ -38669,10 +38933,10 @@ function renderMotherRoleGlyphs(octx, { ms = 1, mox = 0, moy = 0 } = {}) {
       };
       octx.save();
       octx.globalAlpha = 0.36;
-      if (draft?.img) {
+      if (draftImg) {
         octx.imageSmoothingEnabled = true;
         octx.imageSmoothingQuality = "high";
-        octx.drawImage(draft.img, Math.round(px.x), Math.round(px.y), Math.round(px.w), Math.round(px.h));
+        octx.drawImage(draftImg, Math.round(px.x), Math.round(px.y), Math.round(px.w), Math.round(px.h));
       } else {
         octx.fillStyle = "rgba(82, 255, 148, 0.18)";
         octx.fillRect(Math.round(px.x), Math.round(px.y), Math.round(px.w), Math.round(px.h));
@@ -39857,7 +40121,8 @@ function render() {
   if (state.canvasMode === "multi") {
     renderMultiCanvas(wctx, octx, work.width, work.height);
   } else {
-    const img = item?.img;
+    if (item?.path) ensureCanvasImageLoaded(item);
+    const img = readSessionRuntimeImageHandle(item);
     if (img) {
       const singleTransform = readFreeformRectTransform(state.freeformRects.get(String(item?.id || "")) || null);
       const singleW = img.naturalWidth || item?.width || 1;
@@ -41873,10 +42138,13 @@ function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
   const title = sessionTabDisplayLabel(record || tab, DEFAULT_UNTITLED_TAB_TITLE);
   const runDir = record?.runDir ? String(record.runDir) : tab?.runDir ? String(tab.runDir) : "";
   const reviewFlowState = sessionTabReviewFlowStateForRecord(record, tabId);
+  const forkedFromTabId = sessionTabForkSourceId(record || tab);
   return {
     tabId,
     title,
     runDir,
+    forkedFromTabId,
+    isForked: Boolean(forkedFromTabId),
     isActive: Boolean(tab?.active),
     isBusy: Boolean(tab?.busy),
     isDirty: Boolean(uiMeta.isDirty),
@@ -41885,6 +42153,28 @@ function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
     reviewFlowLabel: sessionTabReviewFlowLabel(reviewFlowState),
     isRenaming: String(sessionTabRenameState.tabId || "").trim() === tabId,
   };
+}
+
+function createSessionTabForkIndicator() {
+  const indicator = document.createElement("span");
+  indicator.className = "session-tab-fork-indicator";
+  indicator.setAttribute("aria-hidden", "true");
+  indicator.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M8 8.5v6.4M8 9.25h6.4M8 14.9c0 2.6 2.1 4.7 4.7 4.7h1.05"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+      <circle cx="8" cy="6" r="2.25" fill="currentColor" />
+      <circle cx="8" cy="18" r="2.25" fill="currentColor" />
+      <circle cx="17" cy="9.25" r="2.25" fill="currentColor" />
+    </svg>
+  `;
+  return indicator;
 }
 
 function createSessionTabFlags(summary = {}) {
@@ -41910,6 +42200,7 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
   const summary = buildSessionTabUiSummary(tab, totalTabs);
   const item = document.createElement("div");
   item.className = "session-tab-item";
+  if (summary.isForked) item.classList.add("is-forked");
   if (summary.isActive) item.classList.add("is-active");
   if (summary.isBusy) item.classList.add("is-busy");
   if (summary.isDirty) item.classList.add("is-dirty");
@@ -41921,6 +42212,7 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
   item.dataset.active = summary.isActive ? "true" : "false";
   item.dataset.busy = summary.isBusy ? "true" : "false";
   item.dataset.dirty = summary.isDirty ? "true" : "false";
+  item.dataset.forked = summary.isForked ? "true" : "false";
   item.dataset.canClose = summary.canClose ? "true" : "false";
   item.dataset.reviewFlowState = summary.reviewFlowState;
   if (summary.isRenaming && Number.isFinite(sessionTabRenameState.lockedWidth) && sessionTabRenameState.lockedWidth > 0) {
@@ -41939,6 +42231,9 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
 
     const rename = document.createElement("label");
     rename.className = "session-tab-rename";
+
+    const renameRow = document.createElement("span");
+    renameRow.className = "session-tab-title-row";
 
     const input = document.createElement("input");
     input.className = "session-tab-title-input";
@@ -41976,7 +42271,9 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
       commitSessionTabRename(summary.tabId, input.value);
     });
 
-    rename.append(input);
+    if (summary.isForked) renameRow.append(createSessionTabForkIndicator());
+    renameRow.append(input);
+    rename.append(renameRow);
     labels.append(rename);
     renameShell.append(labels, createSessionTabFlags(summary));
     item.append(renameShell);
@@ -41992,10 +42289,15 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
     const labels = document.createElement("span");
     labels.className = "session-tab-labels";
 
+    const titleRow = document.createElement("span");
+    titleRow.className = "session-tab-title-row";
+
     const title = document.createElement("span");
     title.className = "session-tab-title";
     title.textContent = summary.title;
-    labels.append(title);
+    if (summary.isForked) titleRow.append(createSessionTabForkIndicator());
+    titleRow.append(title);
+    labels.append(titleRow);
 
     const runDir = document.createElement("span");
     runDir.className = "session-tab-run-dir";
@@ -42143,6 +42445,16 @@ function installSessionTabStripUi() {
       bumpInteraction();
       void runWithUserError("New session", () => createRun(), {
         retryHint: "Check permissions and try again.",
+      });
+    });
+  }
+
+  if (els.sessionTabFork && els.sessionTabFork.dataset.bound !== "1") {
+    els.sessionTabFork.dataset.bound = "1";
+    els.sessionTabFork.addEventListener("click", () => {
+      bumpInteraction();
+      void runWithUserError("Fork tab", () => forkActiveTab(), {
+        retryHint: "Wait for the current tab to settle and retry.",
       });
     });
   }

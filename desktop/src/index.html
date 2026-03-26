@@ -43,7 +43,7 @@
         </div>
         <div class="window-drag-region" aria-hidden="true" data-tauri-drag-region></div>
         <div id="session-tab-strip" class="session-tab-strip" role="group" aria-label="Session strip">
-          <div class="session-tab-run" role="group" aria-label="Open sessions and new session">
+          <div class="session-tab-run" role="group" aria-label="Open sessions, new session, and fork tab">
             <div id="session-tab-list" class="session-tab-list" role="tablist" aria-label="Open sessions">
               <div
                 class="session-tab-item is-active"
@@ -109,6 +109,43 @@
                 />
               </svg>
               <span class="sr-only">New session</span>
+            </button>
+            <button
+              id="session-tab-fork"
+              class="session-tab-strip-action session-tab-strip-fork"
+              type="button"
+              aria-label="Fork tab"
+              title="Fork tab"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M8 8.5v6.4"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M8 9.25h6.4"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M8 14.9c0 2.6 2.1 4.7 4.7 4.7h1.05"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <circle cx="8" cy="6" r="2.25" fill="currentColor" />
+                <circle cx="8" cy="18" r="2.25" fill="currentColor" />
+                <circle cx="17" cy="9.25" r="2.25" fill="currentColor" />
+              </svg>
+              <span class="sr-only">Fork tab</span>
             </button>
           </div>
           <div class="session-tab-strip-actions" role="group" aria-label="Session actions">
