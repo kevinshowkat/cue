@@ -49,7 +49,13 @@ test("Titlebar tab strip supports inline rename and review-state badges", () => 
   assert.match(app, /lockedWidth:\s*0/);
   assert.match(app, /sessionTabRenameState\.lockedWidth/);
   assert.match(app, /function commitSessionTabRename\(tabId = "", rawTitle = sessionTabRenameState\.draft\)/);
+  assert.match(app, /function sessionTabReviewFlowShowsSpinner\(reviewFlowState = ""\) \{[\s\S]*reviewFlowState === "planning" \|\| reviewFlowState === "applying";[\s\S]*\}/);
+  assert.match(app, /const showReviewSpinner = sessionTabReviewFlowShowsSpinner\(reviewFlowState\);/);
+  assert.match(app, /showReviewSpinner,/);
   assert.match(app, /className = "session-tab-review-state"/);
+  assert.match(app, /className = "session-tab-review-spinner"/);
+  assert.match(app, /className = "session-tab-review-label"/);
+  assert.match(app, /item\.classList\.add\("is-review-progress"\)/);
   assert.match(app, /className = "session-tab-rename-shell"/);
   assert.match(app, /className = "session-tab-title-input"/);
   assert.match(app, /input\.maxLength = SESSION_TAB_TITLE_MAX_LENGTH;/);

@@ -80,6 +80,8 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.doesNotMatch(html, /session-tab-dirty-dot/);
   assert.doesNotMatch(css, /\.session-tab-dirty-dot\s*\{/);
   assert.match(css, /\.session-tab-review-state\s*\{/);
+  assert.match(css, /\.session-tab-review-spinner\s*\{/);
+  assert.match(css, /\.session-tab-item\.is-review-progress\s+\.session-tab-busy-indicator\s*\{/);
   assert.match(css, /\.session-tab-rename-shell\s*\{/);
   assert.match(css, /\.session-tab-title-input\s*\{/);
   assert.match(css, /\.session-tab-close\s*\{/);
@@ -94,4 +96,5 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-action-menu-item\s*\{/);
   assert.match(css, /@keyframes\s+sessionTabBusyPulse/);
   assert.match(css, /@keyframes\s+sessionTabReviewPulse/);
+  assert.match(css, /@keyframes\s+sessionTabReviewSpinner/);
 });

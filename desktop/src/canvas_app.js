@@ -35471,6 +35471,10 @@ function sessionTabReviewFlowLabel(reviewFlowState = "") {
   return "";
 }
 
+function sessionTabReviewFlowShowsSpinner(reviewFlowState = "") {
+  return reviewFlowState === "planning" || reviewFlowState === "applying";
+}
+
 function syncActiveTabReviewFlowState({ publish = true } = {}) {
   const tabId = String(state.activeTabId || "").trim();
   if (!tabId) return "";
@@ -42806,6 +42810,7 @@ function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
   const title = sessionTabDisplayLabel(record || tab, DEFAULT_UNTITLED_TAB_TITLE);
   const runDir = record?.runDir ? String(record.runDir) : tab?.runDir ? String(tab.runDir) : "";
   const reviewFlowState = sessionTabReviewFlowStateForRecord(record, tabId);
+  const showReviewSpinner = sessionTabReviewFlowShowsSpinner(reviewFlowState);
   return {
     tabId,
     title,
@@ -42816,6 +42821,7 @@ function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
     canClose: totalTabs > 1,
     reviewFlowState,
     reviewFlowLabel: sessionTabReviewFlowLabel(reviewFlowState),
+    showReviewSpinner,
     isRenaming: String(sessionTabRenameState.tabId || "").trim() === tabId,
   };
 }
@@ -42829,7 +42835,15 @@ function createSessionTabFlags(summary = {}) {
     const reviewState = document.createElement("span");
     reviewState.className = "session-tab-review-state";
     reviewState.dataset.reviewFlowState = summary.reviewFlowState;
-    reviewState.textContent = summary.reviewFlowLabel;
+    if (summary.showReviewSpinner) {
+      const reviewSpinner = document.createElement("span");
+      reviewSpinner.className = "session-tab-review-spinner";
+      reviewState.append(reviewSpinner);
+    }
+    const reviewLabel = document.createElement("span");
+    reviewLabel.className = "session-tab-review-label";
+    reviewLabel.textContent = summary.reviewFlowLabel;
+    reviewState.append(reviewLabel);
     flags.append(reviewState);
   }
 
@@ -42847,6 +42861,7 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
   if (summary.isBusy) item.classList.add("is-busy");
   if (summary.isDirty) item.classList.add("is-dirty");
   if (summary.reviewFlowState) item.classList.add(`is-review-${summary.reviewFlowState}`);
+  if (summary.showReviewSpinner) item.classList.add("is-review-progress");
   if (summary.isRenaming) item.classList.add("is-renaming");
   item.dataset.tabId = summary.tabId;
   item.dataset.title = summary.title;
@@ -42856,6 +42871,7 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
   item.dataset.dirty = summary.isDirty ? "true" : "false";
   item.dataset.canClose = summary.canClose ? "true" : "false";
   item.dataset.reviewFlowState = summary.reviewFlowState;
+  item.dataset.reviewProgress = summary.showReviewSpinner ? "true" : "false";
   if (summary.isRenaming && Number.isFinite(sessionTabRenameState.lockedWidth) && sessionTabRenameState.lockedWidth > 0) {
     const fixedWidth = `${sessionTabRenameState.lockedWidth}px`;
     item.style.width = fixedWidth;
