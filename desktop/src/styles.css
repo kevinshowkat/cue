@@ -10643,6 +10643,36 @@ button.ghost:hover {
     inset 0 -14px 22px rgba(0, 0, 0, 0.26);
 }
 
+.session-tab-item.is-review-applying {
+  border-color: rgba(100, 210, 255, 0.26);
+  background:
+    radial-gradient(128px 76px at 14% 10%, rgba(100, 210, 255, 0.18), transparent 72%),
+    linear-gradient(180deg, rgba(232, 244, 255, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(18, 30, 46, 0.90);
+  box-shadow:
+    0 0 0 1px rgba(100, 210, 255, 0.05),
+    0 16px 28px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -14px 22px rgba(0, 18, 40, 0.28);
+}
+
+.session-tab-item.is-review-applying:hover {
+  border-color: rgba(100, 210, 255, 0.32);
+}
+
+.session-tab-item.is-review-applying.is-active {
+  border-color: rgba(100, 210, 255, 0.46);
+  background:
+    radial-gradient(132px 82px at 14% 8%, rgba(100, 210, 255, 0.22), transparent 72%),
+    linear-gradient(180deg, rgba(240, 248, 255, 0.10), rgba(255, 255, 255, 0.03)),
+    rgba(19, 33, 50, 0.92);
+  box-shadow:
+    0 0 0 1px rgba(100, 210, 255, 0.14),
+    0 16px 28px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -14px 22px rgba(0, 18, 40, 0.28);
+}
+
 .session-tab-hit,
 .session-tab-rename-shell {
   min-width: 0;
@@ -10754,6 +10784,10 @@ button.ghost:hover {
   text-overflow: ellipsis;
 }
 
+.session-tab-item.is-review-applying .session-tab-title {
+  color: rgba(226, 244, 255, 0.98);
+}
+
 .session-tab-run-dir {
   max-width: 150px;
   font-family: "IBM Plex Mono", monospace;
@@ -10772,36 +10806,23 @@ button.ghost:hover {
   margin-left: auto;
 }
 
-.session-tab-review-state {
+.session-tab-review-icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: 18px;
-  padding: 0 7px;
-  border-radius: 999px;
-  border: 1px solid rgba(110, 210, 255, 0.22);
-  background:
-    linear-gradient(180deg, rgba(246, 252, 255, 0.18), rgba(214, 239, 255, 0.08)),
-    rgba(72, 161, 218, 0.12);
-  color: rgba(204, 238, 255, 0.96);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 0 0 1px rgba(88, 201, 255, 0.05);
+  justify-content: center;
+  color: rgba(142, 216, 255, 0.96);
 }
 
-.session-tab-review-label {
-  display: inline-block;
+.session-tab-review-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .session-tab-review-spinner {
-  width: 10px;
-  height: 10px;
-  flex: 0 0 auto;
   border-radius: 999px;
   box-sizing: border-box;
   border: 1.5px solid currentColor;
@@ -10809,30 +10830,19 @@ button.ghost:hover {
   animation: sessionTabReviewSpinner 720ms linear infinite;
 }
 
-.session-tab-item.is-review-ready .session-tab-review-state {
-  border-color: rgba(82, 255, 148, 0.24);
-  background:
-    linear-gradient(180deg, rgba(245, 255, 249, 0.18), rgba(210, 255, 228, 0.08)),
-    rgba(82, 255, 148, 0.12);
+.session-tab-review-icon.is-planning,
+.session-tab-review-icon.is-applying {
+  color: rgba(151, 222, 255, 0.98);
+}
+
+.session-tab-review-icon.is-ready {
   color: rgba(221, 255, 235, 0.96);
+  filter: drop-shadow(0 0 6px rgba(82, 255, 148, 0.28));
 }
 
-.session-tab-item.is-review-planning .session-tab-review-state,
-.session-tab-item.is-review-applying .session-tab-review-state {
-  border-color: rgba(88, 201, 255, 0.32);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 0 0 1px rgba(88, 201, 255, 0.08),
-    0 0 14px rgba(88, 201, 255, 0.10);
-  animation: sessionTabReviewPulse 1.6s ease-in-out infinite;
-}
-
-.session-tab-item.is-review-failed .session-tab-review-state {
-  border-color: rgba(255, 148, 148, 0.24);
-  background:
-    linear-gradient(180deg, rgba(255, 247, 247, 0.18), rgba(255, 226, 226, 0.08)),
-    rgba(255, 120, 120, 0.10);
+.session-tab-review-icon.is-failed {
   color: rgba(255, 228, 228, 0.96);
+  filter: drop-shadow(0 0 6px rgba(255, 120, 120, 0.24));
 }
 
 .session-tab-busy-indicator {
@@ -12124,6 +12134,41 @@ body.juggernaut-shell .brand-strip .session-tab-item.is-active {
     0 4px 12px rgba(58, 84, 120, 0.08);
 }
 
+body.juggernaut-shell .brand-strip .session-tab-item.is-review-applying {
+  background:
+    linear-gradient(180deg, rgba(251, 253, 255, 0.98), rgba(237, 245, 255, 0.96)),
+    rgba(231, 242, 255, 0.90);
+  border-color: rgba(93, 157, 255, 0.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 -1px 0 rgba(68, 112, 182, 0.06),
+    0 1px 0 rgba(255, 255, 255, 0.62),
+    0 4px 10px rgba(84, 140, 235, 0.07);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-item.is-review-applying:hover {
+  background:
+    linear-gradient(180deg, rgba(253, 254, 255, 0.99), rgba(241, 247, 255, 0.98)),
+    rgba(236, 245, 255, 0.93);
+  border-color: rgba(93, 157, 255, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1px 0 rgba(68, 112, 182, 0.07),
+    0 2px 8px rgba(84, 140, 235, 0.08);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-item.is-review-applying.is-active {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.995), rgba(238, 246, 255, 0.99)),
+    rgba(235, 244, 255, 0.97);
+  border-color: rgba(93, 157, 255, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1px 0 rgba(68, 112, 182, 0.08),
+    0 0 0 1px rgba(255, 255, 255, 0.68),
+    0 4px 12px rgba(84, 140, 235, 0.10);
+}
+
 body.juggernaut-shell .brand-strip .session-tab-item.is-active::after {
   content: "";
   position: absolute;
@@ -12219,9 +12264,17 @@ body.juggernaut-shell .brand-strip .session-tab-title {
   color: rgba(53, 63, 79, 0.94);
 }
 
+body.juggernaut-shell .brand-strip .session-tab-item.is-review-applying .session-tab-title {
+  color: rgba(32, 70, 128, 0.96);
+}
+
 body.juggernaut-shell .brand-strip .session-tab-item.is-active .session-tab-title {
   color: rgba(21, 31, 48, 0.99);
   font-weight: 600;
+}
+
+body.juggernaut-shell .brand-strip .session-tab-item.is-review-applying.is-active .session-tab-title {
+  color: rgba(24, 58, 113, 0.98);
 }
 
 body.juggernaut-shell .brand-strip .session-tab-item.is-active .session-tab-fork-indicator {
@@ -12237,37 +12290,26 @@ body.juggernaut-shell .brand-strip .session-tab-flags {
   margin-left: 10px;
 }
 
-body.juggernaut-shell .brand-strip .session-tab-review-state {
-  min-height: 16px;
-  padding: 0 6px;
-  border-color: rgba(93, 157, 255, 0.18);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(238, 246, 252, 0.92)),
-    rgba(227, 242, 255, 0.86);
-  color: rgba(56, 88, 133, 0.9);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.96),
-    0 1px 0 rgba(255, 255, 255, 0.34);
+body.juggernaut-shell .brand-strip .session-tab-review-icon {
+  width: 11px;
+  height: 11px;
+  color: rgba(74, 125, 221, 0.88);
 }
 
 body.juggernaut-shell .brand-strip .session-tab-review-spinner {
-  width: 9px;
-  height: 9px;
+  border-width: 1.4px;
 }
 
-body.juggernaut-shell .brand-strip .session-tab-item.is-review-ready .session-tab-review-state {
-  border-color: rgba(93, 177, 118, 0.20);
-  background:
-    linear-gradient(180deg, rgba(250, 255, 251, 0.96), rgba(237, 248, 240, 0.96)),
-    rgba(230, 248, 235, 0.90);
+body.juggernaut-shell .brand-strip .session-tab-review-icon.is-planning,
+body.juggernaut-shell .brand-strip .session-tab-review-icon.is-applying {
+  color: rgba(74, 125, 221, 0.92);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-review-icon.is-ready {
   color: rgba(45, 108, 67, 0.9);
 }
 
-body.juggernaut-shell .brand-strip .session-tab-item.is-review-failed .session-tab-review-state {
-  border-color: rgba(211, 118, 118, 0.18);
-  background:
-    linear-gradient(180deg, rgba(255, 251, 251, 0.96), rgba(250, 241, 241, 0.96)),
-    rgba(252, 236, 236, 0.90);
+body.juggernaut-shell .brand-strip .session-tab-review-icon.is-failed {
   color: rgba(140, 68, 68, 0.9);
 }
 
