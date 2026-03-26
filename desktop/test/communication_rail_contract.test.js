@@ -33,8 +33,11 @@ test("communication rail markup exposes bottom rail tools and proposal tray scaf
 
 test("communication rail css anchors a partially submerged pouch rail at the bottom and keeps the proposal tray floating", () => {
   assert.match(css, /\.communication-shell\s*\{/);
-  assert.match(css, /\.communication-shell\s*\{[\s\S]*bottom:\s*-56px/);
-  assert.match(css, /\.communication-shell\s*\{[\s\S]*width:\s*min\(620px,\s*calc\(100vw - 48px\)\)/);
+  assert.match(
+    css,
+    /\.communication-shell\s*\{[\s\S]*bottom:\s*calc\(var\(--jg-system-strip-bottom\)\s*\+\s*var\(--jg-system-strip-height\)\s*\+\s*var\(--jg-system-strip-gap\)\)/
+  );
+  assert.match(css, /\.communication-shell\s*\{[\s\S]*width:\s*var\(--jg-communication-shell-width\)/);
   assert.match(css, /\.communication-rail\s*\{/);
   assert.match(css, /\.communication-rail\s*\{[\s\S]*height:\s*214px/);
   assert.match(css, /\.communication-rail\s*\{[\s\S]*align-items:\s*flex-start/);
@@ -44,8 +47,26 @@ test("communication rail css anchors a partially submerged pouch rail at the bot
   assert.match(css, /\.communication-rail::after\s*\{[\s\S]*clip-path:\s*polygon\(/);
   assert.match(css, /\.communication-tool\s*\{[\s\S]*height:\s*188px/);
   assert.match(css, /\.communication-tool\s*\{[\s\S]*min-height:\s*188px/);
-  assert.match(css, /\.communication-tool svg\s*\{[\s\S]*width:\s*60px[\s\S]*height:\s*352px/);
+  assert.match(css, /\.communication-tool svg\s*\{[\s\S]*width:\s*56px[\s\S]*height:\s*336px/);
+  assert.match(
+    css,
+    /\.communication-tool svg\s*\{[\s\S]*drop-shadow\(0 0 16px var\(--communication-tool-accent\)\)[\s\S]*drop-shadow\(0 2px 0 rgba\(255,\s*255,\s*255,\s*0\.24\)\)/
+  );
+  assert.doesNotMatch(
+    css,
+    /\.communication-tool svg\s*\{[\s\S]*drop-shadow\(0 14px 18px rgba\(18,\s*31,\s*46,\s*0\.18\)\)/
+  );
+  assert.doesNotMatch(
+    css,
+    /\.communication-tool:hover svg\s*\{[\s\S]*drop-shadow\(0 24px 28px rgba\(18,\s*31,\s*46,\s*0\.18\)\)/
+  );
+  assert.doesNotMatch(
+    css,
+    /\.communication-tool\.is-active svg\s*\{[\s\S]*drop-shadow\(0 26px 30px rgba\(18,\s*31,\s*46,\s*0\.18\)\)/
+  );
   assert.match(css, /\.communication-tool-label\s*\{[\s\S]*position:\s*absolute[\s\S]*bottom:\s*70px/);
+  assert.match(css, /\.communication-tool-label\s*\{[\s\S]*box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.76\);/);
+  assert.doesNotMatch(css, /\.communication-tool-label\s*\{[\s\S]*0 10px 22px rgba\(18,\s*31,\s*46,\s*0\.1\)/);
   assert.doesNotMatch(css, /\.communication-tool\.communication-tool-make-space/);
   assert.match(css, /\.communication-proposal-tray\s*\{/);
   assert.match(css, /\.communication-proposal-slot\.is-skeleton::before\s*\{/);

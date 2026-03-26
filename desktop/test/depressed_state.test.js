@@ -100,7 +100,7 @@ test("Juggernaut shell rail selected hover keeps a light-shell pressed treatment
 test("Local-only buttons use the original neutral fills with black icon and label treatment", () => {
   assert.match(
     css,
-    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(252,\s*253,\s*254,\s*0\.99\),\s*rgba\(241,\s*244,\s*248,\s*0\.98\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*0 8px 16px rgba\(17,\s*24,\s*32,\s*0\.08\);/
+    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(252,\s*253,\s*254,\s*0\.99\),\s*rgba\(241,\s*244,\s*248,\s*0\.98\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.98\);/
   );
   assert.match(
     css,
@@ -108,7 +108,7 @@ test("Local-only buttons use the original neutral fills with black icon and labe
   );
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(255,\s*255,\s*255,\s*0\.98\),\s*rgba\(250,\s*251,\s*253,\s*0\.88\)\s*44%\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*0 12px 22px rgba\(30,\s*35,\s*44,\s*0\.08\);/
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(255,\s*255,\s*255,\s*0\.98\),\s*rgba\(250,\s*251,\s*253,\s*0\.88\)\s*44%\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*1\),[\s\S]*inset 0 -10px 18px rgba\(220,\s*225,\s*232,\s*0\.22\);/
   );
   assert.match(
     css,
