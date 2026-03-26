@@ -11082,6 +11082,13 @@ button.ghost:hover {
   white-space: nowrap;
 }
 
+.session-tab-history-action {
+  width: 34px;
+  min-width: 34px;
+  gap: 0;
+  padding: 0;
+}
+
 .session-tab-strip-action .action-provenance-model-dot {
   top: 5px;
   right: 5px;
@@ -11218,6 +11225,15 @@ button.ghost:hover {
 
 .session-tab-action-menu-toggle {
   position: relative;
+  min-width: 52px;
+  gap: 4px;
+  padding: 0 10px;
+}
+
+body.juggernaut-shell .brand-strip .session-tab-action-menu-toggle {
+  min-width: 52px;
+  gap: 4px;
+  padding: 0 10px;
 }
 
 .session-tab-action-menu-caret {
@@ -12391,6 +12407,13 @@ body.juggernaut-shell .brand-strip .session-tab-runtime-action {
   flex: 0 0 auto;
   gap: 7px;
   padding: 0 14px;
+}
+
+body.juggernaut-shell .brand-strip .session-tab-history-action {
+  width: 34px;
+  min-width: 34px;
+  gap: 0;
+  padding: 0;
 }
 
 body.juggernaut-shell .brand-strip .session-tab-history-action span,

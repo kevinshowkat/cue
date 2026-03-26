@@ -10195,7 +10195,6 @@ function renderJuggernautShellChrome() {
       "is-selection-empty",
       disabledReason === "selection_required" || (key === "select" && disabledReason === "unavailable_in_current_mode")
     );
-    btn.classList.toggle("is-empty-canvas-cue", key === "upload" && emptyCanvas);
   }
 }
 

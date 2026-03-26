@@ -30,11 +30,11 @@ test("Runtime minimalism keeps the empty-state upload tool from pulsing", () => 
   assert.doesNotMatch(fnMatch[0], /classList\.toggle\("pulse"/);
 });
 
-test("Runtime minimalism gives the empty-state upload tool a gold shimmer cue without affecting populated canvases", () => {
+test("Runtime minimalism keeps the upload tool on standard local-button styling even on an empty canvas", () => {
   assert.match(app, /const emptyCanvas = state\.images\.length === 0;/);
-  assert.match(app, /btn\.classList\.toggle\("is-empty-canvas-cue", key === "upload" && emptyCanvas\);/);
-  assert.match(visualSystemCss, /@keyframes juggernautUploadGoldShimmer/);
-  assert.match(
+  assert.doesNotMatch(app, /btn\.classList\.toggle\("is-empty-canvas-cue", key === "upload" && emptyCanvas\);/);
+  assert.doesNotMatch(visualSystemCss, /@keyframes juggernautUploadGoldShimmer/);
+  assert.doesNotMatch(
     visualSystemCss,
     /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-empty-canvas-cue\[data-tool-id="upload"\]\s*\{/
   );

@@ -39,8 +39,9 @@ test("Session tab strip seeds a visible launch tab and exposes History plus the 
   );
   assert.match(
     html,
-    /id=\"session-tab-history\"[^>]*class=\"session-tab-strip-action session-tab-runtime-action session-tab-history-action\"[^>]*aria-label=\"History\"[^>]*aria-controls=\"timeline-dock\"[^>]*aria-expanded=\"true\"[^>]*aria-pressed=\"true\"[^>]*title=\"History\"[\s\S]*<svg[\s\S]*<\/svg>[\s\S]*<span>History<\/span>/
+    /id=\"session-tab-history\"[^>]*class=\"session-tab-strip-action session-tab-runtime-action session-tab-history-action\"[^>]*aria-label=\"History\"[^>]*aria-controls=\"timeline-dock\"[^>]*aria-expanded=\"true\"[^>]*aria-pressed=\"true\"[^>]*title=\"History\"[\s\S]*<svg[\s\S]*<\/svg>/
   );
+  assert.doesNotMatch(html, /id=\"session-tab-history\"[\s\S]*<span>History<\/span>/);
   assert.match(
     html,
     /id=\"session-tab-design-review\"[^>]*class=\"session-tab-strip-action session-tab-strip-review\"[^>]*aria-label=\"Design Review\"[^>]*title=\"Design Review\"[\s\S]*<svg[\s\S]*<\/svg>[\s\S]*<span>Design Review<\/span>/
@@ -51,8 +52,9 @@ test("Session tab strip seeds a visible launch tab and exposes History plus the 
   );
   assert.match(
     html,
-    /id=\"juggernaut-export-psd\"[^>]*class=\"session-tab-strip-action session-tab-runtime-action session-tab-action-menu-toggle\"[^>]*title=\"Export\"[\s\S]*<span>Export<\/span>/
+    /id=\"juggernaut-export-psd\"[^>]*class=\"session-tab-strip-action session-tab-runtime-action session-tab-action-menu-toggle\"[^>]*title=\"Export\"[\s\S]*class=\"session-tab-action-menu-caret\"/
   );
+  assert.doesNotMatch(html, /id=\"juggernaut-export-psd\"[\s\S]*<span>Export<\/span>/);
   assert.match(
     html,
     /id=\"juggernaut-export-menu\"[^>]*role=\"menu\"[^>]*aria-label=\"Export formats\"[\s\S]*id=\"juggernaut-export-format-psd\"[\s\S]*<span class=\"session-tab-action-menu-item-label\">PSD<\/span>[\s\S]*id=\"juggernaut-export-format-png\"[\s\S]*<span class=\"session-tab-action-menu-item-label\">PNG<\/span>/
@@ -119,10 +121,12 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-strip-fork\s*\{/);
   assert.match(css, /\.session-tab-strip-review\s*\{/);
   assert.match(css, /\.session-tab-history-action,\s*\.session-tab-runtime-action\s*\{/);
+  assert.match(css, /\.session-tab-history-action\s*\{[\s\S]*width:\s*34px[\s\S]*padding:\s*0;/);
   assert.match(css, /\.session-tab-history-action\[data-provenance="local_only"\]\[aria-pressed="true"\],/);
   assert.match(css, /\.session-tab-runtime-action\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*white-space:\s*nowrap/s);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-history-action,\s*body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\s*\{/);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-history-action\s*\{[\s\S]*width:\s*34px[\s\S]*padding:\s*0;/);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*padding:\s*0 14px/s);
   assert.match(css, /\.session-tab-runtime-action\.is-ready\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\[data-provenance="local_only"\],\s*\.session-tab-runtime-action\[data-provenance="local_only"\]\.is-ready\s*\{/);
@@ -134,6 +138,8 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-strip-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(154,\s*132,\s*126,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*transform:\s*translateY\(1px\);/);
   assert.match(css, /\.session-tab-runtime-action\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(224,\s*214,\s*211,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);[\s\S]*opacity:\s*1;/);
   assert.match(css, /\.session-tab-runtime-action\.is-pending-hook\s*\{/);
+  assert.match(css, /\.session-tab-action-menu-toggle\s*\{[\s\S]*min-width:\s*52px[\s\S]*gap:\s*4px[\s\S]*padding:\s*0 10px;/);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-action-menu-toggle\s*\{[\s\S]*min-width:\s*52px[\s\S]*gap:\s*4px[\s\S]*padding:\s*0 10px;/);
   assert.match(css, /\.session-tab-action-menu-panel\s*\{/);
   assert.match(css, /\.session-tab-action-menu-item\s*\{/);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-fork-indicator\s*\{[\s\S]*background:/s);
