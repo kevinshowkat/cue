@@ -13,3 +13,9 @@ test("timeline card containers stay flat without shadows in base and shell theme
   assert.match(css, /body\.juggernaut-shell \.timeline-card\s*\{[\s\S]*box-shadow:\s*none;/);
   assert.match(css, /body\.juggernaut-shell \.timeline-card\.selected\s*\{[\s\S]*box-shadow:\s*none;/);
 });
+
+test("timeline shell chrome stays flat without shadows in the shell theme", () => {
+  assert.match(css, /body\.juggernaut-shell \.timeline-shell\s*\{[\s\S]*box-shadow:\s*none;/);
+  assert.match(css, /body\.juggernaut-shell \.timeline-arrow\s*\{[\s\S]*box-shadow:\s*none;/);
+  assert.match(css, /body\.juggernaut-shell \.timeline-card-seq\s*\{[\s\S]*box-shadow:\s*none;/);
+});
