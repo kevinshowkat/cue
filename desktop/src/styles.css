@@ -13077,6 +13077,31 @@ body.juggernaut-shell .brand-strip .session-tab-strip-fork:active {
   --jg-pack-danger: rgba(181, 112, 101, 0.88);
   --jg-pack-danger-soft: rgba(181, 112, 101, 0.14);
   --jg-pack-shadow: rgba(27, 38, 51, 0.12);
+  --jg-pack-new-action-ink: rgba(41, 56, 74, 0.94);
+  --jg-pack-new-action-fill: rgba(233, 239, 246, 0.92);
+  --jg-pack-new-action-fill-hover: rgba(240, 245, 250, 0.96);
+  --jg-pack-new-action-fill-active: rgba(219, 228, 238, 0.94);
+  --jg-pack-new-action-border: rgba(95, 125, 161, 0.24);
+  --jg-pack-new-action-border-active: rgba(79, 111, 151, 0.42);
+  --jg-pack-new-action-glow: rgba(95, 125, 161, 0.18);
+  --jg-pack-fork-action-ink: rgba(61, 74, 91, 0.94);
+  --jg-pack-fork-action-fill: rgba(231, 237, 244, 0.92);
+  --jg-pack-fork-action-fill-hover: rgba(238, 243, 249, 0.96);
+  --jg-pack-fork-action-fill-active: rgba(219, 227, 236, 0.94);
+  --jg-pack-fork-action-border: rgba(142, 160, 183, 0.22);
+  --jg-pack-fork-action-border-active: rgba(142, 160, 183, 0.4);
+  --jg-pack-fork-action-glow: rgba(142, 160, 183, 0.18);
+  --jg-pack-model-action-ink: rgba(0, 0, 0, 0.92);
+  --jg-pack-model-action-ink-muted: rgba(0, 0, 0, 0.5);
+  --jg-pack-model-action-fill: rgba(204, 185, 180, 0.98);
+  --jg-pack-model-action-fill-hover: rgba(211, 194, 189, 0.98);
+  --jg-pack-model-action-fill-active: rgba(154, 132, 126, 0.98);
+  --jg-pack-model-action-fill-disabled: rgba(224, 214, 211, 0.98);
+  --jg-pack-model-action-border: rgba(161, 141, 136, 0.34);
+  --jg-pack-model-action-border-hover: rgba(171, 151, 146, 0.4);
+  --jg-pack-model-action-border-active: rgba(123, 101, 96, 0.76);
+  --jg-pack-model-action-border-disabled: rgba(187, 171, 167, 0.62);
+  --jg-pack-model-action-active-shadow: rgba(72, 56, 52, 0.54);
 }
 
 :root[data-rail-icon-pack="oscillo_ink"] {
@@ -13103,6 +13128,29 @@ body.juggernaut-shell .brand-strip .session-tab-strip-fork:active {
   --jg-pack-danger: rgba(176, 86, 74, 0.92);
   --jg-pack-danger-soft: rgba(176, 86, 74, 0.16);
   --jg-pack-shadow: rgba(70, 48, 29, 0.16);
+  --jg-pack-new-action-ink: rgba(77, 44, 31, 0.94);
+  --jg-pack-new-action-fill: rgba(236, 216, 183, 0.96);
+  --jg-pack-new-action-fill-hover: rgba(243, 225, 194, 0.98);
+  --jg-pack-new-action-fill-active: rgba(213, 184, 144, 0.98);
+  --jg-pack-new-action-border: rgba(157, 78, 56, 0.28);
+  --jg-pack-new-action-border-active: rgba(179, 92, 64, 0.44);
+  --jg-pack-new-action-glow: rgba(157, 78, 56, 0.18);
+  --jg-pack-fork-action-ink: rgba(82, 59, 38, 0.94);
+  --jg-pack-fork-action-fill: rgba(229, 208, 173, 0.96);
+  --jg-pack-fork-action-fill-hover: rgba(236, 218, 187, 0.98);
+  --jg-pack-fork-action-fill-active: rgba(205, 177, 139, 0.98);
+  --jg-pack-fork-action-border: rgba(116, 87, 58, 0.26);
+  --jg-pack-fork-action-border-active: rgba(116, 87, 58, 0.42);
+  --jg-pack-fork-action-glow: rgba(116, 87, 58, 0.18);
+  --jg-pack-model-action-fill: rgba(207, 176, 153, 0.98);
+  --jg-pack-model-action-fill-hover: rgba(215, 186, 163, 0.98);
+  --jg-pack-model-action-fill-active: rgba(154, 106, 83, 0.98);
+  --jg-pack-model-action-fill-disabled: rgba(225, 210, 196, 0.98);
+  --jg-pack-model-action-border: rgba(144, 97, 76, 0.38);
+  --jg-pack-model-action-border-hover: rgba(160, 110, 87, 0.44);
+  --jg-pack-model-action-border-active: rgba(108, 67, 52, 0.78);
+  --jg-pack-model-action-border-disabled: rgba(175, 147, 130, 0.62);
+  --jg-pack-model-action-active-shadow: rgba(78, 49, 39, 0.52);
 }
 
 :root[data-rail-icon-pack="industrial_mono"] {
@@ -13129,6 +13177,29 @@ body.juggernaut-shell .brand-strip .session-tab-strip-fork:active {
   --jg-pack-danger: rgba(181, 112, 101, 0.88);
   --jg-pack-danger-soft: rgba(181, 112, 101, 0.14);
   --jg-pack-shadow: rgba(30, 35, 44, 0.1);
+  --jg-pack-new-action-ink: rgba(54, 73, 92, 0.94);
+  --jg-pack-new-action-fill: rgba(225, 233, 241, 0.96);
+  --jg-pack-new-action-fill-hover: rgba(233, 240, 246, 0.98);
+  --jg-pack-new-action-fill-active: rgba(203, 216, 229, 0.98);
+  --jg-pack-new-action-border: rgba(111, 143, 169, 0.28);
+  --jg-pack-new-action-border-active: rgba(90, 125, 155, 0.42);
+  --jg-pack-new-action-glow: rgba(111, 143, 169, 0.14);
+  --jg-pack-fork-action-ink: rgba(71, 85, 103, 0.94);
+  --jg-pack-fork-action-fill: rgba(230, 236, 243, 0.96);
+  --jg-pack-fork-action-fill-hover: rgba(238, 243, 248, 0.98);
+  --jg-pack-fork-action-fill-active: rgba(211, 221, 231, 0.98);
+  --jg-pack-fork-action-border: rgba(142, 160, 183, 0.24);
+  --jg-pack-fork-action-border-active: rgba(142, 160, 183, 0.4);
+  --jg-pack-fork-action-glow: rgba(142, 160, 183, 0.14);
+  --jg-pack-model-action-fill: rgba(208, 218, 228, 0.98);
+  --jg-pack-model-action-fill-hover: rgba(216, 225, 234, 0.98);
+  --jg-pack-model-action-fill-active: rgba(164, 183, 202, 0.98);
+  --jg-pack-model-action-fill-disabled: rgba(228, 235, 242, 0.98);
+  --jg-pack-model-action-border: rgba(120, 143, 164, 0.34);
+  --jg-pack-model-action-border-hover: rgba(120, 143, 164, 0.42);
+  --jg-pack-model-action-border-active: rgba(83, 110, 135, 0.72);
+  --jg-pack-model-action-border-disabled: rgba(181, 193, 206, 0.62);
+  --jg-pack-model-action-active-shadow: rgba(92, 113, 132, 0.34);
 }
 
 :root[data-rail-icon-pack="painterly_folk"] {
@@ -13156,6 +13227,29 @@ body.juggernaut-shell .brand-strip .session-tab-strip-fork:active {
   --jg-pack-danger: rgba(171, 73, 73, 0.9);
   --jg-pack-danger-soft: rgba(171, 73, 73, 0.14);
   --jg-pack-shadow: rgba(78, 50, 28, 0.14);
+  --jg-pack-new-action-ink: rgba(102, 52, 35, 0.94);
+  --jg-pack-new-action-fill: rgba(239, 208, 188, 0.96);
+  --jg-pack-new-action-fill-hover: rgba(245, 217, 198, 0.98);
+  --jg-pack-new-action-fill-active: rgba(218, 177, 149, 0.98);
+  --jg-pack-new-action-border: rgba(192, 91, 61, 0.3);
+  --jg-pack-new-action-border-active: rgba(202, 99, 55, 0.46);
+  --jg-pack-new-action-glow: rgba(192, 91, 61, 0.18);
+  --jg-pack-fork-action-ink: rgba(34, 88, 76, 0.94);
+  --jg-pack-fork-action-fill: rgba(215, 232, 223, 0.96);
+  --jg-pack-fork-action-fill-hover: rgba(223, 238, 229, 0.98);
+  --jg-pack-fork-action-fill-active: rgba(182, 212, 202, 0.98);
+  --jg-pack-fork-action-border: rgba(47, 122, 106, 0.28);
+  --jg-pack-fork-action-border-active: rgba(47, 122, 106, 0.44);
+  --jg-pack-fork-action-glow: rgba(47, 122, 106, 0.16);
+  --jg-pack-model-action-fill: rgba(223, 188, 171, 0.98);
+  --jg-pack-model-action-fill-hover: rgba(231, 198, 180, 0.98);
+  --jg-pack-model-action-fill-active: rgba(183, 124, 100, 0.98);
+  --jg-pack-model-action-fill-disabled: rgba(235, 219, 207, 0.98);
+  --jg-pack-model-action-border: rgba(155, 94, 75, 0.36);
+  --jg-pack-model-action-border-hover: rgba(171, 105, 82, 0.42);
+  --jg-pack-model-action-border-active: rgba(116, 70, 57, 0.76);
+  --jg-pack-model-action-border-disabled: rgba(190, 161, 146, 0.62);
+  --jg-pack-model-action-active-shadow: rgba(93, 55, 44, 0.46);
 }
 
 :root[data-rail-icon-pack="kinetic_marker"] {
@@ -13183,6 +13277,29 @@ body.juggernaut-shell .brand-strip .session-tab-strip-fork:active {
   --jg-pack-danger: rgba(184, 55, 45, 0.9);
   --jg-pack-danger-soft: rgba(184, 55, 45, 0.16);
   --jg-pack-shadow: rgba(34, 24, 22, 0.16);
+  --jg-pack-new-action-ink: rgba(112, 35, 31, 0.94);
+  --jg-pack-new-action-fill: rgba(239, 207, 198, 0.96);
+  --jg-pack-new-action-fill-hover: rgba(245, 216, 208, 0.98);
+  --jg-pack-new-action-fill-active: rgba(217, 164, 152, 0.98);
+  --jg-pack-new-action-border: rgba(198, 54, 46, 0.3);
+  --jg-pack-new-action-border-active: rgba(214, 59, 48, 0.46);
+  --jg-pack-new-action-glow: rgba(198, 54, 46, 0.18);
+  --jg-pack-fork-action-ink: rgba(103, 77, 29, 0.94);
+  --jg-pack-fork-action-fill: rgba(239, 226, 192, 0.96);
+  --jg-pack-fork-action-fill-hover: rgba(244, 232, 203, 0.98);
+  --jg-pack-fork-action-fill-active: rgba(219, 196, 146, 0.98);
+  --jg-pack-fork-action-border: rgba(185, 138, 61, 0.28);
+  --jg-pack-fork-action-border-active: rgba(185, 138, 61, 0.44);
+  --jg-pack-fork-action-glow: rgba(185, 138, 61, 0.18);
+  --jg-pack-model-action-fill: rgba(225, 187, 176, 0.98);
+  --jg-pack-model-action-fill-hover: rgba(232, 197, 186, 0.98);
+  --jg-pack-model-action-fill-active: rgba(171, 84, 73, 0.98);
+  --jg-pack-model-action-fill-disabled: rgba(236, 220, 214, 0.98);
+  --jg-pack-model-action-border: rgba(154, 76, 67, 0.36);
+  --jg-pack-model-action-border-hover: rgba(171, 83, 73, 0.42);
+  --jg-pack-model-action-border-active: rgba(118, 49, 43, 0.76);
+  --jg-pack-model-action-border-disabled: rgba(192, 162, 154, 0.62);
+  --jg-pack-model-action-active-shadow: rgba(87, 34, 30, 0.48);
 }
 
 body {
@@ -13587,6 +13704,8 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenan
 
 body.juggernaut-shell .brand-strip .session-tab-strip-new,
 body.juggernaut-shell .brand-strip .session-tab-strip-fork {
+  border-top-color: rgba(255, 255, 255, 0.94);
+  border-left-color: rgba(255, 255, 255, 0.82);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.82), transparent 48%),
     radial-gradient(90px 64px at 30% 18%, var(--jg-pack-accent-soft), transparent 70%),
@@ -13594,6 +13713,38 @@ body.juggernaut-shell .brand-strip .session-tab-strip-fork {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.92),
     inset 0 -10px 18px var(--jg-pack-secondary-soft);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-strip-new {
+  border-color: var(--jg-pack-new-action-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), transparent 48%),
+    radial-gradient(90px 64px at 30% 18%, var(--jg-pack-accent-soft), transparent 70%),
+    var(--jg-pack-new-action-fill);
+  color: var(--jg-pack-new-action-ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    inset 0 -10px 18px var(--jg-pack-new-action-glow);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-strip-new .session-tab-action-icon .tool-icon {
+  color: var(--jg-pack-new-action-ink);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-strip-fork {
+  border-color: var(--jg-pack-fork-action-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), transparent 48%),
+    radial-gradient(90px 64px at 70% 24%, var(--jg-pack-secondary-soft), transparent 72%),
+    var(--jg-pack-fork-action-fill);
+  color: var(--jg-pack-fork-action-ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    inset 0 -10px 18px var(--jg-pack-fork-action-glow);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-strip-fork .session-tab-action-icon .tool-icon {
+  color: var(--jg-pack-fork-action-ink);
 }
 
 body.juggernaut-shell .brand-strip .session-tab-strip-new:hover,
@@ -13609,6 +13760,32 @@ body.juggernaut-shell .brand-strip .session-tab-strip-fork:focus-visible {
     inset 0 -10px 18px var(--jg-pack-secondary-soft);
 }
 
+body.juggernaut-shell .brand-strip .session-tab-strip-new:hover,
+body.juggernaut-shell .brand-strip .session-tab-strip-new:focus-visible {
+  border-color: var(--jg-pack-new-action-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), transparent 48%),
+    radial-gradient(94px 68px at 30% 18%, var(--jg-pack-accent-soft), transparent 70%),
+    var(--jg-pack-new-action-fill-hover);
+  color: var(--jg-pack-new-action-ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -10px 18px var(--jg-pack-new-action-glow);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-strip-fork:hover,
+body.juggernaut-shell .brand-strip .session-tab-strip-fork:focus-visible {
+  border-color: var(--jg-pack-fork-action-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), transparent 48%),
+    radial-gradient(94px 68px at 70% 24%, var(--jg-pack-secondary-soft), transparent 72%),
+    var(--jg-pack-fork-action-fill-hover);
+  color: var(--jg-pack-fork-action-ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -10px 18px var(--jg-pack-fork-action-glow);
+}
+
 body.juggernaut-shell .brand-strip .session-tab-strip-new:active,
 body.juggernaut-shell .brand-strip .session-tab-strip-fork:active {
   border-color: var(--jg-pack-border-strong);
@@ -13619,6 +13796,30 @@ body.juggernaut-shell .brand-strip .session-tab-strip-fork:active {
   box-shadow:
     inset 0 2px 6px var(--jg-pack-secondary-soft),
     inset 0 1px 0 rgba(255, 255, 255, 0.84);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-strip-new:active {
+  border-color: var(--jg-pack-new-action-border-active);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.7), transparent 48%),
+    radial-gradient(96px 70px at 30% 16%, var(--jg-pack-accent-soft), transparent 72%),
+    var(--jg-pack-new-action-fill-active);
+  color: var(--jg-pack-new-action-ink);
+  box-shadow:
+    inset 0 2px 6px var(--jg-pack-new-action-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+body.juggernaut-shell .brand-strip .session-tab-strip-fork:active {
+  border-color: var(--jg-pack-fork-action-border-active);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.7), transparent 48%),
+    radial-gradient(96px 70px at 70% 22%, var(--jg-pack-secondary-soft), transparent 74%),
+    var(--jg-pack-fork-action-fill-active);
+  color: var(--jg-pack-fork-action-ink);
+  box-shadow:
+    inset 0 2px 6px var(--jg-pack-fork-action-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 body.juggernaut-shell .tool[data-provenance="local_only"]:not(.juggernaut-tool),
@@ -13760,11 +13961,11 @@ body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-proven
 
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance {
-  border-color: rgba(161, 141, 136, 0.34);
-  border-top-color: rgba(247, 242, 240, 0.92);
-  border-left-color: rgba(236, 227, 224, 0.82);
-  background: rgba(204, 185, 180, 0.98);
-  color: rgba(0, 0, 0, 0.92);
+  border-color: var(--jg-pack-model-action-border);
+  border-top-color: rgba(255, 255, 255, 0.92);
+  border-left-color: rgba(255, 255, 255, 0.82);
+  background: var(--jg-pack-model-action-fill);
+  color: var(--jg-pack-model-action-ink);
   box-shadow: none;
 }
 
@@ -13772,36 +13973,36 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenan
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:focus-visible,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:hover,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:focus-visible {
-  border-color: rgba(171, 151, 146, 0.4);
-  border-top-color: rgba(249, 244, 242, 0.96);
-  border-left-color: rgba(239, 231, 228, 0.86);
-  background: rgba(204, 185, 180, 0.98);
-  color: rgba(0, 0, 0, 0.92);
+  border-color: var(--jg-pack-model-action-border-hover);
+  border-top-color: rgba(255, 255, 255, 0.96);
+  border-left-color: rgba(255, 255, 255, 0.86);
+  background: var(--jg-pack-model-action-fill-hover);
+  color: var(--jg-pack-model-action-ink);
   box-shadow: none;
 }
 
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:active,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:active,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance.is-active-request {
-  border-color: rgba(123, 101, 96, 0.76);
-  border-top-color: rgba(211, 199, 195, 0.48);
-  border-left-color: rgba(195, 181, 177, 0.38);
-  background: rgba(154, 132, 126, 0.98);
-  color: rgba(0, 0, 0, 0.92);
+  border-color: var(--jg-pack-model-action-border-active);
+  border-top-color: rgba(255, 255, 255, 0.46);
+  border-left-color: rgba(255, 255, 255, 0.36);
+  background: var(--jg-pack-model-action-fill-active);
+  color: var(--jg-pack-model-action-ink);
   transform: translateY(1px);
   box-shadow:
-    inset 0 4px 12px rgba(72, 56, 52, 0.54),
+    inset 0 4px 12px var(--jg-pack-model-action-active-shadow),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   filter: none;
 }
 
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:disabled,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled {
-  border-color: rgba(187, 171, 167, 0.62);
-  border-top-color: rgba(249, 245, 244, 0.62);
-  border-left-color: rgba(238, 230, 228, 0.54);
-  background: rgba(224, 214, 211, 0.98);
-  color: rgba(0, 0, 0, 0.5);
+  border-color: var(--jg-pack-model-action-border-disabled);
+  border-top-color: rgba(255, 255, 255, 0.62);
+  border-left-color: rgba(255, 255, 255, 0.54);
+  background: var(--jg-pack-model-action-fill-disabled);
+  color: var(--jg-pack-model-action-ink-muted);
   box-shadow: none;
   opacity: 1;
   filter: none;
@@ -13811,7 +14012,7 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenan
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance .session-tab-action-icon .tool-icon,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance span,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance .session-tab-action-icon .tool-icon {
-  color: rgba(0, 0, 0, 0.92);
+  color: var(--jg-pack-model-action-ink);
   text-shadow: none;
 }
 
@@ -13819,7 +14020,7 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenan
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:disabled .session-tab-action-icon .tool-icon,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled span,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled .session-tab-action-icon .tool-icon {
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--jg-pack-model-action-ink-muted);
   text-shadow: none;
   opacity: 1;
   filter: none;
