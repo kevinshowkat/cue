@@ -58,7 +58,7 @@ test("startup boot overlay points at the local Desktop MP4 and gates reveal unti
   assert.match(tauriConfig, /"center": true,/);
 });
 
-test("startup boot overlay has fullscreen video treatment and fade-out dismissal", () => {
+test("startup boot overlay keeps a restrained centered boot video and fade-out dismissal", () => {
   assert.match(css, /\.boot-video-overlay\s*\{/);
   assert.match(css, /position: fixed;/);
   assert.match(css, /z-index: 20000;/);
@@ -68,10 +68,11 @@ test("startup boot overlay has fullscreen video treatment and fade-out dismissal
   assert.match(css, /\.boot-video-overlay\.is-shell-visible\s*\{/);
   assert.match(css, /\.boot-video-overlay\.is-dismissed\s*\{/);
   assert.match(css, /\.boot-video-player\s*\{/);
-  assert.match(css, /width: auto;/);
+  assert.match(css, /width:\s*25%;/);
   assert.match(css, /height: auto;/);
-  assert.match(css, /max-width: 100vw;/);
-  assert.match(css, /max-height: 100vh;/);
+  assert.match(css, /max-width:\s*25%;/);
+  assert.match(css, /max-height:\s*25%;/);
+  assert.match(css, /object-fit:\s*contain;/);
   assert.match(css, /\.boot-video-overlay\.is-video-ready \.boot-video-player,\s*\.boot-video-player\.is-visible\s*\{/);
   assert.match(css, /\.boot-video-copy\s*\{/);
   assert.match(css, /\.boot-video-status-rail\s*\{/);
