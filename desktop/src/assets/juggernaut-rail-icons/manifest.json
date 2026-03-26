@@ -28,7 +28,7 @@
       "tool_id": "upload",
       "label": "Import image",
       "semantic_role": "ingest",
-      "notes": "Classic centered plus sign so adding/importing an image reads immediately without extra metaphor.",
+      "notes": "Upload arrow above a compact image frame so the rail reads as image import instead of generic add-tab creation.",
       "asset": "./upload.svg"
     },
     {

@@ -57,19 +57,27 @@ This surface is intended for:
 - fast workflow experiments without a separate external harness
 
 ### 1. Direct Execution
-Current direct execution affordances correspond to the seeded single-image jobs:
+Current visible direct execution affordances correspond to the exposed left-rail actions:
 - `Cut Out`
 - `Remove`
-- `New Background`
 - `Reframe`
 - `Variants`
+- `Remove People`
+
+The runtime also keeps hidden direct-execution affordances available for compatibility and non-rail callers:
+- `New Background`
+- `Polish`
+- `Relight`
 
 These are agent-facing affordances. Internally they resolve to stable `executionType` values such as:
 - `subject_isolation`
 - `targeted_remove`
+- `people_removal`
 - `background_replace`
 - `crop_or_outpaint`
 - `identity_preserving_variation`
+- `image_polish`
+- `image_relight`
 
 Agents should reason from what the affordance does, not from the internal type name.
 
