@@ -159,6 +159,9 @@ test("communication tray stays pinned below the titlebar button while its width 
     state,
     els: {
       canvasWrap: { clientWidth: 900, clientHeight: 600 },
+      brandStrip: {
+        getBoundingClientRect: () => ({ bottom: 46 }),
+      },
     },
     clamp,
     communicationTrayAnchorPlacement,
@@ -197,14 +200,14 @@ test("communication tray stays pinned below the titlebar button while its width 
   positionCommunicationProposalTrayElement(trayEl, anchor, { x: 780, y: -6 });
   assert.equal(trayEl.dataset.anchorPlacement, "below");
   assert.equal(trayEl.style.left, "668px");
-  assert.equal(trayEl.style.top, "24px");
-  assert.deepEqual(state.communication.proposalTray.anchorLockCss, { x: 668, y: 24 });
+  assert.equal(trayEl.style.top, "45px");
+  assert.deepEqual(state.communication.proposalTray.anchorLockCss, { x: 668, y: 45 });
 
   trayEl.offsetWidth = 160;
   positionCommunicationProposalTrayElement(trayEl, anchor, { x: 780, y: -6 });
 
   assert.equal(trayEl.style.left, "668px");
-  assert.equal(trayEl.style.top, "24px");
+  assert.equal(trayEl.style.top, "45px");
 });
 
 test("communication tray drops below the fixed timeline band instead of overlapping it", () => {
@@ -234,6 +237,9 @@ test("communication tray drops below the fixed timeline band instead of overlapp
     state,
     els: {
       canvasWrap: { clientWidth: 900, clientHeight: 600 },
+      brandStrip: {
+        getBoundingClientRect: () => ({ bottom: 46 }),
+      },
     },
     clamp,
     communicationTrayAnchorPlacement,

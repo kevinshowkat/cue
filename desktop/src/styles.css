@@ -8324,6 +8324,10 @@ button.ghost:hover {
   transform-origin: top left;
 }
 
+.communication-proposal-tray[data-anchor-kind="titlebar_button"] {
+  z-index: 980;
+}
+
 .communication-proposal-tray.is-dismissing {
   opacity: 0;
   pointer-events: none;
@@ -9857,7 +9861,7 @@ button.ghost:hover {
   top: calc(var(--brand-strip-h) + 8px);
   left: 50%;
   z-index: 960;
-  width: min(42vw, 760px);
+  width: clamp(272px, 24vw, 360px);
   transform: translateX(-50%);
   pointer-events: none;
 }

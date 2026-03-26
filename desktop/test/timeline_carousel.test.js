@@ -261,16 +261,16 @@ test("timeline detail text previews hovered target states and falls back to the 
   const timelineDetailText = instantiateFunction("timelineDetailText", {
     state,
     currentTimelineHeadNode: () => headNode,
-    timelineNodeSummary: (node) => `${node.action} · ${node.label}`,
+    timelineNodeSummary: (node) => `${node.action === "Import" ? "Imported" : "Marked"} ${node.label}`,
   });
 
-  assert.equal(timelineDetailText(headNode), "Import · A.jpg");
+  assert.equal(timelineDetailText(headNode), "Imported A.jpg");
 
   state.timelinePreviewNodeId = "tl-2";
-  assert.equal(timelineDetailText(headNode), "Change to · Mark · A.jpg");
+  assert.equal(timelineDetailText(headNode), "Preview change: Marked A.jpg");
 
   state.timelinePreviewNodeId = "tl-1";
-  assert.equal(timelineDetailText(headNode), "Current state · Import · A.jpg");
+  assert.equal(timelineDetailText(headNode), "Current state: Imported A.jpg");
 });
 
 test("timeline detail text is empty when no head node exists", () => {
@@ -284,6 +284,21 @@ test("timeline detail text is empty when no head node exists", () => {
   });
 
   assert.equal(timelineDetailText(null), "");
+});
+
+test("timeline node summary renders import history as readable prose", () => {
+  const timelineNodeSummary = instantiateFunction("timelineNodeSummary", {
+    timelineNodeLabel: (node) => String(node?.label || node?.action || "State"),
+  });
+
+  assert.equal(
+    timelineNodeSummary({
+      action: "Import",
+      label: "spongebob.webp",
+      imageIds: ["img-1"],
+    }),
+    "Imported 1 image from spongebob.webp"
+  );
 });
 
 test("rebuildTimelineStrip preserves existing cards when a new timeline node appends", () => {

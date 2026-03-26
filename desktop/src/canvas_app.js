@@ -205,6 +205,7 @@ const DESIGN_REVIEW_BOOTSTRAP_TRAY_ID = "design-review-tray";
 const DESIGN_REVIEW_APPLY_SOURCE = "design_review_apply";
 const DESIGN_REVIEW_TRAY_DISMISS_MS = 180;
 const DESIGN_REVIEW_TIMELINE_CLEARANCE_PX = 14;
+const DESIGN_REVIEW_TITLEBAR_DOCK_GAP_PX = 4;
 const DESIGN_REVIEW_APPLY_SHIMMER_LOOP_MS = 1350;
 const EDIT_PROPOSALS_LABEL = "Design Review";
 const COMMUNICATION_MARK_STROKE = "rgba(220, 28, 28, 0.96)";
@@ -21935,17 +21936,17 @@ function positionCommunicationProposalTrayElement(trayEl, anchor = null, anchorC
       : Number(nextAnchorCss.y) || 0;
     if (communicationTrayAnchorPinnedToTitlebar(nextAnchor)) {
       const anchorLockSignature = communicationProposalTrayAnchorLockSignature(nextAnchor, wrap);
-      const lockedPosition =
+      const titlebarDockGap =
+        typeof DESIGN_REVIEW_TITLEBAR_DOCK_GAP_PX === "number" ? DESIGN_REVIEW_TITLEBAR_DOCK_GAP_PX : 4;
+      const titlebarRect = els?.brandStrip?.getBoundingClientRect?.();
+      const titlebarBottom = titlebarRect ? Number(titlebarRect.bottom) || 0 : 0;
+      const lockedX =
         trayState?.anchorLockCss && trayState.anchorLockSignature === anchorLockSignature
-          ? trayState.anchorLockCss
-          : null;
-      preferredX = clamp(
-        Number(lockedPosition?.x) || clamp(anchorLeft, 12, maxX),
-        12,
-        maxX
-      );
+          ? Number(trayState.anchorLockCss.x)
+          : NaN;
+      preferredX = clamp(Number.isFinite(lockedX) ? lockedX : anchorLeft, 12, maxX);
       preferredY = clamp(
-        Number(lockedPosition?.y) || clamp(anchorBottom + 12, 12, maxY),
+        Math.max(anchorBottom + titlebarDockGap, titlebarBottom > 0 ? titlebarBottom - 1 : anchorBottom + titlebarDockGap),
         12,
         maxY
       );
@@ -32949,14 +32950,77 @@ function timelineNodeLabel(node = null) {
 
 function timelineNodeSummary(node = null) {
   if (!node) return "Committed session history";
-  const parts = [];
   const action = String(node.action || "").trim();
   const label = timelineNodeLabel(node);
   const imageCount = Array.isArray(node.imageIds) ? node.imageIds.length : 0;
-  if (action) parts.push(action);
-  if (label && label !== action) parts.push(label);
-  if (imageCount) parts.push(`${imageCount} image${imageCount === 1 ? "" : "s"}`);
-  return parts.join(" · ") || "Committed session history";
+  const countText = imageCount ? `${imageCount} image${imageCount === 1 ? "" : "s"}` : "";
+  const targetLabel =
+    label && label !== action && label !== "State" && label !== "Timeline"
+      ? String(label).trim()
+      : "";
+  const normalizedAction = action.toLowerCase();
+  if (normalizedAction === "import" || normalizedAction === "upload" || normalizedAction === "add image") {
+    if (countText && targetLabel) return `Imported ${countText} from ${targetLabel}`;
+    if (targetLabel) return `Imported ${targetLabel}`;
+    if (countText) return `Imported ${countText}`;
+    return "Imported an image";
+  }
+  if (normalizedAction === "mark") {
+    return targetLabel ? `Marked ${targetLabel}` : "Added a marker annotation";
+  }
+  if (normalizedAction === "highlight" || normalizedAction === "protect") {
+    return targetLabel ? `Highlighted ${targetLabel}` : "Added a highlight annotation";
+  }
+  if (normalizedAction === "magic select" || normalizedAction === "select" || normalizedAction === "select region") {
+    return targetLabel ? `Selected a region in ${targetLabel}` : "Selected a region";
+  }
+  if (normalizedAction === "erase") {
+    return targetLabel ? `Erased part of ${targetLabel}` : "Erased part of the image";
+  }
+  if (normalizedAction === "delete" || normalizedAction === "remove") {
+    return targetLabel ? `Removed ${targetLabel}` : countText ? `Removed ${countText}` : "Removed an image";
+  }
+  if (normalizedAction === "move") {
+    return targetLabel ? `Moved ${targetLabel}` : "Moved the selection";
+  }
+  if (normalizedAction === "resize") {
+    return targetLabel ? `Resized ${targetLabel}` : "Resized the selection";
+  }
+  if (normalizedAction === "rotate") {
+    return targetLabel ? `Rotated ${targetLabel}` : "Rotated the selection";
+  }
+  if (normalizedAction === "skew") {
+    return targetLabel ? `Skewed ${targetLabel}` : "Skewed the selection";
+  }
+  if (normalizedAction === "combine") {
+    return countText ? `Combined ${countText}` : "Combined multiple images";
+  }
+  if (normalizedAction === "bridge") {
+    return countText ? `Bridged ${countText}` : "Bridged multiple images";
+  }
+  if (normalizedAction === "triforce") {
+    return countText ? `Merged ${countText}` : "Merged multiple images";
+  }
+  if (normalizedAction === "swap dna") {
+    return targetLabel ? `Swapped the DNA of ${targetLabel}` : "Swapped image DNA";
+  }
+  if (normalizedAction === "recast") {
+    return targetLabel ? `Recast ${targetLabel}` : "Recast the active image";
+  }
+  if (normalizedAction === "prompt generate") {
+    return targetLabel ? `Generated ${targetLabel}` : countText ? `Generated ${countText}` : "Generated a new image";
+  }
+  if (normalizedAction === "create layers") {
+    return targetLabel ? `Created layers for ${targetLabel}` : countText ? `Created layers for ${countText}` : "Created layers";
+  }
+  if (normalizedAction === "export") {
+    return targetLabel ? `Exported ${targetLabel}` : countText ? `Exported ${countText}` : "Exported the canvas";
+  }
+  if (action) {
+    const subject = targetLabel || countText || "the canvas";
+    return `Applied ${normalizedAction} to ${subject}`;
+  }
+  return targetLabel || countText || "Committed session history";
 }
 
 function timelineNodeAriaLabel(node = null, { current = false, future = false } = {}) {
@@ -32976,8 +33040,8 @@ function timelineDetailText(headNode = currentTimelineHeadNode()) {
       : null;
   if (!previewNode) return headNode ? timelineNodeSummary(headNode) : "";
   const previewSummary = timelineNodeSummary(previewNode);
-  if (previewNodeId === headNodeId) return `Current state · ${previewSummary}`;
-  return `Change to · ${previewSummary}`;
+  if (previewNodeId === headNodeId) return `Current state: ${previewSummary}`;
+  return `Preview change: ${previewSummary}`;
 }
 
 function syncTimelineDetailText(headNode = currentTimelineHeadNode()) {
