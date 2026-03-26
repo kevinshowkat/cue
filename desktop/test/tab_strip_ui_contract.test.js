@@ -142,6 +142,14 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-history-action\s*\{[\s\S]*width:\s*34px[\s\S]*padding:\s*0;/);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-runtime-icon-action\s*\{[\s\S]*width:\s*34px[\s\S]*padding:\s*0;/);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\s*\{[\s\S]*display:\s*inline-flex[\s\S]*padding:\s*0 14px/s);
+  assert.match(
+    css,
+    /body\.juggernaut-shell \.brand-strip \.session-tab-history-action\[data-provenance="local_only"\]\[aria-pressed="true"\],[^}]*border-color:\s*var\(--jg-pack-border\);[^}]*var\(--jg-pack-surface\);[^}]*0 1px 2px var\(--jg-pack-shadow\);/
+  );
+  assert.doesNotMatch(
+    css,
+    /body\.juggernaut-shell \.brand-strip \.session-tab-history-action\[data-provenance="local_only"\]\[aria-pressed="true"\],[^}]*border-color:\s*var\(--jg-pack-accent-strong\);/
+  );
   assert.match(css, /\.session-tab-runtime-action\.is-ready\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\[data-provenance="local_only"\],\s*\.session-tab-runtime-action\[data-provenance="local_only"\]\.is-ready\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\[data-provenance="local_only"\],\s*\.session-tab-runtime-action\[data-provenance="local_only"\]\.is-ready\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(252,\s*253,\s*254,\s*0\.99\),\s*rgba\(241,\s*244,\s*248,\s*0\.98\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);/);
