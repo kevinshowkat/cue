@@ -90,23 +90,10 @@ export function actionProvenanceHasModelCost(value = "") {
   return provenance === ACTION_PROVENANCE.LOCAL_FIRST || provenance === ACTION_PROVENANCE.EXTERNAL_MODEL;
 }
 
-export function renderActionProvenanceBadge(provenance = "", { className = "" } = {}) {
+export function renderActionProvenanceBadge(provenance = "") {
   const normalized = normalizeActionProvenance(provenance);
   if (!normalized) return "";
   const costBearing = actionProvenanceHasModelCost(normalized);
   if (!costBearing) return "";
-  const affordanceClasses = [
-    "action-provenance-affordance",
-    `action-provenance-affordance--${normalized.replace(/_/g, "-")}`,
-    "action-provenance-affordance--cost-bearing",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const dotClasses = [
-    "action-provenance-model-dot",
-    normalizeText(className),
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return `<span class="${affordanceClasses}" data-provenance="${normalized}" aria-hidden="true"><span class="${dotClasses}" data-provenance="${normalized}"></span></span>`;
+  return "";
 }
