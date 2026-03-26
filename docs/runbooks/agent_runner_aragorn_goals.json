@@ -57,7 +57,7 @@
     },
     {
       "id": "aragorn-local-problem-visible-scope",
-      "goal": "Identify the most distracting local problem in the frame, mark or select it visibly on the canvas, improve it, then export a PSD.",
+      "goal": "Identify the most distracting local problem in the frame, mark or select it visibly on the canvas, improve it, then export a PNG.",
       "preconditions": [],
       "expected_first_actions": [
         "marker_stroke",

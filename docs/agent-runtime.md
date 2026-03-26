@@ -47,9 +47,10 @@ Current built-in controls:
 
 Current built-in execution path:
 - plans through the shared design-review planner router
-- executes visible `Marker`, `Highlight`, `Magic Select`, and `Eraser` actions through the observable driver
+- executes visible `Marker`, `Magic Select`, and `Eraser` actions through the observable driver
+- reuses manual `Highlight` or `Make Space` prep when those signals are already present on canvas
 - can request or accept `Design review`
-- can invoke seeded single-image jobs, direct affordances, custom tools, `Create Tool`, and PSD export
+- can invoke seeded single-image jobs, direct affordances, custom tools, `Create Tool`, and export actions for PSD, PNG, JPG, WEBP, or TIFF
 
 This surface is intended for:
 - observing agent behavior inside the real app
@@ -217,7 +218,7 @@ The result should be advisory guidance such as:
 - known caveats
 
 Good examples:
-- `Highlight -> Design Review -> Accept Proposal -> Export PSD`
+- `Highlight (manual pre-step) -> Design Review -> Accept Proposal -> Export PNG`
 - `Remove People -> Polish -> Export PSD`
 - `make_space` (runtime-only, currently hidden) -> Relight -> Export PSD
 

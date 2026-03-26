@@ -11,7 +11,7 @@ The repo currently supports this Mac-verified workflow:
 3. use left-rail single-image actions and right-rail communication tools to scope edits
 4. run `Design Review` proposals and accept a real in-place single-image apply
 5. preview or create reusable tools in-session
-6. inspect tab-local history and export PSD or flattened PNG with receipts
+6. inspect tab-local history and export PSD, PNG, JPG, WEBP, or TIFF with receipts
 
 Brood-derived multi-image and token workflows still exist in the runtime, but the main Cue slice remains single-image-first.
 
@@ -52,7 +52,7 @@ That script runs desktop tests, frontend build, Rust checks, a Tauri DMG build, 
 
 ## Known Limitations
 
-- PSD and PNG exports are both flattened for the current slice.
+- PSD, PNG, JPG, WEBP, and TIFF exports are all flattened for the current slice.
 - The native engine binary and some environment paths still use legacy `brood` naming internally during the transition.
 - Current automation, packaging, and smoke coverage are strongest on macOS.
 

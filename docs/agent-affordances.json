@@ -135,6 +135,20 @@
       ]
     },
     {
+      "id": "export_raster",
+      "kind": "export",
+      "description": "Export the current tab as a flattened raster plus a reproducibility receipt.",
+      "mutatesPixels": false,
+      "reversible": false,
+      "defaultRouteProfileId": "export_raster_native_v1",
+      "currentEntryPoints": [
+        "export_png",
+        "export_jpg",
+        "export_webp",
+        "export_tiff"
+      ]
+    },
+    {
       "id": "tool_manifest_generation",
       "kind": "tool_creation",
       "description": "Generate a reusable Cue tool manifest from a short description and register it in the current session.",
@@ -225,6 +239,17 @@
       "limitations": [
         "Current PSD export is flattened to a single bitmap composition with alpha.",
         "Editable per-source PSD layers are not included in the current slice."
+      ]
+    },
+    {
+      "id": "export_raster_native_v1",
+      "kind": "native_export",
+      "defaultProviderPolicy": "none",
+      "defaultModelClass": "none",
+      "recordsExactExecutionInReceipt": true,
+      "limitations": [
+        "Current PNG, JPG, WEBP, and TIFF exports are flattened bitmap compositions rather than editable layered documents.",
+        "JPG composites transparency onto white because the format does not preserve alpha."
       ]
     },
     {
@@ -658,6 +683,98 @@
       "reversible": false,
       "executionType": "export_psd",
       "routeProfileId": "export_psd_native_v1",
+      "costClass": "low",
+      "latencyClass": "fast"
+    },
+    {
+      "id": "export_png",
+      "label": "Export PNG",
+      "surface": "export",
+      "source": "export_control",
+      "whatItDoes": "Exports the current tab as a lossless PNG and writes a reproducibility receipt.",
+      "whenToUse": [
+        "final artifact delivery",
+        "lossless flattened raster handoff"
+      ],
+      "whenNotToUse": [
+        "mid-edit branching",
+        "when editable layers are required in the current slice"
+      ],
+      "requiresImage": true,
+      "requiresFocus": false,
+      "mutatesPixels": false,
+      "reversible": false,
+      "executionType": "export_raster",
+      "routeProfileId": "export_raster_native_v1",
+      "costClass": "low",
+      "latencyClass": "fast"
+    },
+    {
+      "id": "export_jpg",
+      "label": "Export JPG",
+      "surface": "export",
+      "source": "export_control",
+      "whatItDoes": "Exports the current tab as a flattened JPG and writes a reproducibility receipt.",
+      "whenToUse": [
+        "final artifact delivery",
+        "opaque raster handoff where alpha is not required"
+      ],
+      "whenNotToUse": [
+        "mid-edit branching",
+        "when transparency must be preserved"
+      ],
+      "requiresImage": true,
+      "requiresFocus": false,
+      "mutatesPixels": false,
+      "reversible": false,
+      "executionType": "export_raster",
+      "routeProfileId": "export_raster_native_v1",
+      "costClass": "low",
+      "latencyClass": "fast"
+    },
+    {
+      "id": "export_webp",
+      "label": "Export WEBP",
+      "surface": "export",
+      "source": "export_control",
+      "whatItDoes": "Exports the current tab as a flattened WEBP and writes a reproducibility receipt.",
+      "whenToUse": [
+        "compressed raster delivery",
+        "final artifact delivery where a smaller file is acceptable"
+      ],
+      "whenNotToUse": [
+        "mid-edit branching",
+        "when editable layers are required in the current slice"
+      ],
+      "requiresImage": true,
+      "requiresFocus": false,
+      "mutatesPixels": false,
+      "reversible": false,
+      "executionType": "export_raster",
+      "routeProfileId": "export_raster_native_v1",
+      "costClass": "low",
+      "latencyClass": "fast"
+    },
+    {
+      "id": "export_tiff",
+      "label": "Export TIFF",
+      "surface": "export",
+      "source": "export_control",
+      "whatItDoes": "Exports the current tab as a flattened TIFF and writes a reproducibility receipt.",
+      "whenToUse": [
+        "archive-friendly raster delivery",
+        "final artifact delivery where a lossless raster container is preferred"
+      ],
+      "whenNotToUse": [
+        "mid-edit branching",
+        "when editable layers are required in the current slice"
+      ],
+      "requiresImage": true,
+      "requiresFocus": false,
+      "mutatesPixels": false,
+      "reversible": false,
+      "executionType": "export_raster",
+      "routeProfileId": "export_raster_native_v1",
       "costClass": "low",
       "latencyClass": "fast"
     }

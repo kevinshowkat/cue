@@ -43,13 +43,14 @@ Marks and Magic Select regions remain valid prep for Agent Run:
 
 Important:
 
-- Agent Run now checks the visible canvas against that goal contract before allowing `stop` or `Export -> PSD`.
+- Agent Run now checks the visible canvas against that goal contract before allowing `stop` or `Export`.
 - If a required named person or interaction is still missing, the run should continue instead of stopping cleanly.
 - If the current goal and visible prep state already match a ready design-review request, Agent Run should reuse that review instead of asking for the same review again.
 - Goal contract compile and stop-check requests use a bounded 45-second HTTP planner path rather than the slower websocket-first planner path.
 - OpenAI Agent Run planning, goal-contract compile, and goal-check requests use a medium reasoning profile instead of the heavier planner profile that was causing slow step planning.
 - If the goal contract is still pending or unavailable, Agent Run fails open and keeps moving with the raw goal instead of stalling the run.
 - Weird or vibe-heavy goals should compile to sparse hard requirements and richer soft intents rather than becoming over-constrained.
+- If the goal explicitly names `PNG`, `JPG`, `WEBP`, or `TIFF`, Agent Run should export that format. If the goal only says `export`, it should default to `PSD`.
 
 ## Current Limitation
 
@@ -64,7 +65,7 @@ The current Agent Run planner can directly plan:
 - direct affordances like `remove_people`, `polish`, and `relight`
 - `preview_create_tool`
 - `create_tool`
-- `export_psd`
+- `export` with `psd`, `png`, `jpg`, `webp`, or `tiff`
 
 It does not yet plan `protect` or `make_space` directly. If you want to test those, pre-place them yourself, then let Agent Run continue from that scoped state.
 
@@ -119,7 +120,7 @@ What to look for:
 
 Goal:
 
-`Identify the most distracting local problem in the frame, mark or select it visibly on the canvas, improve it, then export a PSD.`
+`Identify the most distracting local problem in the frame, mark or select it visibly on the canvas, improve it, then export a PNG.`
 
 What to look for:
 
@@ -231,7 +232,7 @@ const ar = window.__JUGGERNAUT_AGENT_RUNNER__;
 ar.open();
 ar.setPlannerMode("auto");
 ar.setMaxSteps(4);
-ar.setGoal("Use design review to find one strong improvement that makes Aragorn feel more cinematic while preserving his face, armor, sword, and horse, then export a PSD.");
+ar.setGoal("Identify the most distracting local problem in the frame, mark or select it visibly on the canvas, improve it, then export a PNG.");
 await ar.step();
 ```
 

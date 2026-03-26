@@ -8,7 +8,7 @@ This document defines the current PSD export contract for Cue's desktop shell an
   - titlebar `Export > PSD`
   - titlebar `Export > PNG | JPG | WEBP | TIFF`
   - native `File > Export Session...` (still defaults to PSD)
-  - Agent Run `export_psd`
+  - Agent Run `export` with `format: "psd" | "png" | "jpg" | "webp" | "tiff"`
 - Export entrypoint: Tauri command `export_run`
 - Formats supported by the native exporter: `.psd`, `.png`, `.jpg`, `.webp`, `.tiff`
 - This document focuses on the PSD contract specifically.

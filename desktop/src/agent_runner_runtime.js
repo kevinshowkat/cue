@@ -26,6 +26,7 @@ export const AGENT_RUNNER_MAX_STEPS_LIMIT = 24;
 
 const SEEDED_TOOL_IDS = new Set(["cut_out", "remove", "new_background", "reframe", "variants"]);
 const DIRECT_AFFORDANCE_IDS = new Set(["remove_people", "polish", "relight"]);
+const AGENT_RUNNER_EXPORT_FORMATS = Object.freeze(["psd", "png", "jpg", "webp", "tiff"]);
 const STOPLIKE_ACTIONS = new Set(["stop", "done", "complete", "finish"]);
 const REVIEW_REQUEST_ACTIONS = new Set(["design_review", "request_design_review", "review"]);
 const REVIEW_ACCEPT_ACTIONS = new Set(["accept_review_proposal", "accept_review", "accept_proposal"]);
@@ -34,7 +35,7 @@ const SET_SELECTED_IMAGES_ACTIONS = new Set(["set_selected_images", "select_imag
 const CREATE_TOOL_PREVIEW_ACTIONS = new Set(["preview_create_tool", "preview_tool"]);
 const CREATE_TOOL_ACTIONS = new Set(["create_tool", "make_tool"]);
 const CUSTOM_TOOL_ACTIONS = new Set(["invoke_custom_tool", "run_custom_tool"]);
-const EXPORT_ACTIONS = new Set(["export_psd", "export"]);
+const EXPORT_ACTIONS = new Set(["export", "save"]);
 const OBSERVABLE_MARKER_ACTIONS = new Set(["marker_stroke", "marker"]);
 const OBSERVABLE_MAGIC_SELECT_ACTIONS = new Set(["magic_select_click", "magic_select", "magicselect"]);
 const OBSERVABLE_ERASER_ACTIONS = new Set(["eraser_stroke", "eraser"]);
@@ -67,6 +68,41 @@ function normalizeKey(value = "") {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+function normalizeExportFormat(value = "psd") {
+  const normalized = normalizeKey(value);
+  if (normalized === "png") return "png";
+  if (normalized === "jpg" || normalized === "jpeg") return "jpg";
+  if (normalized === "webp") return "webp";
+  if (normalized === "tif" || normalized === "tiff") return "tiff";
+  return "psd";
+}
+
+function exportFormatLabel(value = "psd") {
+  return normalizeExportFormat(value).toUpperCase();
+}
+
+function isExportActionType(rawType = "") {
+  const normalized = normalizeKey(rawType);
+  return EXPORT_ACTIONS.has(normalized) || normalized.startsWith("export_");
+}
+
+function resolveExportActionFormat(rawType = "", action = null) {
+  const normalized = normalizeKey(rawType);
+  if (normalized.startsWith("export_")) {
+    return normalizeExportFormat(normalized.slice("export_".length));
+  }
+  return normalizeExportFormat(
+    action?.format ||
+      action?.exportFormat ||
+      action?.export_format ||
+      action?.fileFormat ||
+      action?.file_format ||
+      action?.targetFormat ||
+      action?.target_format ||
+      "psd"
+  );
 }
 
 function clamp01(value, fallback = 0) {
@@ -528,7 +564,11 @@ export function buildAgentRunnerContextSummary({
       },
       directAffordances: Array.from(DIRECT_AFFORDANCE_IDS),
       toolCreation: ["preview_create_tool", "create_tool", "invoke_custom_tool"],
-      export: ["export_psd"],
+      export: {
+        actionTypes: ["export"],
+        formats: [...AGENT_RUNNER_EXPORT_FORMATS],
+        defaultFormat: "psd",
+      },
       control: ["stop"],
       actionConstraints: {
         focusOnly: ["marker_stroke", "magic_select_click", "eraser_stroke"],
@@ -579,14 +619,15 @@ export function buildAgentRunnerPlannerPrompt(input = {}) {
     "21. If review.reuse.canReuseReadyReview is true, do not request_design_review again until the canvas, marks, regions, selection, or goal changes.",
     "22. runState.actionBudget is a weighted runway, not a raw step counter. set_active_image, set_selected_images, marker_stroke, magic_select_click, and eraser_stroke are discounted prep actions, but they still consume some budget.",
     "23. Use create_tool only when a reusable local pattern is clearly warranted.",
-    "24. Export or stop only when the visible canvas satisfies the hard requirements in goalContract or, if no hard requirements were extracted, the goal appears visibly satisfied.",
+    "24. When exporting, use the format explicitly named in the goal when present. Otherwise default to psd.",
+    "25. Export or stop only when the visible canvas satisfies the hard requirements in goalContract or, if no hard requirements were extracted, the goal appears visibly satisfied.",
     "",
     "Action schema:",
     '{',
     '  "status": "continue" | "complete" | "blocked",',
     '  "summary": "short reason",',
     '  "action": {',
-    '    "type": "set_active_image" | "set_selected_images" | "marker_stroke" | "magic_select_click" | "eraser_stroke" | "request_design_review" | "accept_review_proposal" | "invoke_seeded_tool" | "invoke_direct_affordance" | "preview_create_tool" | "create_tool" | "invoke_custom_tool" | "export_psd" | "stop",',
+    '    "type": "set_active_image" | "set_selected_images" | "marker_stroke" | "magic_select_click" | "eraser_stroke" | "request_design_review" | "accept_review_proposal" | "invoke_seeded_tool" | "invoke_direct_affordance" | "preview_create_tool" | "create_tool" | "invoke_custom_tool" | "export" | "stop",',
     '    "imageId": "optional image id for single-image actions or observable actions",',
     '    "activeImageId": "for set_selected_images",',
     '    "imageIds": ["for set_selected_images"],',
@@ -599,6 +640,7 @@ export function buildAgentRunnerPlannerPrompt(input = {}) {
     '    "proposalRank": 1,',
     '    "name": "optional tool name",',
     '    "description": "for preview_create_tool or create_tool",',
+    '    "format": "for export; one of psd | png | jpg | webp | tiff",',
     '    "params": {}',
     "  }",
     "}",
@@ -615,6 +657,7 @@ export function buildAgentRunnerPlannerPrompt(input = {}) {
     "- remove deletes the selected content from that active image and must not be used to extract a reusable subject.",
     "- Disabled seeded tools appear in availableActions.seededToolStates; do not choose them.",
     "- set_selected_images supports 1..3 visible image ids.",
+    "- export defaults to psd when format is omitted; supported formats are psd, png, jpg, webp, and tiff.",
     "",
     "Context JSON:",
     JSON.stringify(context, null, 2),
@@ -742,8 +785,11 @@ function normalizeAgentRunnerAction(rawAction = null) {
       imageId: readFirstString(action.imageId, action.image_id, action.activeImageId, action.active_image_id) || null,
     };
   }
-  if (EXPORT_ACTIONS.has(rawType)) {
-    return { type: "export_psd" };
+  if (isExportActionType(rawType)) {
+    return {
+      type: "export",
+      format: resolveExportActionFormat(rawType, action),
+    };
   }
   throw new Error(`Unsupported planner action: ${rawType || "(empty)"}`);
 }
@@ -763,7 +809,7 @@ export function summarizeAgentRunnerAction(action = null) {
   if (type === "preview_create_tool") return `Preview Create Tool${record.name ? ` (${record.name})` : ""}`;
   if (type === "create_tool") return `Create Tool${record.name ? ` (${record.name})` : ""}`;
   if (type === "invoke_custom_tool") return `Run custom tool ${record.toolId}`;
-  if (type === "export_psd") return "Export PSD";
+  if (type === "export") return `Export ${exportFormatLabel(record.format || "psd")}`;
   if (type === "stop") return "Stop";
   return type;
 }

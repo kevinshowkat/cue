@@ -136,6 +136,11 @@ test("agent runner context summary keeps the visible canvas compact and action-o
   assert.equal(summary.runState.actionBudget.used, 1.25);
   assert.deepEqual(summary.runState.actionBudget.discountedActionTypes, ["set_active_image", "marker_stroke"]);
   assert.equal(summary.sessionTools[0].toolId, "soft-contrast");
+  assert.deepEqual(summary.availableActions.export, {
+    actionTypes: ["export"],
+    formats: ["psd", "png", "jpg", "webp", "tiff"],
+    defaultFormat: "psd",
+  });
 });
 
 test("agent runner planner prompt carries the single-step JSON contract and compact context", () => {
@@ -240,12 +245,17 @@ test("agent runner planner prompt carries the single-step JSON contract and comp
   assert.match(prompt, /runState\.actionBudget is a weighted runway, not a raw step counter\./);
   assert.match(prompt, /set_active_image, set_selected_images, marker_stroke, magic_select_click, and eraser_stroke are discounted prep actions/);
   assert.match(prompt, /Export or stop only when the visible canvas satisfies the hard requirements in goalContract/);
+  assert.match(prompt, /When exporting, use the format explicitly named in the goal when present\. Otherwise default to psd\./);
   assert.match(prompt, /Marker, Magic Select, and Eraser are focus-setting actions; they do not directly change the underlying image pixels\./);
   assert.match(prompt, /Their visible overlays can still be used as temporary planning cues for later edits or review proposals\./);
+  assert.match(prompt, /"type": "set_active_image" \| "set_selected_images" \| "marker_stroke"[\s\S]*"export" \| "stop"/);
+  assert.match(prompt, /"format": "for export; one of psd \| png \| jpg \| webp \| tiff"/);
+  assert.match(prompt, /export defaults to psd when format is omitted; supported formats are psd, png, jpg, webp, and tiff\./);
   assert.match(prompt, /"goal":\s*"Make room on the right for copy\."/);
   assert.match(prompt, /"goalContract":\s*\{/);
   assert.match(prompt, /"canReuseReadyReview":\s*true/);
   assert.match(prompt, /"discountedActionTypes":\s*\[/);
+  assert.match(prompt, /"formats":\s*\[\s*"psd",\s*"png",\s*"jpg",\s*"webp",\s*"tiff"\s*\]/);
 });
 
 test("agent runner context summary only exposes enabled seeded tools from the shell affordance snapshot", () => {
@@ -394,6 +404,35 @@ test("agent runner plan parser accepts selection, direct-affordance, and percent
   assert.equal(marker.action.type, "marker_stroke");
   assert.equal(marker.action.imageId, "img-1");
   assert.equal(marker.action.pointsPct.length, 2);
+
+  const exportPng = parseAgentRunnerPlanResponse(
+    JSON.stringify({
+      status: "complete",
+      summary: "Export the improved result as a PNG deliverable.",
+      action: {
+        type: "export",
+        format: "png",
+      },
+    })
+  );
+
+  assert.equal(exportPng.action.type, "export");
+  assert.equal(exportPng.action.format, "png");
+  assert.equal(summarizeAgentRunnerAction(exportPng.action), "Export PNG");
+
+  const exportWebp = parseAgentRunnerPlanResponse(
+    JSON.stringify({
+      status: "complete",
+      summary: "Export a compressed review deliverable.",
+      action: {
+        type: "export_webp",
+      },
+    })
+  );
+
+  assert.equal(exportWebp.action.type, "export");
+  assert.equal(exportWebp.action.format, "webp");
+  assert.equal(summarizeAgentRunnerAction(exportWebp.action), "Export WEBP");
 });
 
 test("agent runner plan parser sanitizes request design review summaries to visible-state wording", () => {

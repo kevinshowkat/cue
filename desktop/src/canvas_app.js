@@ -28350,9 +28350,25 @@ function formatAgentRunnerBudgetValue(value = 0) {
     : rounded.toFixed(2).replace(/\.?0+$/, "");
 }
 
+function isAgentRunnerExportAction(action = null) {
+  const actionType = readFirstString(action?.type).toLowerCase();
+  return actionType === "export" || actionType === "export_psd";
+}
+
+function agentRunnerExportFormat(action = null) {
+  const actionType = readFirstString(action?.type).toLowerCase();
+  if (actionType === "export_psd") return "psd";
+  return normalizeExportFormat(action?.format || "psd");
+}
+
+function isAgentRunnerTerminalAction(action = null) {
+  const actionType = readFirstString(action?.type).toLowerCase();
+  return actionType === "stop" || isAgentRunnerExportAction(action);
+}
+
 function resolveAgentRunnerActionBudgetCost(action = null) {
   const actionType = readFirstString(action?.type).toLowerCase();
-  if (!actionType || actionType === "stop" || actionType === "export_psd") return 0;
+  if (!actionType || actionType === "stop" || isAgentRunnerExportAction(action)) return 0;
   return Number(AGENT_RUNNER_ACTION_BUDGET_COSTS[actionType]) || 1;
 }
 
@@ -29542,14 +29558,15 @@ async function executeAgentRunnerAction(action = null, { goal = "", goalContract
     };
   }
 
-  if (action.type === "export_psd") {
-    const ok = await requestJuggernautPsdExport({ source: "agent_runner" });
-    if (!ok) throw new Error("PSD export failed.");
+  if (isAgentRunnerExportAction(action)) {
+    const format = agentRunnerExportFormat(action);
+    const ok = await requestJuggernautExport({ format, source: "agent_runner" });
+    if (!ok) throw new Error(`${exportFormatLabel(format)} export failed.`);
     return {
       ok: true,
-      message: "PSD export requested.",
+      message: `${exportFormatLabel(format)} export requested.`,
       detail: {
-        format: "psd",
+        format,
       },
     };
   }
@@ -29660,7 +29677,7 @@ async function maybeRunAgentRunnerStopCheck({
 } = {}) {
   const record = asRecord(runner) || state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
   const actionType = readFirstString(plannedAction?.type).toLowerCase();
-  if (!["stop", "export_psd"].includes(actionType)) {
+  if (!(actionType === "stop" || isAgentRunnerExportAction(plannedAction))) {
     return { allowStop: true, skipped: true, reason: "non_terminal_action" };
   }
   const goal = String(record.goal || "").trim();
@@ -29705,7 +29722,7 @@ async function maybeRunAgentRunnerStopCheck({
       completedAt: new Date().toISOString(),
     };
     if (!result.verdict.allowStop) {
-      const label = actionType === "export_psd" ? "Export" : "Stop";
+      const label = isAgentRunnerExportAction(plannedAction) ? "Export" : "Stop";
       appendAgentRunnerLog("info", `${label} blocked: ${result.verdict.summary}`, result.verdict, {
         actionType,
         ok: false,
@@ -29947,7 +29964,7 @@ async function runAgentRunnerStepInternal({ source = "agent_runner_panel" } = {}
     }
   );
 
-  if (plannedAction && (plannedAction.type === "stop" || plannedAction.type === "export_psd")) {
+  if (isAgentRunnerTerminalAction(plannedAction)) {
     const stopCheck = await maybeRunAgentRunnerStopCheck({
       runner,
       shellSnapshot,

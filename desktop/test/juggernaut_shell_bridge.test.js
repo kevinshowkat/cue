@@ -117,6 +117,15 @@ test("Agent Run planning captures the visible canvas for live next-step vision r
   assert.match(app, /images:\s*plannerImages,/);
 });
 
+test("Agent Run routes export actions through the shared multi-format export bridge", () => {
+  assert.match(app, /function isAgentRunnerExportAction\(action = null\)/);
+  assert.match(app, /function agentRunnerExportFormat\(action = null\)/);
+  assert.match(app, /if \(isAgentRunnerExportAction\(action\)\) \{/);
+  assert.match(app, /const format = agentRunnerExportFormat\(action\);/);
+  assert.match(app, /requestJuggernautExport\(\{ format, source: "agent_runner" \}\)/);
+  assert.match(app, /message: `\$\{exportFormatLabel\(format\)\} export requested\.`/);
+});
+
 test("Collapsed Agent Run banner uses the shared liquid-glass material treatment", () => {
   assert.match(styles, /\.agent-runner-banner\s*\{[\s\S]*--agent-runner-banner-accent:/);
   assert.match(styles, /\.agent-runner-banner\s*\{[\s\S]*left:\s*auto;[\s\S]*right:\s*calc\(var\(--jg-shell-inset,\s*18px\) \+ 12px\);[\s\S]*bottom:\s*116px/);
@@ -169,8 +178,8 @@ test("Juggernaut shell bridge emits integration events for tools and PSD export"
 });
 
 test("Juggernaut shell export falls back to the native PSD exporter when no handler is registered", () => {
-  assert.match(app, /const exportHookReady = typeof state\.juggernautShell\.psdExportHandler === "function" \|\| typeof invoke === "function";/);
-  assert.match(app, /if \(typeof invoke === "function"\) \{\s*return await exportRun\(\);\s*\}/);
+  assert.match(app, /const exportHookReady = typeof state\.juggernautShell\.psdExportHandler === "function" \|\| nativeRasterExportReady\(\);/);
+  assert.match(app, /if \(nativeRasterExportReady\(\)\) \{\s*return await exportRunInFormat\(normalizedFormat\);\s*\}/);
   assert.doesNotMatch(app, /Export PSD hook ready for the export branch/);
 });
 
