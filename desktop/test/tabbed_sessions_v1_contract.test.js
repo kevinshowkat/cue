@@ -88,15 +88,15 @@ test("activating a tab captures and restores image, selection, run, and session-
 test("busy active tabs block tab switching with the implemented v1 reasons", () => {
   assert.match(
     app,
-    /function currentTabSwitchBlockReason\(\) \{[\s\S]*return "manipulating_canvas";[\s\S]*return "assistant_busy";[\s\S]*return "queued_actions";[\s\S]*return "engine_busy";[\s\S]*return null;[\s\S]*\}/
+    /function currentTabSwitchBlockReason\(\{ allowReviewApply = false \} = \{\}\) \{[\s\S]*return "manipulating_canvas";[\s\S]*return "review_apply";[\s\S]*return "assistant_busy";[\s\S]*return "queued_actions";[\s\S]*isEngineBusy\(\{ includeReviewApply: !allowReviewApply \}\)\) return "engine_busy";[\s\S]*return null;[\s\S]*\}/
   );
   assert.match(
     app,
-    /async function activateTab\(tabId, \{ spawnEngine = false, reason = "tab_activate", engineFailureToast = true \} = \{\}\) \{[\s\S]*const blockReason = currentTabSwitchBlockReason\(\);[\s\S]*showToast\(currentTabSwitchBlockMessage\(blockReason\), "tip", 2200\);[\s\S]*return finalize\(\s*\{ ok: false, reason: blockReason, activeTabId: state\.activeTabId \|\| null \},\s*\{ ok: false, reason: blockReason \}\s*\);/
+    /async function activateTab\(tabId, \{ spawnEngine = false, reason = "tab_activate", engineFailureToast = true \} = \{\}\) \{[\s\S]*const blockReason = currentTabSwitchBlockReason\(\{ allowReviewApply: true \}\);[\s\S]*showToast\(currentTabSwitchBlockMessage\(blockReason\), "tip", 2200\);[\s\S]*return finalize\(\s*\{ ok: false, reason: blockReason, activeTabId: state\.activeTabId \|\| null \},\s*\{ ok: false, reason: blockReason \}\s*\);/
   );
   assert.match(
     app,
-    /async function closeTab\(tabId\) \{[\s\S]*if \(normalized === String\(state\.activeTabId \|\| ""\)\.trim\(\)\) \{[\s\S]*const blockReason = currentTabSwitchBlockReason\(\);[\s\S]*showToast\(currentTabSwitchBlockMessage\(blockReason\), "tip", 2200\);[\s\S]*return \{ ok: false, reason: blockReason, tabs: snapshot\.tabs \};/
+    /async function closeTab\(tabId\) \{[\s\S]*const targetRecord = tabbedSessions\.getTab\(normalized\) \|\| null;[\s\S]*if \(sessionTabHasRunningReviewApply\(targetRecord\)\) \{[\s\S]*reason: "review_apply"[\s\S]*if \(normalized === String\(state\.activeTabId \|\| ""\)\.trim\(\)\) \{[\s\S]*const blockReason = currentTabSwitchBlockReason\(\);[\s\S]*showToast\(currentTabSwitchBlockMessage\(blockReason\), "tip", 2200\);[\s\S]*return \{ ok: false, reason: blockReason, tabs: snapshot\.tabs \};/
   );
 });
 

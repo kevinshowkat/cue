@@ -23649,6 +23649,178 @@ function normalizeDesignReviewApplyEventDetail(detail = {}, { fallbackState = nu
   };
 }
 
+function sessionTabHasRunningReviewApply(record = null) {
+  const session = record?.session && typeof record.session === "object" ? record.session : null;
+  if (readFirstString(record?.designReviewApply?.status, session?.designReviewApply?.status).toLowerCase() === "running") {
+    return true;
+  }
+  return (
+    normalizeSessionTabReviewFlowState(record?.reviewFlowState) === "applying" ||
+    normalizeSessionTabReviewFlowState(session?.reviewFlowState) === "applying"
+  );
+}
+
+function ensureSessionTabRecordSession(record = null) {
+  if (!record || typeof record !== "object") return null;
+  if (!record.session || typeof record.session !== "object") {
+    record.session = createFreshTabSession({
+      runDir: record.runDir || null,
+      eventsPath: record.eventsPath || null,
+    });
+  }
+  return record.session;
+}
+
+function buildSessionTabUiMeta(session = null, existing = null, { bumpVersions = false } = {}) {
+  const current = session && typeof session === "object" ? session : createFreshTabSession();
+  const previous = normalizeTabUiMeta(existing);
+  const images = Array.isArray(current.images) ? current.images : [];
+  const toolCount = Array.isArray(current.sessionTools) ? current.sessionTools.length : 0;
+  const timelineCount = Array.isArray(current.timelineNodes) ? current.timelineNodes.length : 0;
+  const activeImage = current.activeId ? current.imagesById?.get?.(current.activeId) || null : null;
+  const bump = bumpVersions ? 1 : 0;
+  return {
+    metadataVersion: previous.metadataVersion + bump,
+    filmstripVersion: previous.filmstripVersion + bump,
+    timelineVersion: previous.timelineVersion + bump,
+    spawnVersion: previous.spawnVersion + bump,
+    quickActionsVersion: previous.quickActionsVersion + bump,
+    customToolDockVersion: previous.customToolDockVersion,
+    imageCount: images.length,
+    toolCount,
+    timelineCount,
+    isDirty: images.length > 0 || toolCount > 0 || timelineCount > 0,
+    thumbnailPath: activeImage?.path || images[0]?.path || null,
+  };
+}
+
+function syncSessionTabRecordFromSession(
+  record = null,
+  {
+    publish = true,
+    bumpVersions = false,
+    busy = null,
+    reviewFlowState = null,
+  } = {}
+) {
+  if (!record || typeof record !== "object") return null;
+  const session = ensureSessionTabRecordSession(record);
+  if (!session) return null;
+  const nextReviewFlowState = normalizeSessionTabReviewFlowState(
+    reviewFlowState == null
+      ? currentSessionTabReviewFlowState({
+          communication: session.communication,
+          designReviewApply: session.designReviewApply,
+        })
+      : reviewFlowState
+  );
+  const nextMeta = buildSessionTabUiMeta(session, record.tabUiMeta || session.tabUiMeta, {
+    bumpVersions,
+  });
+  session.tabUiMeta = { ...nextMeta };
+  record.tabUiMeta = nextMeta;
+  record.runDir = session.runDir || record.runDir || null;
+  if (!record.labelManual) {
+    record.label = automaticSessionTabLabel({
+      images: session.images,
+      activeId: session.activeId,
+      runDir: record.runDir,
+      fallback: DEFAULT_UNTITLED_TAB_TITLE,
+    });
+  } else {
+    record.label = normalizeSessionTabTitleInput(record.label, SESSION_TAB_TITLE_MAX_LENGTH) || DEFAULT_UNTITLED_TAB_TITLE;
+  }
+  session.label = record.label;
+  session.labelManual = Boolean(record.labelManual);
+  session.reviewFlowState = nextReviewFlowState;
+  record.reviewFlowState = nextReviewFlowState;
+  if (typeof busy === "boolean") {
+    record.busy = busy;
+  }
+  record.thumbnailPath = nextMeta.thumbnailPath;
+  record.updatedAt = Date.now();
+  if (publish) {
+    tabbedSessions.upsertTab({ ...record }, { activate: false });
+  }
+  return record;
+}
+
+function designReviewApplyEventMatchesTabRecord(record = null, detail = {}, fallbackState = null) {
+  const normalized = cloneDesignReviewApplyState(detail);
+  const fallback = cloneDesignReviewApplyState(fallbackState);
+  const session = record?.session && typeof record.session === "object" ? record.session : null;
+  const recordTabId = readFirstString(record?.tabId);
+  const recordSessionKey = readFirstString(
+    session?.designReviewApply?.sessionKey,
+    recordTabId ? `tab:${recordTabId}` : "",
+    record?.runDir ? `run:${record.runDir}` : ""
+  );
+  if (normalized.sessionKey && recordSessionKey && normalized.sessionKey !== recordSessionKey) return false;
+  if (normalized.tabId && recordTabId && normalized.tabId !== recordTabId) return false;
+  if (fallback.sessionKey && normalized.sessionKey && fallback.sessionKey !== normalized.sessionKey) return false;
+  if (fallback.requestId && normalized.requestId && fallback.requestId !== normalized.requestId) return false;
+  if (fallback.proposalId && normalized.proposalId && fallback.proposalId !== normalized.proposalId) return false;
+  if (fallback.tabId && normalized.tabId && fallback.tabId !== normalized.tabId) return false;
+  return true;
+}
+
+function resolveDesignReviewApplyTargetRecord(detail = {}, fallbackState = null) {
+  let normalized = normalizeDesignReviewApplyEventDetail(detail, { fallbackState });
+  let record = null;
+  for (const candidateTabId of uniqueStringList([
+    normalized.tabId,
+    normalized.sessionKey?.startsWith?.("tab:") ? normalized.sessionKey.slice(4) : "",
+  ])) {
+    record = tabbedSessions.getTab(candidateTabId) || null;
+    if (record) break;
+  }
+  if (!record) {
+    const requestId = readFirstString(normalized.requestId);
+    const sessionKey = readFirstString(normalized.sessionKey);
+    const runDirFromSessionKey = sessionKey.startsWith("run:") ? sessionKey.slice(4) : "";
+    for (const tabId of tabbedSessions.tabsOrder) {
+      const candidate = tabbedSessions.getTab(tabId) || null;
+      const session = candidate?.session && typeof candidate.session === "object" ? candidate.session : null;
+      const sessionApply = cloneDesignReviewApplyState(session?.designReviewApply);
+      const candidateRequestId = readFirstString(sessionApply.requestId, session?.communication?.proposalTray?.requestId);
+      const candidateSessionKey = readFirstString(
+        sessionApply.sessionKey,
+        candidate?.tabId ? `tab:${candidate.tabId}` : "",
+        candidate?.runDir ? `run:${candidate.runDir}` : ""
+      );
+      const candidateRunDir = readFirstString(session?.runDir, candidate?.runDir);
+      if (requestId && candidateRequestId && requestId === candidateRequestId) {
+        record = candidate;
+        break;
+      }
+      if (sessionKey && candidateSessionKey && sessionKey === candidateSessionKey) {
+        record = candidate;
+        break;
+      }
+      if (runDirFromSessionKey && candidateRunDir && runDirFromSessionKey === candidateRunDir) {
+        record = candidate;
+        break;
+      }
+    }
+  }
+  const session = record ? ensureSessionTabRecordSession(record) : null;
+  if (record && session && String(record.tabId || "").trim() !== String(state.activeTabId || "").trim()) {
+    const sessionFallback = cloneDesignReviewApplyState(session.designReviewApply);
+    if (sessionFallback.requestId || sessionFallback.sessionKey || sessionFallback.tabId) {
+      normalized = normalizeDesignReviewApplyEventDetail(detail, {
+        fallbackState: sessionFallback,
+        status: normalized.status,
+      });
+    }
+  }
+  return {
+    normalized,
+    record,
+    session,
+    isActive: Boolean(record && String(record.tabId || "").trim() === String(state.activeTabId || "").trim()),
+  };
+}
+
 function designReviewApplyEventMatchesActiveTab(detail = {}, fallbackState = null) {
   const normalized = cloneDesignReviewApplyState(detail);
   const fallback = cloneDesignReviewApplyState(fallbackState);
@@ -23676,6 +23848,11 @@ function clearDesignReviewApplyState({ capture = true, publish = true } = {}) {
 }
 
 function markDesignReviewApplyRunning(detail = {}) {
+  const resolved = resolveDesignReviewApplyTargetRecord(detail, state.designReviewApply);
+  if (!resolved.record) return false;
+  if (!resolved.isActive) {
+    return markDesignReviewApplyRunningInSessionRecord(resolved.record, detail);
+  }
   const previous = cloneDesignReviewApplyState(state.designReviewApply);
   const normalized = normalizeDesignReviewApplyEventDetail(detail, {
     fallbackState: previous,
@@ -23707,7 +23884,335 @@ function updateDesignReviewApplyCostLatency(detail = {}) {
   return true;
 }
 
+function updateDesignReviewApplyCostLatencyForSession(session = null, detail = {}) {
+  const current = session && typeof session === "object" ? session : null;
+  if (!current) return false;
+  const provider = readFirstString(detail.provider) || null;
+  const model = readFirstString(detail.normalizedModel, detail.requestedModel) || null;
+  const costTotalUsd = readFirstNumber(detail.costTotalUsd);
+  const latencyPerImageS = readFirstNumber(detail.latencyPerImageS);
+  if (!provider && !model && costTotalUsd == null && latencyPerImageS == null) return false;
+  current.lastCostLatency = {
+    provider,
+    model,
+    cost_total_usd: costTotalUsd,
+    cost_per_1k_images_usd: null,
+    latency_per_image_s: latencyPerImageS,
+    at: Date.now(),
+  };
+  return true;
+}
+
+function recordTimelineNodeInSession(session = null, { imageId, path, receiptPath = null, label = null, action = null, parents = [] } = {}) {
+  const current = session && typeof session === "object" ? session : null;
+  if (!current || !imageId || !path) return null;
+  if (!Array.isArray(current.timelineNodes)) current.timelineNodes = [];
+  if (!(current.timelineNodesById instanceof Map)) current.timelineNodesById = new Map();
+  const nodeId = _timelineMakeNodeId();
+  const parentIds = Array.isArray(parents)
+    ? Array.from(new Set(parents.map((value) => String(value || "")).filter(Boolean)))
+    : [];
+  const node = {
+    nodeId,
+    imageId: String(imageId),
+    path: String(path),
+    receiptPath: receiptPath ? String(receiptPath) : null,
+    label: label ? String(label) : basename(path),
+    action: action ? String(action) : null,
+    parents: parentIds,
+    createdAt: Date.now(),
+  };
+  current.timelineNodes.push(node);
+  current.timelineNodesById.set(nodeId, node);
+  return nodeId;
+}
+
+function replaceImageInSessionRecord(
+  session = null,
+  targetId,
+  { path, receiptPath = null, kind = null, label = null, clearVision = true } = {}
+) {
+  const current = session && typeof session === "object" ? session : null;
+  const item = current?.imagesById?.get?.(targetId) || null;
+  if (!item || !path) return false;
+  const oldPath = item.path;
+  if (oldPath && oldPath !== path) {
+    invalidateImageCache(oldPath);
+    dropVisionDescribePath(oldPath, { cancelInFlight: true });
+  }
+  invalidateImageCache(path);
+  item.path = path;
+  item.receiptPath = receiptPath;
+  item.receiptMeta = null;
+  item.receiptMetaChecked = false;
+  item.receiptMetaLoading = false;
+  if (kind) item.kind = kind;
+  const explicitLabel = typeof label === "string" ? label.trim() : "";
+  if (explicitLabel) {
+    item.label = explicitLabel;
+  } else if (path && oldPath && oldPath !== path) {
+    const oldPathLabel = basename(oldPath || "");
+    const nextPathLabel = basename(path || "");
+    const currentLabel = String(item.label || "").trim();
+    if (!currentLabel || (oldPathLabel && currentLabel === oldPathLabel)) {
+      if (nextPathLabel) item.label = nextPathLabel;
+    }
+  }
+  item.img = null;
+  item.width = null;
+  item.height = null;
+  if (clearVision) {
+    item.visionDesc = null;
+    item.visionPending = false;
+    if (state.describePendingPath === oldPath) state.describePendingPath = null;
+  }
+  return true;
+}
+
+function removeImageFromSessionRecord(session = null, imageId = "") {
+  const current = session && typeof session === "object" ? session : null;
+  const normalizedImageId = String(imageId || "").trim();
+  if (!current || !normalizedImageId) return false;
+  if (!current.imagesById?.has?.(normalizedImageId)) return false;
+  current.imagesById.delete(normalizedImageId);
+  current.images = (Array.isArray(current.images) ? current.images : []).filter(
+    (item) => String(item?.id || "").trim() !== normalizedImageId
+  );
+  if (current.circlesByImageId instanceof Map) {
+    current.circlesByImageId.delete(normalizedImageId);
+  }
+  if (current.freeformRects instanceof Map) {
+    current.freeformRects.delete(normalizedImageId);
+  }
+  if (current.multiRects instanceof Map) {
+    current.multiRects.delete(normalizedImageId);
+  }
+  current.freeformZOrder = (Array.isArray(current.freeformZOrder) ? current.freeformZOrder : []).filter(
+    (value) => String(value || "").trim() !== normalizedImageId
+  );
+  current.selectedIds = (Array.isArray(current.selectedIds) ? current.selectedIds : []).filter(
+    (value) => String(value || "").trim() !== normalizedImageId
+  );
+  if (String(current.activeId || "").trim() === normalizedImageId) {
+    current.activeId = current.selectedIds[current.selectedIds.length - 1] || current.images[current.images.length - 1]?.id || null;
+  }
+  return true;
+}
+
+function clearVisibleCommunicationReviewStateForSession(session = null, { hideTray = true } = {}) {
+  const current = session && typeof session === "object" ? session : null;
+  if (!current) return null;
+  const communication =
+    current.communication && typeof current.communication === "object"
+      ? current.communication
+      : createFreshCommunicationState();
+  communication.markDraft = null;
+  communication.eraseDraft = null;
+  communication.marksByImageId = new Map();
+  communication.canvasMarks = [];
+  communication.regionProposalsByImageId = new Map();
+  communication.lastAnchor = null;
+  if (hideTray) {
+    const tray =
+      communication.proposalTray && typeof communication.proposalTray === "object"
+        ? communication.proposalTray
+        : createFreshCommunicationState().proposalTray;
+    tray.visible = false;
+    tray.requestId = null;
+    tray.anchor = null;
+    communication.proposalTray = tray;
+  }
+  current.communication = communication;
+  return communication;
+}
+
+function markSessionCommunicationProposalTrayApplyFailed(session = null, detail = {}, message = "Review apply failed.") {
+  const current = session && typeof session === "object" ? session : null;
+  if (!current) return null;
+  const communication =
+    current.communication && typeof current.communication === "object"
+      ? current.communication
+      : createFreshCommunicationState();
+  const tray =
+    communication.proposalTray && typeof communication.proposalTray === "object"
+      ? communication.proposalTray
+      : createFreshCommunicationState().proposalTray;
+  const slots = Array.isArray(tray.slots)
+    ? tray.slots.map((slot) => ({ ...slot }))
+    : Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) => createCommunicationProposalSlot(index, {}));
+  const normalizedProposalId = readFirstString(detail?.proposalId, detail?.proposal?.proposalId, detail?.proposal?.id);
+  let applied = false;
+  for (let index = 0; index < slots.length; index += 1) {
+    const slot = slots[index] || {};
+    const slotProposalId = readFirstString(slot?.proposalId, slot?.proposal?.proposalId, slot?.proposal?.id);
+    const slotStatus = normalizeCommunicationProposalSlotStatus(slot?.status || "");
+    if (normalizedProposalId && slotProposalId && normalizedProposalId !== slotProposalId) continue;
+    if (slotStatus === "apply_running" || (!normalizedProposalId && !applied)) {
+      slots[index] = createCommunicationProposalSlot(index, {
+        ...slot,
+        status: "apply_failed",
+        copy: clampText(message, 120),
+      });
+      applied = true;
+      break;
+    }
+  }
+  if (!applied && slots.length) {
+    slots[0] = createCommunicationProposalSlot(0, {
+      ...slots[0],
+      status: "apply_failed",
+      copy: clampText(message, 120),
+    });
+  }
+  tray.visible = true;
+  tray.requestId = readFirstString(detail?.requestId, tray.requestId) || null;
+  tray.slots = slots;
+  communication.proposalTray = tray;
+  current.communication = communication;
+  return tray;
+}
+
+function markDesignReviewApplyRunningInSessionRecord(record = null, detail = {}) {
+  const session = ensureSessionTabRecordSession(record);
+  if (!session) return false;
+  const previous = cloneDesignReviewApplyState(session.designReviewApply);
+  const normalized = normalizeDesignReviewApplyEventDetail(detail, {
+    fallbackState: previous,
+    status: "running",
+  });
+  if (!designReviewApplyEventMatchesTabRecord(record, normalized, previous)) return false;
+  normalized.completedAt = 0;
+  session.designReviewApply = normalized;
+  session.lastStatusText = "Engine: applying accepted review…";
+  session.lastStatusError = false;
+  syncSessionTabRecordFromSession(record, {
+    publish: true,
+    bumpVersions: false,
+    busy: true,
+    reviewFlowState: "applying",
+  });
+  return true;
+}
+
+async function applyAcceptedDesignReviewOutputToSessionRecord(record = null, detail = {}) {
+  const session = ensureSessionTabRecordSession(record);
+  if (!session) return false;
+  const pending = cloneDesignReviewApplyState(session.designReviewApply);
+  const normalized = normalizeDesignReviewApplyEventDetail(detail, {
+    fallbackState: pending,
+    status: "succeeded",
+  });
+  if ((!pending.sessionKey && !normalized.sessionKey && !pending.requestId) || !designReviewApplyEventMatchesTabRecord(record, normalized, pending)) {
+    return false;
+  }
+  const targetId = readFirstString(normalized.targetImageId);
+  const outputPath = readFirstString(normalized.outputPath);
+  if (!targetId || !outputPath) return false;
+  const target = session.imagesById.get(targetId) || null;
+  const actionLabel = designReviewApplyActionLabel(normalized);
+  if (!target?.path) {
+    session.designReviewApply = createFreshDesignReviewApplyState();
+    session.lastStatusText = `Engine: ${actionLabel.toLowerCase()} failed (target image missing).`;
+    session.lastStatusError = true;
+    syncSessionTabRecordFromSession(record, {
+      publish: true,
+      bumpVersions: false,
+      busy: false,
+      reviewFlowState: "failed",
+    });
+    return false;
+  }
+  const targetSnapshot = {
+    id: targetId,
+    path: String(target.path || ""),
+    receiptPath: target.receiptPath ? String(target.receiptPath) : null,
+    kind: target.kind ? String(target.kind) : null,
+    source: target.source ? String(target.source) : null,
+    label: target.label ? String(target.label) : basename(outputPath),
+    timelineNodeId: target.timelineNodeId ? String(target.timelineNodeId) : null,
+  };
+  const receiptPath = await writeDesignReviewApplyReceipt({
+    runDir: session.runDir || record?.runDir || null,
+    outputPath,
+    targetBefore: targetSnapshot,
+    targetImageId: targetId,
+    referenceImageIds: normalized.referenceImageIds,
+    proposal: normalized.proposal,
+    request: normalized.request,
+    debugInfo: normalized.debugInfo,
+    provider: normalized.provider,
+    requestedModel: normalized.requestedModel,
+    normalizedModel: normalized.normalizedModel,
+    costTotalUsd: normalized.costTotalUsd,
+    latencyPerImageS: normalized.latencyPerImageS,
+  }).catch((error) => {
+    console.error("Failed to write background design-review apply receipt:", error);
+    return null;
+  });
+  const ok = replaceImageInSessionRecord(session, targetId, {
+    path: outputPath,
+    receiptPath,
+    kind: "engine",
+    label: targetSnapshot.label || basename(outputPath),
+  });
+  if (!ok) {
+    if (receiptPath) removeFile(receiptPath).catch(() => {});
+    session.designReviewApply = createFreshDesignReviewApplyState();
+    session.lastStatusText = `Engine: ${actionLabel.toLowerCase()} failed (replace failed).`;
+    session.lastStatusError = true;
+    syncSessionTabRecordFromSession(record, {
+      publish: true,
+      bumpVersions: false,
+      busy: false,
+      reviewFlowState: "failed",
+    });
+    return false;
+  }
+  const nodeId = recordTimelineNodeInSession(session, {
+    imageId: targetId,
+    path: outputPath,
+    receiptPath,
+    label: targetSnapshot.label || basename(outputPath),
+    action: actionLabel,
+    parents: targetSnapshot.timelineNodeId ? [targetSnapshot.timelineNodeId] : [],
+  });
+  const item = session.imagesById.get(targetId) || null;
+  if (item) {
+    item.source = DESIGN_REVIEW_APPLY_SOURCE;
+    if (nodeId) item.timelineNodeId = nodeId;
+  }
+  const referenceImageIds = uniqueStringList(
+    Array.isArray(normalized.referenceImageIds) ? normalized.referenceImageIds : [],
+    { exclude: ["", targetId] }
+  );
+  for (const referenceImageId of referenceImageIds) {
+    removeImageFromSessionRecord(session, referenceImageId);
+  }
+  if (session.communication && typeof session.communication === "object") {
+    session.communication.tool = null;
+  }
+  clearVisibleCommunicationReviewStateForSession(session);
+  session.activeId = targetId;
+  session.selectedIds = [targetId];
+  updateDesignReviewApplyCostLatencyForSession(session, normalized);
+  session.designReviewApply = createFreshDesignReviewApplyState();
+  session.lastStatusText = "Engine: ready";
+  session.lastStatusError = false;
+  syncSessionTabRecordFromSession(record, {
+    publish: true,
+    bumpVersions: true,
+    busy: false,
+    reviewFlowState: "",
+  });
+  return true;
+}
+
 async function applyAcceptedDesignReviewOutput(detail = {}) {
+  const resolved = resolveDesignReviewApplyTargetRecord(detail, state.designReviewApply);
+  if (!resolved.record) return false;
+  if (!resolved.isActive) {
+    return applyAcceptedDesignReviewOutputToSessionRecord(resolved.record, detail);
+  }
   const pending = cloneDesignReviewApplyState(state.designReviewApply);
   const normalized = normalizeDesignReviewApplyEventDetail(detail, {
     fallbackState: pending,
@@ -23848,7 +24353,38 @@ async function applyAcceptedDesignReviewOutput(detail = {}) {
   return true;
 }
 
+function handleDesignReviewApplyFailureInSessionRecord(record = null, detail = {}) {
+  const session = ensureSessionTabRecordSession(record);
+  if (!session) return false;
+  const pending = cloneDesignReviewApplyState(session.designReviewApply);
+  const normalized = normalizeDesignReviewApplyEventDetail(detail, {
+    fallbackState: pending,
+    status: "failed",
+  });
+  if ((!pending.sessionKey && !normalized.sessionKey && !pending.requestId) || !designReviewApplyEventMatchesTabRecord(record, normalized, pending)) {
+    return false;
+  }
+  const actionLabel = designReviewApplyActionLabel(normalized);
+  const message = readFirstString(normalized.error, normalized.debugInfo?.error) || "Review apply failed.";
+  session.designReviewApply = createFreshDesignReviewApplyState();
+  session.lastStatusText = `Engine: ${actionLabel.toLowerCase()} failed (${message})`;
+  session.lastStatusError = true;
+  markSessionCommunicationProposalTrayApplyFailed(session, normalized, message);
+  syncSessionTabRecordFromSession(record, {
+    publish: true,
+    bumpVersions: true,
+    busy: false,
+    reviewFlowState: "failed",
+  });
+  return true;
+}
+
 function handleDesignReviewApplyFailure(detail = {}) {
+  const resolved = resolveDesignReviewApplyTargetRecord(detail, state.designReviewApply);
+  if (!resolved.record) return false;
+  if (!resolved.isActive) {
+    return handleDesignReviewApplyFailureInSessionRecord(resolved.record, detail);
+  }
   const pending = cloneDesignReviewApplyState(state.designReviewApply);
   const normalized = normalizeDesignReviewApplyEventDetail(detail, {
     fallbackState: pending,
@@ -29969,10 +30505,10 @@ const ACTION_QUEUE_PRIORITY = {
   background: 10,
 };
 
-function isEngineBusy() {
+function isEngineBusy({ includeReviewApply = true } = {}) {
   return Boolean(
     state.ptySpawning ||
-      state.designReviewApply?.status === "running" ||
+      (includeReviewApply && state.designReviewApply?.status === "running") ||
       state.pendingBlend ||
       state.pendingSwapDna ||
       state.pendingBridge ||
@@ -32229,6 +32765,7 @@ function resolveDesignReviewApplyRequestImagePath(request = null, imageId = "") 
 }
 
 async function writeDesignReviewApplyReceipt({
+  runDir = state.runDir,
   outputPath,
   targetBefore = null,
   targetImageId = null,
@@ -32242,8 +32779,9 @@ async function writeDesignReviewApplyReceipt({
   costTotalUsd = null,
   latencyPerImageS = null,
 } = {}) {
-  if (!state.runDir || !outputPath) return null;
-  const receiptPath = `${state.runDir}/receipt-review-apply-${Date.now()}.json`;
+  const resolvedRunDir = readFirstString(runDir, state.runDir);
+  if (!resolvedRunDir || !outputPath) return null;
+  const receiptPath = `${resolvedRunDir}/receipt-review-apply-${Date.now()}.json`;
   const actionLabel = readFirstString(proposal?.label, proposal?.actionType) || "Apply Proposal";
   const referencePaths = uniqueStringList(
     referenceImageIds.map((imageId) => resolveDesignReviewApplyRequestImagePath(request, imageId))
@@ -32265,7 +32803,7 @@ async function writeDesignReviewApplyReceipt({
       provider: readFirstString(provider, debugInfo?.provider, debugInfo?.route?.provider) || null,
       model: readFirstString(requestedModel, debugInfo?.requestedModel, debugInfo?.providerRequest?.model) || null,
       provider_options: {},
-      out_dir: state.runDir,
+      out_dir: resolvedRunDir,
       metadata: {
         operation: "design_review_apply",
         action: actionLabel,
@@ -35036,12 +35574,12 @@ function tabLabelForRunDir(runDir, fallback = DEFAULT_UNTITLED_TAB_TITLE) {
   });
 }
 
-function currentTabSwitchBlockReason() {
+function currentTabSwitchBlockReason({ allowReviewApply = false } = {}) {
   if (state.pointer?.active || state.gestureZoom?.active) return "manipulating_canvas";
-  if (state.designReviewApply?.status === "running") return "review_apply";
+  if (!allowReviewApply && state.designReviewApply?.status === "running") return "review_apply";
   if (state.mother?.running || state.motherIdle?.commitMutationInFlight) return "assistant_busy";
   if (state.actionQueueActive || state.actionQueue.length) return "queued_actions";
-  if (isEngineBusy()) return "engine_busy";
+  if (isEngineBusy({ includeReviewApply: !allowReviewApply })) return "engine_busy";
   return null;
 }
 
@@ -35624,7 +36162,7 @@ async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate"
       { ok: true, sameTab: true }
     );
   }
-  const blockReason = currentTabSwitchBlockReason();
+  const blockReason = currentTabSwitchBlockReason({ allowReviewApply: true });
   if (blockReason) {
     showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
     return finalize(
@@ -35661,8 +36199,13 @@ async function closeTab(tabId) {
   if (!normalized) {
     return { ok: false, reason: "missing_tab", tabs: snapshot.tabs };
   }
-  if (!tabbedSessions.getTab(normalized)) {
+  const targetRecord = tabbedSessions.getTab(normalized) || null;
+  if (!targetRecord) {
     return { ok: false, reason: "missing_tab", tabs: snapshot.tabs };
+  }
+  if (sessionTabHasRunningReviewApply(targetRecord)) {
+    showToast(currentTabSwitchBlockMessage("review_apply"), "tip", 2200);
+    return { ok: false, reason: "review_apply", tabs: snapshot.tabs };
   }
   if (tabbedSessions.tabsOrder.length <= 1) {
     showToast("Keep one tab open in this build.", "tip", 2200);
@@ -35758,7 +36301,7 @@ async function ensureRun() {
 }
 
 async function createRun({ announce = true, source = "new_run" } = {}) {
-  const blockReason = currentTabSwitchBlockReason();
+  const blockReason = currentTabSwitchBlockReason({ allowReviewApply: true });
   if (blockReason) {
     showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
     return { ok: false, reason: blockReason };
@@ -35802,7 +36345,7 @@ async function createRun({ announce = true, source = "new_run" } = {}) {
 
 async function openExistingRun() {
   bumpInteraction();
-  const blockReason = currentTabSwitchBlockReason();
+  const blockReason = currentTabSwitchBlockReason({ allowReviewApply: true });
   if (blockReason) {
     showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
     return { ok: false, reason: blockReason };

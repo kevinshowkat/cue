@@ -285,6 +285,10 @@ function buildReviewApplyHarness({
   };
 
   const applyAcceptedDesignReviewOutput = instantiateFunction("applyAcceptedDesignReviewOutput", {
+    resolveDesignReviewApplyTargetRecord: () => ({
+      record: { tabId: activeTabId },
+      isActive: true,
+    }),
     cloneDesignReviewApplyState,
     normalizeDesignReviewApplyEventDetail,
     designReviewApplyEventMatchesActiveTab,
@@ -346,6 +350,188 @@ function buildReviewApplyHarness({
       return syncReviewFlowCalls;
     },
     applyAcceptedDesignReviewOutput,
+  };
+}
+
+function buildBackgroundReviewApplyHarness({
+  targetTabId = "tab-a",
+  targetPath = "/tmp/source.png",
+  referencePath = "/tmp/ref.png",
+} = {}) {
+  const session = {
+    runDir: "/runs/a",
+    images: [
+      {
+        id: "img-1",
+        path: targetPath,
+        receiptPath: "/tmp/old-receipt.json",
+        kind: "upload",
+        source: "upload",
+        label: "Hero",
+        timelineNodeId: "tl-1",
+      },
+      {
+        id: "img-2",
+        path: referencePath,
+        kind: "upload",
+        source: "upload",
+        label: "Ref",
+        timelineNodeId: "tl-ref",
+      },
+    ],
+    imagesById: new Map(),
+    activeId: "img-1",
+    selectedIds: ["img-1", "img-2"],
+    designReviewApply: {
+      status: "running",
+      sessionKey: `tab:${targetTabId}`,
+      tabId: targetTabId,
+      requestId: "review-1",
+      proposalId: "proposal-1",
+      targetImageId: "img-1",
+      referenceImageIds: ["img-2"],
+    },
+    communication: {
+      tool: "marker",
+      proposalTray: {
+        visible: true,
+        requestId: "review-1",
+        slots: [{ status: "apply_running" }],
+      },
+    },
+    timelineNodes: [],
+    timelineNodesById: new Map(),
+    lastCostLatency: null,
+    reviewFlowState: "applying",
+    freeformRects: new Map(),
+    freeformZOrder: ["img-1", "img-2"],
+    multiRects: new Map(),
+    circlesByImageId: new Map(),
+    lastStatusText: "Engine: applying accepted review…",
+    lastStatusError: false,
+  };
+  for (const image of session.images) {
+    session.imagesById.set(image.id, image);
+  }
+  const record = {
+    tabId: targetTabId,
+    runDir: session.runDir,
+    session,
+    reviewFlowState: "applying",
+    labelManual: false,
+    label: "Hero",
+    busy: true,
+    tabUiMeta: {},
+  };
+  const cloneToolRuntimeValue = (value) => (value == null ? value : JSON.parse(JSON.stringify(value)));
+  const asRecord = instantiateFunction("asRecord");
+  const readFirstString = instantiateFunction("readFirstString");
+  const readFirstNumber = instantiateFunction("readFirstNumber");
+  const uniqueStringList = instantiateFunction("uniqueStringList", { readFirstString, Set });
+  const createFreshDesignReviewApplyState = instantiateFunction("createFreshDesignReviewApplyState");
+  const cloneDesignReviewApplyState = instantiateFunction("cloneDesignReviewApplyState", {
+    asRecord,
+    readFirstString,
+    readFirstNumber,
+    uniqueStringList,
+    cloneToolRuntimeValue,
+    createFreshDesignReviewApplyState,
+  });
+  const normalizeDesignReviewApplyEventDetail = instantiateFunction("normalizeDesignReviewApplyEventDetail", {
+    asRecord,
+    cloneToolRuntimeValue,
+    cloneDesignReviewApplyState,
+    readFirstString,
+    readFirstNumber,
+    uniqueStringList,
+    currentDesignReviewApplySessionKey: () => "",
+    state: {
+      communication: {
+        proposalTray: {
+          requestId: null,
+        },
+      },
+    },
+  });
+  const designReviewApplyActionLabel = instantiateFunction("designReviewApplyActionLabel", {
+    readFirstString,
+  });
+  const designReviewApplyEventMatchesTabRecord = instantiateFunction("designReviewApplyEventMatchesTabRecord", {
+    cloneDesignReviewApplyState,
+    readFirstString,
+  });
+
+  const receiptCalls = [];
+  const timelineCalls = [];
+  const syncCalls = [];
+  const removeFileCalls = [];
+
+  const applyAcceptedDesignReviewOutputToSessionRecord = instantiateFunction("applyAcceptedDesignReviewOutputToSessionRecord", {
+    ensureSessionTabRecordSession: () => session,
+    cloneDesignReviewApplyState,
+    normalizeDesignReviewApplyEventDetail,
+    designReviewApplyEventMatchesTabRecord,
+    readFirstString,
+    designReviewApplyActionLabel,
+    writeDesignReviewApplyReceipt: async (payload = {}) => {
+      receiptCalls.push(payload);
+      return "/runs/a/receipt-review-apply.json";
+    },
+    replaceImageInSessionRecord: (_session, targetId, options = {}) => {
+      const item = session.imagesById.get(targetId) || null;
+      if (!item) return false;
+      item.path = options.path;
+      item.receiptPath = options.receiptPath;
+      item.kind = options.kind;
+      item.label = options.label;
+      item.source = "design_review_apply";
+      return true;
+    },
+    recordTimelineNodeInSession: (_session, payload = {}) => {
+      timelineCalls.push(payload);
+      return "tl-2";
+    },
+    updateDesignReviewApplyCostLatencyForSession: (_session, detail = {}) => {
+      session.lastCostLatency = {
+        provider: detail.provider || null,
+        model: detail.normalizedModel || detail.requestedModel || null,
+      };
+      return true;
+    },
+    uniqueStringList,
+    removeImageFromSessionRecord: (_session, imageId) => {
+      session.imagesById.delete(String(imageId || ""));
+      session.images = session.images.filter((item) => item.id !== imageId);
+      return true;
+    },
+    clearVisibleCommunicationReviewStateForSession: (_session) => {
+      session.communication.tool = null;
+      session.communication.proposalTray.visible = false;
+      session.communication.proposalTray.requestId = null;
+      return session.communication;
+    },
+    syncSessionTabRecordFromSession: (_record, options = {}) => {
+      syncCalls.push(options);
+      record.reviewFlowState = options.reviewFlowState ?? record.reviewFlowState;
+      record.busy = options.busy ?? record.busy;
+      return record;
+    },
+    createFreshDesignReviewApplyState,
+    basename,
+    DESIGN_REVIEW_APPLY_SOURCE: "design_review_apply",
+    removeFile: async (path) => {
+      removeFileCalls.push(path);
+    },
+  });
+
+  return {
+    record,
+    session,
+    receiptCalls,
+    timelineCalls,
+    syncCalls,
+    removeFileCalls,
+    applyAcceptedDesignReviewOutputToSessionRecord,
   };
 }
 
@@ -425,30 +611,62 @@ test("review apply success replaces the target image in place and records a time
   });
 });
 
-test("review apply completion events for another tab are ignored", async () => {
-  const harness = buildReviewApplyHarness({
-    activeTabId: "tab-b",
-    pendingRequestId: "review-b",
-    pendingSessionKey: "tab:tab-b",
-  });
+test("background review apply completion updates the owning tab session without touching active-tab UI", async () => {
+  const harness = buildBackgroundReviewApplyHarness();
 
-  const ok = await harness.applyAcceptedDesignReviewOutput({
+  const ok = await harness.applyAcceptedDesignReviewOutputToSessionRecord(harness.record, {
     phase: "succeeded",
     sessionKey: "tab:tab-a",
-    requestId: "review-a",
+    requestId: "review-1",
+    proposal: {
+      proposalId: "proposal-1",
+      label: "Swap background",
+      actionType: "background_replace",
+    },
+    request: {
+      requestId: "review-1",
+      sessionId: "tab-a",
+      primaryImageId: "img-1",
+      visibleCanvasContext: {
+        images: [
+          { id: "img-1", path: "/tmp/source.png" },
+          { id: "img-2", path: "/tmp/ref.png" },
+        ],
+      },
+    },
     targetImageId: "img-1",
     outputPath: "/tmp/out.png",
+    referenceImageIds: ["img-2"],
+    provider: "google",
+    requestedModel: "gemini-nano-banana-2",
+    normalizedModel: "gemini-nano-banana-2",
   });
 
-  assert.equal(ok, false);
-  assert.equal(harness.receiptCalls.length, 0);
-  assert.equal(harness.replaceCalls.length, 0);
-  assert.equal(harness.timelineCalls.length, 0);
-  assert.equal(harness.clearCalls.length, 0);
-  assert.equal(harness.dismissCalls.length, 0);
-  assert.equal(harness.requestRenderCalls, 0);
-  assert.equal(harness.processActionQueueCalls, 0);
-  assert.equal(harness.state.imagesById.get("img-1")?.path, "/tmp/source.png");
+  assert.equal(ok, true);
+  assert.equal(harness.receiptCalls.length, 1);
+  assert.equal(harness.receiptCalls[0].runDir, "/runs/a");
+  assert.equal(harness.session.imagesById.get("img-1")?.path, "/tmp/out.png");
+  assert.equal(harness.session.imagesById.get("img-1")?.receiptPath, "/runs/a/receipt-review-apply.json");
+  assert.equal(harness.session.imagesById.get("img-1")?.timelineNodeId, "tl-2");
+  assert.equal(harness.session.imagesById.get("img-1")?.source, "design_review_apply");
+  assert.equal(harness.session.imagesById.has("img-2"), false);
+  assert.equal(harness.session.communication.tool, null);
+  assert.equal(harness.session.communication.proposalTray.visible, false);
+  assert.equal(harness.session.designReviewApply.status, "idle");
+  assert.deepEqual(harness.session.selectedIds, ["img-1"]);
+  assert.equal(harness.session.lastStatusText, "Engine: ready");
+  assert.equal(harness.session.lastStatusError, false);
+  assert.equal(harness.session.lastCostLatency?.provider, "google");
+  assert.equal(harness.session.lastCostLatency?.model, "gemini-nano-banana-2");
+  assert.equal(harness.timelineCalls.length, 1);
+  assert.deepEqual(harness.timelineCalls[0].parents, ["tl-1"]);
+  assert.deepEqual(harness.syncCalls.at(-1), {
+    publish: true,
+    bumpVersions: true,
+    busy: false,
+    reviewFlowState: "",
+  });
+  assert.equal(harness.removeFileCalls.length, 0);
 });
 
 test("review apply detail falls back to request-visible reference images and parses ISO timestamps", () => {
