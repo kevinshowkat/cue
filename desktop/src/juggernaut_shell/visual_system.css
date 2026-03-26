@@ -647,7 +647,7 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-p
   border-top-color: rgba(247, 242, 240, 0.92);
   border-left-color: rgba(236, 227, 224, 0.82);
   background: rgba(204, 185, 180, 0.98);
-  color: rgba(255, 255, 255, 0.98);
+  color: rgba(0, 0, 0, 0.92);
   box-shadow: none;
 }
 
@@ -706,7 +706,7 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-p
   border-top-color: rgba(236, 227, 224, 0.78);
   border-left-color: rgba(224, 214, 210, 0.68);
   background: rgba(177, 157, 152, 0.98);
-  color: rgba(255, 255, 255, 0.98);
+  color: rgba(0, 0, 0, 0.92);
   box-shadow:
     inset 0 2px 8px rgba(92, 74, 70, 0.36),
     inset 0 1px 0 rgba(255, 255, 255, 0.14);
@@ -757,7 +757,7 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-p
   border-top-color: rgba(244, 238, 236, 0.78);
   border-left-color: rgba(232, 224, 221, 0.68);
   background: rgba(204, 185, 180, 0.72);
-  color: rgba(255, 255, 255, 0.86);
+  color: rgba(0, 0, 0, 0.58);
   box-shadow: none;
   opacity: 1;
   filter: none;
@@ -766,7 +766,7 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-p
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance:disabled .tool-icon,
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance:disabled .tool-hint,
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance:disabled .tool-label {
-  color: rgba(255, 255, 255, 0.84);
+  color: rgba(0, 0, 0, 0.58);
   opacity: 1;
   filter: none;
 }
@@ -911,7 +911,7 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button .tool-icon {
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance .tool-icon,
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance .tool-hint,
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance .tool-label {
-  color: rgba(255, 255, 255, 0.96);
+  color: rgba(0, 0, 0, 0.92);
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility .tool-icon,
@@ -968,7 +968,7 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button .tool-hint {
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance .tool-hint {
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(0, 0, 0, 0.92);
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility .tool-hint {

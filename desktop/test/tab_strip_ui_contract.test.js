@@ -101,9 +101,9 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-strip-action\[data-provenance="local_only"\]:active,\s*\.session-tab-runtime-action\[data-provenance="local_only"\]:active,\s*\.session-tab-runtime-action\[data-provenance="local_only"\]\.is-active-request\s*\{[\s\S]*background:\s*rgba\(220,\s*212,\s*194,\s*0\.98\);/);
   assert.match(css, /\.session-tab-runtime-action\[data-provenance="local_only"\]:disabled\s*\{[\s\S]*background:\s*rgba\(235,\s*230,\s*216,\s*0\.72\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.58\);/);
   assert.match(css, /\.session-tab-runtime-action\.has-action-provenance,\s*\.session-tab-runtime-action\.has-action-provenance\.is-ready\s*\{/);
-  assert.match(css, /\.session-tab-runtime-action\.has-action-provenance,\s*\.session-tab-runtime-action\.has-action-provenance\.is-ready\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.98\);/);
-  assert.match(css, /\.session-tab-strip-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(177,\s*157,\s*152,\s*0\.98\);/);
-  assert.match(css, /\.session-tab-runtime-action\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.72\);[\s\S]*opacity:\s*1;/);
+  assert.match(css, /\.session-tab-runtime-action\.has-action-provenance,\s*\.session-tab-runtime-action\.has-action-provenance\.is-ready\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);/);
+  assert.match(css, /\.session-tab-strip-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(177,\s*157,\s*152,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);/);
+  assert.match(css, /\.session-tab-runtime-action\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.72\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.58\);[\s\S]*opacity:\s*1;/);
   assert.match(css, /\.session-tab-runtime-action\.is-pending-hook\s*\{/);
   assert.match(css, /\.session-tab-action-menu-panel\s*\{/);
   assert.match(css, /\.session-tab-action-menu-item\s*\{/);
