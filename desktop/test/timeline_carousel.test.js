@@ -297,7 +297,22 @@ test("timeline node summary renders import history as readable prose", () => {
       label: "spongebob.webp",
       imageIds: ["img-1"],
     }),
-    "Imported 1 image from spongebob.webp"
+    "Imported spongebob.webp (1 image)"
+  );
+});
+
+test("timeline node summary treats canvas image counts as context for transforms", () => {
+  const timelineNodeSummary = instantiateFunction("timelineNodeSummary", {
+    timelineNodeLabel: (node) => String(node?.label || node?.action || "State"),
+  });
+
+  assert.equal(
+    timelineNodeSummary({
+      action: "Move",
+      label: "squidward.jpeg",
+      imageIds: ["img-1", "img-2", "img-3", "img-4"],
+    }),
+    "Moved squidward.jpeg in a 4-image canvas"
   );
 });
 

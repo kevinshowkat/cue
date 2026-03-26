@@ -32976,71 +32976,91 @@ function timelineNodeSummary(node = null) {
   const label = timelineNodeLabel(node);
   const imageCount = Array.isArray(node.imageIds) ? node.imageIds.length : 0;
   const countText = imageCount ? `${imageCount} image${imageCount === 1 ? "" : "s"}` : "";
+  const canvasCountText = imageCount ? `${imageCount}-image` : "";
   const targetLabel =
     label && label !== action && label !== "State" && label !== "Timeline"
       ? String(label).trim()
       : "";
   const normalizedAction = action.toLowerCase();
+  const singleCanvasContext = countText ? ` (${countText})` : "";
+  const multiCanvasContext = imageCount > 1 ? ` in a ${canvasCountText} canvas` : "";
+  const parentheticalCanvasContext = countText ? ` (${countText} on canvas)` : "";
+  const targetWithContext = targetLabel ? `${targetLabel}${multiCanvasContext}` : "";
   if (normalizedAction === "import" || normalizedAction === "upload" || normalizedAction === "add image") {
-    if (countText && targetLabel) return `Imported ${countText} from ${targetLabel}`;
-    if (targetLabel) return `Imported ${targetLabel}`;
-    if (countText) return `Imported ${countText}`;
+    if (targetLabel) return `Imported ${targetLabel}${singleCanvasContext}`;
+    if (countText) return `Imported an image${singleCanvasContext}`;
     return "Imported an image";
   }
   if (normalizedAction === "mark") {
-    return targetLabel ? `Marked ${targetLabel}` : "Added a marker annotation";
+    return targetWithContext ? `Marked ${targetWithContext}` : "Added a marker annotation";
   }
   if (normalizedAction === "highlight" || normalizedAction === "protect") {
-    return targetLabel ? `Highlighted ${targetLabel}` : "Added a highlight annotation";
+    return targetWithContext ? `Highlighted ${targetWithContext}` : "Added a highlight annotation";
   }
   if (normalizedAction === "magic select" || normalizedAction === "select" || normalizedAction === "select region") {
-    return targetLabel ? `Selected a region in ${targetLabel}` : "Selected a region";
+    return targetWithContext ? `Selected a region on ${targetWithContext}` : "Selected a region";
   }
   if (normalizedAction === "erase") {
-    return targetLabel ? `Erased part of ${targetLabel}` : "Erased part of the image";
+    return targetWithContext ? `Erased part of ${targetWithContext}` : "Erased part of the image";
+  }
+  if (normalizedAction === "annotate") {
+    return targetWithContext ? `Annotated ${targetWithContext}` : "Added an annotation";
+  }
+  if (normalizedAction === "circle") {
+    return targetWithContext ? `Circled ${targetWithContext}` : "Circled a region";
   }
   if (normalizedAction === "delete" || normalizedAction === "remove") {
-    return targetLabel ? `Removed ${targetLabel}` : countText ? `Removed ${countText}` : "Removed an image";
+    if (targetLabel && countText) return `Removed ${targetLabel}${parentheticalCanvasContext}`;
+    if (targetLabel) return `Removed ${targetLabel}`;
+    if (countText) return `Removed an image${singleCanvasContext}`;
+    return "Removed an image";
   }
   if (normalizedAction === "move") {
-    return targetLabel ? `Moved ${targetLabel}` : "Moved the selection";
+    return targetWithContext ? `Moved ${targetWithContext}` : "Moved the selection";
   }
   if (normalizedAction === "resize") {
-    return targetLabel ? `Resized ${targetLabel}` : "Resized the selection";
+    return targetWithContext ? `Resized ${targetWithContext}` : "Resized the selection";
   }
   if (normalizedAction === "rotate") {
-    return targetLabel ? `Rotated ${targetLabel}` : "Rotated the selection";
+    return targetWithContext ? `Rotated ${targetWithContext}` : "Rotated the selection";
   }
   if (normalizedAction === "skew") {
-    return targetLabel ? `Skewed ${targetLabel}` : "Skewed the selection";
+    return targetWithContext ? `Skewed ${targetWithContext}` : "Skewed the selection";
   }
   if (normalizedAction === "combine") {
-    return countText ? `Combined ${countText}` : "Combined multiple images";
+    return countText ? `Combined images${parentheticalCanvasContext}` : "Combined multiple images";
   }
   if (normalizedAction === "bridge") {
-    return countText ? `Bridged ${countText}` : "Bridged multiple images";
+    return countText ? `Bridged images${parentheticalCanvasContext}` : "Bridged multiple images";
   }
   if (normalizedAction === "triforce") {
-    return countText ? `Merged ${countText}` : "Merged multiple images";
+    return countText ? `Merged images${parentheticalCanvasContext}` : "Merged multiple images";
   }
   if (normalizedAction === "swap dna") {
-    return targetLabel ? `Swapped the DNA of ${targetLabel}` : "Swapped image DNA";
+    return targetWithContext ? `Swapped the DNA of ${targetWithContext}` : "Swapped image DNA";
   }
   if (normalizedAction === "recast") {
-    return targetLabel ? `Recast ${targetLabel}` : "Recast the active image";
+    return targetWithContext ? `Recast ${targetWithContext}` : "Recast the active image";
   }
   if (normalizedAction === "prompt generate") {
-    return targetLabel ? `Generated ${targetLabel}` : countText ? `Generated ${countText}` : "Generated a new image";
+    if (targetLabel) return `Generated ${targetLabel}${singleCanvasContext}`;
+    if (countText) return `Generated a new image${singleCanvasContext}`;
+    return "Generated a new image";
   }
   if (normalizedAction === "create layers") {
-    return targetLabel ? `Created layers for ${targetLabel}` : countText ? `Created layers for ${countText}` : "Created layers";
+    if (targetWithContext) return `Created layers for ${targetWithContext}`;
+    if (countText) return `Created layers${singleCanvasContext}`;
+    return "Created layers";
   }
   if (normalizedAction === "export") {
-    return targetLabel ? `Exported ${targetLabel}` : countText ? `Exported ${countText}` : "Exported the canvas";
+    if (targetLabel) return `Exported ${targetLabel}${singleCanvasContext}`;
+    if (countText) return `Exported the canvas${singleCanvasContext}`;
+    return "Exported the canvas";
   }
   if (action) {
-    const subject = targetLabel || countText || "the canvas";
-    return `Applied ${normalizedAction} to ${subject}`;
+    if (targetWithContext) return `Applied ${action} to ${targetWithContext}`;
+    if (countText) return `Applied ${action}${singleCanvasContext}`;
+    return `Applied ${action}`;
   }
   return targetLabel || countText || "Committed session history";
 }
