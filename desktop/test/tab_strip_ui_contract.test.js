@@ -173,7 +173,7 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
 });
 
 test("Timeline shelf CSS keeps a visible collapsed stub with an in-dock toggle", () => {
-  assert.match(css, /\.timeline-dock\s*\{[\s\S]*width:\s*min\(42vw,\s*760px\)/);
+  assert.match(css, /\.timeline-dock\s*\{[\s\S]*width:\s*(?:min\(42vw,\s*760px\)|clamp\(272px,\s*24vw,\s*360px\))/);
   assert.match(css, /\.timeline-dock\.is-collapsed\s*\{[\s\S]*width:\s*min\(32vw,\s*420px\)/);
   assert.match(css, /\.timeline-toggle\s*\{[\s\S]*min-height:\s*38px[\s\S]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto/);
   assert.match(css, /\.timeline-toggle-summary\s*\{[\s\S]*font-family:\s*"IBM Plex Mono", monospace[\s\S]*text-overflow:\s*ellipsis/);
