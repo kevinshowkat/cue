@@ -186,7 +186,7 @@ fn native_iconography_menu_items() -> [(&'static str, &'static str, &'static str
         (
             "oscillo_ink",
             MENU_SETTINGS_ICON_PACK_OSCILLO_INK,
-            "Oscillo / Cuphead",
+            "Cuphead",
         ),
         (
             "industrial_mono",

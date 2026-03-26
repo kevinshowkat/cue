@@ -3,13 +3,18 @@ export const DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID = "oscillo_ink";
 export const JUGGERNAUT_RAIL_ICON_PACKS = Object.freeze([
   Object.freeze({
     id: "oscillo_ink",
-    label: "Oscillo / Cuphead",
-    settingsLabel: "Oscillo / Cuphead",
-    menuLabel: "Oscillo / Cuphead",
+    label: "Cuphead",
+    settingsLabel: "Cuphead",
+    menuLabel: "Cuphead",
     description:
       "Golden-age rubber-hose iconography based on the current Oscillo bookend prompt family, with the Cuphead / Moldenhauer reference carried into simple single-subject symbols.",
     promptStyle:
       "Golden-age animation iconography in the style currently used by the Oscillo Gemini script: Cuphead-era 1930s cartoon line art by Chad and Jared Moldenhauer, with rubber-hose rhythm, bold contour, and a playful simplified silhouette.",
+    promptDirectives: Object.freeze([
+      "Keep the drawing to a few solid pen strokes only.",
+      "Use as few confident ink strokes as possible while keeping the symbol unmistakable.",
+      "Favor broad exterior contour over interior detail or hatching.",
+    ]),
   }),
   Object.freeze({
     id: "industrial_mono",
@@ -30,6 +35,11 @@ export const JUGGERNAUT_RAIL_ICON_PACKS = Object.freeze([
       "Painterly folk-art iconography with bold handcrafted contour and floral warmth, as if Frida Kahlo translated the rail into symbolic miniature emblems.",
     promptStyle:
       "Painterly folk-art icon as if Frida Kahlo drew it. Hand-painted contour, symbolic clarity, organic balance, artisanal rhythm, and vivid but disciplined shape language.",
+    promptDirectives: Object.freeze([
+      "Keep the drawing to a few solid pen strokes only.",
+      "Use as few confident brush-or-pen contours as possible while keeping the icon unmistakable.",
+      "Favor bold exterior contour over small decorative interior detail.",
+    ]),
   }),
   Object.freeze({
     id: "kinetic_marker",
@@ -67,6 +77,7 @@ export function buildJuggernautRailIconGeminiPrompt(blueprint = {}, packValue = 
   const promptParts = [
     "Design a single desktop-tool icon.",
     pack.promptStyle,
+    ...(Array.isArray(pack.promptDirectives) ? pack.promptDirectives : []),
     "Make the icon simple, clear, uncluttered, and immediately legible.",
     "Prefer bold simplified forms over decorative detail.",
     "Single centered subject on a square canvas.",

@@ -32209,10 +32209,13 @@ function customToolDockIconFor(tool) {
 }
 
 function customToolCreateIcon() {
-  return `<svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-    <path d="M17.5 5.5l1 2.3 2.3 1-2.3 1-1 2.3-1-2.3-2.3-1 2.3-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
-  </svg>`;
+  return (
+    getJuggernautRailIconMarkup("create_tool", settings.railIconPack) ||
+    `<svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      <path d="M17.5 5.5l1 2.3 2.3 1-2.3 1-1 2.3-1-2.3-2.3-1 2.3-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+    </svg>`
+  );
 }
 
 function customToolDockRenderSignature(tools = []) {
