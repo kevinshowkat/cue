@@ -7,12 +7,12 @@
     <style>
       html,
       body {
-        background: #000;
+        background: #efe7d7;
       }
     </style>
     <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body class="juggernaut-shell">
+  <body class="juggernaut-shell boot-pending">
     <div id="boot-video-overlay" class="boot-video-overlay">
       <video
         id="boot-video-player"
@@ -26,7 +26,13 @@
       <div class="boot-video-copy" aria-hidden="true">
         <img class="boot-video-logo" src="./assets/cue_brand_tile.png" alt="" />
         <div class="boot-video-mark">Cue</div>
-        <div id="boot-video-status" class="boot-video-status">Loading startup video…</div>
+      </div>
+      <div class="boot-video-status-rail" aria-live="polite">
+        <div class="boot-video-status-label">Loading</div>
+        <div id="boot-video-status" class="boot-video-status">Starting splash shell…</div>
+        <div class="boot-video-progress" aria-hidden="true">
+          <div id="boot-video-progress-bar" class="boot-video-progress-bar"></div>
+        </div>
       </div>
     </div>
     <div id="app">
@@ -1230,6 +1236,9 @@
       const LOCAL_BOOT_VIDEO_PATH = "/Users/mainframe/Desktop/load.mp4";
       const LOCAL_BOOT_VIDEO_SESSION_KEY = "juggernaut.localBootVideoShown";
       const BOOT_VIDEO_MAX_HOLD_MS = 20000;
+      const BOOT_SHELL_INTRO_DELAY_MS = 60;
+      const BOOT_VIDEO_START_DELAY_MS = 2000;
+      const BOOT_STATUS_TICK_MS = 700;
       const SPLASH_WINDOW_SIZE = 620;
       const APP_WINDOW_WIDTH = 1400;
       const APP_WINDOW_HEIGHT = 900;
@@ -1237,19 +1246,57 @@
       const bootOverlayEl = document.getElementById("boot-video-overlay");
       const bootVideoEl = document.getElementById("boot-video-player");
       const bootStatusEl = document.getElementById("boot-video-status");
+      const bootProgressBarEl = document.getElementById("boot-video-progress-bar");
+      const bodyEl = document.body;
+      const bootPrepStatusQueue = [
+        { message: "Loading workspace modules…", progress: 66 },
+        { message: "Preparing canvas engine…", progress: 74 },
+        { message: "Mounting controls…", progress: 82 },
+      ];
       let bootReady = false;
       let bootFailed = false;
       let bootVideoDone = false;
       let bootRevealStarted = false;
       let bootVideoObjectUrl = null;
+      let bootPrepStatusTimer = 0;
+      let bootPrepStatusIndex = 0;
 
-      function setBootStatus(message = "") {
+      function setBootProgress(progress = 0) {
+        if (!bootProgressBarEl) return;
+        const normalized = Math.max(0, Math.min(100, Number(progress) || 0));
+        bootProgressBarEl.style.transform = `scaleX(${normalized / 100})`;
+      }
+
+      function setBootStatus(message = "", progress = null) {
         if (!bootStatusEl) return;
         bootStatusEl.textContent = String(message || "").trim() || "Loading Cue…";
+        if (progress !== null) setBootProgress(progress);
+      }
+
+      function stopBootPrepStatusCycle() {
+        if (bootPrepStatusTimer) {
+          window.clearInterval(bootPrepStatusTimer);
+          bootPrepStatusTimer = 0;
+        }
+      }
+
+      function startBootPrepStatusCycle() {
+        stopBootPrepStatusCycle();
+        bootPrepStatusIndex = 0;
+        const current = bootPrepStatusQueue[bootPrepStatusIndex];
+        if (current) setBootStatus(current.message, current.progress);
+        bootPrepStatusTimer = window.setInterval(() => {
+          bootPrepStatusIndex = (bootPrepStatusIndex + 1) % bootPrepStatusQueue.length;
+          const next = bootPrepStatusQueue[bootPrepStatusIndex];
+          if (next) setBootStatus(next.message, next.progress);
+        }, BOOT_STATUS_TICK_MS);
       }
 
       function cleanupBootVideoSource() {
+        bootOverlayEl?.classList.remove("is-video-ready");
+        stopBootPrepStatusCycle();
         if (bootVideoEl) {
+          bootVideoEl.classList.remove("is-visible");
           bootVideoEl.pause();
           bootVideoEl.removeAttribute("src");
           bootVideoEl.load();
@@ -1260,7 +1307,19 @@
         }
       }
 
+      function armBootShellIntro() {
+        if (!bootOverlayEl) return;
+        window.requestAnimationFrame(() => {
+          window.setTimeout(() => {
+            bootOverlayEl.classList.add("is-shell-visible");
+          }, BOOT_SHELL_INTRO_DELAY_MS);
+        });
+      }
+
       function hideBootOverlay() {
+        stopBootPrepStatusCycle();
+        setBootStatus("Workspace ready", 100);
+        bodyEl?.classList.add("is-boot-revealed");
         if (!bootOverlayEl) return;
         bootOverlayEl.classList.add("is-dismissed");
         window.setTimeout(() => {
@@ -1290,6 +1349,7 @@
         if (bootFailed || !bootReady || !bootVideoDone) return;
         if (bootRevealStarted) return;
         bootRevealStarted = true;
+        setBootStatus("Opening workspace…", 96);
         expandWindowForApp()
           .catch(() => {})
           .finally(() => {
@@ -1300,18 +1360,32 @@
       async function runLocalBootVideo() {
         const alreadyShown = window.sessionStorage?.getItem(LOCAL_BOOT_VIDEO_SESSION_KEY) === "1";
         if (alreadyShown || !bootOverlayEl || !bootVideoEl) {
+          setBootStatus("Opening workspace…", 96);
           bootVideoDone = true;
           maybeRevealApp();
           return;
         }
         window.sessionStorage?.setItem(LOCAL_BOOT_VIDEO_SESSION_KEY, "1");
-        setBootStatus("Loading startup video…");
+        setBootStatus("Reading startup asset…", 18);
         let holdTimer = 0;
         try {
           const bytes = await readBinaryFile(LOCAL_BOOT_VIDEO_PATH);
           bootVideoObjectUrl = URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }));
+          setBootStatus("Holding launch frame…", 28);
+          await new Promise((resolve) => {
+            window.setTimeout(resolve, BOOT_VIDEO_START_DELAY_MS);
+          });
+          setBootStatus("Starting playback…", 42);
           bootVideoEl.src = bootVideoObjectUrl;
-          setBootStatus("Playing startup video…");
+          bootVideoEl.addEventListener(
+            "loadeddata",
+            () => {
+              bootOverlayEl?.classList.add("is-video-ready");
+              bootVideoEl.classList.add("is-visible");
+              setBootStatus("Startup video ready…", 54);
+            },
+            { once: true },
+          );
           await new Promise((resolve) => {
             let finished = false;
             const complete = () => {
@@ -1329,6 +1403,7 @@
           });
         } catch (error) {
           console.warn("Local boot video unavailable:", error);
+          setBootStatus("Startup video unavailable. Opening workspace…", 88);
         } finally {
           bootVideoDone = true;
           maybeRevealApp();
@@ -1336,18 +1411,23 @@
       }
 
       enterSplashWindowMode();
+      armBootShellIntro();
+      setBootStatus("Starting splash shell…", 10);
       runLocalBootVideo();
 
+      startBootPrepStatusCycle();
       Promise.all([import("./design_review_bootstrap.js"), import("./canvas_app.js")])
         .then(() => {
+          stopBootPrepStatusCycle();
           window.__brood_booted = true;
           window.__juggernaut_booted = true;
           bootReady = true;
           if (bootEl) bootEl.classList.add("hidden");
-          if (!bootVideoDone) setBootStatus("Preparing workspace…");
+          if (!bootVideoDone) setBootStatus("Workspace ready. Waiting on video…", 90);
           maybeRevealApp();
         })
         .catch((err) => {
+          stopBootPrepStatusCycle();
           bootFailed = true;
           console.error(err);
           if (bootEl) {
