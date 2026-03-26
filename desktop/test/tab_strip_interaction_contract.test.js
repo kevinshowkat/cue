@@ -53,7 +53,7 @@ test("Titlebar runtime actions keep Agent Run on the model-backed provenance pat
   assert.match(app, /syncActionProvenanceBadge\(els\.juggernautAgentRunnerOpen,\s*ACTION_PROVENANCE\.EXTERNAL_MODEL\);/);
 });
 
-test("Titlebar tab strip supports inline rename and review-state badges", () => {
+test("Titlebar tab strip supports inline rename and left-edge review-state icons", () => {
   assert.match(app, /function startSessionTabRename\(tabId = ""\)/);
   assert.match(app, /if \(normalizedTabId !== String\(state\.activeTabId \|\| ""\)\.trim\(\)\) return false;/);
   assert.match(app, /lockedWidth:\s*0/);
@@ -62,9 +62,17 @@ test("Titlebar tab strip supports inline rename and review-state badges", () => 
   assert.match(app, /function sessionTabReviewFlowShowsSpinner\(reviewFlowState = ""\) \{[\s\S]*reviewFlowState === "planning" \|\| reviewFlowState === "applying";[\s\S]*\}/);
   assert.match(app, /const showReviewSpinner = sessionTabReviewFlowShowsSpinner\(reviewFlowState\);/);
   assert.match(app, /showReviewSpinner,/);
-  assert.match(app, /className = "session-tab-review-state"/);
-  assert.match(app, /className = "session-tab-review-spinner"/);
-  assert.match(app, /className = "session-tab-review-label"/);
+  assert.match(app, /function createSessionTabReviewIcon\(summary = \{\}\) \{/);
+  assert.match(app, /icon\.className = "session-tab-review-icon";/);
+  assert.match(app, /icon\.classList\.add\(`is-\$\{reviewFlowState\}`\);/);
+  assert.match(app, /icon\.setAttribute\("role", "img"\);/);
+  assert.match(app, /icon\.setAttribute\("aria-label", reviewFlowLabel\);/);
+  assert.match(app, /if \(reviewFlowState === "planning" \|\| reviewFlowState === "applying"\) \{[\s\S]*icon\.classList\.add\("session-tab-review-spinner"\);[\s\S]*return icon;/);
+  assert.match(app, /function appendSessionTabTitleRowLead\(titleRow,\s*summary = \{\}\) \{/);
+  assert.match(app, /const reviewIcon = createSessionTabReviewIcon\(summary\);/);
+  assert.match(app, /if \(reviewIcon\) titleRow\.append\(reviewIcon\);/);
+  assert.doesNotMatch(app, /className = "session-tab-review-state"/);
+  assert.doesNotMatch(app, /className = "session-tab-review-label"/);
   assert.match(app, /item\.classList\.add\("is-review-progress"\)/);
   assert.match(app, /className = "session-tab-rename-shell"/);
   assert.match(app, /className = "session-tab-title-input"/);
@@ -80,8 +88,9 @@ test("Titlebar tab strip surfaces forked-session metadata and renders an inline 
   assert.match(app, /function createSessionTabForkIndicator\(\) \{/);
   assert.match(app, /indicator\.className = "session-tab-fork-indicator";/);
   assert.match(app, /titleRow\.className = "session-tab-title-row";/);
-  assert.match(app, /if \(summary\.isForked\) titleRow\.append\(createSessionTabForkIndicator\(\)\);/);
-  assert.match(app, /if \(summary\.isForked\) renameRow\.append\(createSessionTabForkIndicator\(\)\);/);
+  assert.match(app, /function appendSessionTabTitleRowLead\(titleRow,\s*summary = \{\}\) \{[\s\S]*if \(summary\.isForked\) titleRow\.append\(createSessionTabForkIndicator\(\)\);[\s\S]*\}/);
+  assert.match(app, /appendSessionTabTitleRowLead\(titleRow,\s*summary\);/);
+  assert.match(app, /appendSessionTabTitleRowLead\(renameRow,\s*summary\);/);
   assert.match(app, /if \(summary\.isForked\) item\.classList\.add\("is-forked"\);/);
 });
 

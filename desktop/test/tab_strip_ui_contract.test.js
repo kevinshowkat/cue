@@ -109,8 +109,12 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-item\.is-busy\s+\.session-tab-busy-indicator\s*\{/);
   assert.doesNotMatch(html, /session-tab-dirty-dot/);
   assert.doesNotMatch(css, /\.session-tab-dirty-dot\s*\{/);
-  assert.match(css, /\.session-tab-review-state\s*\{/);
+  assert.match(css, /\.session-tab-review-icon\s*\{/);
+  assert.match(css, /\.session-tab-review-icon svg\s*\{/);
   assert.match(css, /\.session-tab-review-spinner\s*\{/);
+  assert.match(css, /\.session-tab-review-icon\.is-ready\s*\{/);
+  assert.match(css, /\.session-tab-review-icon\.is-failed\s*\{/);
+  assert.match(css, /\.session-tab-item\.is-review-applying\s*\{/);
   assert.match(css, /\.session-tab-item\.is-review-progress\s+\.session-tab-busy-indicator\s*\{/);
   assert.match(css, /\.session-tab-rename-shell\s*\{/);
   assert.match(css, /\.session-tab-title-row\s*\{/);
@@ -148,6 +152,9 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-action-menu-item\s*\{/);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-fork-indicator\s*\{[\s\S]*background:/s);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-fork-indicator\s*\{/);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-item\.is-review-applying\s*\{/);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-review-icon\s*\{/);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-review-icon\.is-ready\s*\{/);
   assert.match(css, /@keyframes\s+sessionTabBusyPulse/);
   assert.match(css, /@keyframes\s+sessionTabReviewPulse/);
   assert.match(css, /@keyframes\s+sessionTabReviewSpinner/);

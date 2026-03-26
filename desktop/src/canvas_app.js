@@ -44596,27 +44596,61 @@ function createSessionTabForkIndicator() {
   return indicator;
 }
 
-function createSessionTabFlags(summary = {}) {
+function createSessionTabReviewIcon(summary = {}) {
+  const reviewFlowState = normalizeSessionTabReviewFlowState(summary.reviewFlowState);
+  if (!reviewFlowState) return null;
+  const icon = document.createElement("span");
+  icon.className = "session-tab-review-icon";
+  icon.classList.add(`is-${reviewFlowState}`);
+  const reviewFlowLabel = String(summary.reviewFlowLabel || sessionTabReviewFlowLabel(reviewFlowState) || "Review").trim() || "Review";
+  icon.setAttribute("role", "img");
+  icon.setAttribute("aria-label", reviewFlowLabel);
+  icon.title = reviewFlowLabel;
+  if (reviewFlowState === "planning" || reviewFlowState === "applying") {
+    icon.classList.add("session-tab-review-spinner");
+    return icon;
+  }
+  if (reviewFlowState === "ready") {
+    icon.innerHTML = `
+      <svg viewBox="0 0 12 12" aria-hidden="true">
+        <path
+          d="M2.4 6.4 4.85 8.85 9.6 3.95"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    `;
+    return icon;
+  }
+  icon.innerHTML = `
+    <svg viewBox="0 0 12 12" aria-hidden="true">
+      <path
+        d="M6 2.4v3.35M6 8.55h.01"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.65"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+      <circle cx="6" cy="6" r="4.2" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.42" />
+    </svg>
+  `;
+  return icon;
+}
+
+function appendSessionTabTitleRowLead(titleRow, summary = {}) {
+  if (summary.isForked) titleRow.append(createSessionTabForkIndicator());
+  const reviewIcon = createSessionTabReviewIcon(summary);
+  if (reviewIcon) titleRow.append(reviewIcon);
+}
+
+function createSessionTabFlags() {
   const flags = document.createElement("span");
   flags.className = "session-tab-flags";
   flags.setAttribute("aria-hidden", "true");
-
-  if (summary.reviewFlowLabel) {
-    const reviewState = document.createElement("span");
-    reviewState.className = "session-tab-review-state";
-    reviewState.dataset.reviewFlowState = summary.reviewFlowState;
-    if (summary.showReviewSpinner) {
-      const reviewSpinner = document.createElement("span");
-      reviewSpinner.className = "session-tab-review-spinner";
-      reviewState.append(reviewSpinner);
-    }
-    const reviewLabel = document.createElement("span");
-    reviewLabel.className = "session-tab-review-label";
-    reviewLabel.textContent = summary.reviewFlowLabel;
-    reviewState.append(reviewLabel);
-    flags.append(reviewState);
-  }
-
   const busyIndicator = document.createElement("span");
   busyIndicator.className = "session-tab-busy-indicator";
   flags.append(busyIndicator);
@@ -44700,7 +44734,7 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
       commitSessionTabRename(summary.tabId, input.value);
     });
 
-    if (summary.isForked) renameRow.append(createSessionTabForkIndicator());
+    appendSessionTabTitleRowLead(renameRow, summary);
     renameRow.append(input);
     rename.append(renameRow);
     labels.append(rename);
@@ -44724,7 +44758,7 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
     const title = document.createElement("span");
     title.className = "session-tab-title";
     title.textContent = summary.title;
-    if (summary.isForked) titleRow.append(createSessionTabForkIndicator());
+    appendSessionTabTitleRowLead(titleRow, summary);
     titleRow.append(title);
     labels.append(titleRow);
 
