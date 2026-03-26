@@ -2850,54 +2850,138 @@ button.ghost:hover {
 }
 
 .toast {
+  --toast-accent: rgba(74, 147, 255, 0.96);
+  --toast-accent-soft: rgba(74, 147, 255, 0.22);
   position: absolute;
   left: 50%;
   right: auto;
   bottom: var(--jg-system-strip-bottom);
   z-index: 11;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: auto;
-  max-width: min(584px, calc(100% - 36px));
-  min-height: var(--jg-system-strip-height);
+  width: calc(var(--jg-system-strip-height) + 4px);
+  min-width: calc(var(--jg-system-strip-height) + 4px);
+  height: calc(var(--jg-system-strip-height) + 4px);
+  min-height: calc(var(--jg-system-strip-height) + 4px);
   padding: 0;
-  border: 0;
-  background: none;
-  color: rgba(128, 134, 143, 0.96);
-  font-family: var(--jg-system-strip-font-stack);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.2;
-  letter-spacing: 0.015em;
-  text-align: center;
-  box-shadow: none;
-  backdrop-filter: none;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.68);
-  pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-bottom-color: rgba(214, 222, 230, 0.88);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.26) 32%, transparent 34%),
+    linear-gradient(180deg, rgba(248, 250, 253, 0.94), rgba(224, 230, 238, 0.86));
+  color: var(--toast-accent);
+  box-shadow:
+    0 12px 28px rgba(8, 16, 24, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -6px 10px rgba(148, 164, 181, 0.16);
+  backdrop-filter: blur(24px) saturate(1.14);
+  pointer-events: auto;
+  cursor: help;
   opacity: 0;
   visibility: hidden;
-  transform: translateX(-50%);
+  transform: translateX(-50%) scale(0.88);
   transition:
     opacity 220ms ease,
-    visibility 0ms linear 220ms;
+    visibility 0ms linear 220ms,
+    transform 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease;
 }
 
-.toast::before {
+.toast[data-kind="tip"] {
+  --toast-accent: rgba(74, 159, 99, 0.96);
+  --toast-accent-soft: rgba(74, 159, 99, 0.2);
+}
+
+.toast[data-kind="error"] {
+  --toast-accent: rgba(214, 70, 86, 0.96);
+  --toast-accent-soft: rgba(214, 70, 86, 0.22);
+}
+
+.toast:hover {
+  box-shadow:
+    0 14px 30px rgba(8, 16, 24, 0.2),
+    0 0 0 4px var(--toast-accent-soft),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    inset 0 -6px 10px rgba(148, 164, 181, 0.16);
+}
+
+.toast .toast-icon {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.5) inset,
+    0 0 0 4px var(--toast-accent-soft);
+  pointer-events: none;
+}
+
+.toast .toast-icon::before,
+.toast .toast-icon::after {
+  content: "";
+  position: absolute;
+  display: block;
+  background: currentColor;
+}
+
+.toast[data-kind="info"] .toast-icon::before {
+  left: 6px;
+  top: 4px;
+  width: 2px;
+  height: 7px;
+  border-radius: 999px;
+}
+
+.toast[data-kind="info"] .toast-icon::after {
+  left: 6px;
+  top: 1px;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+}
+
+.toast[data-kind="tip"] .toast-icon::before {
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  background: none;
+  transform: rotate(40deg);
+  transform-origin: center;
+}
+
+.toast[data-kind="tip"] .toast-icon::after {
   content: none;
 }
 
-.toast::after {
-  content: none;
+.toast[data-kind="error"] .toast-icon::before,
+.toast[data-kind="error"] .toast-icon::after {
+  left: 6px;
+  top: 2px;
+  width: 2px;
+  height: 11px;
+  border-radius: 999px;
+}
+
+.toast[data-kind="error"] .toast-icon::before {
+  transform: rotate(45deg);
+}
+
+.toast[data-kind="error"] .toast-icon::after {
+  transform: rotate(-45deg);
 }
 
 .toast[data-state="visible"] {
   opacity: 1;
   visibility: visible;
   transition-delay: 0s;
+  transform: translateX(-50%) scale(1);
 }
 
 .toast[data-state="refreshing"],
@@ -2905,6 +2989,7 @@ button.ghost:hover {
   opacity: 0;
   visibility: visible;
   transition-delay: 0s;
+  transform: translateX(-50%) scale(0.9);
 }
 
 .filmstrip {
@@ -8086,14 +8171,10 @@ button.ghost:hover {
   }
 
   .toast {
-    left: 50%;
-    right: auto;
-    bottom: var(--jg-system-strip-bottom);
-    width: min(532px, calc(100% - 28px));
-    height: var(--jg-system-strip-height);
-    padding: 0 16px 0 34px;
-    border-radius: 999px;
-    line-height: var(--jg-system-strip-height);
+    width: calc(var(--jg-system-strip-height) + 4px);
+    min-width: calc(var(--jg-system-strip-height) + 4px);
+    height: calc(var(--jg-system-strip-height) + 4px);
+    min-height: calc(var(--jg-system-strip-height) + 4px);
   }
 
   .communication-rail::before {
@@ -10428,12 +10509,14 @@ button.ghost:hover {
 }
 
 :root[data-reel-size-preset="active"] .toast {
-  left: 10px;
-  right: 10px;
+  left: 50%;
+  right: auto;
   bottom: 10px;
   height: 40px;
-  padding: 0 14px 0 32px;
-  line-height: 40px;
+  min-height: 40px;
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
 }
 
 /* Juggernaut launch-slice shell */

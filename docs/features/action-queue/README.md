@@ -9,7 +9,7 @@ Brood currently rejects or overlaps user actions when the engine is busy (e.g. r
 
 ## UX
 - Actions are now *queueable*. If the engine is busy, clicking an action enqueues it instead of rejecting it.
-- A toast confirms enqueue: `Queued: <Action>`.
+- An icon-only bottom system toast confirms enqueue; hover/accessibility text remains `Queued: <Action>`.
 - Abilities remain clickable even while an action is running (they enqueue).
 - The queue executes actions sequentially (one at a time) and resumes automatically on completion/failure events.
 

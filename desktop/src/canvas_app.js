@@ -9687,6 +9687,8 @@ function finishToastHide() {
   if (!els.toast) return;
   els.toast.dataset.state = "hidden";
   els.toast.setAttribute("aria-hidden", "true");
+  els.toast.removeAttribute("aria-label");
+  els.toast.removeAttribute("title");
 }
 
 function hideToast({ immediate = false } = {}) {
@@ -9720,10 +9722,18 @@ function showToast(message, kind = "info", timeoutMs = 2400) {
   toastSwapTimer = null;
   const commitToast = () => {
     if (!els.toast) return;
-    els.toast.textContent = String(message || "");
+    const icon = document.createElement("span");
+    icon.className = "toast-icon";
+    icon.setAttribute("aria-hidden", "true");
+    const label = document.createElement("span");
+    label.className = "sr-only";
+    label.textContent = nextMessage;
+    els.toast.replaceChildren(icon, label);
     els.toast.dataset.kind = kind;
     els.toast.dataset.state = "visible";
     els.toast.setAttribute("aria-hidden", "false");
+    els.toast.setAttribute("aria-label", nextMessage);
+    els.toast.title = nextMessage;
   };
   if (els.toast.dataset.state === "visible" && String(els.toast.textContent || "").trim() && String(els.toast.textContent || "").trim() !== nextMessage) {
     els.toast.dataset.state = "refreshing";

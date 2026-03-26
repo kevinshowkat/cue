@@ -10,6 +10,7 @@ Category claim:
 - Promptless, reference-first AI image generation and editing desktop for developers (multi-provider + reproducible runs).
 
 The desktop app is image-first: import images, run Abilities, and inspect results in the bottom HUD.
+The bottom-center system strip is icon-only; the full toast message remains available through assistive text and the hover title.
 
 ## Core Concepts
 - **Run**: a folder on disk (created under `~/brood_runs/`) that stores inputs, artifacts, receipts, `events.jsonl`, saved session state, and `session-timeline.json` when the run has recorded timeline history.
