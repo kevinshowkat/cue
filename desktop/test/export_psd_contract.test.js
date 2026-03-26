@@ -75,3 +75,136 @@ test("Export prompts for a save path so the user can rename the file across rast
   assert.match(app, /const picked = await save\(\{[\s\S]*defaultPath,[\s\S]*filters: \[\{ name: label, extensions: exportFormatFilterExtensions\(normalizedFormat\) \}\],[\s\S]*\}\);/);
   assert.match(app, /const normalizedPath = normalizeExportPathExtension\(selectedPath,\s*extension\);/);
 });
+
+test("PSD export request carries screenshot-polish approval trace for the approved frame", () => {
+  const buildPsdExportRequest = loadNamedFunction("buildPsdExportRequest");
+  const normalizeExportFormat = loadNamedFunction("normalizeExportFormat");
+  const previousGlobals = {
+    collectExportTimelineNodes: globalThis.collectExportTimelineNodes,
+    SESSION_TIMELINE_SCHEMA_VERSION: globalThis.SESSION_TIMELINE_SCHEMA_VERSION,
+    state: globalThis.state,
+    getVisibleActiveId: globalThis.getVisibleActiveId,
+    exportPsdLimitations: globalThis.exportPsdLimitations,
+    exportRasterFormatLimitations: globalThis.exportRasterFormatLimitations,
+    normalizeExportFormat: globalThis.normalizeExportFormat,
+  };
+
+  globalThis.collectExportTimelineNodes = () => [];
+  globalThis.SESSION_TIMELINE_SCHEMA_VERSION = 1;
+  globalThis.state = {
+    runDir: "/tmp/run",
+    canvasMode: "multi",
+    timelineHeadNodeId: "tl-2",
+    communication: {
+      screenshotPolish: {
+        proposalId: "proposal-1",
+        selectedProposalId: "proposal-1",
+        previewImagePath: "/tmp/preview.png",
+        changedRegionBounds: { x: 4, y: 8, w: 64, h: 48 },
+        preserveRegionIds: ["subject"],
+        rationaleCodes: ["preserve_subject"],
+        frameContext: {
+          targetImageId: "img-1",
+          originalFrame: {
+            path: "/tmp/original.png",
+          },
+          approvedFrame: {
+            path: "/tmp/approved.png",
+          },
+        },
+      },
+    },
+  };
+  globalThis.getVisibleActiveId = () => "img-1";
+  globalThis.exportPsdLimitations = () => ["flattened"];
+  globalThis.exportRasterFormatLimitations = () => ["flattened raster"];
+  globalThis.normalizeExportFormat = normalizeExportFormat;
+
+  try {
+    const request = buildPsdExportRequest({
+      outPath: "/tmp/run/export.psd",
+      flattenedSourcePath: "/tmp/run/export.flattened.png",
+      composite: {
+        width: 100,
+        height: 80,
+        boundsCss: { x: 0, y: 0, w: 100, h: 80 },
+        sourceImages: [],
+      },
+    });
+
+    assert.equal(request.screenshotPolish?.proposalId, "proposal-1");
+    assert.equal(request.screenshotPolish?.selectedProposalId, "proposal-1");
+    assert.equal(request.screenshotPolish?.previewImagePath, "/tmp/preview.png");
+    assert.deepEqual(request.screenshotPolish?.changedRegionBounds, { x: 4, y: 8, w: 64, h: 48 });
+    assert.deepEqual(request.screenshotPolish?.preserveRegionIds, ["subject"]);
+    assert.deepEqual(request.screenshotPolish?.rationaleCodes, ["preserve_subject"]);
+    assert.equal(request.screenshotPolish?.frameContext?.targetImageId, "img-1");
+    assert.equal(request.screenshotPolish?.frameContext?.originalFrame?.path, "/tmp/original.png");
+  } finally {
+    globalThis.collectExportTimelineNodes = previousGlobals.collectExportTimelineNodes;
+    globalThis.SESSION_TIMELINE_SCHEMA_VERSION = previousGlobals.SESSION_TIMELINE_SCHEMA_VERSION;
+    globalThis.state = previousGlobals.state;
+    globalThis.getVisibleActiveId = previousGlobals.getVisibleActiveId;
+    globalThis.exportPsdLimitations = previousGlobals.exportPsdLimitations;
+    globalThis.exportRasterFormatLimitations = previousGlobals.exportRasterFormatLimitations;
+    globalThis.normalizeExportFormat = previousGlobals.normalizeExportFormat;
+  }
+});
+
+test("PSD export request omits screenshot-polish trace when another image is active", () => {
+  const buildPsdExportRequest = loadNamedFunction("buildPsdExportRequest");
+  const normalizeExportFormat = loadNamedFunction("normalizeExportFormat");
+  const previousGlobals = {
+    collectExportTimelineNodes: globalThis.collectExportTimelineNodes,
+    SESSION_TIMELINE_SCHEMA_VERSION: globalThis.SESSION_TIMELINE_SCHEMA_VERSION,
+    state: globalThis.state,
+    getVisibleActiveId: globalThis.getVisibleActiveId,
+    exportPsdLimitations: globalThis.exportPsdLimitations,
+    exportRasterFormatLimitations: globalThis.exportRasterFormatLimitations,
+    normalizeExportFormat: globalThis.normalizeExportFormat,
+  };
+
+  globalThis.collectExportTimelineNodes = () => [];
+  globalThis.SESSION_TIMELINE_SCHEMA_VERSION = 1;
+  globalThis.state = {
+    runDir: "/tmp/run",
+    canvasMode: "multi",
+    timelineHeadNodeId: "tl-2",
+    communication: {
+      screenshotPolish: {
+        proposalId: "proposal-1",
+        selectedProposalId: "proposal-1",
+        frameContext: {
+          targetImageId: "img-approved",
+        },
+      },
+    },
+  };
+  globalThis.getVisibleActiveId = () => "img-other";
+  globalThis.exportPsdLimitations = () => ["flattened"];
+  globalThis.exportRasterFormatLimitations = () => ["flattened raster"];
+  globalThis.normalizeExportFormat = normalizeExportFormat;
+
+  try {
+    const request = buildPsdExportRequest({
+      outPath: "/tmp/run/export.psd",
+      flattenedSourcePath: "/tmp/run/export.flattened.png",
+      composite: {
+        width: 100,
+        height: 80,
+        boundsCss: { x: 0, y: 0, w: 100, h: 80 },
+        sourceImages: [],
+      },
+    });
+
+    assert.equal(request.screenshotPolish, null);
+  } finally {
+    globalThis.collectExportTimelineNodes = previousGlobals.collectExportTimelineNodes;
+    globalThis.SESSION_TIMELINE_SCHEMA_VERSION = previousGlobals.SESSION_TIMELINE_SCHEMA_VERSION;
+    globalThis.state = previousGlobals.state;
+    globalThis.getVisibleActiveId = previousGlobals.getVisibleActiveId;
+    globalThis.exportPsdLimitations = previousGlobals.exportPsdLimitations;
+    globalThis.exportRasterFormatLimitations = previousGlobals.exportRasterFormatLimitations;
+    globalThis.normalizeExportFormat = previousGlobals.normalizeExportFormat;
+  }
+});

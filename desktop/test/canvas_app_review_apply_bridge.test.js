@@ -97,8 +97,13 @@ function buildReviewApplyHarness({
       tabId: pendingSessionKey.startsWith("tab:") ? pendingSessionKey.slice(4) : activeTabId,
       requestId: pendingRequestId,
       proposalId: "proposal-1",
+      selectedProposalId: "proposal-1",
       targetImageId: "img-1",
       referenceImageIds: ["img-2"],
+      previewImagePath: "/tmp/preview.png",
+      changedRegionBounds: { x: 10, y: 12, w: 64, h: 48 },
+      preserveRegionIds: ["subject"],
+      rationaleCodes: ["preserve_subject"],
       proposal: {
         proposalId: "proposal-1",
         label: "Swap background",
@@ -205,6 +210,7 @@ function buildReviewApplyHarness({
   const receiptCalls = [];
   const replaceCalls = [];
   const timelineCalls = [];
+  const screenshotPolishCalls = [];
   const clearCalls = [];
   const dismissCalls = [];
   const statusCalls = [];
@@ -305,6 +311,26 @@ function buildReviewApplyHarness({
     syncReviewFlowCalls += 1;
     return "";
   };
+  const buildScreenshotPolishApprovalState = (payload = {}) => {
+    screenshotPolishCalls.push(payload);
+    return {
+      proposalId: payload?.detail?.proposal?.proposalId || payload?.detail?.proposalId || null,
+      selectedProposalId: payload?.detail?.selectedProposalId || payload?.detail?.proposal?.proposalId || payload?.detail?.proposalId || null,
+      previewImagePath: payload?.detail?.previewImagePath || null,
+      changedRegionBounds: payload?.detail?.changedRegionBounds || null,
+      preserveRegionIds: Array.isArray(payload?.detail?.preserveRegionIds) ? payload.detail.preserveRegionIds.slice() : [],
+      rationaleCodes: Array.isArray(payload?.detail?.rationaleCodes) ? payload.detail.rationaleCodes.slice() : [],
+      frameContext: {
+        targetImageId: payload?.targetAfter?.id || payload?.targetBefore?.id || null,
+        originalFrame: {
+          path: payload?.targetBefore?.path || null,
+        },
+        approvedFrame: {
+          path: payload?.targetAfter?.path || payload?.outputPath || null,
+        },
+      },
+    };
+  };
 
   const applyAcceptedDesignReviewOutput = instantiateFunction("applyAcceptedDesignReviewOutput", {
     resolveDesignReviewApplyTargetRecord: () => ({
@@ -340,6 +366,7 @@ function buildReviewApplyHarness({
     showToast,
     requestRender,
     processActionQueue,
+    buildScreenshotPolishApprovalState,
     basename,
     state,
     removeFile: async () => {},
@@ -359,6 +386,7 @@ function buildReviewApplyHarness({
     topMetricCalls,
     removeImageCalls,
     archiveCalls,
+    screenshotPolishCalls,
     dispatchCalls,
     communicationToolCalls,
     toolCalls,
@@ -414,8 +442,13 @@ function buildBackgroundReviewApplyHarness({
       tabId: targetTabId,
       requestId: "review-1",
       proposalId: "proposal-1",
+      selectedProposalId: "proposal-1",
       targetImageId: "img-1",
       referenceImageIds: ["img-2"],
+      previewImagePath: "/tmp/preview.png",
+      changedRegionBounds: { x: 10, y: 12, w: 64, h: 48 },
+      preserveRegionIds: ["subject"],
+      rationaleCodes: ["preserve_subject"],
     },
     communication: {
       tool: communicationTool,
@@ -507,6 +540,43 @@ function buildBackgroundReviewApplyHarness({
   const timelineCalls = [];
   const syncCalls = [];
   const removeFileCalls = [];
+  const screenshotPolishCalls = [];
+  const createFreshCommunicationState = () => ({
+    tool: null,
+    markDraft: null,
+    eraseDraft: null,
+    marksByImageId: new Map(),
+    canvasMarks: [],
+    regionProposalsByImageId: new Map(),
+    reviewHistory: [],
+    screenshotPolish: null,
+    lastAnchor: null,
+    proposalTray: {
+      visible: false,
+      requestId: null,
+      slots: [],
+    },
+  });
+  const buildScreenshotPolishApprovalState = (payload = {}) => {
+    screenshotPolishCalls.push(payload);
+    return {
+      proposalId: payload?.detail?.proposal?.proposalId || payload?.detail?.proposalId || null,
+      selectedProposalId: payload?.detail?.selectedProposalId || payload?.detail?.proposal?.proposalId || payload?.detail?.proposalId || null,
+      previewImagePath: payload?.detail?.previewImagePath || null,
+      changedRegionBounds: payload?.detail?.changedRegionBounds || null,
+      preserveRegionIds: Array.isArray(payload?.detail?.preserveRegionIds) ? payload.detail.preserveRegionIds.slice() : [],
+      rationaleCodes: Array.isArray(payload?.detail?.rationaleCodes) ? payload.detail.rationaleCodes.slice() : [],
+      frameContext: {
+        targetImageId: payload?.targetAfter?.id || payload?.targetBefore?.id || null,
+        originalFrame: {
+          path: payload?.targetBefore?.path || null,
+        },
+        approvedFrame: {
+          path: payload?.targetAfter?.path || payload?.outputPath || null,
+        },
+      },
+    };
+  };
 
   const applyAcceptedDesignReviewOutputToSessionRecord = instantiateFunction("applyAcceptedDesignReviewOutputToSessionRecord", {
     ensureSessionTabRecordSession: () => session,
@@ -560,6 +630,8 @@ function buildBackgroundReviewApplyHarness({
       return record;
     },
     persistSessionTimelineForSession: async () => "/runs/a/session-timeline.json",
+    buildScreenshotPolishApprovalState,
+    createFreshCommunicationState,
     createFreshDesignReviewApplyState,
     basename,
     DESIGN_REVIEW_APPLY_SOURCE: "design_review_apply",
@@ -575,6 +647,7 @@ function buildBackgroundReviewApplyHarness({
     timelineCalls,
     syncCalls,
     removeFileCalls,
+    screenshotPolishCalls,
     applyAcceptedDesignReviewOutputToSessionRecord,
   };
 }
@@ -602,8 +675,13 @@ test("review apply success replaces the target image in place and records a time
         ],
       },
     },
+    selectedProposalId: "proposal-1",
     targetImageId: "img-1",
     referenceImageIds: ["img-2"],
+    previewImagePath: "/tmp/preview.png",
+    changedRegionBounds: { x: 10, y: 12, w: 64, h: 48 },
+    preserveRegionIds: ["subject"],
+    rationaleCodes: ["preserve_subject"],
     outputPath: "/tmp/out.png",
     provider: "google",
     requestedModel: "gemini-3.1-flash-image-preview",
@@ -625,6 +703,15 @@ test("review apply success replaces the target image in place and records a time
   assert.equal(harness.timelineCalls[0].imageId, "img-1");
   assert.equal(harness.state.imagesById.get("img-1")?.source, "design_review_apply");
   assert.equal(harness.state.imagesById.get("img-1")?.timelineNodeId, "tl-2");
+  assert.equal(harness.state.communication.screenshotPolish?.proposalId, "proposal-1");
+  assert.equal(harness.state.communication.screenshotPolish?.selectedProposalId, "proposal-1");
+  assert.equal(harness.state.communication.screenshotPolish?.previewImagePath, "/tmp/preview.png");
+  assert.deepEqual(harness.state.communication.screenshotPolish?.changedRegionBounds, { x: 10, y: 12, w: 64, h: 48 });
+  assert.deepEqual(harness.state.communication.screenshotPolish?.preserveRegionIds, ["subject"]);
+  assert.deepEqual(harness.state.communication.screenshotPolish?.rationaleCodes, ["preserve_subject"]);
+  assert.equal(harness.state.communication.screenshotPolish?.frameContext?.originalFrame?.path, "/tmp/source.png");
+  assert.equal(harness.state.communication.screenshotPolish?.frameContext?.approvedFrame?.path, "/tmp/out.png");
+  assert.equal(harness.screenshotPolishCalls.length, 1);
   assert.equal(harness.archiveCalls.length, 1);
   assert.equal(harness.archiveCalls[0].targetBefore.id, "img-1");
   assert.equal(harness.clearVisibleCalls, 1);
@@ -711,9 +798,14 @@ test("background review apply completion updates the owning tab session without 
         ],
       },
     },
+    selectedProposalId: "proposal-1",
     targetImageId: "img-1",
     outputPath: "/tmp/out.png",
     referenceImageIds: ["img-2"],
+    previewImagePath: "/tmp/preview.png",
+    changedRegionBounds: { x: 10, y: 12, w: 64, h: 48 },
+    preserveRegionIds: ["subject"],
+    rationaleCodes: ["preserve_subject"],
     provider: "google",
     requestedModel: "gemini-3.1-flash-image-preview",
     normalizedModel: "gemini-3.1-flash-image-preview",
@@ -726,6 +818,15 @@ test("background review apply completion updates the owning tab session without 
   assert.equal(harness.session.imagesById.get("img-1")?.receiptPath, "/runs/a/receipt-review-apply.json");
   assert.equal(harness.session.imagesById.get("img-1")?.timelineNodeId, "tl-2");
   assert.equal(harness.session.imagesById.get("img-1")?.source, "design_review_apply");
+  assert.equal(harness.session.communication.screenshotPolish?.proposalId, "proposal-1");
+  assert.equal(harness.session.communication.screenshotPolish?.selectedProposalId, "proposal-1");
+  assert.equal(harness.session.communication.screenshotPolish?.previewImagePath, "/tmp/preview.png");
+  assert.deepEqual(harness.session.communication.screenshotPolish?.changedRegionBounds, { x: 10, y: 12, w: 64, h: 48 });
+  assert.deepEqual(harness.session.communication.screenshotPolish?.preserveRegionIds, ["subject"]);
+  assert.deepEqual(harness.session.communication.screenshotPolish?.rationaleCodes, ["preserve_subject"]);
+  assert.equal(harness.session.communication.screenshotPolish?.frameContext?.originalFrame?.path, "/tmp/source.png");
+  assert.equal(harness.session.communication.screenshotPolish?.frameContext?.approvedFrame?.path, "/tmp/out.png");
+  assert.equal(harness.screenshotPolishCalls.length, 1);
   assert.equal(harness.session.imagesById.has("img-2"), false);
   assert.equal(harness.session.communication.tool, null);
   assert.equal(harness.session.communication.proposalTray.visible, false);
@@ -984,6 +1085,12 @@ test("review apply detail falls back to request-visible reference images and par
 
   const normalized = normalizeDesignReviewApplyEventDetail({
     requestId: "review-1",
+    proposalId: "proposal-1",
+    selectedProposalId: "proposal-1",
+    previewImagePath: "/tmp/preview.png",
+    changedRegionBounds: { x: 4, y: 5, w: 32, h: 16 },
+    preserveRegionIds: ["subject", "product"],
+    rationaleCodes: ["preserve_subject", "tighten_background"],
     targetImageId: "img-target",
     startedAt: "2026-03-09T18:15:20.000Z",
     completedAt: "2026-03-09T18:15:24.000Z",
@@ -1002,6 +1109,12 @@ test("review apply detail falls back to request-visible reference images and par
   });
 
   assert.deepEqual(normalized.referenceImageIds, ["img-ref-a", "img-ref-b"]);
+  assert.equal(normalized.proposalId, "proposal-1");
+  assert.equal(normalized.selectedProposalId, "proposal-1");
+  assert.equal(normalized.previewImagePath, "/tmp/preview.png");
+  assert.deepEqual(normalized.changedRegionBounds, { x: 4, y: 5, w: 32, h: 16 });
+  assert.deepEqual(normalized.preserveRegionIds, ["subject", "product"]);
+  assert.deepEqual(normalized.rationaleCodes, ["preserve_subject", "tighten_background"]);
   assert.equal(normalized.startedAt, Date.parse("2026-03-09T18:15:20.000Z"));
   assert.equal(normalized.completedAt, Date.parse("2026-03-09T18:15:24.000Z"));
 });
@@ -1087,6 +1200,7 @@ test("review apply success animates the active images and dismisses the tray aft
   assert.match(app, /function shouldAnimateDesignReviewApplyShimmer\(\) \{/);
   assert.match(app, /function renderDesignReviewApplyShimmer\(octx\) \{/);
   assert.match(app, /renderDesignReviewApplyShimmer\(octx\);/);
+  assert.match(app, /renderScreenshotPolishCompareOverlay\(octx,\s*work\.width,\s*work\.height\);/);
   assert.match(app, /dismissCommunicationProposalTrayAfterReviewApply\(\{\s*requestId: normalized\.requestId,/s);
   assert.match(app, /tray\.classList\.add\("is-dismissing"\);/);
   assert.match(app, /source: "review_apply_success"/);

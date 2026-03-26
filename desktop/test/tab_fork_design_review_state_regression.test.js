@@ -72,6 +72,16 @@ test("fork communication sanitization preserves working marks while dropping des
     canvasStamps: [],
     regionProposalsByImageId: new Map(),
     reviewHistory: [],
+    screenshotPolish: {
+      proposalId: null,
+      selectedProposalId: null,
+      previewImagePath: null,
+      changedRegionBounds: null,
+      preserveRegionIds: [],
+      rationaleCodes: [],
+      frameContext: null,
+      updatedAt: 0,
+    },
     lastAnchor: null,
     proposalTray: {
       visible: false,
@@ -85,9 +95,20 @@ test("fork communication sanitization preserves working marks while dropping des
     reviewRequestSeq: 0,
     lastReviewRequestedAt: 0,
   });
+  const cloneScreenshotPolishState = (value = null) => ({
+    proposalId: value?.proposalId || null,
+    selectedProposalId: value?.selectedProposalId || value?.proposalId || null,
+    previewImagePath: value?.previewImagePath || null,
+    changedRegionBounds: value?.changedRegionBounds || null,
+    preserveRegionIds: Array.isArray(value?.preserveRegionIds) ? value.preserveRegionIds.slice() : [],
+    rationaleCodes: Array.isArray(value?.rationaleCodes) ? value.rationaleCodes.slice() : [],
+    frameContext: value?.frameContext || null,
+    updatedAt: Number(value?.updatedAt) || 0,
+  });
   const sanitizeForkedCommunicationState = instantiateFunction("sanitizeForkedCommunicationState", {
     createFreshCommunicationState,
     createFreshCommunicationStampPickerState,
+    cloneScreenshotPolishState,
     Map,
     Array,
   });
@@ -104,6 +125,16 @@ test("fork communication sanitization preserves working marks while dropping des
     canvasStamps: [{ id: "stamp-canvas-1", intentId: "move" }],
     regionProposalsByImageId: new Map([["img-1", [{ id: "region-1" }]]]),
     reviewHistory: [{ requestId: "review-old" }],
+    screenshotPolish: {
+      proposalId: "proposal-1",
+      selectedProposalId: "proposal-1",
+      previewImagePath: "/tmp/preview.png",
+      changedRegionBounds: { x: 4, y: 8, w: 32, h: 16 },
+      preserveRegionIds: ["subject"],
+      rationaleCodes: ["preserve_subject"],
+      frameContext: { targetImageId: "img-1" },
+      updatedAt: 123,
+    },
     lastAnchor: { kind: "mark", imageId: "img-1", markId: "mark-1" },
     proposalTray: {
       visible: true,
@@ -130,6 +161,16 @@ test("fork communication sanitization preserves working marks while dropping des
   assert.deepEqual(result.canvasStamps, [{ id: "stamp-canvas-1", intentId: "move" }]);
   assert.deepEqual(Array.from(result.regionProposalsByImageId.entries()), [["img-1", [{ id: "region-1" }]]]);
   assert.deepEqual(result.reviewHistory, [{ requestId: "review-old" }]);
+  assert.deepEqual(result.screenshotPolish, {
+    proposalId: "proposal-1",
+    selectedProposalId: "proposal-1",
+    previewImagePath: "/tmp/preview.png",
+    changedRegionBounds: { x: 4, y: 8, w: 32, h: 16 },
+    preserveRegionIds: ["subject"],
+    rationaleCodes: ["preserve_subject"],
+    frameContext: { targetImageId: "img-1" },
+    updatedAt: 123,
+  });
   assert.deepEqual(result.lastAnchor, { kind: "mark", imageId: "img-1", markId: "mark-1" });
   assert.equal(result.proposalTray.visible, false);
   assert.equal(result.proposalTray.requestId, null);

@@ -8776,7 +8776,6 @@ done
         let _ = std::fs::remove_file(mask_path);
         let _ = std::fs::remove_dir_all(receipt_dir);
     }
-
     fn temp_file_path(name: &str) -> PathBuf {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)

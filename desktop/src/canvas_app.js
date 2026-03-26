@@ -2352,6 +2352,46 @@ function uniqueStringList(values = [], { exclude = [] } = {}) {
   return out;
 }
 
+function createFreshScreenshotPolishState() {
+  return {
+    proposalId: null,
+    selectedProposalId: null,
+    previewImagePath: null,
+    changedRegionBounds: null,
+    preserveRegionIds: [],
+    rationaleCodes: [],
+    frameContext: null,
+    updatedAt: 0,
+  };
+}
+
+function cloneScreenshotPolishState(value = null) {
+  const current = asRecord(value) || {};
+  const proposalId = readFirstString(current.proposalId, current.proposal_id) || null;
+  return {
+    ...createFreshScreenshotPolishState(),
+    proposalId,
+    selectedProposalId:
+      readFirstString(current.selectedProposalId, current.selected_proposal_id, proposalId) || null,
+    previewImagePath: readFirstString(current.previewImagePath, current.preview_image_path) || null,
+    changedRegionBounds:
+      asRecord(current.changedRegionBounds)
+        ? cloneToolRuntimeValue(current.changedRegionBounds)
+        : asRecord(current.changed_region_bounds)
+          ? cloneToolRuntimeValue(current.changed_region_bounds)
+          : null,
+    preserveRegionIds: uniqueStringList(current.preserveRegionIds || current.preserve_region_ids || []),
+    rationaleCodes: uniqueStringList(current.rationaleCodes || current.rationale_codes || []),
+    frameContext:
+      asRecord(current.frameContext)
+        ? cloneToolRuntimeValue(current.frameContext)
+        : asRecord(current.frame_context)
+          ? cloneToolRuntimeValue(current.frame_context)
+          : null,
+    updatedAt: Math.max(0, Number(current.updatedAt) || Number(current.updated_at) || 0),
+  };
+}
+
 function createFreshDesignReviewApplyState() {
   return {
     status: "idle",
@@ -2359,8 +2399,13 @@ function createFreshDesignReviewApplyState() {
     tabId: null,
     requestId: null,
     proposalId: null,
+    selectedProposalId: null,
     targetImageId: null,
     referenceImageIds: [],
+    previewImagePath: null,
+    changedRegionBounds: null,
+    preserveRegionIds: [],
+    rationaleCodes: [],
     outputPath: null,
     error: null,
     startedAt: 0,
@@ -2387,6 +2432,15 @@ function cloneDesignReviewApplyState(value = null) {
     tabId: readFirstString(current.tabId, current.tab_id) || null,
     requestId: readFirstString(current.requestId, current.request_id, current.request?.requestId) || null,
     proposalId: readFirstString(current.proposalId, current.proposal_id, current.proposal?.proposalId, current.proposal?.id) || null,
+    selectedProposalId:
+      readFirstString(
+        current.selectedProposalId,
+        current.selected_proposal_id,
+        current.proposalId,
+        current.proposal_id,
+        current.proposal?.proposalId,
+        current.proposal?.id
+      ) || null,
     targetImageId: readFirstString(
       current.targetImageId,
       current.target_image_id,
@@ -2394,6 +2448,39 @@ function cloneDesignReviewApplyState(value = null) {
       current.request?.primaryImageId
     ) || null,
     referenceImageIds: uniqueStringList(current.referenceImageIds || current.reference_image_ids || []),
+    previewImagePath:
+      readFirstString(
+        current.previewImagePath,
+        current.preview_image_path,
+        current.proposal?.previewImagePath,
+        current.proposal?.preview_image_path
+      ) || null,
+    changedRegionBounds:
+      asRecord(current.changedRegionBounds)
+        ? cloneToolRuntimeValue(current.changedRegionBounds)
+        : asRecord(current.changed_region_bounds)
+          ? cloneToolRuntimeValue(current.changed_region_bounds)
+          : asRecord(current.proposal?.changedRegionBounds)
+            ? cloneToolRuntimeValue(current.proposal.changedRegionBounds)
+            : asRecord(current.proposal?.changed_region_bounds)
+              ? cloneToolRuntimeValue(current.proposal.changed_region_bounds)
+              : null,
+    preserveRegionIds: uniqueStringList(
+      [
+        ...(Array.isArray(current.preserveRegionIds) ? current.preserveRegionIds : []),
+        ...(Array.isArray(current.preserve_region_ids) ? current.preserve_region_ids : []),
+        ...(Array.isArray(current.proposal?.preserveRegionIds) ? current.proposal.preserveRegionIds : []),
+        ...(Array.isArray(current.proposal?.preserve_region_ids) ? current.proposal.preserve_region_ids : []),
+      ]
+    ),
+    rationaleCodes: uniqueStringList(
+      [
+        ...(Array.isArray(current.rationaleCodes) ? current.rationaleCodes : []),
+        ...(Array.isArray(current.rationale_codes) ? current.rationale_codes : []),
+        ...(Array.isArray(current.proposal?.rationaleCodes) ? current.proposal.rationaleCodes : []),
+        ...(Array.isArray(current.proposal?.rationale_codes) ? current.proposal.rationale_codes : []),
+      ]
+    ),
     outputPath: readFirstString(current.outputPath, current.output_path) || null,
     error: readFirstString(current.error, current.failureReason, current.failure_reason) || null,
     startedAt: Math.max(0, Number(current.startedAt) || 0),
@@ -2432,6 +2519,7 @@ function createFreshCommunicationState() {
     canvasStamps: [],
     regionProposalsByImageId: new Map(),
     reviewHistory: [],
+    screenshotPolish: createFreshScreenshotPolishState(),
     lastAnchor: null,
     proposalTray: {
       visible: false,
@@ -2463,6 +2551,7 @@ function sanitizeForkedCommunicationState(communication = null) {
     canvasStamps: Array.isArray(current.canvasStamps) ? current.canvasStamps : [],
     regionProposalsByImageId: current.regionProposalsByImageId instanceof Map ? current.regionProposalsByImageId : new Map(),
     reviewHistory: Array.isArray(current.reviewHistory) ? current.reviewHistory : [],
+    screenshotPolish: cloneScreenshotPolishState(current.screenshotPolish),
     proposalTray: {
       ...fresh.proposalTray,
     },
@@ -2912,7 +3001,7 @@ const state = {
   effectTokensById: new Map(), // effectTokenId -> token payload
   activeId: null,
   selectedIds: [], // imageId[] (multi-select in multi canvas; last entry is "active")
-  imageCache: new Map(), // path -> { url: string|null, urlPromise: Promise<string>|null, imgPromise: Promise<HTMLImageElement>|null }
+  imageCache: new Map(), // path -> { url, urlPromise, imgPromise, img }
   thumbsById: new Map(), // artifactId -> { rootEl, imgEl, labelEl }
   tabMetadataVersion: 0,
   filmstripVersion: 0,
@@ -25153,6 +25242,126 @@ function buildCommunicationProposalTraySnapshot() {
   };
 }
 
+function buildScreenshotPolishFrameSnapshot(frame = null, overrides = {}) {
+  const current = asRecord(frame) || {};
+  const normalizedOverrides = asRecord(overrides) || {};
+  const snapshot = {
+    imageId:
+      readFirstString(
+        normalizedOverrides.imageId,
+        normalizedOverrides.image_id,
+        current.imageId,
+        current.image_id,
+        current.id
+      ) || null,
+    path: readFirstString(normalizedOverrides.path, current.path, normalizedOverrides.outputPath, normalizedOverrides.output_path) || null,
+    receiptPath:
+      readFirstString(
+        normalizedOverrides.receiptPath,
+        normalizedOverrides.receipt_path,
+        current.receiptPath,
+        current.receipt_path
+      ) || null,
+    label: readFirstString(normalizedOverrides.label, current.label) || null,
+    timelineNodeId:
+      readFirstString(
+        normalizedOverrides.timelineNodeId,
+        normalizedOverrides.timeline_node_id,
+        current.timelineNodeId,
+        current.timeline_node_id
+      ) || null,
+    source: readFirstString(normalizedOverrides.source, current.source) || null,
+    kind: readFirstString(normalizedOverrides.kind, current.kind) || null,
+  };
+  if (!snapshot.imageId && !snapshot.path && !snapshot.receiptPath) return null;
+  return snapshot;
+}
+
+function buildScreenshotPolishFrameContext({
+  detail = null,
+  targetBefore = null,
+  targetAfter = null,
+  receiptPath = null,
+  outputPath = null,
+  timelineNodeId = null,
+} = {}) {
+  const originalFrame = buildScreenshotPolishFrameSnapshot(targetBefore);
+  const approvedFrame = buildScreenshotPolishFrameSnapshot(targetAfter, {
+    path: outputPath,
+    receiptPath,
+    timelineNodeId,
+  });
+  const targetImageId =
+    readFirstString(detail?.targetImageId, detail?.target_image_id, approvedFrame?.imageId, originalFrame?.imageId) || null;
+  if (!targetImageId && !originalFrame && !approvedFrame) return null;
+  return {
+    sessionKind: "screenshot_polish",
+    requestId: readFirstString(detail?.requestId, detail?.request_id, detail?.request?.requestId) || null,
+    targetImageId,
+    originalFrame,
+    approvedFrame,
+  };
+}
+
+function buildScreenshotPolishApprovalState(options = {}) {
+  const detail = asRecord(options?.detail) || {};
+  const proposal = asRecord(detail.proposal) || {};
+  const proposalId = readFirstString(detail.proposalId, detail.proposal_id, proposal.proposalId, proposal.id) || null;
+  const selectedProposalId =
+    readFirstString(detail.selectedProposalId, detail.selected_proposal_id, proposalId) || null;
+  const previewImagePath =
+    readFirstString(
+      detail.previewImagePath,
+      detail.preview_image_path,
+      proposal.previewImagePath,
+      proposal.preview_image_path
+    ) || null;
+  const changedRegionBounds =
+    asRecord(detail.changedRegionBounds)
+      ? cloneToolRuntimeValue(detail.changedRegionBounds)
+      : asRecord(detail.changed_region_bounds)
+        ? cloneToolRuntimeValue(detail.changed_region_bounds)
+        : asRecord(proposal.changedRegionBounds)
+          ? cloneToolRuntimeValue(proposal.changedRegionBounds)
+          : asRecord(proposal.changed_region_bounds)
+            ? cloneToolRuntimeValue(proposal.changed_region_bounds)
+            : null;
+  const preserveRegionIds = uniqueStringList([
+    ...(Array.isArray(detail.preserveRegionIds) ? detail.preserveRegionIds : []),
+    ...(Array.isArray(detail.preserve_region_ids) ? detail.preserve_region_ids : []),
+    ...(Array.isArray(proposal.preserveRegionIds) ? proposal.preserveRegionIds : []),
+    ...(Array.isArray(proposal.preserve_region_ids) ? proposal.preserve_region_ids : []),
+  ]);
+  const rationaleCodes = uniqueStringList([
+    ...(Array.isArray(detail.rationaleCodes) ? detail.rationaleCodes : []),
+    ...(Array.isArray(detail.rationale_codes) ? detail.rationale_codes : []),
+    ...(Array.isArray(proposal.rationaleCodes) ? proposal.rationaleCodes : []),
+    ...(Array.isArray(proposal.rationale_codes) ? proposal.rationale_codes : []),
+  ]);
+  const frameContext = buildScreenshotPolishFrameContext(options);
+  if (
+    !proposalId &&
+    !selectedProposalId &&
+    !previewImagePath &&
+    !changedRegionBounds &&
+    preserveRegionIds.length === 0 &&
+    rationaleCodes.length === 0 &&
+    !frameContext
+  ) {
+    return createFreshScreenshotPolishState();
+  }
+  return {
+    proposalId,
+    selectedProposalId,
+    previewImagePath,
+    changedRegionBounds,
+    preserveRegionIds,
+    rationaleCodes,
+    frameContext: frameContext ? cloneToolRuntimeValue(frameContext) : null,
+    updatedAt: Date.now(),
+  };
+}
+
 function buildCommunicationReviewHistoryEntry({
   reason = "review_apply_success",
   detail = null,
@@ -25172,7 +25381,28 @@ function buildCommunicationReviewHistoryEntry({
   const request = normalizedDetail?.request && typeof normalizedDetail.request === "object"
     ? cloneToolRuntimeValue(normalizedDetail.request)
     : null;
-  if (!marks.length && !stamps.length && !regionSelections.length && !proposal && !request) return null;
+  const screenshotPolish = buildScreenshotPolishApprovalState({
+    detail: normalizedDetail,
+    targetBefore,
+    targetAfter,
+    receiptPath,
+    outputPath,
+    timelineNodeId,
+  });
+  const frameContext = screenshotPolish.frameContext;
+  const hasScreenshotPolish =
+    Boolean(
+      screenshotPolish.proposalId ||
+        screenshotPolish.selectedProposalId ||
+        screenshotPolish.previewImagePath ||
+        screenshotPolish.changedRegionBounds ||
+        screenshotPolish.frameContext
+    ) ||
+    screenshotPolish.preserveRegionIds.length > 0 ||
+    screenshotPolish.rationaleCodes.length > 0;
+  if (!marks.length && !stamps.length && !regionSelections.length && !proposal && !request && !hasScreenshotPolish) {
+    return null;
+  }
   return {
     archivedAt: new Date().toISOString(),
     reason: String(reason || "review_apply_success").trim() || "review_apply_success",
@@ -25197,6 +25427,13 @@ function buildCommunicationReviewHistoryEntry({
       receiptPath: readFirstString(receiptPath) || null,
       outputPath: readFirstString(outputPath) || null,
       timelineNodeId: readFirstString(timelineNodeId) || null,
+      proposalId: screenshotPolish.proposalId || null,
+      selectedProposalId: screenshotPolish.selectedProposalId || null,
+      previewImagePath: screenshotPolish.previewImagePath || null,
+      changedRegionBounds: screenshotPolish.changedRegionBounds ? cloneToolRuntimeValue(screenshotPolish.changedRegionBounds) : null,
+      preserveRegionIds: uniqueStringList(screenshotPolish.preserveRegionIds || []),
+      rationaleCodes: uniqueStringList(screenshotPolish.rationaleCodes || []),
+      frameContext: frameContext ? cloneToolRuntimeValue(frameContext) : null,
     },
     targetBefore: targetBefore ? cloneToolRuntimeValue(targetBefore) : null,
     targetAfter: targetAfter ? cloneToolRuntimeValue(targetAfter) : null,
@@ -26384,8 +26621,53 @@ function normalizeDesignReviewApplyEventDetail(detail = {}, { fallbackState = nu
       ) || null,
     proposalId:
       readFirstString(record.proposalId, record.proposal_id, proposal?.proposalId, proposal?.id, fallback.proposalId) || null,
+    selectedProposalId:
+      readFirstString(
+        record.selectedProposalId,
+        record.selected_proposal_id,
+        record.proposalId,
+        record.proposal_id,
+        fallback.selectedProposalId,
+        fallback.proposalId,
+        proposal?.proposalId,
+        proposal?.id
+      ) || null,
     targetImageId,
     referenceImageIds,
+    previewImagePath:
+      readFirstString(
+        record.previewImagePath,
+        record.preview_image_path,
+        proposal?.previewImagePath,
+        proposal?.preview_image_path,
+        fallback.previewImagePath
+      ) || null,
+    changedRegionBounds:
+      asRecord(record.changedRegionBounds)
+        ? cloneToolRuntimeValue(record.changedRegionBounds)
+        : asRecord(record.changed_region_bounds)
+          ? cloneToolRuntimeValue(record.changed_region_bounds)
+          : asRecord(proposal?.changedRegionBounds)
+            ? cloneToolRuntimeValue(proposal.changedRegionBounds)
+            : asRecord(proposal?.changed_region_bounds)
+              ? cloneToolRuntimeValue(proposal.changed_region_bounds)
+              : fallback.changedRegionBounds
+                ? cloneToolRuntimeValue(fallback.changedRegionBounds)
+                : null,
+    preserveRegionIds: uniqueStringList([
+      ...(Array.isArray(record.preserveRegionIds) ? record.preserveRegionIds : []),
+      ...(Array.isArray(record.preserve_region_ids) ? record.preserve_region_ids : []),
+      ...(Array.isArray(proposal?.preserveRegionIds) ? proposal.preserveRegionIds : []),
+      ...(Array.isArray(proposal?.preserve_region_ids) ? proposal.preserve_region_ids : []),
+      ...(Array.isArray(fallback.preserveRegionIds) ? fallback.preserveRegionIds : []),
+    ]),
+    rationaleCodes: uniqueStringList([
+      ...(Array.isArray(record.rationaleCodes) ? record.rationaleCodes : []),
+      ...(Array.isArray(record.rationale_codes) ? record.rationale_codes : []),
+      ...(Array.isArray(proposal?.rationaleCodes) ? proposal.rationaleCodes : []),
+      ...(Array.isArray(proposal?.rationale_codes) ? proposal.rationale_codes : []),
+      ...(Array.isArray(fallback.rationaleCodes) ? fallback.rationaleCodes : []),
+    ]),
     outputPath: readFirstString(record.outputPath, record.output_path, fallback.outputPath) || null,
     error: readFirstString(record.error, record.failureReason, record.failure_reason, fallback.error) || null,
     startedAt: parseApplyEventTimestamp(record.startedAt, fallback.startedAt, Date.now()),
@@ -26527,7 +26809,16 @@ function designReviewApplyEventMatchesTabRecord(record = null, detail = {}, fall
   if (normalized.tabId && recordTabId && normalized.tabId !== recordTabId) return false;
   if (fallback.sessionKey && normalized.sessionKey && fallback.sessionKey !== normalized.sessionKey) return false;
   if (fallback.requestId && normalized.requestId && fallback.requestId !== normalized.requestId) return false;
-  if (fallback.proposalId && normalized.proposalId && fallback.proposalId !== normalized.proposalId) return false;
+  if (
+    fallback.selectedProposalId &&
+    normalized.selectedProposalId &&
+    fallback.selectedProposalId !== normalized.selectedProposalId
+  ) {
+    return false;
+  }
+  if (!fallback.selectedProposalId && fallback.proposalId && normalized.proposalId && fallback.proposalId !== normalized.proposalId) {
+    return false;
+  }
   if (fallback.tabId && normalized.tabId && fallback.tabId !== normalized.tabId) return false;
   return true;
 }
@@ -26598,7 +26889,16 @@ function designReviewApplyEventMatchesActiveTab(detail = {}, fallbackState = nul
   if (normalized.tabId && activeTabId && normalized.tabId !== activeTabId) return false;
   if (fallback.sessionKey && normalized.sessionKey && fallback.sessionKey !== normalized.sessionKey) return false;
   if (fallback.requestId && normalized.requestId && fallback.requestId !== normalized.requestId) return false;
-  if (fallback.proposalId && normalized.proposalId && fallback.proposalId !== normalized.proposalId) return false;
+  if (
+    fallback.selectedProposalId &&
+    normalized.selectedProposalId &&
+    fallback.selectedProposalId !== normalized.selectedProposalId
+  ) {
+    return false;
+  }
+  if (!fallback.selectedProposalId && fallback.proposalId && normalized.proposalId && fallback.proposalId !== normalized.proposalId) {
+    return false;
+  }
   return true;
 }
 
@@ -26875,7 +27175,13 @@ function markSessionCommunicationProposalTrayApplyFailed(session = null, detail 
   const slots = Array.isArray(tray.slots)
     ? tray.slots.map((slot) => ({ ...slot }))
     : Array.from({ length: COMMUNICATION_PROPOSAL_SLOT_COUNT }, (_, index) => createCommunicationProposalSlot(index, {}));
-  const normalizedProposalId = readFirstString(detail?.proposalId, detail?.proposal?.proposalId, detail?.proposal?.id);
+  const normalizedProposalId = readFirstString(
+    detail?.selectedProposalId,
+    detail?.selected_proposal_id,
+    detail?.proposalId,
+    detail?.proposal?.proposalId,
+    detail?.proposal?.id
+  );
   let applied = false;
   for (let index = 0; index < slots.length; index += 1) {
     const slot = slots[index] || {};
@@ -27021,6 +27327,38 @@ async function applyAcceptedDesignReviewOutputToSessionRecord(record = null, det
     item.source = DESIGN_REVIEW_APPLY_SOURCE;
     if (nodeId) item.timelineNodeId = nodeId;
   }
+  const targetAfter = item
+    ? {
+        id: String(item.id || targetId),
+        path: String(item.path || outputPath),
+        receiptPath: item.receiptPath ? String(item.receiptPath) : receiptPath,
+        kind: item.kind ? String(item.kind) : "engine",
+        source: item.source ? String(item.source) : DESIGN_REVIEW_APPLY_SOURCE,
+        label: item.label ? String(item.label) : targetSnapshot.label,
+        timelineNodeId: item.timelineNodeId ? String(item.timelineNodeId) : nodeId || null,
+      }
+    : {
+        id: targetId,
+        path: outputPath,
+        receiptPath,
+        kind: "engine",
+        source: DESIGN_REVIEW_APPLY_SOURCE,
+        label: targetSnapshot.label || basename(outputPath),
+        timelineNodeId: nodeId || null,
+      };
+  const communication =
+    session.communication && typeof session.communication === "object"
+      ? session.communication
+      : createFreshCommunicationState();
+  communication.screenshotPolish = buildScreenshotPolishApprovalState({
+    detail: normalized,
+    targetBefore: targetSnapshot,
+    targetAfter,
+    receiptPath,
+    outputPath,
+    timelineNodeId: nodeId,
+  });
+  session.communication = communication;
   const referenceImageIds = uniqueStringList(
     Array.isArray(normalized.referenceImageIds) ? normalized.referenceImageIds : [],
     { exclude: ["", targetId] }
@@ -27152,6 +27490,16 @@ async function applyAcceptedDesignReviewOutput(detail = {}) {
         label: targetSnapshot.label || basename(outputPath),
         timelineNodeId: nodeId || null,
       };
+  if (state.communication && typeof state.communication === "object") {
+    state.communication.screenshotPolish = buildScreenshotPolishApprovalState({
+      detail: normalized,
+      targetBefore: targetSnapshot,
+      targetAfter,
+      receiptPath,
+      outputPath,
+      timelineNodeId: nodeId,
+    });
+  }
   const referenceImageIds = uniqueStringList(
     Array.isArray(normalized.referenceImageIds) ? normalized.referenceImageIds : [],
     { exclude: ["", targetId] }
@@ -27732,14 +28080,22 @@ function requestRender({ allowTabSwitchPreview = false, reason = "render" } = {}
 async function loadImage(path) {
   if (!path) return null;
   const rec = getOrCreateImageCacheRecord(path);
+  const cached = readSessionRuntimeImageHandle({ img: rec.img || null });
+  if (cached) return cached;
   if (rec.imgPromise) return await rec.imgPromise;
   rec.imgPromise = (async () => {
     // Always use a blob URL to keep the canvas untainted for local edits (toBlob, etc).
     const url = await ensureImageUrl(path);
     return await new Promise((resolve, reject) => {
       const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = (err) => reject(err);
+      img.onload = () => {
+        rec.img = img;
+        resolve(img);
+      };
+      img.onerror = (err) => {
+        rec.img = null;
+        reject(err);
+      };
       img.src = url;
     });
   })();
@@ -27755,6 +28111,13 @@ function readSessionRuntimeImageHandle(entry = null) {
   if (!Number.isFinite(naturalHeight) || naturalHeight <= 0) return null;
   if (typeof img.complete === "boolean" && !img.complete) return null;
   return img;
+}
+
+function readCachedImageHandle(path = "") {
+  const normalizedPath = String(path || "").trim();
+  if (!normalizedPath) return null;
+  const record = state.imageCache.get(normalizedPath);
+  return readSessionRuntimeImageHandle({ img: record?.img || null });
 }
 
 function clearImageCache() {
@@ -38692,6 +39055,42 @@ async function buildPsdExportComposite() {
 function buildPsdExportRequest({ outPath, flattenedSourcePath, composite, format = "psd" }) {
   const normalizedFormat = normalizeExportFormat(format);
   const timelineNodes = collectExportTimelineNodes();
+  const activeImageId = getVisibleActiveId() ? String(getVisibleActiveId()) : null;
+  const screenshotPolish =
+    state.communication?.screenshotPolish && typeof state.communication.screenshotPolish === "object"
+      ? state.communication.screenshotPolish
+      : null;
+  const rawFrameContext =
+    screenshotPolish?.frameContext && typeof screenshotPolish.frameContext === "object"
+      ? JSON.parse(JSON.stringify(screenshotPolish.frameContext))
+      : null;
+  const frameContextTargetImageId =
+    rawFrameContext && typeof rawFrameContext === "object"
+      ? String(rawFrameContext.targetImageId || rawFrameContext.approvedFrame?.imageId || "").trim()
+      : "";
+  const frameContext =
+    rawFrameContext && (!activeImageId || !frameContextTargetImageId || frameContextTargetImageId === activeImageId)
+      ? rawFrameContext
+      : null;
+  const screenshotPolishTrace = frameContext
+    ? {
+        proposalId: String(screenshotPolish?.proposalId || "").trim() || null,
+        selectedProposalId:
+          String(screenshotPolish?.selectedProposalId || screenshotPolish?.proposalId || "").trim() || null,
+        previewImagePath: String(screenshotPolish?.previewImagePath || "").trim() || null,
+        changedRegionBounds:
+          screenshotPolish?.changedRegionBounds && typeof screenshotPolish.changedRegionBounds === "object"
+            ? JSON.parse(JSON.stringify(screenshotPolish.changedRegionBounds))
+            : null,
+        preserveRegionIds: Array.isArray(screenshotPolish?.preserveRegionIds)
+          ? screenshotPolish.preserveRegionIds.map((value) => String(value || "").trim()).filter(Boolean)
+          : [],
+        rationaleCodes: Array.isArray(screenshotPolish?.rationaleCodes)
+          ? screenshotPolish.rationaleCodes.map((value) => String(value || "").trim()).filter(Boolean)
+          : [],
+        frameContext,
+      }
+    : null;
   return {
     schemaVersion: 1,
     format: normalizedFormat,
@@ -38699,7 +39098,7 @@ function buildPsdExportRequest({ outPath, flattenedSourcePath, composite, format
     outPath,
     flattenedSourcePath,
     canvasMode: state.canvasMode,
-    activeImageId: getVisibleActiveId() ? String(getVisibleActiveId()) : null,
+    activeImageId,
     exportBoundsCss: composite?.boundsCss || null,
     flattenedSizePx: composite ? { width: composite.width, height: composite.height } : null,
     sourceImages: Array.isArray(composite?.sourceImages) ? composite.sourceImages : [],
@@ -38708,6 +39107,7 @@ function buildPsdExportRequest({ outPath, flattenedSourcePath, composite, format
     timelineHeadNodeId: state.timelineHeadNodeId ? String(state.timelineHeadNodeId) : null,
     actionSequence: timelineNodes.map((node) => node?.action).filter(Boolean),
     limitations: normalizedFormat === "psd" ? exportPsdLimitations() : exportRasterFormatLimitations(normalizedFormat),
+    screenshotPolish: screenshotPolishTrace,
   };
 }
 
@@ -46040,6 +46440,131 @@ function renderReelTouchIndicator(octx, canvasW, canvasH) {
   if (now < visibleUntil || now < downUntil) requestRender();
 }
 
+function resolveActiveScreenshotPolishCompareState({
+  communication = state.communication,
+  activeImage = getActiveImage(),
+} = {}) {
+  const screenshotPolish = cloneScreenshotPolishState(communication?.screenshotPolish);
+  const frameContext =
+    screenshotPolish.frameContext && typeof screenshotPolish.frameContext === "object"
+      ? screenshotPolish.frameContext
+      : null;
+  if (!frameContext || !activeImage?.id || !activeImage?.path) return null;
+  const targetImageId =
+    readFirstString(frameContext?.targetImageId, frameContext?.approvedFrame?.imageId, frameContext?.originalFrame?.imageId) || null;
+  if (targetImageId && String(activeImage.id || "").trim() !== targetImageId) return null;
+  const approvedPath = readFirstString(frameContext?.approvedFrame?.path) || null;
+  if (approvedPath && String(activeImage.path || "").trim() !== approvedPath) return null;
+  const originalPath = readFirstString(frameContext?.originalFrame?.path) || null;
+  if (!originalPath) return null;
+  let originalImage = readCachedImageHandle(originalPath);
+  if (!originalImage) {
+    void loadImage(originalPath)
+      .then(() => requestRender())
+      .catch(() => {});
+  }
+  return {
+    proposalId: readFirstString(screenshotPolish.proposalId) || null,
+    selectedProposalId: readFirstString(screenshotPolish.selectedProposalId, screenshotPolish.proposalId) || null,
+    frameContext,
+    originalFrame: frameContext.originalFrame || null,
+    approvedFrame: frameContext.approvedFrame || null,
+    originalImage,
+    approvedImage: readSessionRuntimeImageHandle(activeImage),
+    activeImage,
+  };
+}
+
+function renderScreenshotPolishCompareOverlay(octx, canvasW, canvasH) {
+  const compare = resolveActiveScreenshotPolishCompareState();
+  if (!compare || !octx) return false;
+  const dpr = getDpr();
+  const panelPad = Math.max(12, Math.round(16 * dpr));
+  const panelWidth = Math.max(Math.round(280 * dpr), Math.min(Math.round(canvasW * 0.42), Math.round(420 * dpr)));
+  const cardGap = Math.max(10, Math.round(12 * dpr));
+  const panelInnerPad = Math.max(10, Math.round(12 * dpr));
+  const labelHeight = Math.max(12, Math.round(14 * dpr));
+  const cardWidth = Math.max(80, Math.floor((panelWidth - panelInnerPad * 2 - cardGap) / 2));
+  const cardHeight = Math.max(Math.round(92 * dpr), Math.min(Math.round(cardWidth * 0.62), Math.round(160 * dpr)));
+  const titleHeight = Math.max(18, Math.round(20 * dpr));
+  const footerHeight = Math.max(14, Math.round(16 * dpr));
+  const panelHeight = panelInnerPad * 2 + titleHeight + labelHeight + cardHeight + footerHeight + Math.round(12 * dpr);
+  const panelX = Math.max(panelPad, canvasW - panelWidth - panelPad);
+  const panelY = panelPad;
+  const topY = panelY + panelInnerPad;
+  const cardsY = topY + titleHeight + labelHeight;
+  const leftCardX = panelX + panelInnerPad;
+  const rightCardX = leftCardX + cardWidth + cardGap;
+
+  const drawCard = (img, x, y, w, h, label = "") => {
+    octx.save();
+    octx.fillStyle = "rgba(10, 15, 21, 0.94)";
+    octx.fillRect(x, y, w, h);
+    octx.strokeStyle = "rgba(255, 255, 255, 0.10)";
+    octx.lineWidth = Math.max(1, Math.round(1 * dpr));
+    octx.strokeRect(x, y, w, h);
+    if (img) {
+      const innerPad = Math.max(6, Math.round(6 * dpr));
+      const innerX = x + innerPad;
+      const innerY = y + innerPad;
+      const innerW = Math.max(1, w - innerPad * 2);
+      const innerH = Math.max(1, h - innerPad * 2);
+      const scale = Math.min(
+        innerW / Math.max(1, Number(img.naturalWidth) || 1),
+        innerH / Math.max(1, Number(img.naturalHeight) || 1)
+      );
+      const drawW = Math.max(1, Math.round((Number(img.naturalWidth) || 1) * scale));
+      const drawH = Math.max(1, Math.round((Number(img.naturalHeight) || 1) * scale));
+      const drawX = innerX + Math.round((innerW - drawW) / 2);
+      const drawY = innerY + Math.round((innerH - drawH) / 2);
+      octx.drawImage(img, drawX, drawY, drawW, drawH);
+    } else {
+      const gradient = octx.createLinearGradient(x, y, x, y + h);
+      gradient.addColorStop(0, "rgba(44, 58, 76, 0.85)");
+      gradient.addColorStop(1, "rgba(14, 20, 28, 0.96)");
+      octx.fillStyle = gradient;
+      octx.fillRect(x + 1, y + 1, Math.max(1, w - 2), Math.max(1, h - 2));
+      octx.fillStyle = "rgba(224, 231, 239, 0.72)";
+      octx.font = `${Math.max(10, Math.round(11 * dpr))}px IBM Plex Mono`;
+      octx.textBaseline = "middle";
+      octx.fillText("LOADING…", x + Math.round(10 * dpr), y + Math.round(h * 0.5));
+    }
+    octx.fillStyle = "rgba(235, 241, 246, 0.94)";
+    octx.font = `${Math.max(10, Math.round(11 * dpr))}px IBM Plex Mono`;
+    octx.textBaseline = "bottom";
+    octx.fillText(label, x, y - Math.max(4, Math.round(4 * dpr)));
+    octx.restore();
+  };
+
+  octx.save();
+  octx.shadowColor = "rgba(0, 0, 0, 0.28)";
+  octx.shadowBlur = Math.round(24 * dpr);
+  octx.fillStyle = "rgba(6, 10, 14, 0.84)";
+  octx.fillRect(panelX, panelY, panelWidth, panelHeight);
+  octx.shadowBlur = 0;
+  octx.strokeStyle = "rgba(255, 255, 255, 0.10)";
+  octx.lineWidth = Math.max(1, Math.round(1 * dpr));
+  octx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+
+  octx.fillStyle = "rgba(244, 248, 251, 0.98)";
+  octx.font = `${Math.max(11, Math.round(12 * dpr))}px IBM Plex Mono`;
+  octx.textBaseline = "top";
+  octx.fillText("COMPARE  ORIGINAL  |  APPROVED", panelX + panelInnerPad, topY);
+
+  drawCard(compare.originalImage, leftCardX, cardsY, cardWidth, cardHeight, "Original");
+  drawCard(compare.approvedImage, rightCardX, cardsY, cardWidth, cardHeight, "Approved");
+
+  const footer = compare.selectedProposalId
+    ? `proposal ${String(compare.selectedProposalId || "").trim()}`
+    : "approved trace ready";
+  octx.fillStyle = "rgba(190, 205, 219, 0.76)";
+  octx.font = `${Math.max(9, Math.round(10 * dpr))}px IBM Plex Mono`;
+  octx.textBaseline = "bottom";
+  octx.fillText(footer, panelX + panelInnerPad, panelY + panelHeight - panelInnerPad);
+  octx.restore();
+  return true;
+}
+
 function render() {
   const work = els.workCanvas;
   const overlay = els.overlayCanvas;
@@ -46265,6 +46790,7 @@ function render() {
 
   renderDesignReviewApplyShimmer(octx);
   renderCommunicationOverlay(octx);
+  renderScreenshotPolishCompareOverlay(octx, work.width, work.height);
   renderIntentOverlay(octx, work.width, work.height);
   renderMotherDraftingPlaceholder(octx, work.width, work.height);
   renderPromptGeneratePlaceholder(octx, work.width, work.height);
