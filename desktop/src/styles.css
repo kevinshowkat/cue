@@ -1785,6 +1785,31 @@ button.ghost:hover {
   text-shadow: none;
 }
 
+.tool.has-action-provenance:disabled,
+.session-tab-strip-action.has-action-provenance:disabled,
+.session-tab-runtime-action.has-action-provenance:disabled {
+  border-color: rgba(100, 138, 244, 0.42);
+  border-top-color: rgba(230, 238, 255, 0.28);
+  border-left-color: rgba(214, 226, 255, 0.22);
+  background: rgba(53, 104, 235, 0.72);
+  color: rgba(255, 255, 255, 0.84);
+  box-shadow: none;
+  opacity: 1;
+  filter: none;
+}
+
+.tool.has-action-provenance:disabled .tool-icon,
+.tool.has-action-provenance:disabled .tool-hint,
+.tool.has-action-provenance:disabled .tool-label,
+.session-tab-strip-action.has-action-provenance:disabled span,
+.session-tab-runtime-action.has-action-provenance:disabled span,
+.session-tab-runtime-action.has-action-provenance:disabled svg {
+  color: rgba(255, 255, 255, 0.84);
+  opacity: 1;
+  filter: none;
+  text-shadow: none;
+}
+
 .action-provenance-affordance {
   position: absolute;
   inset: 0;
@@ -11901,11 +11926,35 @@ body.juggernaut-shell .juggernaut-tool-rail .tool.has-action-provenance.is-activ
   box-shadow: none;
 }
 
+body.juggernaut-shell .tool.has-action-provenance:disabled,
+body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:disabled,
+body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled {
+  border-color: rgba(82, 123, 236, 0.32);
+  border-top-color: rgba(234, 240, 255, 0.78);
+  border-left-color: rgba(220, 230, 255, 0.68);
+  background: rgba(53, 104, 235, 0.72);
+  color: rgba(255, 255, 255, 0.86);
+  box-shadow: none;
+  opacity: 1;
+  filter: none;
+}
+
 body.juggernaut-shell .tool.has-action-provenance .tool-hint,
 body.juggernaut-shell .tool.has-action-provenance .tool-label,
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance span {
   color: rgba(255, 255, 255, 0.94);
   text-shadow: none;
+}
+
+body.juggernaut-shell .tool.has-action-provenance:disabled .tool-hint,
+body.juggernaut-shell .tool.has-action-provenance:disabled .tool-label,
+body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:disabled span,
+body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled span,
+body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled svg {
+  color: rgba(255, 255, 255, 0.84);
+  text-shadow: none;
+  opacity: 1;
+  filter: none;
 }
 
 body.juggernaut-shell .brand-strip .session-tab-action-menu-panel {

@@ -98,6 +98,7 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-runtime-action\.is-ready\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\.has-action-provenance,\s*\.session-tab-runtime-action\.has-action-provenance\.is-ready,\s*\.session-tab-runtime-action\.has-action-provenance\.is-active-request\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\.has-action-provenance,\s*\.session-tab-runtime-action\.has-action-provenance\.is-ready,\s*\.session-tab-runtime-action\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.98\);/);
+  assert.match(css, /\.session-tab-runtime-action\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.72\);[\s\S]*opacity:\s*1;/);
   assert.match(css, /\.session-tab-runtime-action\.is-pending-hook\s*\{/);
   assert.match(css, /\.session-tab-action-menu-panel\s*\{/);
   assert.match(css, /\.session-tab-action-menu-item\s*\{/);

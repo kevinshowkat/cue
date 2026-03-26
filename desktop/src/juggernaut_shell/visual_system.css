@@ -748,6 +748,25 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:disabled {
     0 6px 12px rgba(30, 35, 44, 0.06);
 }
 
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance:disabled {
+  border-color: rgba(82, 123, 236, 0.32);
+  border-top-color: rgba(234, 240, 255, 0.78);
+  border-left-color: rgba(220, 230, 255, 0.68);
+  background: rgba(53, 104, 235, 0.72);
+  color: rgba(255, 255, 255, 0.86);
+  box-shadow: none;
+  opacity: 1;
+  filter: none;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance:disabled .tool-icon,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance:disabled .tool-hint,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance:disabled .tool-label {
+  color: rgba(255, 255, 255, 0.84);
+  opacity: 1;
+  filter: none;
+}
+
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button[data-tool-id="upload"],
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button[data-tool-id="export_psd"] {
   color: rgba(53, 64, 79, 0.84);
@@ -910,6 +929,11 @@ body.juggernaut-shell .juggernaut-shell-action.is-pending-hook {
 
 body.juggernaut-shell .juggernaut-tool-rail .tool.is-selection-empty {
   opacity: 0.52;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .tool.has-action-provenance.is-selection-empty,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance.is-selection-empty {
+  opacity: 1;
 }
 
 body.juggernaut-shell .canvas-wrap {

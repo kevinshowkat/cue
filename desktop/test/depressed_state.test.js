@@ -105,3 +105,13 @@ test("Model-backed blue buttons use flat fills without blue gradients or glow", 
     /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.98\);[\s\S]*box-shadow:\s*none;/
   );
 });
+
+test("Model-backed blue buttons keep a visible inactive state when unavailable", () => {
+  assert.match(css, /\.tool\.has-action-provenance:disabled,\s*\.session-tab-strip-action\.has-action-provenance:disabled,\s*\.session-tab-runtime-action\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.72\);[\s\S]*opacity:\s*1;/);
+  assert.match(
+    visualSystemCss,
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.72\);[\s\S]*opacity:\s*1;/
+  );
+  assert.match(visualSystemCss, /\.juggernaut-tool-rail \.tool\.has-action-provenance\.is-selection-empty,\s*$/m);
+  assert.match(visualSystemCss, /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-selection-empty\s*\{[\s\S]*opacity:\s*1;/);
+});
