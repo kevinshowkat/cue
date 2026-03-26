@@ -2004,6 +2004,24 @@ function createFreshCommunicationState() {
   };
 }
 
+function sanitizeForkedCommunicationState(communication = null) {
+  const current = communication && typeof communication === "object" ? communication : createFreshCommunicationState();
+  const fresh = createFreshCommunicationState();
+  return {
+    ...fresh,
+    ...current,
+    marksByImageId: current.marksByImageId instanceof Map ? current.marksByImageId : new Map(),
+    canvasMarks: Array.isArray(current.canvasMarks) ? current.canvasMarks : [],
+    regionProposalsByImageId: current.regionProposalsByImageId instanceof Map ? current.regionProposalsByImageId : new Map(),
+    reviewHistory: Array.isArray(current.reviewHistory) ? current.reviewHistory : [],
+    proposalTray: {
+      ...fresh.proposalTray,
+    },
+    reviewRequestSeq: 0,
+    lastReviewRequestedAt: 0,
+  };
+}
+
 const state = {
   tabsOrder: [],
   tabsById: new Map(),
@@ -35602,9 +35620,12 @@ function createForkedTabSession(session = null, { label = null } = {}) {
   next.forkedFromTabId = String(cloned.forkedFromTabId || source.forkedFromTabId || "").trim() || null;
   next.label = typeof label === "string" && label ? label : typeof cloned.label === "string" ? cloned.label : null;
   next.labelManual = Boolean(label) || Boolean(cloned.labelManual);
-  next.reviewFlowState = normalizeSessionTabReviewFlowState(cloned.reviewFlowState);
-  next.communication = cloned.communication && typeof cloned.communication === "object" ? cloned.communication : createFreshCommunicationState();
-  next.designReviewApply = cloneDesignReviewApplyState(cloned.designReviewApply);
+  next.communication = sanitizeForkedCommunicationState(cloned.communication);
+  next.designReviewApply = createFreshDesignReviewApplyState();
+  next.reviewFlowState = currentSessionTabReviewFlowState({
+    communication: next.communication,
+    designReviewApply: next.designReviewApply,
+  });
   next.promptGenerateDraft =
     cloned.promptGenerateDraft && typeof cloned.promptGenerateDraft === "object"
       ? cloned.promptGenerateDraft

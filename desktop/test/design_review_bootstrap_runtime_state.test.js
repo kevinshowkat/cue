@@ -79,6 +79,22 @@ function createRuntimeRegistry() {
   return createDesignReviewRuntimeRegistry();
 }
 
+function createReviewStateSelector() {
+  const asRecord = instantiateFunction("asRecord");
+  const readFirstString = instantiateFunction("readFirstString");
+  const resolveDesignReviewRuntimeSessionKey = instantiateFunction(
+    "resolveDesignReviewRuntimeSessionKey",
+    {
+      asRecord,
+      readFirstString,
+    }
+  );
+  return instantiateFunction("selectDesignReviewStateForSession", {
+    readFirstString,
+    resolveDesignReviewRuntimeSessionKey,
+  });
+}
+
 function seedRuntimeRegistry(registry) {
   registry.rememberRequest("review-a", "tab:tab-a");
   registry.rememberRequest("review-b", "tab:tab-b");
@@ -184,6 +200,37 @@ test("review bootstrap runtime registry rejects tray events with a mismatched re
   });
 
   assert.equal(mismatched, null);
+});
+
+test("review bootstrap state selector does not leak another tab's in-flight review into a fresh fork", () => {
+  const selectDesignReviewStateForSession = createReviewStateSelector();
+  const registry = createRuntimeRegistry();
+  seedRuntimeRegistry(registry);
+
+  const leaked = selectDesignReviewStateForSession({
+    activeSessionKey: "tab:tab-fork",
+    runtimeRegistry: registry,
+    pipeline: {
+      getState() {
+        return {
+          request: {
+            requestId: "review-a",
+            sessionId: "tab-a",
+            visibleCanvasContext: {
+              runDir: "/tmp/run-a",
+            },
+          },
+          status: "planning",
+        };
+      },
+    },
+    shellContext: {
+      activeTabId: "tab-fork",
+      runDir: "/tmp/run-fork",
+    },
+  });
+
+  assert.equal(leaked, null);
 });
 
 test("review bootstrap debug payload collector preserves apply failure details in the tray state", () => {

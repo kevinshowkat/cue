@@ -1391,6 +1391,32 @@ export function createDesignReviewRuntimeRegistry() {
   };
 }
 
+export function selectDesignReviewStateForSession({
+  activeSessionKey = "",
+  runtimeRegistry = null,
+  pipeline = null,
+  shellContext = null,
+} = {}) {
+  const normalizedSessionKey = readFirstString(activeSessionKey);
+  const runtimeState =
+    normalizedSessionKey && runtimeRegistry && typeof runtimeRegistry.stateForSession === "function"
+      ? runtimeRegistry.stateForSession(normalizedSessionKey, { create: false })
+      : null;
+  if (runtimeState?.lastReviewState && typeof runtimeState.lastReviewState === "object") {
+    return runtimeState.lastReviewState;
+  }
+  const fallbackState = pipeline && typeof pipeline.getState === "function" ? pipeline.getState() : null;
+  if (!fallbackState || typeof fallbackState !== "object") return null;
+  const fallbackSessionKey = resolveDesignReviewRuntimeSessionKey({
+    request: fallbackState?.request,
+    state: fallbackState,
+  });
+  if (normalizedSessionKey && fallbackSessionKey && normalizedSessionKey !== fallbackSessionKey) {
+    return null;
+  }
+  return fallbackState;
+}
+
 function clearCommunicationTrayReviewDetails() {
   const tray = communicationTrayRoot();
   if (!tray) return false;
@@ -1799,11 +1825,14 @@ export async function installDesignReviewBootstrap() {
 
   const bridge = {
     getState: () => {
-      const activeSessionKey = runtimeRegistry.sessionKeyForContext(shellSnapshot());
-      return (
-        runtimeRegistry.stateForSession(activeSessionKey, { create: false })?.lastReviewState ||
-        pipeline.getState()
-      );
+      const shell = shellSnapshot();
+      const activeSessionKey = runtimeRegistry.sessionKeyForContext(shell);
+      return selectDesignReviewStateForSession({
+        activeSessionKey,
+        runtimeRegistry,
+        pipeline,
+        shellContext: shell,
+      });
     },
     subscribe: (listener) => pipeline.subscribe(listener),
     acceptProposal({ proposalId = "", proposalRank = 1 } = {}) {

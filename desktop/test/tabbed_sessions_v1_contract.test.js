@@ -81,7 +81,7 @@ test("forking the active tab clones the visible session into a detached sibling 
   );
   assert.match(
     app,
-    /function createForkedTabSession\(session = null,\s*\{ label = null \} = \{\}\) \{[\s\S]*next\.forkedFromTabId = String\(cloned\.forkedFromTabId \|\| source\.forkedFromTabId \|\| ""\)\.trim\(\) \|\| null;[\s\S]*next\.toolRegistry = createInSessionToolRegistry\([\s\S]*next\.sessionTools = next\.toolRegistry\.list\(\);[\s\S]*next\.runDir = null;[\s\S]*next\.eventsPath = null;[\s\S]*next\.eventsByteOffset = 0;/
+    /function createForkedTabSession\(session = null,\s*\{ label = null \} = \{\}\) \{[\s\S]*next\.forkedFromTabId = String\(cloned\.forkedFromTabId \|\| source\.forkedFromTabId \|\| ""\)\.trim\(\) \|\| null;[\s\S]*next\.communication = sanitizeForkedCommunicationState\(cloned\.communication\);[\s\S]*next\.designReviewApply = createFreshDesignReviewApplyState\(\);[\s\S]*next\.reviewFlowState = currentSessionTabReviewFlowState\(\{[\s\S]*communication: next\.communication,[\s\S]*designReviewApply: next\.designReviewApply,[\s\S]*\}\);[\s\S]*next\.toolRegistry = createInSessionToolRegistry\([\s\S]*next\.sessionTools = next\.toolRegistry\.list\(\);[\s\S]*next\.runDir = null;[\s\S]*next\.eventsPath = null;[\s\S]*next\.eventsByteOffset = 0;/
   );
   assert.match(
     app,
