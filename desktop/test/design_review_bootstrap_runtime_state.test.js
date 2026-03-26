@@ -336,6 +336,13 @@ test("review bootstrap collapses the runtime tray only while review work is busy
   );
   assert.equal(
     shouldCollapseReviewTray({
+      status: "apply_running",
+      slots: [{ status: "apply_running" }],
+    }),
+    false
+  );
+  assert.equal(
+    shouldCollapseReviewTray({
       status: "ready",
       slots: [{ status: "ready" }],
     }),
@@ -387,7 +394,7 @@ test("review bootstrap renders runtime tray details before shell positioning to 
   assert.equal(runtimeState.lastTrayAnchor?.kind, "titlebar_button");
 });
 
-test("review bootstrap shows only the active proposal card while apply is running in the collapsed tray", () => {
+test("review bootstrap shows only the active proposal card while apply is running and keeps the full tray format", () => {
   const readFirstString = instantiateFunction("readFirstString");
   const clampText = instantiateFunction("clampText");
   const proposalEffectText = instantiateFunction("proposalEffectText", {
@@ -543,7 +550,7 @@ test("review bootstrap shows only the active proposal card while apply is runnin
   });
 
   renderCommunicationTrayDetails({
-    status: "apply_running",
+    status: "ready",
     request: { requestId: "review-1" },
     activeApply: {
       requestId: "review-1",
@@ -581,7 +588,7 @@ test("review bootstrap shows only the active proposal card while apply is runnin
     ],
   });
 
-  assert.equal(tray.classList.contains("is-collapsed"), true);
+  assert.equal(tray.classList.contains("is-collapsed"), false);
   assert.equal(list.children.length, 1);
   assert.equal(list.children[0].dataset.slotIndex, "1");
   assert.equal(list.children[0].querySelector(".design-review-runtime-title")?.textContent, "Swap the backdrop");

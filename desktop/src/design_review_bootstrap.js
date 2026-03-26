@@ -885,10 +885,10 @@ function slotSummaryText(slot = {}) {
 
 function shouldCollapseReviewTray(state = {}) {
   const status = readFirstString(state?.status).toLowerCase();
-  if (["preparing", "planning", "previewing", "apply_running"].includes(status)) {
+  if (["preparing", "planning", "previewing"].includes(status)) {
     return true;
   }
-  if (["ready", "failed", "apply_failed", "apply_succeeded"].includes(status)) {
+  if (["ready", "apply_running", "failed", "apply_failed", "apply_succeeded"].includes(status)) {
     return false;
   }
   const slots = Array.isArray(state?.slots) ? state.slots : [];
@@ -900,7 +900,7 @@ function shouldCollapseReviewTray(state = {}) {
   );
   if (hasTerminalSlot) return false;
   return slots.some((slot) =>
-    ["planning", "preview_pending", "preview_running", "apply_running"].includes(
+    ["planning", "preview_pending", "preview_running"].includes(
       readFirstString(slot?.status).toLowerCase()
     )
   );
@@ -1092,16 +1092,17 @@ function renderCommunicationTrayDetails(state = {}, onAccept = null) {
   );
   const slotEntries = slots.map((slot, index) => ({ index, slot }));
   const activeApplyProposalId = readFirstString(state?.activeApply?.proposalId);
+  const activeApplyRunning = readFirstString(state?.activeApply?.status).toLowerCase() === "running";
+  const runningEntries = slotEntries.filter(
+    ({ slot }) => readFirstString(slot?.status).toLowerCase() === "apply_running"
+  );
   let visibleSlotEntries = slotEntries;
-  if (collapsed && readFirstString(state?.status).toLowerCase() === "apply_running") {
+  if (activeApplyRunning || runningEntries.length) {
     const applyingEntries = activeApplyProposalId
       ? slotEntries.filter(
           ({ slot }) => readFirstString(slot?.proposal?.proposalId) === activeApplyProposalId
         )
       : [];
-    const runningEntries = slotEntries.filter(
-      ({ slot }) => readFirstString(slot?.status).toLowerCase() === "apply_running"
-    );
     visibleSlotEntries = applyingEntries.length
       ? applyingEntries
       : runningEntries.length
