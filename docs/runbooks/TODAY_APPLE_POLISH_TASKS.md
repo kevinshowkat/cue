@@ -1,6 +1,8 @@
 # Today Apple Polish Tasks (Juggernaut)
 
-Use these prompts for the next design pass after `feature/design-wave-integration`.
+Historical prompt pack for the Apple-polish wave that followed `feature/design-wave-integration`.
+
+Update the branch names, worktree paths, and mission text before reusing these prompts.
 
 The goal is not "more glass." The goal is a calmer, more premium macOS-first feel:
 - closer to a first-party Apple creative utility than a sci-fi dashboard

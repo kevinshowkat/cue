@@ -4,8 +4,8 @@ These are the multi-agent execution documents created during the launch/design/p
 
 ## Current Files
 
-- [WARP_AGENT_LAUNCH.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/WARP_AGENT_LAUNCH.md): first launch-slice worktree and tab setup
-- [TODAY_LAUNCH_TASKS.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/TODAY_LAUNCH_TASKS.md): launch-slice worker prompts
+- [WARP_AGENT_LAUNCH.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/WARP_AGENT_LAUNCH.md): reusable multi-agent Warp/worktree setup baseline
+- [TODAY_LAUNCH_TASKS.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/TODAY_LAUNCH_TASKS.md): historical March 8 launch-slice worker prompts
 - [WARP_DESIGN_WAVE.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/WARP_DESIGN_WAVE.md): design-wave setup
 - [TODAY_DESIGN_WAVE_TASKS.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/TODAY_DESIGN_WAVE_TASKS.md): design-wave worker prompts
 - [WARP_APPLE_POLISH.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/WARP_APPLE_POLISH.md): Apple-polish setup
@@ -19,5 +19,7 @@ These are the multi-agent execution documents created during the launch/design/p
 
 ## Notes
 
+- Most `TODAY_*` files are historical wave instructions. Copy and adapt them rather than following their dates, paths, or branch names literally.
+- `AGENT_RUNNER_ARAGORN.md` and `agent_runner_aragorn_goals.json` are still useful as current manual verification assets for the Agent Run path.
 - These are useful for repeatable multi-agent execution, but they are operational history, not product documentation.
 - Keep new runbooks here instead of adding them back to the repository root.

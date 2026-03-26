@@ -1,6 +1,8 @@
 # Today Launch Tasks (Juggernaut)
 
-Use these prompts for the March 8, 2026 sprint targeting a launchable slice by 5:30 PM America/Los_Angeles.
+Historical prompt pack for the March 8, 2026 sprint targeting a launchable slice by 5:30 PM America/Los_Angeles.
+
+Update the date, branch names, worktree paths, and mission text before reusing these prompts.
 
 ## Coordinator
 ```text

@@ -5,11 +5,12 @@ Canonical agent instructions live in this file.
 ## Project Intent
 - Build `Juggernaut`, a text-free-first, image-first desktop design workstation.
 - The source-of-truth product definition is [`PRD.md`](/Users/mainframe/Desktop/projects/Juggernaut/PRD.md).
-- Current operating objective: move toward a launchable vertical slice by **5:30 PM America/Los_Angeles on 2026-03-08**.
+- Current operating objective: harden and document the launchable single-image-first desktop slice already landed in the repo while preserving the release bar in [`PRD.md`](/Users/mainframe/Desktop/projects/Juggernaut/PRD.md).
 
 ## Non-Negotiable Rules
-- Every agent must use a separate git worktree.
-- Never run two agents in the same worktree or on the same local branch checkout.
+- Every implementation agent must use a separate git worktree.
+- Exception: when `/review` is initiated in Codex for an in-flight task, the review and any follow-up fixes must happen in the original task worktree and on the original task branch. Do not create a second review-only worktree.
+- Never run two independent implementation agents in the same worktree or on the same local branch checkout.
 - Preserve a clean separation between deterministic local transforms and model-backed actions.
 - Primary workflow must remain text-free in the visible editing loop.
 - Tool creation is a core feature, not an extension point to postpone.
@@ -17,7 +18,7 @@ Canonical agent instructions live in this file.
 
 ## Product Directives
 - Release goal is parity across macOS, Windows, and Linux for the same core feature set.
-- Today's sprint goal is narrower: launchable app on the current Mac with upload, canvas, custom tools, image edit path, and PSD export.
+- Current slice goal is narrower: a launchable app on the current Mac with session tabs, upload, canvas, custom tools, design review/apply, and reproducible PSD export.
 - 3D scope for v1 is printable relief or mesh export only.
 - VGen or artist-marketplace discovery is phase 2.
 - Connected mode defaults to telemetry enabled with opt-out.
@@ -45,8 +46,9 @@ Canonical agent instructions live in this file.
 1. Start from the main repo clone.
 2. Create a dedicated branch and worktree for your task.
 3. Do all edits, tests, commits, and pushes from that worktree only.
-4. Open a PR from your branch.
-5. After merge, remove your worktree.
+4. If you initiate `/review` in Codex on that task, keep the review pass in that same worktree and apply fixes there instead of creating a new worktree.
+5. Open a PR from your branch.
+6. After merge, remove your worktree.
 
 ## Worktree Commands
 Create new feature worktree:
@@ -76,6 +78,7 @@ git worktree remove ../juggernaut-<feature>
 - Do not run destructive git commands on shared branches.
 - Keep commits scoped to one task.
 - Rebase or merge only within your own branch and worktree.
+- Do not spin up a second review-only worktree for Codex `/review`; review the existing task branch in place and fix findings there.
 - If blocked by another branch, coordinate through PR comments or coordinator notes instead of editing in their worktree.
 
 ## Documentation Rules
@@ -105,8 +108,8 @@ git worktree remove ../juggernaut-<feature>
 
 ## Multi-Agent Runbooks
 - Use [`WARP_AGENT_LAUNCH.md`](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/WARP_AGENT_LAUNCH.md) for the parallel Codex setup.
-- Use [`AGENT_PROMPTS.md`](/Users/mainframe/Desktop/projects/Juggernaut/AGENT_PROMPTS.md) for task-specific boot prompts.
-- Use [`TODAY_LAUNCH_TASKS.md`](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/TODAY_LAUNCH_TASKS.md) for the launch-slice worker prompts.
+- Use [`AGENT_PROMPTS.md`](/Users/mainframe/Desktop/projects/Juggernaut/AGENT_PROMPTS.md) for reusable role templates; update branch names and mission text before reuse.
+- Use [`TODAY_LAUNCH_TASKS.md`](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/TODAY_LAUNCH_TASKS.md) only when recreating the original March 8 launch-slice wave.
 - Use [`WARP_DESIGN_WAVE.md`](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/WARP_DESIGN_WAVE.md) for the second-wave design pass.
 - Use [`TODAY_DESIGN_WAVE_TASKS.md`](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/TODAY_DESIGN_WAVE_TASKS.md) for the design-wave worker prompts.
 - Use [`WARP_APPLE_POLISH.md`](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/WARP_APPLE_POLISH.md) for the Apple-style shell reset.

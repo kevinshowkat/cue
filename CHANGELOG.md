@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+- Add the Juggernaut session-shell workflow: in-app tabs, fork/open/save/close session actions, tab-local state capture, and persisted visual timeline history.
+- Add the current design-review/apply path, including proposal trays, accepted in-place replacement, and timeline/receipt integration.
+- Add the titlebar runtime controls: `History`, `Agent Run`, `Design Review`, and an export menu with PSD plus flattened PNG save-dialog flows.
+- Add Agent Run goal execution hooks for design review, tool preview/create, and export.
+- Continue shell polish across titlebar controls, tab status indicators, untitled-tab numbering, timeline copy, and communication-mark visuals.
 
 ## [0.2.3] - 2026-02-22
 - Fix Mother realtime timeout failures firing after proposal confirm by clearing stale in-flight intent requests before drafting.

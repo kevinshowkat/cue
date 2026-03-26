@@ -1,129 +1,72 @@
 # Desktop App (Tauri)
 
-Supported platform: **macOS only** (Desktop app). There is no web app, and Windows/Linux builds are not supported yet.
+Juggernaut is a Tauri desktop app with its strongest verification on macOS today. The release bar still targets the same core feature set across macOS, Windows, and Linux, but the currently shipped and tested slice is the Mac desktop shell.
 
-Local launch note:
-- When the app is launched through the local Tauri shell, it now opens in a smaller square splash stage first, tries to play `/Users/mainframe/Desktop/load.mp4` once per app window, and then expands into the normal workspace when boot finishes.
-- If that file cannot be read, startup falls back to the normal boot path without blocking the app.
+There is no web app.
 
-Category claim:
-- Promptless, reference-first AI image generation and editing desktop for developers (multi-provider + reproducible runs).
+## Current Shell
 
-The desktop app is image-first: import images, run Abilities, and inspect results in the bottom HUD.
-The bottom-center system strip is icon-only; the full toast message remains available through assistive text and the hover title.
+- One window with a brand strip, in-app session tabs, and one shared canvas surface.
+- Titlebar actions for `New session`, `Fork tab`, `History`, `Agent Run`, `Design Review`, and `Export`.
+- Native `File` menu items for new/open/save/close/import/export/settings.
+- The empty-canvas hint is visual only; uploads come from the left-rail `Upload` action, `File > Import Photos...`, or drag-drop.
 
 ## Core Concepts
-- **Run**: a folder on disk (created under `~/brood_runs/`) that stores inputs, artifacts, receipts, `events.jsonl`, saved session state, and `session-timeline.json` when the run has recorded timeline history.
-- **Unit**: the currently selected image (shown on the canvas in single view).
-- **Session Timeline**: a compact dock under the tab strip that records committed session-state boundaries for the active tab and can restore any saved head without re-running model work.
-- **Views**:
-  - `Single view`: one image on the canvas, with a filmstrip to browse artifacts and the docked session timeline for rewind/restore.
-  - `Multi view`: tiled layout of all images in the run (used for 2-photo actions).
 
-## Basic Workflow
-1. Click **New Run** (creates a run directory and starts the engine).
-2. Click **Import Photos** or drag-drop onto the canvas (copies files into `run_dir/inputs/`).
-3. Use **Abilities** (right panel) to generate edits/variants.
-4. Use the session timeline under the tab strip to move backward or forward across committed run states.
-5. Use **Export** to write `run_dir/export.html` for a lightweight shareable viewer from the currently selected timeline head.
+- **Run**: a folder under `~/brood_runs/` that stores imported files, artifacts, receipts, `events.jsonl`, `juggernaut-session.json`, and `session-timeline.json`.
+- **Session tab**: an isolated shell state bound to one run directory. Tabs can be created fresh, opened from disk, saved, closed, or forked from the current tab.
+- **Shared canvas**: only the active tab is attached to runtime/events at a time; switching tabs swaps session state into the shared surface.
+- **Visual timeline**: tab-local history toggled by the titlebar `History` button. It can restore prior committed states without re-running model work.
+- **Communication overlay**: the `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` tools used to scope `Design Review`.
+- **Agent Run**: a compact goal-driven panel that can step or auto-run review, tool-preview/create, and export actions against the current tab.
 
-## Abilities
+## Current Primary Workflow
 
-Single-image actions (work in `Single view`):
-- `Recast`: reimagine the image in a different medium/context (image output).
-- `Create Layers`: split one image into compositional layers as separate artifacts.
-- `Background: White` / `Background: Sweep`: background replacement edits.
-- `Crop: Square`: local crop (no model call).
-- `Variations`: zero-prompt variations of the active image.
+1. Create a new session or open an existing run directory.
+2. Import one or more images.
+3. Use the left rail for direct single-image actions and the right-side communication tools for spatial guidance.
+4. Trigger `Design Review` when the edit is ambiguous, aesthetic, or multi-step.
+5. Accept a proposal to run a real in-place single-image apply.
+6. Optionally preview or create a reusable tool from the current edit pattern.
+7. Use `History` to inspect or restore earlier tab-local states.
+8. Export PSD or flattened PNG with a receipt.
 
-Extraction actions (work from selected source images, typically in `Multi view`):
-- `Extract DNA`: collapse each selected source into a draggable DNA glyph.
-- `Soul Leech`: collapse each selected source into a draggable Soul glyph.
+The primary Juggernaut wedge is still single-image-first even though older Brood-derived multi-image actions remain available in the runtime.
 
-Two-image actions (require `Multi view` and **exactly 2** photos loaded):
-- `Combine`: blend the two images into one (`/blend`).
-- `Swap DNA`: structure from one + surface qualities from the other (`/swap_dna`). Shift-click to invert.
-- `Bridge`: synthesize the aesthetic midpoint between two references (`/bridge`).
+## Left Rail And Review
 
-Notes:
-- Some actions auto-switch the **Image Model** (e.g. 2-photo actions prefer `gemini-3-pro-image-preview`). The agent portraits update to match.
-- After a 2-photo action completes, Brood switches back to `Single view` showing the output-only image. Use `Multi view` to return to the tiled layout.
+- Stable visible anchors: `Move`, `Upload`, `Select`.
+- Three dynamic suggested slots are filled from the seeded single-image job library.
+- `Remove People` is currently exposed as an extra direct single-image affordance outside the three dynamic slots.
+- `New Background` remains part of the seeded job library, but it is hidden in the current visible rail.
+- `Design Review` consumes the visible canvas plus marks or region candidates and returns proposal cards in the communication tray.
+- Accepting a proposal routes through the normal execution layer and replaces the target image in place.
+- Busy tabs block switching, closing, or forking until they reach a safe boundary.
 
-## Effect Tokens (DNA / Soul)
-- Extraction visuals run on a dedicated Pixi overlay (`#effects-canvas`) and are clipped exactly to the source tile bounds.
-- When extraction completes, the source tile is tokenized: the source image box is removed from normal canvas interaction and replaced by a floating draggable glyph.
-- The token lifecycle is explicit: `extracting -> ready -> dragging -> drop_preview -> applying -> consumed`.
-- Drag/drop rules:
-  - Valid drop target must be a different image than the source.
-  - Valid targets get a strong hover highlight.
-  - Drop plays a sink/absorb animation, then dispatches apply exactly once.
-  - Invalid drop cancels without dispatching apply.
-- On successful apply:
-  - Target is edited in place (DNA/Soul transfer).
-  - The token is consumed.
-  - The extracted source image is removed from the canvas.
-- On failed apply:
-  - Token recovers to a draggable `ready` state (no stuck `applying` lock).
+## Persistence And Files
 
-### Canvas Context + Mother Reference Counts
-- Tokenized source images are excluded from visible-canvas counts and selection logic.
-- Effect glyphs are rendered only on the Pixi overlay (not the base work canvas), so realtime/intent snapshots do not include DNA/Soul glyphs.
-- Practical result: after one extraction from `n` images, Mother context and reference counts use `n - 1` visible images until the effect is applied.
+- Imported files land in `run_dir/inputs/`.
+- Session saves write `run_dir/juggernaut-session.json`.
+- Timeline persistence writes `run_dir/session-timeline.json`.
+- Receipts continue to live alongside run artifacts as `receipt-*.json` or export-specific receipt payloads.
+- Some on-disk paths, local-storage keys, and runtime env names still use legacy `brood` naming during the transition.
 
-## HUD + Tools
-- The HUD prints `UNIT / DESC / SEL / GEN` for the active image.
-- The HUD keybar (buttons `1`-`9`) activates canvas tools/actions. Common hotkeys:
-  - `L` lasso
-  - `F` fit-to-view
-  - `Esc` clear selection / close panels
+## Export
 
-## Mother Proposal + Gemini Context (v2)
-Brood now sends two compact context packets that preserve user-selected proposal flow while making model behavior more aware of what happened on canvas.
+- The titlebar export menu offers PSD and flattened PNG.
+- `File > Export Session...` currently routes to PSD export.
+- Both export routes open a save dialog and remember the last export directory.
+- Export receipts include the current timeline head and timeline schema version.
+- PSD is currently a flattened bitmap composition with alpha rather than fully editable per-image layers.
+- PNG is also flattened and does not preserve editable tool semantics.
 
-- `brood.mother.proposal_context.v1` (during intent/proposal inference):
-  - Added to `mother_intent_infer-*.json` as `proposal_context`.
-  - Encodes soft priors only: interaction focus, geometry hints, and compact spatial relations.
-  - Does not override explicit proposal lock semantics (`active_id`, `selected_ids`, chosen proposal mode).
-- `brood.gemini.context_packet.v2` (during image generation):
-  - Added to `mother_generate-*.json` as `gemini_context_packet`.
-  - Includes `proposal_lock`, ranked image slots, compact relations, and a capped `must_not` list.
-  - Includes a tiny `geometry_trace` per image: `cx`, `cy`, `relative_scale`, `iou_to_primary`.
+## Legacy Runtime Note
 
-### Scoring Math (high level)
-Per-image interaction and geometry are normalized and combined into a soft weighting prior.
+Older Brood-era capabilities such as multi-image blends, DNA/Soul token flows, and some multi-image generation helpers are still present in the runtime. They are useful implementation carryover, but they are not the main Juggernaut launch loop.
 
-- Saturating interaction transform:
-  - `sat(c, k) = min(1, ln(1 + c) / ln(1 + k))`
-- Interaction base:
-  - `E = 0.35*sat(move,8) + 0.35*sat(resize,4) + 0.25*sat(selection,8) + 0.05*sat(action_grid,4)`
-- Recency + staleness:
-  - decay `exp(-age_ms / 90000)`
-  - hard stale cutoff on transform activity: `age_transform_ms > 600000` (10 min) => interaction contribution `0`
-- Geometry score:
-  - size term uses `sqrt(area_ratio)` normalization
-  - centrality term uses distance to `(0.5, 0.5)`
-  - combined as `0.8*size + 0.2*centrality`, then normalized
-- Combined score (soft prior):
-  - intent proposal context uses:
-    - `(1 + 0.8*focus_score) * (1 + 0.5*geometry_score) * (1 + selected_bonus + active_bonus)`
-  - Gemini generation context uses role priors and single-target guardrails.
+## See Also
 
-### Guardrails and compactness
-- Single-target clamp logic is applied only when exactly one target exists.
-- `must_not` is deduped and capped to exactly 6 constraints.
-- Relations are compact and confidence-gated (`OVERLAP` / directional `ADJACENT`) to reduce prompt noise.
-
-### Debugging and verification
-- Enable Gemini wire debug:
-  - `BROOD_DEBUG_GEMINI_WIRE=1 npm --prefix desktop run tauri dev`
-- Inspect the latest run:
-  - `~/brood_runs/run-*/mother_intent_infer-*.json` -> `proposal_context`
-  - `~/brood_runs/run-*/_raw_provider_outputs/gemini-send-message-*.json` -> exact Gemini `chat.send_message` payload parts
-  - `~/brood_runs/run-*/_raw_provider_outputs/gemini-receipt-*.json` -> provider receipt copy
-  - `~/brood_runs/run-*/mother_generate-*.json` -> generation payload containing `gemini_context_packet`
-
-## Files Written To The Run
-- `run_dir/inputs/`: imported photos
-- `run_dir/receipt-*.json`: generation/edit receipts
-- `run_dir/events.jsonl`: event stream consumed by the desktop UI
-- `run_dir/visual_prompt.json`: serialized canvas marks/layout (see `docs/visual_prompting_v0.md`)
+- [docs/features/visual-timeline/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/visual-timeline/README.md)
+- [docs/features/shell-canvas-integration.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/shell-canvas-integration.md)
+- [docs/psd-export-slice.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/psd-export-slice.md)
+- [docs/runbooks/AGENT_RUNNER_ARAGORN.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/AGENT_RUNNER_ARAGORN.md)

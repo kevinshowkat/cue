@@ -1,24 +1,26 @@
 # Juggernaut
 
-Juggernaut is an image-first desktop design workstation built around a text-free editing loop: import images to a canvas, create custom tools, apply those tools deterministically when possible, and export reproducible assets.
+Juggernaut is an image-first desktop design workstation built around a text-free-first editing loop. The current app centers on session tabs, a shared canvas, design review/apply, in-session tool creation, reproducible receipts, and exportable results.
 
-## Current Vertical Slice
+## Current Product State
 
-The repo currently supports this launch path:
+The repo currently supports this Mac-verified workflow:
 
-1. import one or more images onto the canvas
-2. create a custom tool from a short description
-3. apply a deterministic local edit to the selected image
-4. export a flattened PSD with a receipt trail
+1. create, open, save, close, and fork session tabs in one shared window
+2. import images by left-rail `Upload`, `File > Import Photos...`, or drag-drop
+3. use left-rail single-image actions and right-rail communication tools to scope edits
+4. run `Design Review` proposals and accept a real in-place single-image apply
+5. preview or create reusable tools in-session
+6. inspect tab-local history and export PSD or flattened PNG with receipts
 
-The shell has been reset toward a lighter, more premium desktop design-tool feel, with custom left-rail iconography and reduced default telemetry noise.
+Brood-derived multi-image and token workflows still exist in the runtime, but the main Juggernaut slice remains single-image-first.
 
 ## Status
 
 - Desktop shell: Tauri
 - Verified locally: macOS build, test, and DMG generation
 - Release target: same core feature set across macOS, Windows, and Linux
-- Not finished yet: native `.ai` and `.fig` round-trip, full 3D authoring, marketplace discovery, and final release automation polish
+- Current gaps: native `.ai` and `.fig` round-trip, richer PSD layering fidelity, cross-platform verification, and final release automation polish
 
 ## Run From Source
 
@@ -41,15 +43,18 @@ That script runs desktop tests, frontend build, Rust checks, a Tauri DMG build, 
 - Product definition: [PRD.md](/Users/mainframe/Desktop/projects/Juggernaut/PRD.md)
 - Agent workflow rules: [AGENTS.md](/Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md)
 - Docs index: [docs/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/README.md)
-- Desktop shell notes: [docs/desktop.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/desktop.md)
+- Current desktop behavior: [docs/desktop.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/desktop.md)
+- Visual timeline contract: [docs/features/visual-timeline/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/visual-timeline/README.md)
+- Shell/tool/export bridge notes: [docs/features/shell-canvas-integration.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/shell-canvas-integration.md)
 - PSD export slice: [docs/psd-export-slice.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/psd-export-slice.md)
 - Multi-agent sprint runbooks: [docs/runbooks/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/README.md)
+- Changelog: [CHANGELOG.md](/Users/mainframe/Desktop/projects/Juggernaut/CHANGELOG.md)
 
 ## Known Limitations
 
-- PSD export is still flattened for the current slice.
+- PSD and PNG exports are both flattened for the current slice.
 - The native engine binary and some environment paths still use legacy `brood` naming internally during the transition.
-- Current automation and smoke coverage are strongest on macOS.
+- Current automation, packaging, and smoke coverage are strongest on macOS.
 
 ## License
 

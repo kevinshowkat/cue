@@ -1,6 +1,8 @@
 # Today Design Wave Tasks (Juggernaut)
 
-Use these prompts for the March 8, 2026 design wave. The goal is to make Juggernaut feel less like Brood and more like a native design workstation, while preserving the already-working launch slice.
+Historical prompt pack for the March 8, 2026 design wave.
+
+Update the date, branch names, worktree paths, and mission text before reusing these prompts.
 
 ## Design Contract
 - Default workspace should feel closer to Photoshop or Figma than Brood.

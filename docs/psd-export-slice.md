@@ -1,18 +1,24 @@
 # PSD Export Slice
 
-This document defines the March 8, 2026 PSD export contract for Juggernaut's same-day launch slice.
+This document defines the current PSD export contract for Juggernaut's desktop shell.
 
 ## Contract
 
+- UI entrypoints:
+  - titlebar `Export > PSD`
+  - native `File > Export Session...`
+  - Agent Run `export_psd`
 - Export entrypoint: Tauri command `export_run`
 - Format: `.psd`
-- Source artifact: flattened PNG render of the visible canvas composition
-- Receipt output: JSON receipt written into the active run directory
+- Destination: user-chosen save path from the native save dialog
+- Source artifact: flattened PNG render of the current visible canvas composition
+- Receipt output: JSON receipt from the native exporter, including timeline/export metadata
 
-## What Ships Today
+## What Ships Now
 
 - The export menu now writes a valid PSD file for the current canvas result.
 - The PSD preserves transparency from the flattened canvas render.
+- The titlebar export menu also offers flattened PNG, but this document covers the PSD path specifically.
 - The export receipt captures:
   - run directory
   - active image id
@@ -35,4 +41,4 @@ This document defines the March 8, 2026 PSD export contract for Juggernaut's sam
 
 - Promote source images into editable PSD layers when the edit graph supports it cleanly.
 - Carry richer mask and effect semantics into export metadata and layer structures.
-- Add save-path selection UI once shell ownership is ready for it.
+- Add native `.ai` / `.fig` export and round-trip once the core slice is stable.

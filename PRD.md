@@ -1,7 +1,7 @@
 # Juggernaut
 
-Status: Draft v0.2  
-Last updated: 2026-03-26  
+Status: Draft v0.2
+Last updated: 2026-03-26
 Document owner: Product / founding team
 
 ## Purpose
@@ -14,14 +14,14 @@ Juggernaut is a text-free-first, image-first desktop design workstation for non-
 - Product name: `Juggernaut`.
 - Main editing workflow: text-free to start.
 - V1 primary wedge: single-image-first. The primary loop is one image in, usable asset out.
-- V1 primary rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots.
+- V1 primary rail shape: stable `Move`, `Upload`, and `Select` anchors plus 3 dynamic suggested job slots. The current shell also exposes `Remove People` as a direct single-image affordance outside the dynamic slots.
 - Product split:
   - left rail = deterministic precomputed action library
   - right rail = communication layer for complex or non-prebaked changes
 - V1 right-side communication rail tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
 - V1 shell model: single-window, Warp-style session tabs over one shared canvas surface.
 - `Create Tool` remains core product value, but for the single-image-first wedge it moves to a secondary follow-on surface such as `Save Shortcut`.
-- Icon system: custom iconography generated from the same pipeline family used for Oscillo bookend icon generation, with the starting reference at `../oscillo/scripts/generate_bookend_overlays.py`, provider-generated mask packs for the rail and session/titlebar actions, and a global Settings toggle for pack switching.
+- Icon system: custom iconography generated from the same pipeline family used for Oscillo bookend icon generation, with the starting reference at `../oscillo/scripts/generate_bookend_overlays.py`.
 - Export requirement: native `.psd`, native `.ai`, and native `.fig` are release requirements.
 - Native `.ai` and `.fig` exports must re-import into Juggernaut with high fidelity.
 - Release requirement: macOS, Windows, and Linux parity at first release.
@@ -81,8 +81,18 @@ There is "vibe coding" because code can be shaped through examples, suggestions,
 ## Release Goal
 At release, Juggernaut is a cross-platform desktop app for macOS, Windows, and Linux that supports image upload, guided editing, generated custom tools, reproducible receipts, native `.psd`/`.ai`/`.fig` export, high-fidelity re-import of `.ai` and `.fig` assets produced by Juggernaut, and basic printable 3D output.
 
-## Today Sprint Goal
-By **5:30 PM America/Los_Angeles on Sunday, March 8, 2026**, produce a launchable vertical slice on the current Mac that:
+## Current Operating Focus
+As of **2026-03-26**, the repo focus is to harden and document the launchable Mac slice already present in the codebase:
+
+- session tabs over one shared canvas
+- single-image-first edits with communication-guided design review/apply
+- in-session tool preview/create
+- reproducible export and timeline state
+
+Cross-platform parity and native `.ai` / `.fig` round-trip remain release requirements, but they are not yet complete in the current slice.
+
+## Historical Sprint 0 Goal (March 8, 2026)
+By **5:30 PM America/Los_Angeles on Sunday, March 8, 2026**, the goal was to produce a launchable vertical slice on the current Mac that:
 
 - launches as a desktop app
 - lets the user upload one image to the canvas
@@ -90,7 +100,7 @@ By **5:30 PM America/Los_Angeles on Sunday, March 8, 2026**, produce a launchabl
 - lets the user reach a follow-on `Save Shortcut` / `Create Tool` surface after a useful edit
 - exports to PSD
 
-This is a same-day launch slice, not the full release bar. Cross-platform parity and native `.ai`/`.fig` remain release requirements unless scope is later renegotiated.
+That sprint was a same-day launch slice, not the full release bar. Cross-platform parity and native `.ai`/`.fig` remain release requirements unless scope is later renegotiated.
 
 ## V1 Outcome
 Users can open the app, keep multiple isolated runs in one window through session tabs, swap the active run into a shared canvas surface, drop in one image, use the left rail for deterministic precomputed actions and the right rail for complex communication-driven edits, see intent-aware suggested rail jobs, apply seeded single-image edits, request action-first design review proposals against the visible canvas plus any marks, accept a proposal to run a real single-image edit that replaces the target image in place, optionally save a reusable shortcut after a successful edit, and export a usable 2D asset with a reproducibility receipt. Multi-image flows are deferred from the primary v1 loop until the single-image wedge is stable.
@@ -101,7 +111,7 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 - One shared window and one shared canvas surface.
 - One active run/session tab attached at a time.
 - No multi-image flows in the primary loop.
-- Left rail shape: stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library.
+- Left rail shape: stable `Move`, `Upload`, and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library. The current shell may also expose direct single-image affordances outside those 3 dynamic slots.
 - Right rail shape: communication-only rail for complex or non-prebaked changes.
 - Right-side communication rail v1 tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
 - `Create Tool` remains in the product, but enters as a secondary follow-on capability through `Save Shortcut` or a secondary dialog after useful edits.
@@ -120,8 +130,8 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 4. The native system menu mirrors the session shell: `File` exposes new/open/save/close/export session actions, `Tools` mirrors the right-side communication tools plus visible custom tools, and `Shortcuts` mirrors the left rail actions.
 5. The user drags one image onto the active session canvas.
 6. After first-use cloud-analysis consent, the system may opportunistically analyze the uploaded image through the design-review upload-analysis path, cache that analysis by image hash, and use it to improve future suggestions without blocking editing or design review.
-7. The left rail keeps two stable icon-only anchors: `Upload` and `Select`.
-8. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the deterministic precomputed action library, while any action that may incur model cost shows a top-right sapphire-blue dot.
+7. The left rail keeps three stable icon-only anchors: `Move`, `Upload`, and `Select`.
+8. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the deterministic precomputed action library, while any action that may incur model cost shows a top-right sapphire-blue dot. The current shell may also expose `Remove People` as a direct single-image affordance outside those 3 dynamic slots.
 9. The right rail exposes `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` as the communication layer for complex or non-prebaked changes.
 10. `Marker` lets the user place transient Photoshop-style freehand highlighter marks that are raw and pointer-faithful, without arrowheads, without prior image selection, and without requiring an image under the pointer.
 11. `Protect` uses the same visible freehand marking behavior as `Marker`, but its semantics are "do not change this area" when review or apply consumes the focus contract.
@@ -204,10 +214,11 @@ UI ids:
 - Account-wide memory may bias suggestion and proposal ranking by accepted action types, style preferences, and repeated use-case patterns, but must not silently apply edits.
 
 ### 3. Primary Rail Shape
-- Stable anchors: `Upload`, `Select`.
+- Stable anchors: `Move`, `Upload`, `Select`.
 - Dynamic suggested job slots: 3.
 - Anchors do not rerank or disappear.
 - Dynamic slots draw only from the seeded single-image job set in the primary loop.
+- Direct shell affordances may sit outside the 3 dynamic slots when they are still part of the single-image-first wedge.
 - `Create Tool` and multi-image actions do not appear as primary rail actions in the v1 wedge.
 - The left rail is the deterministic precomputed action library and does not host freeform communication tools.
 
@@ -222,6 +233,7 @@ V1 seeds 5 single-image jobs and lets intent ranking choose which 3 to show at a
 
 Notes:
 - The seeded set is finite for the v1 wedge. Intent ranking may reorder and enable or disable it, but does not invent new primary rail jobs.
+- In the current shell, `New Background` remains part of the seeded library but is hidden in the visible rail, while `Remove People` is exposed as an extra direct single-image affordance.
 - `Select` is the deterministic local entry into region-aware variants of jobs that need explicit user scope.
 
 ### 5. Bottom Communication Rail
@@ -545,7 +557,7 @@ Rules:
 - `stl` or `3mf` for supported printable outputs.
 
 ### V1 Practical Constraint
-- The same-day March 8, 2026 sprint only requires a working PSD export path.
+- The historical March 8, 2026 sprint only required a working PSD export path.
 - Native `.ai` and `.fig` are still required before release.
 
 ## Acceptance Criteria
@@ -558,14 +570,14 @@ Rules:
 - The main workspace includes a left vertical icon-only rail.
 - The main workspace includes a right-side communication rail.
 - The main workspace includes an in-app session tab strip using a single shared canvas surface.
-- The left rail keeps stable `Upload` and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library.
+- The left rail keeps stable `Move`, `Upload`, and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library.
 - The right-side communication rail contains `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` in v1.
 - The main editing workflow requires no text labels to operate.
 - The primary wedge is one image in and one usable asset out.
 - No multi-image action is required in the primary loop.
 - The UI uses a glass-material visual system on macOS and equivalent platform-native material styling elsewhere.
 - The default workflow is image-led, not chat-led.
-- The primary rail suggestions come only from the seeded 5-job single-image set.
+- The primary rail suggestions come only from the seeded 5-job single-image set, even if the current shell exposes extra direct single-image affordances outside the dynamic slots.
 - Communication marks alone are sufficient input for `Design review`; explicit image selection is not required.
 - Communication marks are canvas-overlay annotations first and may begin on blank canvas.
 
@@ -626,7 +638,7 @@ Rules:
 - Round-trip support is part of the release bar, not a future enhancement.
 
 ## Delivery Plan
-### Sprint 0: Today By 5:30 PM
+### Historical Sprint 0: March 8, 2026 Launch Slice
 - Fork or adapt `../brood` into a Juggernaut desktop shell.
 - Achieve launchable single-image upload-to-canvas loop.
 - Land the primary rail contract with stable anchors and 3 dynamic job slots.

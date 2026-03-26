@@ -1,6 +1,8 @@
 # Today Review Apply Tasks (Juggernaut)
 
-Use these prompts for the March 9, 2026 review-apply wave. The goal is to let users accept a design-review proposal and run a real Gemini final edit that replaces the target image in the active tab.
+Historical prompt pack for the March 9, 2026 review-apply wave.
+
+Update the date, branch names, worktree paths, and mission text before reusing these prompts.
 
 ## Review Apply Contract
 - Communication tray remains the only review surface.

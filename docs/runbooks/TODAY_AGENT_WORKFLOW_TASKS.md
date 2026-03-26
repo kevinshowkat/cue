@@ -1,6 +1,8 @@
 # Today Agent Workflow Tasks (Juggernaut)
 
-Use these prompts for the first observable-agent workflow build wave.
+Historical prompt pack for the first observable-agent workflow build wave.
+
+Update the branch names, worktree paths, and mission text before reusing these prompts.
 
 ## Shared Contract
 - Observable agent mode must use visible canvas tools for focus/communication.
