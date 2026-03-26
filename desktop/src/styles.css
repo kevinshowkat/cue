@@ -1754,33 +1754,33 @@ button.ghost:hover {
 }
 
 .tool.has-action-provenance {
-  border-color: rgba(114, 150, 255, 0.6);
-  border-top-color: rgba(221, 232, 255, 0.34);
-  border-left-color: rgba(205, 220, 255, 0.24);
-  background: rgba(53, 104, 235, 0.98);
+  border-color: rgba(169, 149, 144, 0.6);
+  border-top-color: rgba(242, 236, 234, 0.34);
+  border-left-color: rgba(229, 220, 217, 0.24);
+  background: rgba(204, 185, 180, 0.98);
   color: rgba(255, 255, 255, 0.98);
   box-shadow: none;
 }
 
 .tool.has-action-provenance:hover {
   filter: none;
-  border-color: rgba(136, 167, 255, 0.72);
-  border-top-color: rgba(233, 240, 255, 0.44);
-  border-left-color: rgba(217, 229, 255, 0.34);
-  background: rgba(53, 104, 235, 0.98);
+  border-color: rgba(181, 161, 156, 0.72);
+  border-top-color: rgba(246, 241, 239, 0.44);
+  border-left-color: rgba(234, 226, 223, 0.34);
+  background: rgba(204, 185, 180, 0.98);
 }
 
 .tool.has-action-provenance.selected,
 .tool.has-action-provenance.selected:hover,
 .tool.has-action-provenance.depressed,
 .tool.has-action-provenance:active {
-  border-color: rgba(72, 109, 214, 0.82);
-  border-top-color: rgba(205, 219, 255, 0.24);
-  border-left-color: rgba(188, 206, 255, 0.2);
-  background: rgba(37, 82, 194, 0.98);
+  border-color: rgba(145, 124, 119, 0.82);
+  border-top-color: rgba(232, 223, 220, 0.24);
+  border-left-color: rgba(219, 207, 203, 0.2);
+  background: rgba(177, 157, 152, 0.98);
   color: rgba(255, 255, 255, 0.98);
   box-shadow:
-    inset 0 2px 8px rgba(17, 42, 104, 0.42),
+    inset 0 2px 8px rgba(92, 74, 70, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
   filter: none;
 }
@@ -1798,10 +1798,10 @@ button.ghost:hover {
 .tool.has-action-provenance:disabled,
 .session-tab-strip-action.has-action-provenance:disabled,
 .session-tab-runtime-action.has-action-provenance:disabled {
-  border-color: rgba(100, 138, 244, 0.42);
-  border-top-color: rgba(230, 238, 255, 0.28);
-  border-left-color: rgba(214, 226, 255, 0.22);
-  background: rgba(53, 104, 235, 0.72);
+  border-color: rgba(169, 149, 144, 0.42);
+  border-top-color: rgba(240, 234, 232, 0.28);
+  border-left-color: rgba(228, 219, 216, 0.22);
+  background: rgba(204, 185, 180, 0.72);
   color: rgba(255, 255, 255, 0.84);
   box-shadow: none;
   opacity: 1;
@@ -1834,11 +1834,11 @@ button.ghost:hover {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: rgba(70, 128, 255, 0.98);
+  background: rgba(204, 185, 180, 0.98);
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.18),
-    0 0 0 3px rgba(70, 128, 255, 0.18),
-    0 2px 6px rgba(4, 12, 28, 0.24);
+    0 0 0 3px rgba(204, 185, 180, 0.18),
+    0 2px 6px rgba(60, 48, 45, 0.24);
 }
 
 .custom-tool-dock .tool.tool-create {
@@ -10724,8 +10724,8 @@ button.ghost:hover {
 }
 
 .session-tab-strip-action.has-action-provenance {
-  border-color: rgba(111, 149, 255, 0.46);
-  background: rgba(53, 104, 235, 0.98);
+  border-color: rgba(172, 152, 147, 0.46);
+  background: rgba(204, 185, 180, 0.98);
   color: rgba(255, 255, 255, 0.98);
 }
 
@@ -10746,9 +10746,9 @@ button.ghost:hover {
 
 .session-tab-runtime-action.has-action-provenance,
 .session-tab-runtime-action.has-action-provenance.is-ready {
-  border-color: rgba(111, 149, 255, 0.46);
+  border-color: rgba(172, 152, 147, 0.46);
   color: rgba(255, 255, 255, 0.98);
-  background: rgba(53, 104, 235, 0.98);
+  background: rgba(204, 185, 180, 0.98);
 }
 
 .session-tab-runtime-action.is-active-request {
@@ -10763,10 +10763,10 @@ button.ghost:hover {
 .session-tab-strip-action.has-action-provenance:active,
 .session-tab-runtime-action.has-action-provenance:active,
 .session-tab-runtime-action.has-action-provenance.is-active-request {
-  border-color: rgba(118, 152, 255, 0.62);
-  background: rgba(37, 82, 194, 0.98);
+  border-color: rgba(154, 133, 128, 0.62);
+  background: rgba(177, 157, 152, 0.98);
   box-shadow:
-    inset 0 2px 8px rgba(17, 42, 104, 0.42),
+    inset 0 2px 8px rgba(92, 74, 70, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
   filter: none;
 }
@@ -10916,9 +10916,9 @@ button.ghost:hover {
 
 .session-tab-strip-action.has-action-provenance:hover,
 .session-tab-strip-action.has-action-provenance:focus-visible {
-  border-color: rgba(136, 167, 255, 0.66);
+  border-color: rgba(181, 161, 156, 0.66);
   color: rgba(255, 255, 255, 0.98);
-  background: rgba(53, 104, 235, 0.98);
+  background: rgba(204, 185, 180, 0.98);
   filter: none;
 }
 
@@ -11873,19 +11873,19 @@ body.juggernaut-shell .brand-strip .session-tab-runtime-action svg {
 }
 
 body.juggernaut-shell .action-provenance-model-dot {
-  background: rgba(53, 104, 235, 0.98);
+  background: rgba(204, 185, 180, 0.98);
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.9),
-    0 0 0 3px rgba(61, 113, 241, 0.14),
-    0 3px 8px rgba(30, 35, 44, 0.12);
+    0 0 0 3px rgba(204, 185, 180, 0.16),
+    0 3px 8px rgba(60, 48, 45, 0.12);
 }
 
 body.juggernaut-shell .tool.has-action-provenance,
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance {
-  border-color: rgba(79, 121, 233, 0.34);
-  border-top-color: rgba(238, 243, 255, 0.9);
-  border-left-color: rgba(222, 232, 255, 0.8);
-  background: rgba(53, 104, 235, 0.98);
+  border-color: rgba(161, 141, 136, 0.34);
+  border-top-color: rgba(247, 242, 240, 0.9);
+  border-left-color: rgba(235, 227, 224, 0.8);
+  background: rgba(204, 185, 180, 0.98);
   color: rgba(255, 255, 255, 0.98);
   box-shadow: none;
 }
@@ -11893,10 +11893,10 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenan
 body.juggernaut-shell .tool.has-action-provenance:hover,
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:hover,
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:focus-visible {
-  border-color: rgba(87, 130, 243, 0.4);
-  border-top-color: rgba(244, 247, 255, 0.94);
-  border-left-color: rgba(230, 238, 255, 0.84);
-  background: rgba(53, 104, 235, 0.98);
+  border-color: rgba(171, 151, 146, 0.4);
+  border-top-color: rgba(249, 244, 242, 0.94);
+  border-left-color: rgba(239, 231, 228, 0.84);
+  background: rgba(204, 185, 180, 0.98);
   color: rgba(255, 255, 255, 0.98);
 }
 
@@ -11906,26 +11906,26 @@ body.juggernaut-shell .tool.has-action-provenance.depressed,
 body.juggernaut-shell .tool.has-action-provenance:active,
 body.juggernaut-shell .juggernaut-tool-rail .tool.has-action-provenance.is-active-request,
 body.juggernaut-shell .juggernaut-tool-rail .tool.has-action-provenance.is-active-request:hover {
-  border-color: rgba(66, 102, 207, 0.48);
-  border-top-color: rgba(220, 230, 255, 0.76);
-  border-left-color: rgba(204, 218, 255, 0.66);
-  background: rgba(37, 82, 194, 0.98);
+  border-color: rgba(148, 127, 122, 0.48);
+  border-top-color: rgba(235, 226, 223, 0.76);
+  border-left-color: rgba(223, 212, 208, 0.66);
+  background: rgba(177, 157, 152, 0.98);
   color: rgba(255, 255, 255, 0.98);
   box-shadow:
-    inset 0 2px 8px rgba(17, 42, 104, 0.34),
+    inset 0 2px 8px rgba(92, 74, 70, 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:active,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:active,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance.is-active-request {
-  border-color: rgba(76, 115, 223, 0.4);
-  border-top-color: rgba(222, 231, 255, 0.74);
-  border-left-color: rgba(208, 220, 255, 0.64);
-  background: rgba(37, 82, 194, 0.98);
+  border-color: rgba(153, 132, 127, 0.4);
+  border-top-color: rgba(236, 227, 224, 0.74);
+  border-left-color: rgba(225, 214, 210, 0.64);
+  background: rgba(177, 157, 152, 0.98);
   color: rgba(255, 255, 255, 0.98);
   box-shadow:
-    inset 0 2px 8px rgba(17, 42, 104, 0.34),
+    inset 0 2px 8px rgba(92, 74, 70, 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.14);
   filter: none;
 }
@@ -11933,10 +11933,10 @@ body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-proven
 body.juggernaut-shell .tool.has-action-provenance:disabled,
 body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenance:disabled,
 body.juggernaut-shell .brand-strip .session-tab-runtime-action.has-action-provenance:disabled {
-  border-color: rgba(82, 123, 236, 0.32);
-  border-top-color: rgba(234, 240, 255, 0.78);
-  border-left-color: rgba(220, 230, 255, 0.68);
-  background: rgba(53, 104, 235, 0.72);
+  border-color: rgba(161, 141, 136, 0.32);
+  border-top-color: rgba(244, 238, 236, 0.78);
+  border-left-color: rgba(232, 224, 221, 0.68);
+  background: rgba(204, 185, 180, 0.72);
   color: rgba(255, 255, 255, 0.86);
   box-shadow: none;
   opacity: 1;

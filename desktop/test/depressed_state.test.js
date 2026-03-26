@@ -97,36 +97,36 @@ test("Juggernaut shell rail selected hover keeps a light-shell pressed treatment
   assert.match(visualSystemCss, /transform:\s*translate3d\(0,\s*1px,\s*0\)/);
 });
 
-test("Model-backed blue buttons use flat fills without blue gradients or glow", () => {
-  assert.match(css, /\.tool\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.98\);[\s\S]*box-shadow:\s*none;/);
-  assert.match(css, /\.session-tab-strip-action\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.98\);/);
+test("Model-backed external-call buttons use flat taupe fills without gradients or glow", () => {
+  assert.match(css, /\.tool\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.98\);[\s\S]*box-shadow:\s*none;/);
+  assert.match(css, /\.session-tab-strip-action\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.98\);/);
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.98\);[\s\S]*box-shadow:\s*none;/
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.98\);[\s\S]*box-shadow:\s*none;/
   );
 });
 
-test("Model-backed blue buttons keep a visible inactive state when unavailable", () => {
-  assert.match(css, /\.tool\.has-action-provenance:disabled,\s*\.session-tab-strip-action\.has-action-provenance:disabled,\s*\.session-tab-runtime-action\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.72\);[\s\S]*opacity:\s*1;/);
+test("Model-backed external-call buttons keep a visible inactive state when unavailable", () => {
+  assert.match(css, /\.tool\.has-action-provenance:disabled,\s*\.session-tab-strip-action\.has-action-provenance:disabled,\s*\.session-tab-runtime-action\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.72\);[\s\S]*opacity:\s*1;/);
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.72\);[\s\S]*opacity:\s*1;/
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.72\);[\s\S]*opacity:\s*1;/
   );
   assert.match(visualSystemCss, /\.juggernaut-tool-rail \.tool\.has-action-provenance\.is-selection-empty,\s*$/m);
   assert.match(visualSystemCss, /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-selection-empty\s*\{[\s\S]*opacity:\s*1;/);
 });
 
-test("Model-backed blue buttons darken and recess when active", () => {
+test("Model-backed external-call buttons darken and recess when active", () => {
   assert.match(
     css,
-    /\.tool\.has-action-provenance\.selected,\s*\.tool\.has-action-provenance\.selected:hover,\s*\.tool\.has-action-provenance\.depressed,\s*\.tool\.has-action-provenance:active\s*\{[\s\S]*background:\s*rgba\(37,\s*82,\s*194,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(17,\s*42,\s*104,\s*0\.42\)/
+    /\.tool\.has-action-provenance\.selected,\s*\.tool\.has-action-provenance\.selected:hover,\s*\.tool\.has-action-provenance\.depressed,\s*\.tool\.has-action-provenance:active\s*\{[\s\S]*background:\s*rgba\(177,\s*157,\s*152,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(92,\s*74,\s*70,\s*0\.42\)/
   );
   assert.match(
     css,
-    /\.session-tab-strip-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(37,\s*82,\s*194,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(17,\s*42,\s*104,\s*0\.42\)/
+    /\.session-tab-strip-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(177,\s*157,\s*152,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(92,\s*74,\s*70,\s*0\.42\)/
   );
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-pressing\s*\{[\s\S]*background:\s*rgba\(37,\s*82,\s*194,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(17,\s*42,\s*104,\s*0\.36\)/
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-pressing\s*\{[\s\S]*background:\s*rgba\(177,\s*157,\s*152,\s*0\.98\);[\s\S]*inset 0 2px 8px rgba\(92,\s*74,\s*70,\s*0\.36\)/
   );
 });
