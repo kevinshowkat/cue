@@ -7,6 +7,7 @@ This replaces the earlier lineage-overlay concept that swapped image paths in pl
 
 ## UX
 - The timeline is a compact horizontal dock under the tab strip.
+- The titlebar `History` button reveals or hides the timeline dock without leaving the active tab.
 - Nodes stay in chronological order even after the user rewinds to an older head.
 - Image-result steps render thumbnail cards.
 - Session-state steps render action glyphs for moves, marks, protect, magic select, erase, annotate, circle, delete, and related local mutations.

@@ -661,7 +661,7 @@ const els = {
   brandStrip: document.querySelector(".brand-strip"),
   sessionTabStrip: document.getElementById("session-tab-strip"),
   sessionTabList: document.getElementById("session-tab-list"),
-  sessionTabOpen: document.getElementById("session-tab-open"),
+  sessionTabHistory: document.getElementById("session-tab-history"),
   sessionTabNew: document.getElementById("session-tab-new"),
   sessionTabFork: document.getElementById("session-tab-fork"),
   sessionTabDesignReview: document.getElementById("session-tab-design-review"),
@@ -834,9 +834,7 @@ const els = {
   imageMenu: document.getElementById("image-menu"),
   motherWheelMenu: document.getElementById("mother-wheel-menu"),
   quickActions: document.getElementById("quick-actions"),
-  timelineToggle: document.getElementById("timeline-toggle"),
-  timelineOverlay: document.getElementById("timeline-overlay"),
-  timelineClose: document.getElementById("timeline-close"),
+  timelineDock: document.getElementById("timeline-dock"),
   timelineShell: document.getElementById("timeline-shell"),
   timelinePrev: document.getElementById("timeline-prev"),
   timelineNext: document.getElementById("timeline-next"),
@@ -9781,6 +9779,20 @@ function syncActionProvenanceBadge(button, provenance) {
   return normalized;
 }
 
+function syncSessionTimelineHistoryButton() {
+  const timelineOpen = state.timelineOpen !== false;
+  if (!els.sessionTabHistory) return timelineOpen;
+  const historyTitleBase = timelineOpen ? "Hide History" : "Show History";
+  const historyTitle = appendActionProvenanceDescription(historyTitleBase, ACTION_PROVENANCE.LOCAL_ONLY);
+  syncActionProvenanceBadge(els.sessionTabHistory, ACTION_PROVENANCE.LOCAL_ONLY);
+  els.sessionTabHistory.title = historyTitle;
+  els.sessionTabHistory.setAttribute("aria-label", historyTitle);
+  els.sessionTabHistory.setAttribute("aria-pressed", timelineOpen ? "true" : "false");
+  els.sessionTabHistory.setAttribute("aria-expanded", timelineOpen ? "true" : "false");
+  els.sessionTabHistory.classList.toggle("is-open", timelineOpen);
+  return timelineOpen;
+}
+
 function singleImageRailMagicSelectSelectionForImage(imageId = "") {
   const normalizedImageId = String(imageId || "").trim();
   if (!normalizedImageId) return null;
@@ -10111,6 +10123,7 @@ function renderJuggernautShellChrome() {
     }
   }
   syncRuntimeStatusAffordances();
+  syncSessionTimelineHistoryButton();
 
   const toolHookReady = typeof state.juggernautShell.toolInvoker === "function";
   const exportHookReady = typeof state.juggernautShell.psdExportHandler === "function" || typeof invoke === "function";
@@ -32671,14 +32684,37 @@ function ensureTimelineNodeForImageItem(item) {
   return nodeId;
 }
 
-function openTimeline() {
-  state.timelineOpen = true;
-  renderTimeline();
+function openTimeline(options = {}) {
+  return setTimelineOpen(true, options);
 }
 
-function closeTimeline() {
-  state.timelineOpen = true;
-  renderTimeline();
+function closeTimeline(options = {}) {
+  return setTimelineOpen(false, options);
+}
+
+function toggleTimeline(options = {}) {
+  return setTimelineOpen(state.timelineOpen === false, options);
+}
+
+function syncTimelineDockVisibility() {
+  const timelineOpen = syncSessionTimelineHistoryButton();
+  if (els.timelineDock) {
+    els.timelineDock.classList.toggle("hidden", !timelineOpen);
+    els.timelineDock.setAttribute("aria-hidden", timelineOpen ? "false" : "true");
+  }
+  return timelineOpen;
+}
+
+function setTimelineOpen(open = true, { persist = false } = {}) {
+  const nextOpen = open !== false;
+  const changed = state.timelineOpen !== nextOpen;
+  state.timelineOpen = nextOpen;
+  syncTimelineDockVisibility();
+  if (nextOpen) renderTimeline();
+  if (changed && persist) {
+    syncActiveTabRecord({ capture: true, publish: true });
+  }
+  return changed;
 }
 
 function timelineGlyphSvgMarkup(actionKey = "state") {
@@ -33337,6 +33373,7 @@ async function jumpToTimelineNode(nodeId) {
   syncIntentModeClass();
   syncJuggernautShellState();
   renderMotherMoodStatus();
+  syncTimelineDockVisibility();
   renderTimeline();
   for (const item of state.images || []) {
     ensureCanvasImageLoaded(item);
@@ -37422,7 +37459,7 @@ function suspendActiveTabRuntimeForSwitch() {
     els.communicationProposalTray.classList.add("hidden");
   }
   closeMotherWheelMenu({ immediate: true });
-  if (els.timelineOverlay) els.timelineOverlay.classList.add("hidden");
+  if (els.timelineDock) els.timelineDock.classList.add("hidden");
   if (state.wheelMenu) {
     clearTimeout(state.wheelMenu.hideTimer);
     state.wheelMenu.hideTimer = null;
@@ -37441,9 +37478,7 @@ function publishActiveTabVisibleState({ allowTabSwitchPreview = false, reason = 
   setTip(state.lastTipText || DEFAULT_TIP);
   setDirectorText(state.lastDirectorText, state.lastDirectorMeta);
   updateEmptyCanvasHint();
-  if (els.timelineOverlay) {
-    els.timelineOverlay.classList.toggle("hidden", !state.timelineOpen);
-  }
+  syncTimelineDockVisibility();
   requestRender({ allowTabSwitchPreview, reason });
 }
 
@@ -37563,11 +37598,9 @@ async function attachActiveTabRuntime({
   syncJuggernautShellState();
   applyRuntimeChromeVisibility({ source: reason });
   renderMotherMoodStatus();
+  syncTimelineDockVisibility();
   if (state.timelineOpen) {
-    if (els.timelineOverlay) els.timelineOverlay.classList.remove("hidden");
     renderTimeline();
-  } else if (els.timelineOverlay) {
-    els.timelineOverlay.classList.add("hidden");
   }
   requestRender();
   if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
@@ -44727,13 +44760,11 @@ function installSessionTabStripUi() {
     });
   }
 
-  if (els.sessionTabOpen && els.sessionTabOpen.dataset.bound !== "1") {
-    els.sessionTabOpen.dataset.bound = "1";
-    els.sessionTabOpen.addEventListener("click", () => {
+  if (els.sessionTabHistory && els.sessionTabHistory.dataset.bound !== "1") {
+    els.sessionTabHistory.dataset.bound = "1";
+    els.sessionTabHistory.addEventListener("click", () => {
       bumpInteraction();
-      void runWithUserError("Open session", () => openExistingRun(), {
-        retryHint: "Choose a valid run folder and retry.",
-      });
+      toggleTimeline({ persist: true });
     });
   }
 
@@ -45422,26 +45453,6 @@ function installUi() {
     });
   }
 
-  if (els.timelineToggle) {
-    els.timelineToggle.addEventListener("click", () => {
-      bumpInteraction();
-      openTimeline();
-    });
-  }
-  if (els.timelineClose) {
-    els.timelineClose.addEventListener("click", () => {
-      bumpInteraction();
-      closeTimeline();
-    });
-  }
-  if (els.timelineOverlay) {
-    els.timelineOverlay.addEventListener("pointerdown", (event) => {
-      if (event?.target === els.timelineOverlay) {
-        bumpInteraction();
-        closeTimeline();
-      }
-    });
-  }
   if (els.timelineShell) {
     els.timelineShell.addEventListener("pointerdown", (event) => {
       beginTimelineCarouselGesture(event);

@@ -11,7 +11,7 @@ const app = readFileSync(appPath, "utf8");
 test("Titlebar tab strip binds live DOM ids and renders from the tab snapshot", () => {
   assert.match(app, /sessionTabStrip:\s*document\.getElementById\("session-tab-strip"\)/);
   assert.match(app, /sessionTabList:\s*document\.getElementById\("session-tab-list"\)/);
-  assert.match(app, /sessionTabOpen:\s*document\.getElementById\("session-tab-open"\)/);
+  assert.match(app, /sessionTabHistory:\s*document\.getElementById\("session-tab-history"\)/);
   assert.match(app, /sessionTabNew:\s*document\.getElementById\("session-tab-new"\)/);
   assert.match(app, /sessionTabFork:\s*document\.getElementById\("session-tab-fork"\)/);
   assert.match(app, /sessionTabDesignReview:\s*document\.getElementById\("session-tab-design-review"\)/);
@@ -24,7 +24,7 @@ test("Titlebar tab strip binds live DOM ids and renders from the tab snapshot", 
   assert.match(app, /const title = sessionTabDisplayLabel\(record \|\| tab,\s*DEFAULT_UNTITLED_TAB_TITLE\);/);
 });
 
-test("Titlebar tab strip routes activate, close, open, new, fork, and design review actions", () => {
+test("Titlebar tab strip routes activate, close, history, new, fork, and design review actions", () => {
   assert.match(app, /els\.sessionTabList\.addEventListener\("click",\s*\(event\)\s*=>\s*{/);
   assert.match(app, /closest\("\.session-tab-title"\)/);
   assert.match(app, /const isActive = String\(item\?\.dataset\?\.active \|\| ""\)\.trim\(\) === "true";/);
@@ -37,8 +37,10 @@ test("Titlebar tab strip routes activate, close, open, new, fork, and design rev
   assert.match(app, /void closeTab\(tabId\)\.catch/);
   assert.match(app, /closest\("\.session-tab-hit"\)/);
   assert.match(app, /void activateTab\(tabId,\s*\{\s*spawnEngine:\s*true,\s*reason:\s*"titlebar_tab_click"\s*\}\)\.catch/);
-  assert.match(app, /els\.sessionTabOpen\.addEventListener\("click"/);
-  assert.match(app, /runWithUserError\("Open session",\s*\(\)\s*=>\s*openExistingRun\(\)/);
+  assert.match(app, /function syncTimelineDockVisibility\(\) \{/);
+  assert.match(app, /function toggleTimeline\(options = \{\}\) \{/);
+  assert.match(app, /els\.sessionTabHistory\.addEventListener\("click"/);
+  assert.match(app, /toggleTimeline\(\{\s*persist:\s*true\s*\}\);/);
   assert.match(app, /els\.sessionTabNew\.addEventListener\("click"/);
   assert.match(app, /runWithUserError\("New session",\s*\(\)\s*=>\s*createRun\(\)/);
   assert.match(app, /els\.sessionTabFork\.addEventListener\("click"/);
