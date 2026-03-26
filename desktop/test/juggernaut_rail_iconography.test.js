@@ -5,12 +5,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID,
   JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS,
   JUGGERNAUT_RAIL_ICON_ASSET_URLS,
   getJuggernautRailIconAssetUrl,
   getJuggernautRailIconMarkup,
-} from "../src/juggernaut_shell/generated/rail_icon_registry.js";
+} from "../src/juggernaut_shell/rail_icon_registry.js";
+import {
+  DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID,
+  JUGGERNAUT_RAIL_ICON_PACKS,
+} from "../src/juggernaut_shell/rail_icon_packs.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(
@@ -43,10 +46,14 @@ test("Juggernaut rail iconography: manifest covers the shared generated glyph se
   assert.deepEqual(actualIds, expectedIds);
   assert.equal(manifest.style.id, "juggernaut.rail_iconography.v1");
   assert.equal(manifest.schema, "juggernaut.rail_icon_manifest.v3");
-  assert.equal(manifest.default_pack_id, DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID);
+  assert.equal(manifest.default_pack_id, "oscillo_ink");
   assert.deepEqual(
     manifest.packs.map((pack) => pack.id),
     ["oscillo_ink", "industrial_mono", "painterly_folk", "kinetic_marker"]
+  );
+  assert.deepEqual(
+    JUGGERNAUT_RAIL_ICON_PACKS.map((pack) => pack.id),
+    ["default_classic", "oscillo_ink", "industrial_mono", "painterly_folk", "kinetic_marker"]
   );
   for (const pack of manifest.packs) {
     assert.deepEqual(
@@ -59,18 +66,19 @@ test("Juggernaut rail iconography: manifest covers the shared generated glyph se
     assert.equal(pack.icons[0]?.asset_kind, "mask_png");
     assert.equal(typeof pack.icons[0]?.effective_prompt, "string");
   }
-  assert.equal(DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID, "oscillo_ink");
+  assert.equal(DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID, "default_classic");
 });
 
-test("Juggernaut rail iconography: generated registry exports provider-backed asset packs", () => {
+test("Juggernaut rail iconography: default pack uses legacy inline SVGs and themed packs use provider-backed masks", () => {
   assert.equal(typeof JUGGERNAUT_RAIL_ICON_ASSET_URLS.upload, "string");
   assert.equal(typeof JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS.oscillo_ink.upload, "string");
   assert.equal(typeof JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS.kinetic_marker.upload, "string");
   assert.match(JUGGERNAUT_RAIL_ICON_ASSET_URLS.upload, /upload\.png$/);
   assert.match(JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS.oscillo_ink.upload, /oscillo_ink\/upload\.png$/);
   assert.match(JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS.painterly_folk.upload, /painterly_folk\/upload\.png$/);
-  assert.match(getJuggernautRailIconMarkup("upload", "oscillo_ink"), /tool-icon-mask/);
-  assert.match(getJuggernautRailIconMarkup("upload", "oscillo_ink"), /tool-icon-pack-oscillo-ink/);
+
+  assert.doesNotMatch(getJuggernautRailIconMarkup("upload", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-mask/);
+  assert.match(getJuggernautRailIconMarkup("upload", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-upload/);
   assert.match(getJuggernautRailIconMarkup("select_region", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-select-region/);
   assert.match(getJuggernautRailIconMarkup("reframe", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-reframe/);
   assert.match(getJuggernautRailIconMarkup("protect", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-protect/);
@@ -83,6 +91,9 @@ test("Juggernaut rail iconography: generated registry exports provider-backed as
   assert.match(getJuggernautRailIconMarkup("agent_run", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-agent-run/);
   assert.match(getJuggernautRailIconMarkup("design_review", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-design-review/);
   assert.match(getJuggernautRailIconMarkup("export", DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID), /tool-icon-export/);
+
+  assert.match(getJuggernautRailIconMarkup("upload", "oscillo_ink"), /tool-icon-mask/);
+  assert.match(getJuggernautRailIconMarkup("upload", "oscillo_ink"), /tool-icon-pack-oscillo-ink/);
   assert.notEqual(
     getJuggernautRailIconAssetUrl("upload", "oscillo_ink"),
     getJuggernautRailIconAssetUrl("upload", "kinetic_marker")

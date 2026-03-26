@@ -33,7 +33,7 @@ import {
   getJuggernautRailIconPack,
   normalizeJuggernautRailIconPackId,
 } from "./juggernaut_shell/rail_icon_packs.js";
-import { getJuggernautRailIconMarkup } from "./juggernaut_shell/generated/rail_icon_registry.js";
+import { getJuggernautRailIconMarkup } from "./juggernaut_shell/rail_icon_registry.js";
 import {
   mergeAmbientSuggestions,
   placeAmbientSuggestions,

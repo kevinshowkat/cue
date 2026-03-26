@@ -1,4 +1,4 @@
-import { getJuggernautRailIconMarkup } from "./generated/rail_icon_registry.js";
+import { getJuggernautRailIconMarkup } from "./rail_icon_registry.js";
 import { DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID, normalizeJuggernautRailIconPackId } from "./rail_icon_packs.js";
 import { buildSingleImageDirectAffordanceInvocation, buildSingleImageRailInvocation } from "../tool_runtime.js";
 import {

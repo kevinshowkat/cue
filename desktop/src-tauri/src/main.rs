@@ -50,6 +50,7 @@ const MENU_FILE_CLOSE_SESSION: &str = "file_close_session";
 const MENU_FILE_IMPORT_PHOTOS: &str = "file_import_photos";
 const MENU_FILE_EXPORT_SESSION: &str = "file_export_session";
 const MENU_FILE_SETTINGS: &str = "file_settings";
+const MENU_SETTINGS_ICON_PACK_DEFAULT_CLASSIC: &str = "settings_icon_pack_default_classic";
 const MENU_SETTINGS_ICON_PACK_OSCILLO_INK: &str = "settings_icon_pack_oscillo_ink";
 const MENU_SETTINGS_ICON_PACK_INDUSTRIAL_MONO: &str = "settings_icon_pack_industrial_mono";
 const MENU_SETTINGS_ICON_PACK_PAINTERLY_FOLK: &str = "settings_icon_pack_painterly_folk";
@@ -181,8 +182,13 @@ fn build_shortcuts_menu() -> Menu {
     )
 }
 
-fn native_iconography_menu_items() -> [(&'static str, &'static str, &'static str); 4] {
+fn native_iconography_menu_items() -> [(&'static str, &'static str, &'static str); 5] {
     [
+        (
+            "default_classic",
+            MENU_SETTINGS_ICON_PACK_DEFAULT_CLASSIC,
+            "Default",
+        ),
         (
             "oscillo_ink",
             MENU_SETTINGS_ICON_PACK_OSCILLO_INK,
@@ -215,7 +221,7 @@ fn active_iconography_menu_title(pack_id: &str, active_pack_id: &str, label: &st
 }
 
 fn build_settings_menu() -> Menu {
-    let active_pack_id = "industrial_mono";
+    let active_pack_id = "default_classic";
     let mut menu = Menu::new();
     for (pack_id, menu_id, label) in native_iconography_menu_items() {
         menu = menu.add_item(CustomMenuItem::new(
@@ -5523,6 +5529,9 @@ fn main() {
                 }
                 MENU_FILE_SETTINGS => {
                     emit_native_menu_action(&event.window(), "open_settings")
+                }
+                MENU_SETTINGS_ICON_PACK_DEFAULT_CLASSIC => {
+                    emit_native_menu_action(&event.window(), "settings_icon_pack:default_classic")
                 }
                 MENU_SETTINGS_ICON_PACK_OSCILLO_INK => {
                     emit_native_menu_action(&event.window(), "settings_icon_pack:oscillo_ink")
