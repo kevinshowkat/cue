@@ -27853,14 +27853,16 @@ function renderAgentRunnerActivityChrome() {
   const runner = state.agentRunner || (state.agentRunner = createFreshAgentRunnerState());
   const active = agentRunnerActive(runner);
   const panelVisible = agentRunnerPanelVisible();
-  const openTitle = active
+  const openTitleBase = active
     ? panelVisible
       ? "Hide Agent Run and watch the canvas"
       : "Show Agent Run"
     : panelVisible
       ? "Hide Agent Run"
       : "Open Agent Run";
+  const openTitle = appendActionProvenanceDescription(openTitleBase, ACTION_PROVENANCE.EXTERNAL_MODEL);
   if (els.juggernautAgentRunnerOpen) {
+    syncActionProvenanceBadge(els.juggernautAgentRunnerOpen, ACTION_PROVENANCE.EXTERNAL_MODEL);
     els.juggernautAgentRunnerOpen.title = openTitle;
     els.juggernautAgentRunnerOpen.setAttribute("aria-label", openTitle);
     els.juggernautAgentRunnerOpen.classList.toggle("is-ready", state.images.length > 0);

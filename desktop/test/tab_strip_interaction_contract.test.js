@@ -46,6 +46,11 @@ test("Titlebar tab strip routes activate, close, open, new, fork, and design rev
   assert.match(app, /els\.sessionTabDesignReview\.addEventListener\("click"/);
 });
 
+test("Titlebar runtime actions keep Agent Run on the model-backed provenance path", () => {
+  assert.match(app, /const openTitle = appendActionProvenanceDescription\(openTitleBase,\s*ACTION_PROVENANCE\.EXTERNAL_MODEL\);/);
+  assert.match(app, /syncActionProvenanceBadge\(els\.juggernautAgentRunnerOpen,\s*ACTION_PROVENANCE\.EXTERNAL_MODEL\);/);
+});
+
 test("Titlebar tab strip supports inline rename and review-state badges", () => {
   assert.match(app, /function startSessionTabRename\(tabId = ""\)/);
   assert.match(app, /if \(normalizedTabId !== String\(state\.activeTabId \|\| ""\)\.trim\(\)\) return false;/);
