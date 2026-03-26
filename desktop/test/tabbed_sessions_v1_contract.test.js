@@ -62,7 +62,11 @@ test("canvas app routes New Run and Open Run into fresh tabs instead of wiping t
   );
   assert.match(
     app,
-    /async function openExistingRun\(\) \{[\s\S]*const tabId = createTabId\(\);[\s\S]*let restoredSnapshot = null;[\s\S]*sessionSnapshotPathForRunDir\(selected\);[\s\S]*tabbedSessions\.upsertTab\([\s\S]*runDir: session\.runDir \|\| selected,[\s\S]*eventsPath: session\.eventsPath \|\| defaultEventsPath,[\s\S]*\{\s*activate: false\s*\}[\s\S]*activateTab\(tabId, \{ spawnEngine: false, reason: "open_run_tab" \}\);/
+    /async function openExistingRun\(\) \{[\s\S]*const tabId = createTabId\(\);[\s\S]*let restoredTimeline = null;[\s\S]*let restoredSnapshot = null;[\s\S]*sessionTimelinePathForRunDir\(selected\);[\s\S]*sessionSnapshotPathForRunDir\(selected\);[\s\S]*tabbedSessions\.upsertTab\([\s\S]*runDir: session\.runDir \|\| selected,[\s\S]*eventsPath: session\.eventsPath \|\| defaultEventsPath,[\s\S]*\{\s*activate: false\s*\}[\s\S]*activateTab\(tabId, \{ spawnEngine: false, reason: "open_run_tab" \}\);/
+  );
+  assert.match(
+    app,
+    /if \(restoredTimeline\) \{[\s\S]*showToast\(`Opened \$\{tabLabel\} from the saved session timeline\.`, "tip", 3200\);/
   );
   assert.match(
     app,

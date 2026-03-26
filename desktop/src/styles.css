@@ -9632,112 +9632,300 @@ button.ghost:hover {
   line-height: 1.4;
 }
 
-.timeline-overlay {
+.timeline-dock {
   position: fixed;
-  inset: 0;
-  z-index: 90;
-  background: rgba(0, 0, 0, 0.56);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 14px;
+  top: calc(var(--brand-strip-h) + 8px);
+  left: 50%;
+  z-index: 960;
+  width: min(60vw, 980px);
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .timeline-shell {
-  width: min(980px, 96vw);
-  max-height: min(420px, 70vh);
-  background: rgba(13, 18, 25, 0.96);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: 0 32px 90px rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(10px);
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-height: 58px;
+  padding: 7px 8px 6px;
+  border-radius: 18px;
+  background:
+    radial-gradient(180px 60px at 15% 18%, rgba(255, 255, 255, 0.82), transparent 72%),
+    linear-gradient(180deg, rgba(254, 254, 255, 0.96), rgba(243, 246, 250, 0.95)),
+    rgba(246, 248, 251, 0.92);
+  border: 1px solid rgba(76, 93, 118, 0.14);
+  backdrop-filter: blur(16px);
+  pointer-events: auto;
+  overflow: hidden;
 }
 
-.timeline-header {
-  padding: 12px 14px;
-  display: flex;
+.timeline-track {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid rgba(53, 71, 96, 0.55);
+  gap: 8px;
+  min-width: 0;
 }
 
-.timeline-title {
-  font-weight: 600;
+.timeline-arrow {
+  width: 28px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(71, 89, 115, 0.14);
+  border-radius: 11px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(240, 245, 251, 0.94)),
+    rgba(245, 248, 252, 0.92);
+  color: rgba(71, 93, 124, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 1px 2px rgba(17, 24, 32, 0.08);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease;
 }
 
-.timeline-body {
-  padding: 12px 14px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.timeline-arrow span {
+  display: block;
+  font-size: 18px;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.timeline-arrow:hover,
+.timeline-arrow:focus-visible {
+  border-color: rgba(92, 130, 185, 0.28);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(239, 245, 252, 0.98)),
+    rgba(246, 249, 253, 0.96);
+  color: rgba(44, 63, 89, 0.98);
+}
+
+.timeline-arrow:active {
+  transform: translateY(1px);
+}
+
+.timeline-arrow.is-hidden {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .timeline-strip {
   display: flex;
-  gap: 10px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding-bottom: 6px;
+  padding: 0 1px 1px;
   scroll-behavior: smooth;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 1px;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  user-select: none;
+}
+
+.timeline-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.timeline-shell.is-scrollable .timeline-strip {
+  cursor: grab;
+}
+
+.timeline-shell.is-swiping .timeline-strip {
+  cursor: grabbing;
+  scroll-behavior: auto;
+}
+
+.timeline-empty {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  padding: 0 8px;
 }
 
 .timeline-card {
+  position: relative;
   flex: 0 0 auto;
-  width: 156px;
-  border: 1px solid rgba(53, 71, 96, 0.65);
-  border-radius: 14px;
-  background: rgba(18, 26, 37, 0.62);
-  padding: 8px;
+  width: 54px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(68, 84, 109, 0.14);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(239, 243, 248, 0.94)),
+    rgba(240, 244, 248, 0.9);
+  color: rgba(55, 69, 88, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 1px 2px rgba(17, 24, 32, 0.06);
   cursor: pointer;
-  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  overflow: hidden;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease;
 }
 
-.timeline-card:hover {
-  transform: translateY(-1px);
-  border-color: rgba(255, 212, 0, 0.45);
+.timeline-card:hover,
+.timeline-card:focus-visible {
+  border-color: rgba(84, 120, 175, 0.26);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(237, 242, 248, 0.98)),
+    rgba(242, 246, 250, 0.96);
+  color: rgba(29, 40, 56, 0.98);
+}
+
+.timeline-card.is-future {
+  opacity: 0.7;
 }
 
 .timeline-card.selected {
-  border-color: rgba(255, 212, 0, 0.75);
-  box-shadow: 0 0 0 1px rgba(255, 212, 0, 0.15), 0 16px 38px rgba(0, 0, 0, 0.48);
+  border-color: rgba(82, 126, 198, 0.48);
+  background:
+    radial-gradient(50px 26px at 50% 0%, rgba(119, 176, 255, 0.22), transparent 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(238, 244, 251, 0.99)),
+    rgba(243, 248, 253, 0.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    0 0 0 1px rgba(120, 169, 255, 0.16),
+    0 10px 24px rgba(61, 100, 162, 0.14);
+  opacity: 1;
+}
+
+.timeline-card-seq {
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  z-index: 1;
+  min-width: 14px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: rgba(72, 86, 108, 0.9);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+  line-height: 14px;
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(17, 24, 32, 0.08);
+}
+
+.timeline-card-visual {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
 }
 
 .timeline-card img {
   width: 100%;
-  height: 104px;
+  height: 100%;
   object-fit: cover;
-  border-radius: 10px;
   display: block;
-  background: rgba(0, 0, 0, 0.22);
+  background: rgba(192, 204, 220, 0.38);
 }
 
-.timeline-meta {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
-  line-height: 1.25;
-  color: rgba(230, 237, 243, 0.82);
+.timeline-card-glyph {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
 }
 
-.timeline-action {
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 10px;
-  color: rgba(230, 237, 243, 0.68);
+.timeline-card-glyph svg {
+  width: 22px;
+  height: 22px;
+}
+
+.timeline-card-glyph--mark {
+  color: rgba(64, 108, 172, 0.96);
+}
+
+.timeline-card-glyph--protect {
+  color: rgba(47, 129, 96, 0.96);
+}
+
+.timeline-card-glyph--magic {
+  color: rgba(146, 94, 49, 0.96);
+}
+
+.timeline-card-glyph--erase,
+.timeline-card-glyph--delete {
+  color: rgba(173, 83, 83, 0.96);
+}
+
+.timeline-card-glyph--move,
+.timeline-card-glyph--resize,
+.timeline-card-glyph--rotate,
+.timeline-card-glyph--skew {
+  color: rgba(88, 96, 144, 0.96);
+}
+
+.timeline-card-glyph--annotate,
+.timeline-card-glyph--circle {
+  color: rgba(112, 77, 146, 0.96);
 }
 
 .timeline-detail {
+  min-width: 0;
+  width: 100%;
+  padding: 0 36px 1px;
   font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
-  white-space: pre-line;
-  max-height: 140px;
-  overflow: auto;
+  font-size: 10px;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  color: rgba(12, 16, 22, 0.96);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 980px) {
+  .timeline-dock {
+    width: min(72vw, 760px);
+  }
+}
+
+@media (max-width: 720px) {
+  .timeline-dock {
+    top: calc(var(--brand-strip-h) + 6px);
+    width: calc(100vw - 24px);
+  }
+
+  .timeline-shell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .timeline-track {
+    grid-template-columns: 24px minmax(0, 1fr) 24px;
+    gap: 6px;
+  }
+
+  .timeline-arrow {
+    width: 24px;
+    height: 30px;
+  }
+
+  .timeline-detail {
+    padding-inline: 28px;
+  }
 }
 
 @media (max-width: 980px) {
@@ -11552,6 +11740,7 @@ body.juggernaut-shell .brand-strip {
 
 body.juggernaut-shell {
   --brand-strip-h: 46px;
+  --jg-header-clearance: calc(var(--brand-strip-h) + 54px);
   --jg-titlebar-traffic-gutter: 86px;
   --jg-primary-rail-top: calc(var(--brand-strip-h) + 14px);
 }

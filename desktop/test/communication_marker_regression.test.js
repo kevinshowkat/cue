@@ -281,6 +281,7 @@ test("eraser click still removes an existing annotation before any image erase b
     communicationToolId: () => "eraser",
     communicationBehaviorToolId: (tool) => tool,
     eraseCommunicationAtCanvasPoint: () => ({ kind: "mark", imageId: "img-hero" }),
+    recordTimelineNode: () => null,
     invalidateActiveTabPreview: (reason) => calls.push(["invalidate", reason]),
     dispatchJuggernautShellEvent: (type, detail) => calls.push(["dispatch", type, detail?.source || null]),
     COMMUNICATION_STATE_CHANGED_EVENT: "juggernaut:communication-state-changed",

@@ -109,6 +109,7 @@ test("Juggernaut launch slice: upload, custom tool creation, local apply, and PS
   const buildPsdExportRequest = loadNamedFunction("buildPsdExportRequest");
   const previousGlobals = {
     collectExportTimelineNodes: globalThis.collectExportTimelineNodes,
+    SESSION_TIMELINE_SCHEMA_VERSION: globalThis.SESSION_TIMELINE_SCHEMA_VERSION,
     state: globalThis.state,
     getVisibleActiveId: globalThis.getVisibleActiveId,
     exportPsdLimitations: globalThis.exportPsdLimitations,
@@ -123,7 +124,9 @@ test("Juggernaut launch slice: upload, custom tool creation, local apply, and PS
   globalThis.state = {
     runDir: "/tmp/juggernaut-run",
     canvasMode: "multi",
+    timelineHeadNodeId: "node-1",
   };
+  globalThis.SESSION_TIMELINE_SCHEMA_VERSION = 1;
   globalThis.getVisibleActiveId = () => "img-1";
   globalThis.exportPsdLimitations = () => [...JUGGERNAUT_PSD_EXPORT_LIMITATIONS];
 
@@ -155,12 +158,15 @@ test("Juggernaut launch slice: upload, custom tool creation, local apply, and PS
     assert.equal(request.runDir, "/tmp/juggernaut-run");
     assert.equal(request.activeImageId, "img-1");
     assert.equal(request.flattenedSourcePath, "/tmp/juggernaut-run/export-mono-hero.flattened.png");
+    assert.equal(request.timelineSchemaVersion, 1);
+    assert.equal(request.timelineHeadNodeId, "node-1");
     assert.deepEqual(request.actionSequence, [manifest.label]);
     assert.equal(request.sourceImages[0].receiptPath, "/tmp/output-receipt.json");
     assert.ok(Array.isArray(request.limitations));
     assert.ok(request.limitations.length > 0);
   } finally {
     globalThis.collectExportTimelineNodes = previousGlobals.collectExportTimelineNodes;
+    globalThis.SESSION_TIMELINE_SCHEMA_VERSION = previousGlobals.SESSION_TIMELINE_SCHEMA_VERSION;
     globalThis.state = previousGlobals.state;
     globalThis.getVisibleActiveId = previousGlobals.getVisibleActiveId;
     globalThis.exportPsdLimitations = previousGlobals.exportPsdLimitations;
