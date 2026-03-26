@@ -96,3 +96,12 @@ test("Juggernaut shell rail selected hover keeps a light-shell pressed treatment
   assert.match(visualSystemCss, /filter:\s*none;/);
   assert.match(visualSystemCss, /transform:\s*translate3d\(0,\s*1px,\s*0\)/);
 });
+
+test("Model-backed blue buttons use flat fills without blue gradients or glow", () => {
+  assert.match(css, /\.tool\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.98\);[\s\S]*box-shadow:\s*none;/);
+  assert.match(css, /\.session-tab-strip-action\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.98\);/);
+  assert.match(
+    visualSystemCss,
+    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(53,\s*104,\s*235,\s*0\.98\);[\s\S]*box-shadow:\s*none;/
+  );
+});

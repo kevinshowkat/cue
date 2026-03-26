@@ -1751,15 +1751,9 @@ button.ghost:hover {
   border-color: rgba(114, 150, 255, 0.6);
   border-top-color: rgba(221, 232, 255, 0.34);
   border-left-color: rgba(205, 220, 255, 0.24);
-  background:
-    radial-gradient(72px 52px at 50% 20%, rgba(172, 196, 255, 0.24), transparent 72%),
-    linear-gradient(180deg, rgba(104, 145, 255, 0.98), rgba(56, 98, 218, 0.98));
+  background: rgba(53, 104, 235, 0.98);
   color: rgba(255, 255, 255, 0.98);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    inset 0 -10px 18px rgba(14, 33, 86, 0.26),
-    0 7px 0 rgba(8, 18, 40, 0.34),
-    0 18px 28px rgba(8, 16, 34, 0.48);
+  box-shadow: none;
 }
 
 .tool.has-action-provenance:hover {
@@ -1767,9 +1761,7 @@ button.ghost:hover {
   border-color: rgba(136, 167, 255, 0.72);
   border-top-color: rgba(233, 240, 255, 0.44);
   border-left-color: rgba(217, 229, 255, 0.34);
-  background:
-    radial-gradient(74px 54px at 50% 20%, rgba(188, 208, 255, 0.28), transparent 72%),
-    linear-gradient(180deg, rgba(116, 155, 255, 0.98), rgba(63, 107, 231, 0.98));
+  background: rgba(53, 104, 235, 0.98);
 }
 
 .tool.has-action-provenance.selected,
@@ -1778,29 +1770,19 @@ button.ghost:hover {
   border-color: rgba(102, 139, 242, 0.74);
   border-top-color: rgba(224, 234, 255, 0.3);
   border-left-color: rgba(202, 217, 255, 0.26);
-  background:
-    radial-gradient(72px 52px at 50% 18%, rgba(162, 190, 255, 0.18), transparent 72%),
-    linear-gradient(180deg, rgba(90, 131, 245, 0.98), rgba(45, 83, 196, 0.98));
+  background: rgba(53, 104, 235, 0.98);
   color: rgba(255, 255, 255, 0.98);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 0 0 1px rgba(22, 44, 108, 0.14),
-    inset 0 -8px 14px rgba(10, 26, 74, 0.28),
-    0 10px 22px rgba(9, 18, 40, 0.38);
+  box-shadow: none;
 }
 
 .tool.has-action-provenance .tool-icon {
-  filter:
-    drop-shadow(0 1px 0 rgba(17, 31, 69, 0.36))
-    drop-shadow(0 0 12px rgba(160, 194, 255, 0.18));
+  filter: none;
 }
 
 .tool.has-action-provenance .tool-hint,
 .tool.has-action-provenance .tool-label {
   color: rgba(255, 255, 255, 0.96);
-  text-shadow:
-    0 1px 0 rgba(17, 31, 69, 0.34),
-    0 0 12px rgba(160, 194, 255, 0.16);
+  text-shadow: none;
 }
 
 .action-provenance-affordance {
@@ -10735,9 +10717,7 @@ button.ghost:hover {
 
 .session-tab-strip-action.has-action-provenance {
   border-color: rgba(111, 149, 255, 0.46);
-  background:
-    radial-gradient(42px 30px at 50% 18%, rgba(164, 193, 255, 0.26), transparent 74%),
-    linear-gradient(180deg, rgba(105, 145, 255, 0.98), rgba(58, 101, 220, 0.98));
+  background: rgba(53, 104, 235, 0.98);
   color: rgba(255, 255, 255, 0.98);
 }
 
@@ -10761,9 +10741,7 @@ button.ghost:hover {
 .session-tab-runtime-action.has-action-provenance.is-active-request {
   border-color: rgba(111, 149, 255, 0.46);
   color: rgba(255, 255, 255, 0.98);
-  background:
-    radial-gradient(42px 30px at 50% 18%, rgba(164, 193, 255, 0.26), transparent 74%),
-    linear-gradient(180deg, rgba(105, 145, 255, 0.98), rgba(58, 101, 220, 0.98));
+  background: rgba(53, 104, 235, 0.98);
 }
 
 .session-tab-runtime-action.is-active-request {
@@ -10777,13 +10755,8 @@ button.ghost:hover {
 
 .session-tab-runtime-action.has-action-provenance.is-active-request {
   border-color: rgba(136, 167, 255, 0.66);
-  background:
-    radial-gradient(44px 32px at 50% 14%, rgba(186, 209, 255, 0.34), transparent 74%),
-    linear-gradient(180deg, rgba(116, 155, 255, 0.98), rgba(64, 109, 231, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    0 0 0 1px rgba(111, 149, 255, 0.16),
-    0 10px 22px rgba(43, 76, 165, 0.18);
+  background: rgba(53, 104, 235, 0.98);
+  box-shadow: none;
 }
 
 .session-tab-runtime-action.is-agent-runner-live::after {
@@ -10933,9 +10906,7 @@ button.ghost:hover {
 .session-tab-strip-action.has-action-provenance:focus-visible {
   border-color: rgba(136, 167, 255, 0.66);
   color: rgba(255, 255, 255, 0.98);
-  background:
-    radial-gradient(44px 30px at 50% 18%, rgba(182, 207, 255, 0.32), transparent 74%),
-    linear-gradient(180deg, rgba(115, 155, 255, 0.98), rgba(64, 109, 231, 0.98));
+  background: rgba(53, 104, 235, 0.98);
   filter: none;
 }
 
@@ -11902,16 +11873,9 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenan
   border-color: rgba(79, 121, 233, 0.34);
   border-top-color: rgba(238, 243, 255, 0.9);
   border-left-color: rgba(222, 232, 255, 0.8);
-  background:
-    linear-gradient(180deg, rgba(106, 147, 255, 0.98), rgba(53, 104, 235, 0.98) 56%, rgba(44, 90, 213, 0.98)),
-    radial-gradient(88px 64px at 30% 18%, rgba(255, 255, 255, 0.3), transparent 70%),
-    rgba(53, 104, 235, 0.94);
+  background: rgba(53, 104, 235, 0.98);
   color: rgba(255, 255, 255, 0.98);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 -10px 18px rgba(19, 51, 128, 0.18),
-    0 10px 18px rgba(30, 35, 44, 0.1),
-    0 0 0 1px rgba(83, 128, 246, 0.12);
+  box-shadow: none;
 }
 
 body.juggernaut-shell .tool.has-action-provenance:hover,
@@ -11920,10 +11884,7 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.has-action-provenan
   border-color: rgba(87, 130, 243, 0.4);
   border-top-color: rgba(244, 247, 255, 0.94);
   border-left-color: rgba(230, 238, 255, 0.84);
-  background:
-    linear-gradient(180deg, rgba(118, 158, 255, 0.98), rgba(60, 111, 241, 0.98) 56%, rgba(47, 96, 224, 0.98)),
-    radial-gradient(88px 64px at 30% 18%, rgba(255, 255, 255, 0.36), transparent 70%),
-    rgba(60, 111, 241, 0.94);
+  background: rgba(53, 104, 235, 0.98);
   color: rgba(255, 255, 255, 0.98);
 }
 
@@ -11935,16 +11896,9 @@ body.juggernaut-shell .juggernaut-tool-rail .tool.has-action-provenance.is-activ
   border-color: rgba(74, 116, 229, 0.42);
   border-top-color: rgba(232, 238, 255, 0.84);
   border-left-color: rgba(214, 226, 255, 0.74);
-  background:
-    linear-gradient(180deg, rgba(95, 137, 248, 0.98), rgba(46, 93, 219, 0.98) 56%, rgba(38, 81, 201, 0.98)),
-    radial-gradient(84px 58px at 30% 14%, rgba(255, 255, 255, 0.22), transparent 72%),
-    rgba(46, 93, 219, 0.94);
+  background: rgba(53, 104, 235, 0.98);
   color: rgba(255, 255, 255, 0.98);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 2px 6px rgba(33, 72, 165, 0.38),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.12),
-    0 8px 16px rgba(30, 35, 44, 0.1);
+  box-shadow: none;
 }
 
 body.juggernaut-shell .tool.has-action-provenance .tool-hint,

@@ -646,16 +646,9 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-p
   border-color: rgba(79, 121, 233, 0.34);
   border-top-color: rgba(238, 243, 255, 0.92);
   border-left-color: rgba(224, 233, 255, 0.82);
-  background:
-    linear-gradient(180deg, rgba(106, 147, 255, 0.98), rgba(53, 104, 235, 0.98) 56%, rgba(44, 90, 213, 0.98)),
-    radial-gradient(90px 64px at 30% 18%, rgba(255, 255, 255, 0.3), transparent 70%),
-    rgba(53, 104, 235, 0.94);
+  background: rgba(53, 104, 235, 0.98);
   color: rgba(255, 255, 255, 0.98);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 -10px 18px rgba(19, 51, 128, 0.18),
-    0 10px 18px rgba(30, 35, 44, 0.1),
-    0 0 0 1px rgba(83, 128, 246, 0.12);
+  box-shadow: none;
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:hover:not(:disabled):not(.selected):not(.is-active-request):not(.is-pressing):not(.depressed) {
@@ -678,15 +671,8 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-p
   border-color: rgba(87, 130, 243, 0.4);
   border-top-color: rgba(244, 247, 255, 0.96);
   border-left-color: rgba(230, 238, 255, 0.86);
-  background:
-    linear-gradient(180deg, rgba(118, 158, 255, 0.98), rgba(60, 111, 241, 0.98) 56%, rgba(47, 96, 224, 0.98)),
-    radial-gradient(90px 64px at 30% 18%, rgba(255, 255, 255, 0.36), transparent 70%),
-    rgba(60, 111, 241, 0.94);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.32),
-    inset 0 -10px 18px rgba(21, 56, 136, 0.18),
-    0 12px 22px rgba(30, 35, 44, 0.12),
-    0 0 0 1px rgba(89, 134, 251, 0.14);
+  background: rgba(53, 104, 235, 0.98);
+  box-shadow: none;
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.selected,
@@ -719,16 +705,9 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-p
   border-color: rgba(74, 116, 229, 0.42);
   border-top-color: rgba(232, 238, 255, 0.86);
   border-left-color: rgba(214, 226, 255, 0.76);
-  background:
-    linear-gradient(180deg, rgba(95, 137, 248, 0.98), rgba(46, 93, 219, 0.98) 56%, rgba(38, 81, 201, 0.98)),
-    radial-gradient(92px 68px at 30% 16%, rgba(255, 255, 255, 0.22), transparent 72%),
-    rgba(46, 93, 219, 0.94);
+  background: rgba(53, 104, 235, 0.98);
   color: rgba(255, 255, 255, 0.98);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 2px 6px rgba(33, 72, 165, 0.38),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.12),
-    0 6px 12px rgba(30, 35, 44, 0.08);
+  box-shadow: none;
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.depressed {
@@ -747,14 +726,8 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.depressed {
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance.depressed {
   border-color: rgba(72, 112, 224, 0.38);
   border-top-color: rgba(228, 235, 255, 0.82);
-  background:
-    linear-gradient(180deg, rgba(91, 132, 241, 0.96), rgba(44, 90, 211, 0.96) 54%, rgba(37, 78, 192, 0.96)),
-    radial-gradient(84px 58px at 30% 14%, rgba(255, 255, 255, 0.18), transparent 72%),
-    rgba(44, 90, 211, 0.92);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    inset 0 -8px 14px rgba(24, 61, 150, 0.2),
-    0 7px 14px rgba(30, 35, 44, 0.08);
+  background: rgba(53, 104, 235, 0.98);
+  box-shadow: none;
 }
 
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:focus-visible {
