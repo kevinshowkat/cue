@@ -10146,10 +10146,9 @@ function renderJuggernautShellChrome() {
         capability: btn.dataset?.capability || "",
       })
     );
-    const isLocallyBacked =
-      provenance === ACTION_PROVENANCE.LOCAL_ONLY || provenance === ACTION_PROVENANCE.LOCAL_FIRST;
+    const isLocalOnly = provenance === ACTION_PROVENANCE.LOCAL_ONLY;
     const isPending = provenance === ACTION_PROVENANCE.EXTERNAL_MODEL && disabledReason === "capability_unavailable" && !toolHookReady;
-    btn.classList.toggle("is-local-utility", isLocallyBacked);
+    btn.classList.toggle("is-local-utility", isLocalOnly);
     btn.classList.toggle("is-local-first", provenance === ACTION_PROVENANCE.LOCAL_FIRST);
     btn.classList.toggle("is-ai-tool", provenance === ACTION_PROVENANCE.EXTERNAL_MODEL);
     btn.classList.toggle("is-active-request", String(state.juggernautShell.lastToolKey || "") === key);

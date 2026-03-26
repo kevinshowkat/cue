@@ -797,10 +797,7 @@ function syncButtonClasses(toolEl, button) {
   toolEl.classList.toggle("selected", Boolean(button.selected));
   toolEl.classList.toggle("depressed", Boolean(button.running));
   toolEl.classList.toggle("has-action-provenance", actionProvenanceHasModelCost(button.provenance));
-  toolEl.classList.toggle(
-    "is-local-utility",
-    button.provenance === ACTION_PROVENANCE.LOCAL_ONLY || button.provenance === ACTION_PROVENANCE.LOCAL_FIRST
-  );
+  toolEl.classList.toggle("is-local-utility", button.provenance === ACTION_PROVENANCE.LOCAL_ONLY);
   toolEl.classList.toggle("is-local-first", button.provenance === ACTION_PROVENANCE.LOCAL_FIRST);
   toolEl.classList.toggle("is-external-model", button.provenance === ACTION_PROVENANCE.EXTERNAL_MODEL);
 }

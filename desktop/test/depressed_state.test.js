@@ -19,6 +19,12 @@ test("Juggernaut rail: depressed class is applied only when an action is activel
   assert.match(rail, /toolEl\.classList\.toggle\("depressed", Boolean\(button\.running\)\);/);
 });
 
+test("Juggernaut rail keeps local-first actions out of local-utility styling", () => {
+  assert.match(rail, /toolEl\.classList\.toggle\("is-local-utility", button\.provenance === ACTION_PROVENANCE\.LOCAL_ONLY\);/);
+  assert.match(app, /const isLocalOnly = provenance === ACTION_PROVENANCE\.LOCAL_ONLY;/);
+  assert.match(app, /btn\.classList\.toggle\("is-local-utility", isLocalOnly\);/);
+});
+
 test("Action Grid: currentRunningActionKey maps pending actions to a single depressed key", () => {
   for (const key of [
     "pendingBlend",
