@@ -149,6 +149,8 @@ Hard constraints:
 Build:
 - Adapt the Oscillo bookend illustration approach into a repeatable tool icon workflow.
 - Generate or script the first set of icons for the tool rail.
+- Preserve a deterministic local fallback pack even if you add Gemini-oriented prompt manifests or alternate render packs.
+- Keep icon pack selection global so Settings can swap the rail language without touching per-tab state.
 - Keep the UI text-free in the visible main workflow.
 
 Deliverables:

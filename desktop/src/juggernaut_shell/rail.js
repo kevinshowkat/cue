@@ -1,4 +1,5 @@
-import { getJuggernautRailIconSvg } from "./generated/rail_icon_registry.js";
+import { getJuggernautRailIconMarkup } from "./generated/rail_icon_registry.js";
+import { DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID, normalizeJuggernautRailIconPackId } from "./rail_icon_packs.js";
 import { buildSingleImageDirectAffordanceInvocation, buildSingleImageRailInvocation } from "../tool_runtime.js";
 import {
   ACTION_PROVENANCE,
@@ -28,6 +29,7 @@ const DEFAULT_DYNAMIC_ORDER = Object.freeze(["cut_out", "remove", "reframe", "va
 const SHELL_DIRECT_AFFORDANCE_ORDER = Object.freeze(["remove_people"]);
 const HIDDEN_LEFT_RAIL_TOOL_IDS = new Set(["new_background", "polish", "relight"]);
 const COMMUNICATION_TOOL_EVENT = "juggernaut:communication-state-changed";
+let activeRailIconPackId = DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID;
 
 const RAIL_LABELS = Object.freeze({
   move: "Move",
@@ -174,22 +176,17 @@ export const SINGLE_IMAGE_RAIL_INVENTORY = Object.freeze([
   ),
 ]);
 
-function reframeIconSvg() {
-  return `<svg class="tool-icon tool-icon-reframe" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-  <rect fill="currentColor" fill-opacity="0.14" x="8.2" y="7.2" width="7.6" height="8.6" rx="1.7" />
-  <rect fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" x="8.2" y="7.2" width="7.6" height="8.6" rx="1.7" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M5.2 8.85V5.6h3.25" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M18.8 8.85V5.6h-3.25" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M5.2 15.15v3.25h3.25" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M18.8 15.15v3.25h-3.25" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M10.65 12l-1.55 1.55 1.55 1.55" />
-  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M13.35 15.1l1.55-1.55L13.35 12" />
-</svg>`;
+export function getJuggernautRailIconPackId() {
+  return activeRailIconPackId;
 }
 
-function railIconSvg(iconId = "") {
-  if (iconId === "reframe") return reframeIconSvg();
-  return getJuggernautRailIconSvg(iconId);
+export function setJuggernautRailIconPack(packId = "") {
+  activeRailIconPackId = normalizeJuggernautRailIconPackId(packId);
+  return activeRailIconPackId;
+}
+
+function railIconMarkup(iconId = "") {
+  return getJuggernautRailIconMarkup(iconId, activeRailIconPackId);
 }
 
 function railLabel(toolId = "") {
@@ -333,7 +330,7 @@ function buildAnchorButtons({
       selected: String(activeToolId || "").trim() === "move",
       toggleable: true,
       running: false,
-      iconSvg: railIconSvg("move"),
+      iconMarkup: railIconMarkup("move"),
       provenance: ACTION_PROVENANCE.LOCAL_ONLY,
       title: "",
       ariaLabel: "",
@@ -350,7 +347,7 @@ function buildAnchorButtons({
       selected: false,
       toggleable: false,
       running: false,
-      iconSvg: railIconSvg("upload"),
+      iconMarkup: railIconMarkup("upload"),
       provenance: ACTION_PROVENANCE.LOCAL_ONLY,
       title: "",
       ariaLabel: "",
@@ -367,7 +364,7 @@ function buildAnchorButtons({
       selected: String(activeToolId || "").trim() === "select",
       toggleable: true,
       running: false,
-      iconSvg: railIconSvg("select_region"),
+      iconMarkup: railIconMarkup("select_region"),
       provenance: ACTION_PROVENANCE.LOCAL_ONLY,
       title: "",
       ariaLabel: "",
@@ -451,7 +448,7 @@ function buildDynamicButtons(dynamicJobs = [], { runningToolId = "" } = {}) {
       selected: false,
       toggleable: false,
       running: String(runningToolId || "").trim() === job.jobId,
-      iconSvg: railIconSvg(job.iconId || job.jobId),
+      iconMarkup: railIconMarkup(job.iconId || job.jobId),
       title: "",
       ariaLabel: "",
       capability: job.capability,
@@ -653,7 +650,7 @@ function directAffordanceButton(seed, index, { hasImage = false, busy = false } 
     selected: false,
     toggleable: false,
     running: false,
-    iconSvg: railIconSvg(seed.iconId),
+    iconMarkup: railIconMarkup(seed.iconId),
     title: "",
     ariaLabel: "",
     capability: seed.capability,
@@ -812,7 +809,7 @@ function syncButtonClasses(toolEl, button) {
 }
 
 function syncButtonContent(toolEl, button) {
-  const html = `${button.iconSvg}${renderActionProvenanceBadge(button.provenance)}`;
+  const html = `${button.iconMarkup}${renderActionProvenanceBadge(button.provenance)}`;
   if (toolEl.__juggernautRailHtml !== html) {
     toolEl.innerHTML = html;
     toolEl.__juggernautRailHtml = html;
@@ -905,6 +902,7 @@ export function renderJuggernautRail(root, { buttons = [], onPress } = {}) {
   if (!root) return;
   root.__juggernautRailOnPress = typeof onPress === "function" ? onPress : null;
   root.dataset.railContract = SINGLE_IMAGE_RAIL_CONTRACT;
+  root.dataset.iconPack = activeRailIconPackId;
   const chromeRoot = root.closest?.(".juggernaut-shell-chrome");
   if (chromeRoot?.style?.setProperty) {
     chromeRoot.style.setProperty("--jg-primary-rail-button-count", String((Array.isArray(buttons) ? buttons.length : 0) || 0));
