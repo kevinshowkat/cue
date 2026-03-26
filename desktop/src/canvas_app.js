@@ -33180,11 +33180,11 @@ function rebuildTimelineStrip(nodes = timelineSortedNodes(), headNode = currentT
   if (!strip) return false;
   if (!nodes.length) {
     const currentEmpty = strip.querySelector(".timeline-empty");
-    if (!currentEmpty || String(currentEmpty.textContent || "").trim() !== "History appears here after the first committed change.") {
+    if (!currentEmpty || String(currentEmpty.textContent || "").trim() !== "Your timeline appears after your first edit.") {
       strip.replaceChildren();
       const empty = document.createElement("div");
       empty.className = "timeline-empty muted";
-      empty.textContent = "History appears here after the first committed change.";
+      empty.textContent = "Your timeline appears after your first edit.";
       strip.appendChild(empty);
     }
     state.lastTimelineCenteredNodeId = null;
