@@ -138,6 +138,7 @@ import {
 } from "./tabbed_sessions.js";
 import {
   deserializeSessionSnapshot,
+  normalizeScreenshotPolishMetadata,
   serializeSessionSnapshot,
 } from "./session_snapshot.js";
 import {
@@ -284,6 +285,16 @@ const SESSION_TAB_TITLE_MAX_LENGTH = 40;
 const SESSION_SNAPSHOT_FILENAME = "juggernaut-session.json";
 const CANVAS_IMAGE_PREPARING_LABEL = "Preparing image…";
 const CANVAS_IMAGE_WARMING_MAGIC_SELECT_LABEL = "Warming Magic Select…";
+const SCREENSHOT_POLISH_SCREEN_NAME_MAX_LENGTH = 80;
+const SCREENSHOT_POLISH_PLATFORM_OPTIONS = Object.freeze([
+  { value: "ios", label: "iOS" },
+  { value: "android", label: "Android" },
+  { value: "ipad", label: "iPad" },
+  { value: "web", label: "Web" },
+  { value: "macos", label: "macOS" },
+  { value: "windows", label: "Windows" },
+  { value: "other", label: "Other" },
+]);
 
 function communicationToolDisplayLabel(toolId = "") {
   const normalized = String(toolId || "").trim().toLowerCase();
@@ -2888,6 +2899,7 @@ const state = {
   timelineLatestNodeId: null,
   timelineNextSeq: 1,
   timelineOpen: true,
+  screenshotPolishMeta: null,
   timelineCarouselGesture: null,
   timelineCarouselWheel: { delta: 0, lastAt: 0 },
   timelineSuppressClickUntil: 0,
@@ -3651,6 +3663,7 @@ function createFreshTabSession({ runDir = null, eventsPath = null } = {}) {
     timelineLatestNodeId: null,
     timelineNextSeq: 1,
     timelineOpen: true,
+    screenshotPolishMeta: null,
     canvasMode: "multi",
     freeformRects: new Map(),
     freeformZOrder: [],
@@ -3735,6 +3748,15 @@ let sessionTabRenameState = {
   draft: "",
   focusRequested: false,
   lockedWidth: 0,
+};
+let screenshotPolishMetadataUi = {
+  button: null,
+  panel: null,
+  meta: null,
+  source: null,
+  platform: null,
+  screen: null,
+  done: null,
 };
 const TAB_HYDRATION_IDLE_TIMEOUT_MS = 180;
 const TAB_PREVIEW_CAPTURE_SETTLE_MS = 120;
@@ -10969,6 +10991,216 @@ function buildJuggernautShellContext() {
   };
 }
 
+function screenshotPolishMetadataPanelIsOpen() {
+  return Boolean(screenshotPolishMetadataUi.panel && !screenshotPolishMetadataUi.panel.classList.contains("hidden"));
+}
+
+function closeScreenshotPolishMetadataPanel({ focusButton = false } = {}) {
+  const panel = screenshotPolishMetadataUi.panel;
+  if (!panel) return false;
+  panel.classList.add("hidden");
+  if (focusButton) {
+    requestAnimationFrame(() => screenshotPolishMetadataUi.button?.focus());
+  }
+  return true;
+}
+
+function ensureScreenshotPolishMetadataUi() {
+  const existingButton = screenshotPolishMetadataUi.button;
+  const existingPanel = screenshotPolishMetadataUi.panel;
+  if (existingButton && existingPanel) return screenshotPolishMetadataUi;
+  if (typeof document === "undefined") return screenshotPolishMetadataUi;
+  const actions = els.sessionTabStrip?.querySelector?.(".session-tab-strip-actions");
+  if (!actions) return screenshotPolishMetadataUi;
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "session-tab-strip-action session-tab-runtime-action";
+  button.textContent = "Metadata";
+  button.setAttribute("aria-label", "Screenshot metadata");
+  button.title = "Screenshot metadata";
+
+  const panel = document.createElement("div");
+  panel.className = "annotate-panel hidden";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", "Screenshot metadata");
+  panel.style.left = "50%";
+  panel.style.top = "74px";
+  panel.style.transform = "translateX(-50%)";
+  panel.style.zIndex = "14";
+
+  const header = document.createElement("div");
+  header.className = "annotate-header";
+  const title = document.createElement("div");
+  title.className = "annotate-title";
+  title.textContent = "Screenshot Metadata";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "ghost";
+  close.textContent = "Close";
+  close.setAttribute("aria-label", "Close screenshot metadata");
+  header.append(title, close);
+
+  const body = document.createElement("div");
+  body.className = "annotate-body";
+  const meta = document.createElement("div");
+  meta.className = "annotate-meta muted";
+  const source = document.createElement("div");
+  source.className = "annotate-meta muted";
+
+  const platformField = document.createElement("label");
+  platformField.className = "annotate-field";
+  const platformLabel = document.createElement("div");
+  platformLabel.className = "annotate-label";
+  platformLabel.textContent = "Platform";
+  const platform = document.createElement("select");
+  for (const option of SCREENSHOT_POLISH_PLATFORM_OPTIONS) {
+    const node = document.createElement("option");
+    node.value = option.value;
+    node.textContent = option.label;
+    platform.append(node);
+  }
+  platformField.append(platformLabel, platform);
+
+  const screenField = document.createElement("label");
+  screenField.className = "annotate-field";
+  const screenLabel = document.createElement("div");
+  screenLabel.className = "annotate-label";
+  screenLabel.textContent = "Screen";
+  const screen = document.createElement("input");
+  screen.type = "text";
+  screen.className = "annotate-input";
+  screen.maxLength = SCREENSHOT_POLISH_SCREEN_NAME_MAX_LENGTH;
+  screen.placeholder = "Primary Screen";
+  screenField.append(screenLabel, screen);
+
+  const actionsRow = document.createElement("div");
+  actionsRow.className = "annotate-actions";
+  const done = document.createElement("button");
+  done.type = "button";
+  done.textContent = "Done";
+  actionsRow.append(done);
+
+  body.append(meta, source, platformField, screenField, actionsRow);
+  panel.append(header, body);
+  actions.insertBefore(button, actions.firstChild || null);
+  (document.body || actions).append(panel);
+
+  button.addEventListener("click", () => {
+    if (button.disabled) return;
+    bumpInteraction();
+    if (screenshotPolishMetadataPanelIsOpen()) {
+      closeScreenshotPolishMetadataPanel({ focusButton: true });
+      return;
+    }
+    openScreenshotPolishMetadataPanel();
+  });
+  close.addEventListener("click", () => {
+    closeScreenshotPolishMetadataPanel({ focusButton: true });
+  });
+  done.addEventListener("click", () => {
+    closeScreenshotPolishMetadataPanel({ focusButton: true });
+  });
+  platform.addEventListener("change", () => {
+    updateActiveScreenshotPolishMetadata({ platformTarget: platform.value || null });
+  });
+  screen.addEventListener("input", () => {
+    const next = normalizeScreenshotPolishScreenName(screen.value);
+    if (screen.value !== next) screen.value = next;
+    updateActiveScreenshotPolishMetadata({ screenName: next || null });
+  });
+  screen.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    closeScreenshotPolishMetadataPanel({ focusButton: true });
+  });
+  if (typeof window !== "undefined" && !panel.dataset.bound) {
+    panel.dataset.bound = "1";
+    window.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !screenshotPolishMetadataPanelIsOpen()) return;
+      closeScreenshotPolishMetadataPanel({ focusButton: true });
+    });
+    window.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (!screenshotPolishMetadataPanelIsOpen()) return;
+        const target = event?.target;
+        if (target && (panel.contains(target) || button.contains(target))) return;
+        closeScreenshotPolishMetadataPanel();
+      },
+      { capture: true }
+    );
+  }
+
+  screenshotPolishMetadataUi = {
+    button,
+    panel,
+    meta,
+    source,
+    platform,
+    screen,
+    done,
+  };
+  return screenshotPolishMetadataUi;
+}
+
+function renderScreenshotPolishMetadataPanel() {
+  const ui = ensureScreenshotPolishMetadataUi();
+  if (!ui.button) return false;
+  const current = resolveScreenshotPolishMetadata(state, state.screenshotPolishMeta, { allowInference: true });
+  const hasPersistedMetadata = Boolean(normalizeScreenshotPolishMetadata(state.screenshotPolishMeta));
+  const canEdit = Boolean(current) && (hasPersistedMetadata || (Array.isArray(state.images) && state.images.length === 1));
+  const summary = current ? screenshotPolishTabSubtitle(current) : "";
+  const resolution = current ? screenshotPolishResolutionLabel(current) : "";
+  ui.button.disabled = !canEdit;
+  ui.button.classList.toggle("is-ready", canEdit);
+  ui.button.title = canEdit
+    ? [summary || "Screenshot metadata", resolution].filter(Boolean).join("\n")
+    : "Open an image before editing screenshot metadata.";
+  ui.button.setAttribute("aria-disabled", canEdit ? "false" : "true");
+  if (!canEdit) {
+    closeScreenshotPolishMetadataPanel();
+    return false;
+  }
+  if (ui.meta) {
+    ui.meta.textContent = resolution || "Resolution loads from the source frame.";
+  }
+  if (ui.source) {
+    const sourceLabel =
+      readFirstString(current?.sourceFrame?.label) ||
+      (current?.sourceFrame?.path ? basename(current.sourceFrame.path) : "") ||
+      "Source frame";
+    const sourcePath = current?.sourceFrame?.path ? basename(current.sourceFrame.path) : "";
+    ui.source.textContent = [sourceLabel, sourcePath].filter(Boolean).join(" · ");
+  }
+  if (ui.platform) {
+    ui.platform.value = current?.platformTarget || SCREENSHOT_POLISH_PLATFORM_OPTIONS[0].value;
+  }
+  if (ui.screen) {
+    const nextScreen = normalizeScreenshotPolishScreenName(current?.screenName || "");
+    if (ui.screen.value !== nextScreen) ui.screen.value = nextScreen;
+  }
+  return true;
+}
+
+function openScreenshotPolishMetadataPanel() {
+  const current = initializeActiveScreenshotPolishMetadata();
+  if (!current) {
+    showToast("Open an image before editing screenshot metadata.", "tip", 2200);
+    return false;
+  }
+  const ui = ensureScreenshotPolishMetadataUi();
+  if (!ui.panel) return false;
+  renderScreenshotPolishMetadataPanel();
+  ui.panel.classList.remove("hidden");
+  requestAnimationFrame(() => ui.screen?.focus());
+  return true;
+}
+
+function syncScreenshotPolishMetadataUi() {
+  renderScreenshotPolishMetadataPanel();
+}
+
 function renderJuggernautShellChrome() {
   const activeImage = getActiveImage();
   const selectedIds = getSelectedIds();
@@ -10987,6 +11219,7 @@ function renderJuggernautShellChrome() {
     }
   }
   syncRuntimeStatusAffordances();
+  syncScreenshotPolishMetadataUi();
   syncTimelineDockVisibility();
 
   const toolHookReady = typeof state.juggernautShell.toolInvoker === "function";
@@ -36301,6 +36534,9 @@ async function jumpToTimelineNode(nodeId) {
     runDir: state.runDir || null,
     eventsPath: state.eventsPath || null,
   });
+  restoredSession.screenshotPolishMeta = normalizeScreenshotPolishMetadata(
+    state.screenshotPolishMeta || restoredSession.screenshotPolishMeta
+  );
   restoredSession.timelineNodes = Array.from(state.timelineNodes || []);
   restoredSession.timelineNodesById = state.timelineNodesById instanceof Map ? state.timelineNodesById : new Map();
   restoredSession.timelineHeadNodeId = node.nodeId;
@@ -36388,6 +36624,7 @@ async function setActiveImage(id, { preserveSelection = false, source = "system"
   } catch (err) {
     console.error(err);
   }
+  syncActiveScreenshotPolishMetadataFromImage(item);
   renderHudReadout();
   resetViewToFit();
   requestRender();
@@ -36708,6 +36945,7 @@ async function replaceImageInPlace(
     } catch (err) {
       console.error(err);
     }
+    syncActiveScreenshotPolishMetadataFromImage(item);
     await setEngineActiveImage(item.path);
     renderSelectionMeta();
     chooseSpawnNodes();
@@ -39479,6 +39717,219 @@ function humanizeSessionTabStem(value = "") {
   return normalizeSessionTabTitleInput(words.join(" "));
 }
 
+function normalizeScreenshotPolishScreenName(value = "") {
+  const compact = String(value || "").replace(/\s+/g, " ").trim();
+  if (!compact) return "";
+  if (compact.length <= SCREENSHOT_POLISH_SCREEN_NAME_MAX_LENGTH) return compact;
+  return compact.slice(0, Math.max(0, SCREENSHOT_POLISH_SCREEN_NAME_MAX_LENGTH)).trim();
+}
+
+function screenshotPolishMetadataSignature(meta = null) {
+  const normalized = normalizeScreenshotPolishMetadata(meta);
+  return normalized ? JSON.stringify(normalized) : "";
+}
+
+function screenshotPolishSourceImage(session = state, meta = null) {
+  const current = normalizeScreenshotPolishMetadata(meta ?? session?.screenshotPolishMeta);
+  const imagesById = session?.imagesById instanceof Map ? session.imagesById : new Map();
+  const sourceFrameId = String(current?.sourceFrame?.id || "").trim();
+  if (sourceFrameId && imagesById.has(sourceFrameId)) {
+    return imagesById.get(sourceFrameId) || null;
+  }
+  const activeId = String(session?.activeId || "").trim();
+  if (activeId && imagesById.has(activeId)) {
+    return imagesById.get(activeId) || null;
+  }
+  const images = Array.isArray(session?.images) ? session.images : [];
+  return images[0] || null;
+}
+
+function inferScreenshotPolishPlatformTarget(image = null, { width = null, height = null } = {}) {
+  const hint = [
+    String(image?.label || "").trim(),
+    image?.path ? basename(image.path) : "",
+    String(image?.visionDesc || "").trim(),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (/iphone|ios|app\s*store/.test(hint)) return "ios";
+  if (/android|pixel|galaxy|play\s*store/.test(hint)) return "android";
+  if (/ipad|tablet/.test(hint)) return "ipad";
+  if (/mac|macos|macbook/.test(hint)) return "macos";
+  if (/windows|pc|win11|win10/.test(hint)) return "windows";
+  if (/web|desktop|browser/.test(hint)) return "web";
+  const resolvedWidth = Math.max(0, Number(readFirstNumber(width, image?.img?.naturalWidth, image?.width)) || 0);
+  const resolvedHeight = Math.max(0, Number(readFirstNumber(height, image?.img?.naturalHeight, image?.height)) || 0);
+  if (resolvedWidth && resolvedHeight) {
+    if (resolvedHeight > resolvedWidth * 1.2) return "ios";
+    if (resolvedWidth > resolvedHeight * 1.35) {
+      return resolvedWidth >= 1800 ? "macos" : "web";
+    }
+  }
+  return "web";
+}
+
+function inferScreenshotPolishScreenName(image = null) {
+  const seed = humanizeSessionTabStem(
+    String(image?.label || "").trim() ||
+      String(image?.path || "").trim()
+  );
+  const normalized = normalizeScreenshotPolishScreenName(seed);
+  if (normalized && normalized.toLowerCase() !== "screenshot") return normalized;
+  return "Primary Screen";
+}
+
+function resolveScreenshotPolishMetadata(session = state, meta = null, { allowInference = true } = {}) {
+  const current = normalizeScreenshotPolishMetadata(meta ?? session?.screenshotPolishMeta);
+  const sourceImage = screenshotPolishSourceImage(session, current);
+  if (!current && !sourceImage) return null;
+  const width = readFirstNumber(current?.resolution?.width, sourceImage?.img?.naturalWidth, sourceImage?.width);
+  const height = readFirstNumber(current?.resolution?.height, sourceImage?.img?.naturalHeight, sourceImage?.height);
+  const next = normalizeScreenshotPolishMetadata({
+    sourceFrame: {
+      id: readFirstString(current?.sourceFrame?.id, sourceImage?.id) || null,
+      path: readFirstString(current?.sourceFrame?.path, sourceImage?.path) || null,
+      label:
+        readFirstString(current?.sourceFrame?.label, sourceImage?.label) ||
+        (sourceImage?.path ? basename(sourceImage.path) : null),
+    },
+    platformTarget: readFirstString(
+      current?.platformTarget,
+      allowInference ? inferScreenshotPolishPlatformTarget(sourceImage, { width, height }) : null
+    ),
+    screenName: readFirstString(
+      current?.screenName,
+      allowInference ? inferScreenshotPolishScreenName(sourceImage) : null
+    ),
+    resolution: {
+      width: readFirstNumber(width),
+      height: readFirstNumber(height),
+    },
+  });
+  return next || current;
+}
+
+function screenshotPolishPlatformLabel(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return "";
+  const match = SCREENSHOT_POLISH_PLATFORM_OPTIONS.find((option) => option.value === normalized) || null;
+  if (match) return match.label;
+  return normalized.toUpperCase();
+}
+
+function screenshotPolishAspectLabel(width = null, height = null) {
+  const w = Math.max(0, Number(width) || 0);
+  const h = Math.max(0, Number(height) || 0);
+  if (!w || !h) return "";
+  const landscape = w >= h;
+  const ratio = landscape ? w / Math.max(1, h) : h / Math.max(1, w);
+  const precision = ratio >= 10 ? 1 : 2;
+  const formatted = ratio.toFixed(precision).replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+  return landscape ? `${formatted}:1` : `1:${formatted}`;
+}
+
+function screenshotPolishResolutionLabel(meta = null) {
+  const width = Math.max(0, Number(meta?.resolution?.width) || 0);
+  const height = Math.max(0, Number(meta?.resolution?.height) || 0);
+  if (!width || !height) return "";
+  const aspect = screenshotPolishAspectLabel(width, height);
+  return aspect ? `${width}x${height} · ${aspect}` : `${width}x${height}`;
+}
+
+function sessionTabScreenshotPolishMetadata(record = null) {
+  const tabId = String(record?.tabId || "").trim();
+  if (tabId && tabId === String(state.activeTabId || "").trim()) {
+    return normalizeScreenshotPolishMetadata(state.screenshotPolishMeta);
+  }
+  return normalizeScreenshotPolishMetadata(record?.session?.screenshotPolishMeta);
+}
+
+function screenshotPolishTabSubtitle(meta = null) {
+  const current = normalizeScreenshotPolishMetadata(meta);
+  if (!current) return "";
+  const parts = [];
+  const screenName = readFirstString(current.screenName, current.sourceFrame?.label) || "";
+  const platform = screenshotPolishPlatformLabel(current.platformTarget);
+  const resolution = screenshotPolishResolutionLabel(current);
+  if (screenName) parts.push(screenName);
+  if (platform) parts.push(platform);
+  if (resolution) parts.push(resolution);
+  return clampText(parts.join(" · "), 52);
+}
+
+function persistActiveScreenshotPolishMetadata(meta = null, { publish = true, persistTimeline = true } = {}) {
+  const next = normalizeScreenshotPolishMetadata(meta);
+  const previousSignature = screenshotPolishMetadataSignature(state.screenshotPolishMeta);
+  const nextSignature = screenshotPolishMetadataSignature(next);
+  const changed = previousSignature !== nextSignature;
+  state.screenshotPolishMeta = next;
+  if (!changed) {
+    renderScreenshotPolishMetadataPanel();
+    return false;
+  }
+  syncActiveTabRecord({ capture: true, publish });
+  if (persistTimeline) {
+    void persistActiveSessionTimeline();
+  }
+  renderScreenshotPolishMetadataPanel();
+  return true;
+}
+
+function initializeActiveScreenshotPolishMetadata() {
+  if (!normalizeScreenshotPolishMetadata(state.screenshotPolishMeta) && Array.isArray(state.images) && state.images.length !== 1) {
+    return null;
+  }
+  const resolved = resolveScreenshotPolishMetadata(state, state.screenshotPolishMeta, { allowInference: true });
+  if (!resolved) return null;
+  persistActiveScreenshotPolishMetadata(resolved, { publish: true, persistTimeline: true });
+  return resolveScreenshotPolishMetadata(state, resolved, { allowInference: false }) || resolved;
+}
+
+function updateActiveScreenshotPolishMetadata(patch = {}) {
+  const current = initializeActiveScreenshotPolishMetadata();
+  if (!current) return null;
+  const next = normalizeScreenshotPolishMetadata({
+    ...current,
+    ...patch,
+    sourceFrame: {
+      ...(current.sourceFrame || {}),
+      ...(patch?.sourceFrame && typeof patch.sourceFrame === "object" ? patch.sourceFrame : null),
+    },
+    resolution: {
+      ...(current.resolution || {}),
+      ...(patch?.resolution && typeof patch.resolution === "object" ? patch.resolution : null),
+    },
+  });
+  persistActiveScreenshotPolishMetadata(next, { publish: true, persistTimeline: true });
+  return next;
+}
+
+function syncActiveScreenshotPolishMetadataFromImage(image = null) {
+  const current = normalizeScreenshotPolishMetadata(state.screenshotPolishMeta);
+  if (!current) return false;
+  const sourceImage = image && current.sourceFrame?.id === String(image?.id || "").trim()
+    ? image
+    : screenshotPolishSourceImage(state, current);
+  if (!sourceImage) return false;
+  const next = normalizeScreenshotPolishMetadata({
+    ...current,
+    sourceFrame: {
+      ...(current.sourceFrame || {}),
+      id: readFirstString(current.sourceFrame?.id, sourceImage?.id) || null,
+      path: readFirstString(sourceImage?.path, current.sourceFrame?.path) || null,
+      label:
+        readFirstString(sourceImage?.label, current.sourceFrame?.label) ||
+        (sourceImage?.path ? basename(sourceImage.path) : null),
+    },
+    resolution: {
+      width: readFirstNumber(sourceImage?.img?.naturalWidth, sourceImage?.width, current.resolution?.width),
+      height: readFirstNumber(sourceImage?.img?.naturalHeight, sourceImage?.height, current.resolution?.height),
+    },
+  });
+  return persistActiveScreenshotPolishMetadata(next, { publish: true, persistTimeline: true });
+}
+
 function sessionTabTitleSeedForImage(item = null) {
   const candidates = [
     String(item?.label || "").trim(),
@@ -39648,6 +40099,7 @@ function createForkedTabSession(session = null, { label = null } = {}) {
   };
   rehydrateForkedTabSessionImageRuntime(next, source);
   next.forkedFromTabId = String(cloned.forkedFromTabId || source.forkedFromTabId || "").trim() || null;
+  next.screenshotPolishMeta = normalizeScreenshotPolishMetadata(cloned.screenshotPolishMeta || source.screenshotPolishMeta);
   next.label = typeof label === "string" && label ? label : typeof cloned.label === "string" ? cloned.label : null;
   next.labelManual = Boolean(label) || Boolean(cloned.labelManual);
   next.communication = sanitizeForkedCommunicationState(cloned.communication);
@@ -39887,6 +40339,7 @@ function buildSessionTimelinePayloadFromSession(session = null, { runDir = null 
     latestNodeId: current.timelineLatestNodeId || null,
     nextSeq: current.timelineNextSeq || 1,
     updatedAt: new Date().toISOString(),
+    screenshotPolishMeta: normalizeScreenshotPolishMetadata(current.screenshotPolishMeta),
     nodes: Array.isArray(current.timelineNodes) ? current.timelineNodes : [],
   });
 }
@@ -39942,6 +40395,9 @@ function restoreSessionFromTimelineRecord(timeline = null, { runDir = null, even
     runDir: runDir || current.runDir || null,
     eventsPath,
   });
+  restoredSession.screenshotPolishMeta = normalizeScreenshotPolishMetadata(
+    current.screenshotPolishMeta || restoredSession.screenshotPolishMeta
+  );
   restoredSession.timelineNodes = nodes;
   restoredSession.timelineNodesById = new Map(
     nodes
@@ -40191,6 +40647,7 @@ function captureActiveTabSession(session = null) {
   next.timelineLatestNodeId = state.timelineLatestNodeId ? String(state.timelineLatestNodeId) : null;
   next.timelineNextSeq = Math.max(1, Number(state.timelineNextSeq) || 1);
   next.timelineOpen = state.timelineOpen !== false;
+  next.screenshotPolishMeta = normalizeScreenshotPolishMetadata(state.screenshotPolishMeta);
   next.canvasMode = String(state.canvasMode || "multi");
   next.freeformRects = state.freeformRects instanceof Map ? state.freeformRects : new Map();
   next.freeformZOrder = Array.isArray(state.freeformZOrder) ? state.freeformZOrder.slice() : [];
@@ -40302,6 +40759,7 @@ function bindTabSessionToState(session = null) {
   state.timelineLatestNodeId = current.timelineLatestNodeId ? String(current.timelineLatestNodeId) : null;
   state.timelineNextSeq = Math.max(1, Number(current.timelineNextSeq) || 1);
   state.timelineOpen = current.timelineOpen !== false;
+  state.screenshotPolishMeta = normalizeScreenshotPolishMetadata(current.screenshotPolishMeta);
   state.canvasMode = String(current.canvasMode || "multi");
   state.freeformRects = current.freeformRects instanceof Map ? current.freeformRects : new Map();
   state.freeformZOrder = Array.isArray(current.freeformZOrder) ? current.freeformZOrder.slice() : [];
@@ -47591,6 +48049,8 @@ function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
   const uiMeta = normalizeTabUiMeta(record?.tabUiMeta || record?.session?.tabUiMeta);
   const title = sessionTabDisplayLabel(record || tab, DEFAULT_UNTITLED_TAB_TITLE);
   const runDir = record?.runDir ? String(record.runDir) : tab?.runDir ? String(tab.runDir) : "";
+  const screenshotPolishMeta = sessionTabScreenshotPolishMetadata(record || tab);
+  const subtitle = screenshotPolishTabSubtitle(screenshotPolishMeta) || runDir;
   const reviewFlowState = sessionTabReviewFlowStateForRecord(record, tabId);
   const showReviewSpinner = sessionTabReviewFlowShowsSpinner(reviewFlowState);
   const forkedFromTabId = sessionTabForkSourceId(record || tab);
@@ -47598,6 +48058,8 @@ function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
     tabId,
     title,
     runDir,
+    subtitle,
+    screenshotPolishMeta,
     forkedFromTabId,
     isForked: Boolean(forkedFromTabId),
     isActive: Boolean(tab?.active),
@@ -47771,7 +48233,7 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
     hit.setAttribute("role", "tab");
     hit.setAttribute("aria-selected", summary.isActive ? "true" : "false");
     hit.tabIndex = summary.isActive ? 0 : -1;
-    hit.title = summary.runDir ? `${summary.title}\n${summary.runDir}` : summary.title;
+    hit.title = [summary.title, summary.subtitle, summary.runDir].filter(Boolean).join("\n");
 
     const labels = document.createElement("span");
     labels.className = "session-tab-labels";
@@ -47788,7 +48250,7 @@ function createSessionTabStripItem(tab = null, totalTabs = 0) {
 
     const runDir = document.createElement("span");
     runDir.className = "session-tab-run-dir";
-    runDir.textContent = summary.runDir;
+    runDir.textContent = summary.subtitle;
     labels.append(runDir);
 
     hit.append(labels, createSessionTabFlags(summary));

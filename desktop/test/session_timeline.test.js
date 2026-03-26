@@ -25,6 +25,19 @@ test("timeline snapshots round-trip committed canvas session state", () => {
   const snapshot = captureSessionTimelineSnapshot({
     label: "Run A",
     labelManual: true,
+    screenshotPolishMeta: {
+      sourceFrame: {
+        id: "img-a",
+        path: "/tmp/run/a.png",
+        label: "Checkout",
+      },
+      platformTarget: "ios",
+      screenName: "Checkout",
+      resolution: {
+        width: 1170,
+        height: 2532,
+      },
+    },
     images: [imageA, imageB],
     imagesById: new Map([
       ["img-a", imageA],
@@ -94,6 +107,19 @@ test("timeline snapshots round-trip committed canvas session state", () => {
   assert.equal(restored.sessionTools[0].toolId, "mono");
   assert.equal(restored.activeCustomToolId, "mono");
   assert.equal(restored.timelineOpen, true);
+  assert.deepEqual(restored.screenshotPolishMeta, {
+    sourceFrame: {
+      id: "img-a",
+      path: "/tmp/run/a.png",
+      label: "Checkout",
+    },
+    platformTarget: "ios",
+    screenName: "Checkout",
+    resolution: {
+      width: 1170,
+      height: 2532,
+    },
+  });
 });
 
 test("timeline serialization preserves head selection and chronological ordering", () => {
@@ -109,6 +135,19 @@ test("timeline serialization preserves head selection and chronological ordering
     headNodeId: "tl-000002",
     latestNodeId: "tl-000003",
     nextSeq: 4,
+    screenshotPolishMeta: {
+      sourceFrame: {
+        id: "img-a",
+        path: "/tmp/run/a.png",
+        label: "Checkout",
+      },
+      platformTarget: "ios",
+      screenName: "Checkout",
+      resolution: {
+        width: 1170,
+        height: 2532,
+      },
+    },
     nodes: [
       { nodeId: "tl-000003", seq: 3, action: "Mark", snapshot: nodeSnapshot },
       { nodeId: "tl-000001", seq: 1, action: "Import", snapshot: nodeSnapshot },
@@ -122,6 +161,19 @@ test("timeline serialization preserves head selection and chronological ordering
   assert.equal(restored.headNodeId, "tl-000002");
   assert.equal(restored.latestNodeId, "tl-000003");
   assert.equal(restored.nextSeq, 4);
+  assert.deepEqual(restored.screenshotPolishMeta, {
+    sourceFrame: {
+      id: "img-a",
+      path: "/tmp/run/a.png",
+      label: "Checkout",
+    },
+    platformTarget: "ios",
+    screenName: "Checkout",
+    resolution: {
+      width: 1170,
+      height: 2532,
+    },
+  });
   assert.deepEqual(
     restored.nodes.map((node) => node.nodeId),
     ["tl-000001", "tl-000002", "tl-000003"]

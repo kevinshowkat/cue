@@ -33,6 +33,19 @@ test("session snapshot round-trips maps and rebuilds session indexes", () => {
       timelineHeadNodeId: "node-a",
       timelineLatestNodeId: "node-a",
       timelineNextSeq: 2,
+      screenshotPolishMeta: {
+        sourceFrame: {
+          id: "img-a",
+          path: "/tmp/run/img-a.png",
+          label: "Checkout",
+        },
+        platformTarget: "ios",
+        screenName: "Checkout",
+        resolution: {
+          width: 1170,
+          height: 2532,
+        },
+      },
       communication: {
         marksByImageId: new Map([["img-a", [{ id: "mark-a" }]]]),
         stampsByImageId: new Map([["img-a", [{ id: "stamp-a", intentId: "fix", imageId: "img-a" }]]]),
@@ -77,6 +90,19 @@ test("session snapshot round-trips maps and rebuilds session indexes", () => {
   assert.equal(restored.session.timelineLatestNodeId, "node-a");
   assert.equal(restored.session.timelineNextSeq, 2);
   assert.equal(restored.session.timelineOpen, true);
+  assert.deepEqual(restored.session.screenshotPolishMeta, {
+    sourceFrame: {
+      id: "img-a",
+      path: "/tmp/run/img-a.png",
+      label: "Checkout",
+    },
+    platformTarget: "ios",
+    screenName: "Checkout",
+    resolution: {
+      width: 1170,
+      height: 2532,
+    },
+  });
   assert.ok(restored.session.communication.marksByImageId instanceof Map);
   assert.ok(restored.session.communication.stampsByImageId instanceof Map);
   assert.equal(restored.session.communication.stampsByImageId.get("img-a")?.[0]?.intentId, "fix");
@@ -86,6 +112,21 @@ test("session snapshot round-trips maps and rebuilds session indexes", () => {
   assert.equal(restored.session.sessionTools[0].toolId, "mono");
   assert.equal(typeof restored.session.toolRegistry.list, "function");
   assert.ok(restored.session.eventsDecoder instanceof TextDecoder);
+});
+
+test("session snapshot keeps older payloads compatible when screenshot metadata is absent", () => {
+  const restored = deserializeSessionSnapshot({
+    schema: "juggernaut.session_snapshot.v1",
+    version: 1,
+    savedAt: "2026-03-26T00:00:00.000Z",
+    session: {
+      images: [],
+      timelineNodes: [],
+    },
+  });
+
+  assert.equal(restored.session.screenshotPolishMeta, null);
+  assert.equal(restored.session.timelineOpen, true);
 });
 
 test("session snapshot rejects unsupported schemas", () => {

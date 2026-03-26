@@ -102,6 +102,52 @@ function clonePlainObject(value) {
   return value && typeof value === "object" ? { ...value } : value;
 }
 
+function normalizeScreenshotPolishString(value, { maxLength = 256 } = {}) {
+  const compact = String(value || "").replace(/\s+/g, " ").trim();
+  if (!compact) return null;
+  if (compact.length <= maxLength) return compact;
+  return compact.slice(0, Math.max(0, maxLength)).trim() || null;
+}
+
+function normalizeScreenshotPolishDimension(value) {
+  const n = Math.round(Number(value) || 0);
+  return n > 0 ? n : null;
+}
+
+export function normalizeScreenshotPolishMetadata(meta = null) {
+  const current = meta && typeof meta === "object" && !Array.isArray(meta) ? meta : null;
+  if (!current) return null;
+  const rawSourceFrame =
+    current.sourceFrame && typeof current.sourceFrame === "object" && !Array.isArray(current.sourceFrame)
+      ? current.sourceFrame
+      : {};
+  const rawResolution =
+    current.resolution && typeof current.resolution === "object" && !Array.isArray(current.resolution)
+      ? current.resolution
+      : {};
+  const sourceFrame = {
+    id: normalizeScreenshotPolishString(rawSourceFrame.id ?? current.sourceFrameId, { maxLength: 160 }),
+    path: normalizeScreenshotPolishString(rawSourceFrame.path ?? current.sourceFramePath, { maxLength: 4096 }),
+    label: normalizeScreenshotPolishString(rawSourceFrame.label ?? current.sourceFrameLabel, { maxLength: 160 }),
+  };
+  const resolution = {
+    width: normalizeScreenshotPolishDimension(rawResolution.width ?? current.resolutionWidth),
+    height: normalizeScreenshotPolishDimension(rawResolution.height ?? current.resolutionHeight),
+  };
+  const hasSourceFrame = Boolean(sourceFrame.id || sourceFrame.path || sourceFrame.label);
+  const hasResolution = Boolean(resolution.width || resolution.height);
+  const normalized = {
+    sourceFrame: hasSourceFrame ? sourceFrame : null,
+    platformTarget: normalizeScreenshotPolishString(current.platformTarget, { maxLength: 64 }),
+    screenName: normalizeScreenshotPolishString(current.screenName, { maxLength: 160 }),
+    resolution: hasResolution ? resolution : null,
+  };
+  if (!normalized.sourceFrame && !normalized.platformTarget && !normalized.screenName && !normalized.resolution) {
+    return null;
+  }
+  return normalized;
+}
+
 export function rehydrateSessionSnapshotSession(rawSession = {}) {
   const current = rawSession && typeof rawSession === "object" ? { ...rawSession } : {};
   const images = Array.isArray(current.images)
@@ -163,6 +209,7 @@ export function rehydrateSessionSnapshotSession(rawSession = {}) {
       timelineNodes.length ? Math.max(...timelineNodes.map((node) => Math.max(1, Number(node?.seq) || 1))) + 1 : 1
     ),
     timelineOpen: current.timelineOpen !== false,
+    screenshotPolishMeta: normalizeScreenshotPolishMetadata(current.screenshotPolishMeta),
     toolRegistry,
     sessionTools: toolRegistry.list(),
     eventsDecoder: new TextDecoder("utf-8"),

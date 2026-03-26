@@ -85,7 +85,7 @@ test("forking the active tab clones the visible session into a detached sibling 
   );
   assert.match(
     app,
-    /function createForkedTabSession\(session = null,\s*\{ label = null \} = \{\}\) \{[\s\S]*next\.forkedFromTabId = String\(cloned\.forkedFromTabId \|\| source\.forkedFromTabId \|\| ""\)\.trim\(\) \|\| null;[\s\S]*next\.communication = sanitizeForkedCommunicationState\(cloned\.communication\);[\s\S]*next\.designReviewApply = createFreshDesignReviewApplyState\(\);[\s\S]*next\.reviewFlowState = currentSessionTabReviewFlowState\(\{[\s\S]*communication: next\.communication,[\s\S]*designReviewApply: next\.designReviewApply,[\s\S]*\}\);[\s\S]*next\.toolRegistry = createInSessionToolRegistry\([\s\S]*next\.sessionTools = next\.toolRegistry\.list\(\);[\s\S]*next\.runDir = null;[\s\S]*next\.eventsPath = null;[\s\S]*next\.eventsByteOffset = 0;/
+    /function createForkedTabSession\(session = null,\s*\{ label = null \} = \{\}\) \{[\s\S]*next\.forkedFromTabId = String\(cloned\.forkedFromTabId \|\| source\.forkedFromTabId \|\| ""\)\.trim\(\) \|\| null;[\s\S]*next\.screenshotPolishMeta = normalizeScreenshotPolishMetadata\(cloned\.screenshotPolishMeta \|\| source\.screenshotPolishMeta\);[\s\S]*next\.communication = sanitizeForkedCommunicationState\(cloned\.communication\);[\s\S]*next\.designReviewApply = createFreshDesignReviewApplyState\(\);[\s\S]*next\.reviewFlowState = currentSessionTabReviewFlowState\(\{[\s\S]*communication: next\.communication,[\s\S]*designReviewApply: next\.designReviewApply,[\s\S]*\}\);[\s\S]*next\.toolRegistry = createInSessionToolRegistry\([\s\S]*next\.sessionTools = next\.toolRegistry\.list\(\);[\s\S]*next\.runDir = null;[\s\S]*next\.eventsPath = null;[\s\S]*next\.eventsByteOffset = 0;/
   );
   assert.match(
     app,
@@ -96,15 +96,34 @@ test("forking the active tab clones the visible session into a detached sibling 
 test("activating a tab captures and restores image, selection, run, and session-local runtime state", () => {
   assert.match(
     app,
-    /function captureActiveTabSession\(session = null\) \{[\s\S]*next\.runDir = state\.runDir \|\| null;[\s\S]*next\.eventsPath = state\.eventsPath \|\| null;[\s\S]*next\.images = Array\.isArray\(state\.images\) \? state\.images : \[\];[\s\S]*next\.activeId = state\.activeId \? String\(state\.activeId\) : null;[\s\S]*next\.selectedIds = Array\.isArray\(state\.selectedIds\) \? state\.selectedIds\.slice\(\) : \[\];[\s\S]*next\.freeformRects = state\.freeformRects instanceof Map \? state\.freeformRects : new Map\(\);[\s\S]*next\.toolRegistry =[\s\S]*next\.topMetrics = state\.topMetrics[\s\S]*next\.lastStatusText = String\(state\.lastStatusText \|\| "Engine: idle"\);/
+    /function captureActiveTabSession\(session = null\) \{[\s\S]*next\.runDir = state\.runDir \|\| null;[\s\S]*next\.eventsPath = state\.eventsPath \|\| null;[\s\S]*next\.images = Array\.isArray\(state\.images\) \? state\.images : \[\];[\s\S]*next\.activeId = state\.activeId \? String\(state\.activeId\) : null;[\s\S]*next\.selectedIds = Array\.isArray\(state\.selectedIds\) \? state\.selectedIds\.slice\(\) : \[\];[\s\S]*next\.toolRegistry =[\s\S]*next\.topMetrics = state\.topMetrics[\s\S]*next\.lastStatusText = String\(state\.lastStatusText \|\| "Engine: idle"\);/
   );
   assert.match(
     app,
-    /function bindTabSessionToState\(session = null\) \{[\s\S]*state\.runDir = current\.runDir \|\| null;[\s\S]*state\.eventsPath = current\.eventsPath \|\| null;[\s\S]*state\.images = Array\.isArray\(current\.images\) \? current\.images : \[\];[\s\S]*state\.activeId = current\.activeId \? String\(current\.activeId\) : null;[\s\S]*state\.selectedIds = Array\.isArray\(current\.selectedIds\) \? current\.selectedIds\.slice\(\) : \[\];[\s\S]*state\.freeformRects = current\.freeformRects instanceof Map \? current\.freeformRects : new Map\(\);[\s\S]*sessionToolRegistry =[\s\S]*state\.topMetrics =[\s\S]*state\.lastStatusText = String\(current\.lastStatusText \|\| "Engine: idle"\);/
+    /function captureActiveTabSession\(session = null\) \{[\s\S]*next\.timelineOpen = state\.timelineOpen !== false;[\s\S]*next\.screenshotPolishMeta = normalizeScreenshotPolishMetadata\(state\.screenshotPolishMeta\);[\s\S]*next\.canvasMode = String\(state\.canvasMode \|\| "multi"\);[\s\S]*next\.freeformRects = state\.freeformRects instanceof Map \? state\.freeformRects : new Map\(\);/
+  );
+  assert.match(
+    app,
+    /function bindTabSessionToState\(session = null\) \{[\s\S]*state\.runDir = current\.runDir \|\| null;[\s\S]*state\.eventsPath = current\.eventsPath \|\| null;[\s\S]*state\.images = Array\.isArray\(current\.images\) \? current\.images : \[\];[\s\S]*state\.activeId = current\.activeId \? String\(current\.activeId\) : null;[\s\S]*state\.selectedIds = Array\.isArray\(current\.selectedIds\) \? current\.selectedIds\.slice\(\) : \[\];[\s\S]*sessionToolRegistry =[\s\S]*state\.topMetrics =[\s\S]*state\.lastStatusText = String\(current\.lastStatusText \|\| "Engine: idle"\);/
+  );
+  assert.match(
+    app,
+    /function bindTabSessionToState\(session = null\) \{[\s\S]*state\.timelineOpen = current\.timelineOpen !== false;[\s\S]*state\.screenshotPolishMeta = normalizeScreenshotPolishMetadata\(current\.screenshotPolishMeta\);[\s\S]*state\.canvasMode = String\(current\.canvasMode \|\| "multi"\);[\s\S]*state\.freeformRects = current\.freeformRects instanceof Map \? current\.freeformRects : new Map\(\);/
   );
   assert.match(
     app,
     /target\.session = target\.session \|\| createFreshTabSession\([\s\S]*bindTabSessionToState\(target\.session\);[\s\S]*tabbedSessions\.setActiveTab\(normalized\);/
+  );
+});
+
+test("timeline-backed restore paths preserve screenshot polish metadata overlays", () => {
+  assert.match(
+    app,
+    /function restoreSessionFromTimelineRecord\(timeline = null,\s*\{ runDir = null,\s*eventsPath = null \} = \{\}\) \{[\s\S]*restoredSession\.screenshotPolishMeta = normalizeScreenshotPolishMetadata\(\s*current\.screenshotPolishMeta \|\| restoredSession\.screenshotPolishMeta\s*\);/
+  );
+  assert.match(
+    app,
+    /async function jumpToTimelineNode\(nodeId\) \{[\s\S]*restoredSession\.screenshotPolishMeta = normalizeScreenshotPolishMetadata\(\s*state\.screenshotPolishMeta \|\| restoredSession\.screenshotPolishMeta\s*\);/
   );
 });
 

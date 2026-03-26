@@ -1,5 +1,6 @@
 import {
   deserializeSessionValue,
+  normalizeScreenshotPolishMetadata,
   rehydrateSessionSnapshotSession,
   serializeSessionValue,
 } from "./session_snapshot.js";
@@ -63,12 +64,14 @@ function buildTimelineImagesById(images = []) {
 
 export function captureSessionTimelineSnapshot(session = null) {
   const current = session && typeof session === "object" ? session : {};
+  const screenshotPolishMeta = normalizeScreenshotPolishMetadata(current.screenshotPolishMeta);
   const images = Array.isArray(current.images) ? current.images.map(cloneTimelineImage).filter(Boolean) : [];
   const snapshot = {
     label: typeof current.label === "string" ? current.label : null,
     labelManual: Boolean(current.labelManual),
     forkedFromTabId: current.forkedFromTabId ? String(current.forkedFromTabId) : null,
     reviewFlowState: current.reviewFlowState ? String(current.reviewFlowState) : "",
+    screenshotPolishMeta: screenshotPolishMeta ? cloneStructured(screenshotPolishMeta) : null,
     images,
     imagesById: buildTimelineImagesById(images),
     imagePaletteSeed: Math.max(0, Number(current.imagePaletteSeed) || 0),
@@ -155,6 +158,7 @@ export function serializeSessionTimeline({
   latestNodeId = null,
   nextSeq = 1,
   updatedAt = null,
+  screenshotPolishMeta = null,
   nodes = [],
 } = {}) {
   const normalizedNodes = sortTimelineNodes(nodes.map((node, index) => normalizeTimelineNode(node, index)));
@@ -173,6 +177,7 @@ export function serializeSessionTimeline({
     latestNodeId: resolvedLatestNodeId,
     nextSeq: resolvedNextSeq,
     updatedAt: updatedAt ? String(updatedAt) : new Date().toISOString(),
+    screenshotPolishMeta: normalizeScreenshotPolishMetadata(screenshotPolishMeta),
     nodes: normalizedNodes,
   };
 }
@@ -201,6 +206,7 @@ export function deserializeSessionTimeline(payload = null) {
       lastNode ? Math.max(1, Number(lastNode.seq) || 0) + 1 : 1
     ),
     updatedAt: current.updatedAt ? String(current.updatedAt) : null,
+    screenshotPolishMeta: normalizeScreenshotPolishMetadata(current.screenshotPolishMeta),
     nodes: normalizedNodes,
   };
 }
