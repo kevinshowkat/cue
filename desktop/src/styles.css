@@ -9677,7 +9677,7 @@ button.ghost:hover {
   top: calc(var(--brand-strip-h) + 8px);
   left: 50%;
   z-index: 960;
-  width: min(60vw, 980px);
+  width: min(42vw, 760px);
   transform: translateX(-50%);
   pointer-events: none;
 }
@@ -9937,7 +9937,7 @@ button.ghost:hover {
 
 @media (max-width: 980px) {
   .timeline-dock {
-    width: min(72vw, 760px);
+    width: min(54vw, 680px);
   }
 }
 

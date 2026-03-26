@@ -207,6 +207,84 @@ test("communication tray stays pinned below the titlebar button while its width 
   assert.equal(trayEl.style.top, "24px");
 });
 
+test("communication tray drops below the fixed timeline band instead of overlapping it", () => {
+  const trayEl = {
+    classList: {
+      contains() {
+        return false;
+      },
+      toggle() {},
+    },
+    style: {},
+    dataset: {},
+    offsetWidth: 220,
+    offsetHeight: 180,
+  };
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const communicationTrayAnchorPlacement = instantiateFunction("communicationTrayAnchorPlacement");
+  const state = {
+    communication: {
+      proposalTray: {
+        anchorLockCss: null,
+        anchorLockSignature: "",
+      },
+    },
+  };
+  const positionCommunicationProposalTrayElement = instantiateFunction("positionCommunicationProposalTrayElement", {
+    state,
+    els: {
+      canvasWrap: { clientWidth: 900, clientHeight: 600 },
+    },
+    clamp,
+    communicationTrayAnchorPlacement,
+    clearCommunicationProposalTrayAnchorLock: (tray = null) => {
+      if (!tray || typeof tray !== "object") return tray || null;
+      tray.anchorLockCss = null;
+      tray.anchorLockSignature = "";
+      return tray;
+    },
+    communicationProposalTrayAnchorLockSignature: () => "titlebar:below:900:600",
+    communicationTrayAnchorPinnedToTitlebar: (anchor = null) =>
+      String(anchor?.kind || "").trim().toLowerCase() === "titlebar_button",
+    designReviewButtonTrayAnchor: () => ({
+      kind: "titlebar_button",
+      trayPlacement: "below",
+      canvasOverlayBounds: {
+        x0: 710,
+        y0: -24,
+        w: 140,
+        h: 36,
+      },
+    }),
+    communicationAnchorCanvasCss: () => ({ x: 780, y: -6 }),
+    timelineDockCollisionBoundsCss: () => ({
+      left: 24,
+      top: 0,
+      right: 700,
+      bottom: 104,
+      width: 676,
+      height: 104,
+    }),
+    DESIGN_REVIEW_TIMELINE_CLEARANCE_PX: 14,
+  });
+  const anchor = {
+    kind: "titlebar_button",
+    trayPlacement: "below",
+    canvasOverlayBounds: {
+      x0: 710,
+      y0: -24,
+      w: 140,
+      h: 36,
+    },
+  };
+
+  positionCommunicationProposalTrayElement(trayEl, anchor, { x: 780, y: -6 });
+
+  assert.equal(trayEl.style.left, "668px");
+  assert.equal(trayEl.style.top, "118px");
+  assert.deepEqual(state.communication.proposalTray.anchorLockCss, { x: 668, y: 118 });
+});
+
 test("bootstrap review-state sync keeps the communication tray authoritative and hides the fixed bootstrap tray", () => {
   const trayCalls = [];
   let suppressed = 0;

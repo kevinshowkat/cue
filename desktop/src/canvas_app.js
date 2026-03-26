@@ -191,6 +191,7 @@ const DESIGN_REVIEW_APPLY_EVENT = "juggernaut:design-review-apply";
 const DESIGN_REVIEW_BOOTSTRAP_TRAY_ID = "design-review-tray";
 const DESIGN_REVIEW_APPLY_SOURCE = "design_review_apply";
 const DESIGN_REVIEW_TRAY_DISMISS_MS = 180;
+const DESIGN_REVIEW_TIMELINE_CLEARANCE_PX = 14;
 const DESIGN_REVIEW_APPLY_SHIMMER_LOOP_MS = 1350;
 const EDIT_PROPOSALS_LABEL = "Design Review";
 const COMMUNICATION_MARK_STROKE = "rgba(220, 28, 28, 0.96)";
@@ -837,6 +838,7 @@ const els = {
   timelineToggle: document.getElementById("timeline-toggle"),
   timelineOverlay: document.getElementById("timeline-overlay"),
   timelineClose: document.getElementById("timeline-close"),
+  timelineDock: document.getElementById("timeline-dock"),
   timelineShell: document.getElementById("timeline-shell"),
   timelinePrev: document.getElementById("timeline-prev"),
   timelineNext: document.getElementById("timeline-next"),
@@ -21746,6 +21748,21 @@ function communicationProposalTrayAnchorLockSignature(anchor = null, wrap = els.
   ].join(":");
 }
 
+function timelineDockCollisionBoundsCss(wrap = els.canvasWrap, dockEl = els.timelineDock) {
+  const dockRect = dockEl?.getBoundingClientRect?.();
+  const wrapRect = wrap?.getBoundingClientRect?.();
+  if (!dockRect || !wrapRect) return null;
+  if (!(Number(dockRect.width) > 0) || !(Number(dockRect.height) > 0)) return null;
+  return {
+    left: (Number(dockRect.left) || 0) - (Number(wrapRect.left) || 0),
+    top: (Number(dockRect.top) || 0) - (Number(wrapRect.top) || 0),
+    right: (Number(dockRect.right) || 0) - (Number(wrapRect.left) || 0),
+    bottom: (Number(dockRect.bottom) || 0) - (Number(wrapRect.top) || 0),
+    width: Math.max(1, Number(dockRect.width) || 0),
+    height: Math.max(1, Number(dockRect.height) || 0),
+  };
+}
+
 function positionCommunicationProposalTrayElement(trayEl, anchor = null, anchorCss = null) {
   const wrap = els.canvasWrap;
   let nextAnchor = anchor;
@@ -21809,6 +21826,29 @@ function positionCommunicationProposalTrayElement(trayEl, anchor = null, anchorC
     preferredX = clamp((Number(nextAnchorCss.x) || 0) + 18, 12, maxX);
     preferredY = clamp((Number(nextAnchorCss.y) || 0) - (trayEl.offsetHeight || 0) - 16, 12, maxY);
     clearCommunicationProposalTrayAnchorLock(trayState);
+  }
+  const timelineBounds =
+    typeof timelineDockCollisionBoundsCss === "function"
+      ? timelineDockCollisionBoundsCss(wrap)
+      : null;
+  if (timelineBounds) {
+    const trayWidth = Math.max(1, Number(trayEl.offsetWidth) || 1);
+    const trayHeight = Math.max(1, Number(trayEl.offsetHeight) || 1);
+    const clearance = Math.max(0, Number(DESIGN_REVIEW_TIMELINE_CLEARANCE_PX) || 0);
+    const overlapsTimeline =
+      preferredX < timelineBounds.right + clearance &&
+      preferredX + trayWidth > timelineBounds.left - clearance &&
+      preferredY < timelineBounds.bottom + clearance &&
+      preferredY + trayHeight > timelineBounds.top - clearance;
+    if (overlapsTimeline) {
+      preferredY = clamp(timelineBounds.bottom + clearance, 12, maxY);
+      if (communicationTrayAnchorPinnedToTitlebar(nextAnchor) && trayState) {
+        trayState.anchorLockCss = {
+          x: preferredX,
+          y: preferredY,
+        };
+      }
+    }
   }
   if (trayEl.dataset) {
     trayEl.dataset.anchorPlacement = placement;
