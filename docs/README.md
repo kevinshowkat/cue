@@ -19,6 +19,7 @@ This tree mixes current Cue product docs, active implementation notes, historica
 - [benchmark-playbook.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/benchmark-playbook.md)
 - [visual_prompting_v0.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/visual_prompting_v0.md)
 - [aesthetic.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/aesthetic.md)
+- [market/los-angeles-game-dev-use-cases.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/market/los-angeles-game-dev-use-cases.md): LA game-dev market wedge, ranked use cases, and next beachhead recommendation
 
 ## Agent And Intake Notes
 
