@@ -42,6 +42,9 @@ test("timeline snapshots round-trip committed canvas session state", () => {
       markDraft: { id: "draft" },
       marksByImageId: new Map([["img-a", [{ id: "mark-1" }]]]),
       canvasMarks: [{ id: "canvas-mark-1" }],
+      stampsByImageId: new Map([["img-a", [{ id: "stamp-1", intentId: "fix", imageId: "img-a" }]]]),
+      canvasStamps: [{ id: "stamp-canvas-1", intentId: "custom", label: "Headline", instruction: "Headline" }],
+      stampPicker: { open: true, targetImageId: "img-a" },
       regionProposalsByImageId: new Map([["img-a", { imageId: "img-a", activeCandidateIndex: 0 }]]),
       lastAnchor: { kind: "mark", imageId: "img-a" },
       proposalTray: { visible: true, requestId: "req-1" },
@@ -82,6 +85,11 @@ test("timeline snapshots round-trip committed canvas session state", () => {
   assert.ok(restored.multiRects instanceof Map);
   assert.ok(restored.communication.marksByImageId instanceof Map);
   assert.equal(restored.communication.markDraft, null);
+  assert.ok(restored.communication.stampsByImageId instanceof Map);
+  assert.equal(restored.communication.stampsByImageId.get("img-a")?.[0]?.intentId, "fix");
+  assert.equal(restored.communication.canvasStamps?.[0]?.intentId, "custom");
+  assert.equal(restored.communication.canvasStamps?.[0]?.label, "Headline");
+  assert.equal(restored.communication.stampPicker?.open, true);
   assert.ok(restored.circlesByImageId instanceof Map);
   assert.equal(restored.sessionTools[0].toolId, "mono");
   assert.equal(restored.activeCustomToolId, "mono");

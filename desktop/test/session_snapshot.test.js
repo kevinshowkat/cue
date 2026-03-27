@@ -35,6 +35,9 @@ test("session snapshot round-trips maps and rebuilds session indexes", () => {
       timelineNextSeq: 2,
       communication: {
         marksByImageId: new Map([["img-a", [{ id: "mark-a" }]]]),
+        stampsByImageId: new Map([["img-a", [{ id: "stamp-a", intentId: "fix", imageId: "img-a" }]]]),
+        canvasStamps: [{ id: "stamp-canvas", intentId: "custom", label: "Headline", instruction: "Headline", imageId: null }],
+        stampPicker: { open: true, targetImageId: "img-a" },
       },
       sessionTools: [
         {
@@ -75,6 +78,11 @@ test("session snapshot round-trips maps and rebuilds session indexes", () => {
   assert.equal(restored.session.timelineNextSeq, 2);
   assert.equal(restored.session.timelineOpen, true);
   assert.ok(restored.session.communication.marksByImageId instanceof Map);
+  assert.ok(restored.session.communication.stampsByImageId instanceof Map);
+  assert.equal(restored.session.communication.stampsByImageId.get("img-a")?.[0]?.intentId, "fix");
+  assert.equal(restored.session.communication.canvasStamps?.[0]?.intentId, "custom");
+  assert.equal(restored.session.communication.canvasStamps?.[0]?.label, "Headline");
+  assert.equal(restored.session.communication.stampPicker?.open, true);
   assert.equal(restored.session.sessionTools[0].toolId, "mono");
   assert.equal(typeof restored.session.toolRegistry.list, "function");
   assert.ok(restored.session.eventsDecoder instanceof TextDecoder);

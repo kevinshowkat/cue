@@ -76,7 +76,7 @@
       "id": "aragorn-copy-space-manual-make-space",
       "goal": "Preserve Aragorn as the clear hero, keep his face and sword hand intact, and create a cleaner left-side area that could hold title text, then export a PSD.",
       "preconditions": [
-        "human pre-places Make Space on the left side of the frame"
+        "human pre-places a Stamp with Custom text like Title here on the left side of the frame"
       ],
       "expected_first_actions": [
         "request_design_review"
@@ -86,7 +86,7 @@
         "subject remains dominant"
       ],
       "failure_signals": [
-        "reserved space is ignored",
+        "stamped placement intent is ignored",
         "subject is cropped or displaced badly"
       ]
     },

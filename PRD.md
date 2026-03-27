@@ -18,7 +18,7 @@ Cue is a text-free-first, image-first desktop design workstation for non-designe
 - Product split:
   - left rail = deterministic precomputed action library
   - right rail = communication layer for complex or non-prebaked changes
-- V1 right-side communication rail tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
+- V1 right-side communication rail tools: `Marker`, `Highlight`, `Magic Select`, `Stamp`, `Eraser`.
 - V1 shell model: single-window, Warp-style session tabs over one shared canvas surface.
 - `Create Tool` remains core product value, but for the single-image-first wedge it moves to a secondary follow-on surface such as `Save Shortcut`.
 - Icon system: custom iconography generated from the same pipeline family used for Oscillo bookend icon generation, with the starting reference at `../oscillo/scripts/generate_bookend_overlays.py`.
@@ -113,7 +113,7 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 - No multi-image flows in the primary loop.
 - Left rail shape: stable `Move`, `Upload`, and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library. The current shell may also expose direct single-image affordances outside those 3 dynamic slots.
 - Right rail shape: communication-only rail for complex or non-prebaked changes.
-- Right-side communication rail v1 tools: `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`.
+- Right-side communication rail v1 tools: `Marker`, `Highlight`, `Magic Select`, `Stamp`, `Eraser`.
 - `Create Tool` remains in the product, but enters as a secondary follow-on capability through `Save Shortcut` or a secondary dialog after useful edits.
 
 ## V1 Non-Goals
@@ -132,18 +132,19 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 6. After first-use cloud-analysis consent, the system may opportunistically analyze the uploaded image through the design-review upload-analysis path, cache that analysis by image hash, and use it to improve future suggestions without blocking editing or design review.
 7. The left rail keeps three stable icon-only anchors: `Move`, `Upload`, and `Select`.
 8. The left rail fills 3 dynamic suggested job slots from the seeded single-image job set and functions as the deterministic precomputed action library, while any action that may incur model cost shows a top-right sapphire-blue dot. The current shell may also expose `Remove People` as a direct single-image affordance outside those 3 dynamic slots.
-9. The right rail exposes `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` as the communication layer for complex or non-prebaked changes.
+9. The right rail exposes `Marker`, `Highlight`, `Magic Select`, `Stamp`, and `Eraser` as the communication layer for complex or non-prebaked changes.
 10. `Marker` lets the user place transient Photoshop-style freehand highlighter marks that are raw and pointer-faithful, without arrowheads, without prior image selection, and without requiring an image under the pointer.
-11. `Protect` uses the same visible freehand marking behavior as `Marker`, but its semantics are "do not change this area" when review or apply consumes the focus contract.
+11. `Highlight` uses the same visible freehand marking behavior as `Marker`, but its semantics are "do not change this area" when review or apply consumes the focus contract.
 12. `Magic Select` lets the user click an image and cycle through 2-3 proposed candidate regions for communication and review.
-13. `Make Space` uses region-candidate selection semantics to say "preserve or create room here" for review and later execution.
-14. `Eraser` clears communication marks and region proposals only; it does not delete image pixels or committed edits.
-15. The user triggers `Design review` explicitly with the existing `Design review` button.
-16. Review analyzes the whole visible canvas plus the marked region or active region candidate, can infer the relevant image or region from mark overlap and intersection at review time, and immediately opens a floating proposal tray near that area with 2-3 proposal skeleton slots.
-17. The planner/reviewer uses `GPT-5.4 vision`; proposal cards become selectable as soon as planning finishes, async Nano Banana 2 thumbnails may upgrade those cards in the background, selecting one proposal may trigger a higher-fidelity Nano Banana Pro compare rerender, and accepting a proposal still routes through the normal execution layer to produce a real single-image replacement edit in the active tab.
-18. If the active tab is busy, tab switching is blocked or deferred until the session reaches a safe boundary.
-19. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
-20. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
+13. `Stamp` places compact directive labels from a starter list of intents such as `Fix`, `Move`, `Remove`, `Replace`, plus a `Custom` option for short typed notes, and design review planning must consume those labels as structured context.
+14. `Make Space` uses region-candidate selection semantics to say "preserve or create room here" for review and later execution, but it remains a hidden runtime-only affordance in the current slice rather than a visible rail tool.
+15. `Eraser` clears communication marks, stamp labels, and region proposals only; it does not delete image pixels or committed edits.
+16. The user triggers `Design review` explicitly with the existing `Design review` button.
+17. Review analyzes the whole visible canvas plus the marked region, stamped directive labels, or active region candidate, can infer the relevant image or region from mark overlap and intersection at review time, and immediately opens a floating proposal tray near that area with 2-3 proposal skeleton slots.
+18. The planner/reviewer uses `GPT-5.4 vision`; proposal cards become selectable as soon as planning finishes, async Nano Banana 2 thumbnails may upgrade those cards in the background, selecting one proposal may trigger a higher-fidelity Nano Banana Pro compare rerender, and accepting a proposal still routes through the normal execution layer to produce a real single-image replacement edit in the active tab.
+19. If the active tab is busy, tab switching is blocked or deferred until the session reaches a safe boundary.
+20. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
+21. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
 
 ## V1 Feature Scope
 ### 1. Single-Image Canvas And Editing
@@ -238,19 +239,20 @@ Notes:
 
 ### 5. Bottom Communication Rail
 - The right rail is the communication layer for complex or non-prebaked changes that do not map cleanly to a single left-rail action.
-- Right-side communication rail v1 contains exactly 5 tools:
+- Right-side communication rail v1 contains exactly 5 visible tools:
   - `Marker`
-  - `Protect`
+  - `Highlight`
   - `Magic Select`
-  - `Make Space`
+  - `Stamp`
   - `Eraser`
 - `Marker` creates transient Photoshop-style freehand highlighter annotations that mean "look here" or "change this".
-- `Protect` creates protected-region focus input using the same visible freehand marking surface as `Marker`, but with "do not edit here" semantics.
+- `Highlight` creates protected-region focus input using the same visible freehand marking surface as `Marker`, but with "do not edit here" semantics.
 - `Magic Select` proposes 2-3 candidate regions for a clicked image location and lets the user cycle through them before review.
-- `Make Space` creates reserved-space focus input using region candidates to signal "preserve or create room here".
-- `Eraser` removes communication marks and region proposals only.
+- `Stamp` places compact directive labels from the starter list: `Fix`, `Move`, `Remove`, `Replace`, plus `Custom` for a short typed note.
+- `Eraser` removes communication marks, stamp labels, and region proposals only.
+- `Make Space` remains a dormant runtime affordance for compatibility, but it is not exposed in the visible communication rail.
 - Communication marks are canvas-overlay annotations first. They may overlap an image or blank canvas, and they do not become image-local geometry until a later action explicitly needs that mapping.
-- Marks alone are sufficient input for `Design review`; explicit image selection is not required.
+- Marks and stamps alone are sufficient input for `Design review`; explicit image selection is not required.
 - Blank-canvas marks are valid input for `Design review`.
 - Communication overlays are session-local, reversible, and excluded from exported image pixels unless intentionally committed through a later action.
 
@@ -262,6 +264,8 @@ Notes:
 - The proposal tray floats near the marked region or active region candidate rather than opening as chat.
 - The tray reserves 2-3 proposal slots immediately as skeletons while planning completes.
 - `GPT-5.4 vision` is the planner/reviewer for design-review reasoning.
+- Review-time targeting may infer the relevant image, images, or region from mark overlap, stamp labels, and intersection instead of requiring marker-time attachment.
+- Proposal planning must consume placed stamps as structured focus inputs, not just the raw canvas snapshot.
 - Proposal readiness must not wait for preview image generation.
 - Ready proposals may start async Nano Banana 2 thumbnail generation against the visible frame, and thumbnail failure must not make the proposal unavailable.
 - Selecting a ready proposal may trigger one higher-fidelity Nano Banana Pro compare rerender for that proposal only.
@@ -583,14 +587,14 @@ Rules:
 - The main workspace includes a right-side communication rail.
 - The main workspace includes an in-app session tab strip using a single shared canvas surface.
 - The left rail keeps stable `Move`, `Upload`, and `Select` anchors plus 3 dynamic suggested job slots from the deterministic precomputed action library.
-- The right-side communication rail contains `Marker`, `Protect`, `Magic Select`, `Make Space`, and `Eraser` in v1.
+- The right-side communication rail contains `Marker`, `Highlight`, `Magic Select`, `Stamp`, and `Eraser` in v1.
 - The main editing workflow requires no text labels to operate.
 - The primary wedge is one image in and one usable asset out.
 - No multi-image action is required in the primary loop.
 - The UI uses a glass-material visual system on macOS and equivalent platform-native material styling elsewhere.
 - The default workflow is image-led, not chat-led.
 - The primary rail suggestions come only from the seeded 5-job single-image set, even if the current shell exposes extra direct single-image affordances outside the dynamic slots.
-- Communication marks alone are sufficient input for `Design review`; explicit image selection is not required.
+- Communication marks and stamps alone are sufficient input for `Design review`; explicit image selection is not required.
 - Communication marks are canvas-overlay annotations first and may begin on blank canvas.
 
 ### Suggested Rail Jobs
@@ -600,10 +604,11 @@ Rules:
 
 ### Communication Rail And Review
 - `Marker` is a transient Photoshop-style freehand highlighter mark in canvas-overlay space, with raw pointer-faithful paths and no arrowheads.
-- `Protect` is a transient protected-region mark in canvas-overlay space and must preserve "do not edit here" semantics through review and apply.
+- `Highlight` is a transient protected-region mark in canvas-overlay space and must preserve "do not edit here" semantics through review and apply.
 - `Magic Select` proposes 2-3 candidate regions per click and lets the user cycle among them.
-- `Make Space` produces reserved-space region candidates that tell review and downstream execution to preserve or create room there.
-- `Eraser` clears communication marks and region proposals only.
+- `Stamp` places compact preset directive labels from a starter list of intents and passes them through as structured review context.
+- `Eraser` clears communication marks, stamp labels, and region proposals only.
+- `Make Space` produces reserved-space region candidates that tell review and downstream execution to preserve or create room there, but it remains runtime-only and hidden from the visible rail.
 - `Design review` is triggered explicitly from the existing button rather than automatically on mark creation.
 - Blank-canvas marks are valid review input.
 - Review analyzes the visible canvas plus the marked region or active region candidate.
@@ -654,7 +659,7 @@ Rules:
 - Fork or adapt `../brood` into a Cue desktop shell.
 - Achieve launchable single-image upload-to-canvas loop.
 - Land the primary rail contract with stable anchors and 3 dynamic job slots.
-- Land the right-side communication rail contract for `Marker`, `Protect`, `Magic Select`, `Make Space`, `Eraser`, and explicit `Design review`.
+- Land the right-side communication rail contract for `Marker`, `Highlight`, `Magic Select`, `Stamp`, `Eraser`, and explicit `Design review`.
 - Wire at least one working single-image edit path.
 - Expose a follow-on `Save Shortcut` / `Create Tool` surface after a useful edit.
 - Export to PSD.

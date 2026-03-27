@@ -1658,6 +1658,9 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
   const slotCount = clamp(normalized.slotCount, 2, 3);
   const focusImageIds = uniqueStrings(normalized.focusImageIds || [], { limit: 6 });
   const hasHighlightScope = focusImageIds.length > 0;
+  const hasStampFocusInputs = (Array.isArray(normalized.focusInputs) ? normalized.focusInputs : []).some((entry) =>
+    readFirstString(entry?.sourceTool, entry?.source_tool, entry?.tool).toLowerCase() === "stamp"
+  );
   const identityHints = Array.isArray(normalized.imageIdentityHints)
     ? normalized.imageIdentityHints
         .filter((entry) => entry && typeof entry === "object")
@@ -1704,6 +1707,11 @@ export function buildDesignReviewPlannerPrompt(request = {}) {
   }
   if ((normalized.focusInputs || []).some((entry) => normalizeFocusKind(entry?.kind) === "highlight")) {
     promptSections.push("Highlight focus inputs mark the areas the design review should prioritize.");
+  }
+  if (hasStampFocusInputs) {
+    promptSections.push(
+      "Stamp focus inputs are short directive labels such as Fix, Move, Remove, Replace, or a custom typed note. Legacy sessions may also include Text Here or Logo Here stamps. Treat each stamp instruction as an explicit edit or placement request."
+    );
   }
   if (focusPayload?.reservedSpaceIntent?.areas?.length) {
     promptSections.push("Make Space focus inputs mean reserve or create room there.");

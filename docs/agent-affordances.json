@@ -5,7 +5,8 @@
     "This manifest is a first-pass machine-readable catalog for agent-operated Cue workflows.",
     "Affordances are agent-facing descriptions of what operations do; execution types remain internal stable runtime identifiers.",
     "Provider and model details belong primarily to route profiles and receipts, not to the semantic identity of an affordance.",
-    "The current visible right-side communication rail exposes Marker, Highlight, Magic Select, and Eraser; make_space remains documented as a dormant runtime affordance."
+    "The current visible right-side communication rail exposes Marker, Highlight, Magic Select, Stamp, and Eraser; make_space remains documented as a dormant runtime affordance.",
+    "Placed stamps are structured review context, not just freeform text overlays."
   ],
   "executionTypes": [
     {
@@ -80,6 +81,28 @@
       ]
     },
     {
+      "id": "communication_highlight",
+      "kind": "focus_overlay",
+      "description": "Add a stronger review-priority highlight without changing image pixels.",
+      "mutatesPixels": false,
+      "reversible": true,
+      "defaultRouteProfileId": null,
+      "currentEntryPoints": [
+        "protect"
+      ]
+    },
+    {
+      "id": "communication_stamp",
+      "kind": "focus_overlay",
+      "description": "Place a compact preset directive label that becomes structured review context without changing image pixels.",
+      "mutatesPixels": false,
+      "reversible": true,
+      "defaultRouteProfileId": null,
+      "currentEntryPoints": [
+        "stamp"
+      ]
+    },
+    {
       "id": "region_candidate_select",
       "kind": "focus_overlay",
       "description": "Generate or cycle candidate target regions near a clicked location.",
@@ -91,9 +114,20 @@
       ]
     },
     {
+      "id": "communication_make_space",
+      "kind": "focus_overlay",
+      "description": "Create a reserved-space guidance region that tells review or downstream execution to preserve or create room there.",
+      "mutatesPixels": false,
+      "reversible": true,
+      "defaultRouteProfileId": null,
+      "currentEntryPoints": [
+        "make_space"
+      ]
+    },
+    {
       "id": "communication_clear",
       "kind": "focus_overlay",
-      "description": "Clear communication marks and region proposals without changing image pixels.",
+      "description": "Clear communication marks, stamp labels, and region proposals without changing image pixels.",
       "mutatesPixels": false,
       "reversible": true,
       "defaultRouteProfileId": null,
@@ -534,6 +568,31 @@
       "latencyClass": "fast"
     },
     {
+      "id": "stamp",
+      "label": "Stamp",
+      "surface": "focus",
+      "source": "right_rail",
+      "whatItDoes": "Places a compact directive label that the review planner treats as structured context.",
+      "whenToUse": [
+        "capturing a short design instruction on the canvas",
+        "labeling a region with a reusable intent",
+        "feeding review with a directive such as fix, move, remove, replace, or a short custom note"
+      ],
+      "whenNotToUse": [
+        "final typography layout",
+        "content-aware pixel editing",
+        "long-form notes"
+      ],
+      "requiresImage": false,
+      "requiresFocus": false,
+      "mutatesPixels": false,
+      "reversible": true,
+      "executionType": "communication_stamp",
+      "routeProfileId": null,
+      "costClass": "none",
+      "latencyClass": "instant"
+    },
+    {
       "id": "make_space",
       "label": "Make Space",
       "surface": "focus",
@@ -586,7 +645,7 @@
       "label": "Design Review",
       "surface": "review",
       "source": "review_button",
-      "whatItDoes": "Generates ranked action-first edit proposals from visible canvas state plus current focus hints.",
+      "whatItDoes": "Generates ranked action-first edit proposals from visible canvas state plus current focus hints and stamp labels.",
       "whenToUse": [
         "ambiguous user goals",
         "aesthetic improvement tasks",

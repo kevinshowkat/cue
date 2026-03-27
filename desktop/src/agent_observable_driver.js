@@ -23,6 +23,11 @@ const OBSERVABLE_ACTIONS = Object.freeze({
     tool: "magic_select",
     minPoints: 1,
   }),
+  stamp_click: Object.freeze({
+    method: "stampClick",
+    tool: "stamp",
+    minPoints: 1,
+  }),
   make_space_click: Object.freeze({
     method: "makeSpaceClick",
     tool: "make_space",
@@ -69,6 +74,8 @@ function normalizeObservableActionName(value = "") {
   if (key === "highlight") return "protect_stroke";
   if (key === "protect") return "protect_stroke";
   if (key === "magic_select" || key === "magicselect" || key === "magic-select") return "magic_select_click";
+  if (key === "stamp") return "stamp_click";
+  if (key === "stamp_click" || key === "stampclick" || key === "stamp-click") return "stamp_click";
   if (key === "make_space" || key === "makespace" || key === "make-space") return "make_space_click";
   if (key === "eraser") return "eraser_stroke";
   return "";
@@ -127,7 +134,10 @@ export function normalizeAgentObservableRequest(actionName, input = {}) {
     throw new Error("Unsupported observable action");
   }
   const config = OBSERVABLE_ACTIONS[normalizedActionName];
-  const pointAction = normalizedActionName === "magic_select_click" || normalizedActionName === "make_space_click";
+  const pointAction =
+    normalizedActionName === "magic_select_click" ||
+    normalizedActionName === "stamp_click" ||
+    normalizedActionName === "make_space_click";
   const raw = asRecord(input) || {};
   const coordinateSpace = readFirstString(raw.coordinate_space, raw.coordinateSpace, "canvas_css").toLowerCase();
   if (coordinateSpace !== "canvas_css") {
@@ -154,6 +164,8 @@ export function normalizeAgentObservableRequest(actionName, input = {}) {
     image_id: readFirstString(raw.image_id, raw.imageId) || null,
     point: cloneJson(point || points[0]),
     points: cloneJson(points),
+    intent_id: readFirstString(raw.intent_id, raw.intentId, raw.stamp_intent, raw.stampIntent, raw.stampIntentId) || null,
+    custom_text: readFirstString(raw.custom_text, raw.customText, raw.label, raw.text) || null,
     step_delay_ms: normalizeStepDelayMs(raw.step_delay_ms ?? raw.stepDelayMs),
     meta: cloneJson(asRecord(raw.meta) || asRecord(raw.metadata) || null),
   };
@@ -164,6 +176,7 @@ export function createAgentObservableDriver(
     performMarkerStroke = null,
     performProtectStroke = null,
     performMagicSelectClick = null,
+    performStampClick = null,
     performMakeSpaceClick = null,
     performEraserStroke = null,
     getContextSnapshot = null,
@@ -177,6 +190,7 @@ export function createAgentObservableDriver(
     marker_stroke: performMarkerStroke,
     protect_stroke: performProtectStroke,
     magic_select_click: performMagicSelectClick,
+    stamp_click: performStampClick,
     make_space_click: performMakeSpaceClick,
     eraser_stroke: performEraserStroke,
   };
@@ -347,6 +361,9 @@ export function createAgentObservableDriver(
     magicSelectClick(request = {}) {
       return executeAction("magic_select_click", request);
     },
+    stampClick(request = {}) {
+      return executeAction("stamp_click", request);
+    },
     makeSpaceClick(request = {}) {
       return executeAction("make_space_click", request);
     },
@@ -424,6 +441,7 @@ export function installAgentObservableDriverBridge(
     markerStroke: (request = {}) => driver.markerStroke(request),
     protectStroke: (request = {}) => driver.protectStroke(request),
     magicSelectClick: (request = {}) => driver.magicSelectClick(request),
+    stampClick: (request = {}) => driver.stampClick(request),
     makeSpaceClick: (request = {}) => driver.makeSpaceClick(request),
     eraserStroke: (request = {}) => driver.eraserStroke(request),
     replayTraceEntry: (entry = {}) => driver.replayTraceEntry(entry),

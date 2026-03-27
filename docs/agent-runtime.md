@@ -1,7 +1,7 @@
 # Cue Agent Runtime Guide
 
 Status: Draft v0.1  
-Last updated: 2026-03-13
+Last updated: 2026-03-26
 
 ## Purpose
 This document explains how an LLM or agent should use Cue as a constrained visual runtime. It is a companion to [agent-workflow-prd.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-workflow-prd.md) and [agent-affordances.json](/Users/mainframe/Desktop/projects/Juggernaut/docs/agent-affordances.json).
@@ -23,7 +23,7 @@ An agent should prefer the loop:
 
 ## Working Rules
 - Prefer `observe` before every expensive or destructive mutation.
-- Treat `Marker`, `Highlight`, `Magic Select`, and `Eraser` as the current visible focus-setting tools, not final edits.
+- Treat `Marker`, `Highlight`, `Magic Select`, `Stamp`, and `Eraser` as the current visible focus-setting tools, not final edits.
 - Keep dormant `make_space` semantics available at the runtime layer, but do not advertise them as a current visible rail control.
 - Use direct affordances when the desired edit class is already obvious.
 - Use `Design review` when the goal is ambiguous, aesthetic, or multi-step.
@@ -47,8 +47,8 @@ Current built-in controls:
 
 Current built-in execution path:
 - plans through the shared design-review planner router
-- executes visible `Marker`, `Magic Select`, and `Eraser` actions through the observable driver
-- reuses manual `Highlight` or `Make Space` prep when those signals are already present on canvas
+- executes visible `Marker`, `Highlight`, `Magic Select`, `Stamp`, and `Eraser` actions through the observable driver
+- reuses runtime-only `Make Space` prep when that signal is already present on canvas
 - can request or accept `Design review`
 - can invoke seeded single-image jobs, direct affordances, custom tools, `Create Tool`, and export actions for PSD, PNG, JPG, WEBP, or TIFF
 
@@ -87,9 +87,12 @@ Current focus affordances correspond to the right-side communication rail:
 - `Marker`
 - `Highlight`
 - `Magic Select`
+- `Stamp`
 - `Eraser`
 
 These are non-destructive communication operations.
+
+`Stamp` carries compact directive labels from the starter intent list and should be treated as structured review context, not as a final text layer. In the visible desktop shell, users click the canvas with `Stamp` armed and choose `Fix`, `Move`, `Remove`, `Replace`, or `Custom` from a compact menu at that point. `Custom` opens a short text field and the typed note becomes the stamp label.
 
 `Make Space` remains a dormant runtime affordance for compatibility, but it is not currently exposed in the visible communication rail.
 
@@ -163,6 +166,7 @@ Current review guidance is mostly spatial.
 
 The strongest current guidance signals are:
 - communication marks
+- stamp labels and their associated directive text
 - active region candidates from `Magic Select`
 - active or selected image context
 - visible canvas composition

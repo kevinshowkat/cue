@@ -1027,6 +1027,68 @@
               <span class="communication-tool-label">Magic Select</span>
             </button>
             <button
+              id="communication-tool-stamp"
+              class="communication-tool communication-tool-stamp"
+              type="button"
+              data-communication-tool="stamp"
+              aria-label="Stamp"
+              title="Stamp"
+            >
+              <svg class="communication-icon communication-icon-stamp" viewBox="0 0 24 48" aria-hidden="true">
+                <path
+                  d="M8.55 4.35h6.9c.74 0 1.34.6 1.34 1.34v2.4H7.21v-2.4c0-.74.6-1.34 1.34-1.34Z"
+                  fill="rgba(30, 38, 49, 0.96)"
+                />
+                <path
+                  d="M9.1 2.85h5.8c.58 0 1.05.47 1.05 1.05v1.02H8.05V3.9c0-.58.47-1.05 1.05-1.05Z"
+                  fill="rgba(58, 67, 78, 0.92)"
+                />
+                <path
+                  d="M8.4 8.45h7.2L17 10.2v21.7l-1.4 1.8h-7.2L7 31.9V10.2Z"
+                  fill="rgba(42, 51, 63, 0.96)"
+                  stroke="rgba(239, 245, 252, 0.16)"
+                  stroke-width="0.82"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M9.5 10.9h5"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.18)"
+                  stroke-width="0.82"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M9.55 16.15h4.9"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.14)"
+                  stroke-width="0.82"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M8.35 33.15h7.3l1.08 1v3.6l-1.08 1.1h-7.3l-1.08-1.1v-3.6Z"
+                  fill="rgba(32, 40, 51, 0.98)"
+                  stroke="rgba(239, 245, 252, 0.14)"
+                  stroke-width="0.8"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M9.05 34.25h5.9"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.14)"
+                  stroke-width="0.82"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M9.6 37.15h4.8"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.12)"
+                  stroke-width="0.82"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span class="communication-tool-label">Stamp</span>
+            </button>
+            <button
               id="communication-tool-eraser"
               class="communication-tool communication-tool-eraser"
               type="button"
@@ -1052,6 +1114,53 @@
               </svg>
               <span class="communication-tool-label">Eraser</span>
             </button>
+          </div>
+          <div id="communication-stamp-picker" class="communication-stamp-picker" aria-label="Stamp intents" hidden>
+            <div class="communication-stamp-picker-orbit" aria-hidden="true"></div>
+            <div class="communication-stamp-picker-core" aria-hidden="true">
+              <span id="communication-stamp-picker-title" class="communication-stamp-picker-title">Stamp</span>
+              <span id="communication-stamp-picker-subtitle" class="communication-stamp-picker-subtitle">Choose intent</span>
+            </div>
+            <div id="communication-stamp-intent-list" class="communication-stamp-intent-list" role="menu" aria-label="Stamp intents">
+              <button class="communication-stamp-intent" type="button" data-stamp-intent="fix">Fix</button>
+              <button class="communication-stamp-intent" type="button" data-stamp-intent="move">Move</button>
+              <button class="communication-stamp-intent" type="button" data-stamp-intent="remove">Remove</button>
+              <button class="communication-stamp-intent" type="button" data-stamp-intent="replace">Replace</button>
+              <button class="communication-stamp-intent" type="button" data-stamp-intent="custom">Custom</button>
+            </div>
+            <form
+              id="communication-stamp-custom-panel"
+              class="communication-stamp-custom-panel hidden"
+              aria-label="Custom stamp text"
+              hidden
+            >
+              <label class="sr-only" for="communication-stamp-custom-input">Custom stamp text</label>
+              <input
+                id="communication-stamp-custom-input"
+                class="communication-stamp-custom-input"
+                type="text"
+                maxlength="48"
+                placeholder="Add note"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <div class="communication-stamp-custom-actions">
+                <button
+                  id="communication-stamp-custom-cancel"
+                  class="communication-stamp-custom-action communication-stamp-custom-action-secondary"
+                  type="button"
+                >
+                  Back
+                </button>
+                <button
+                  id="communication-stamp-custom-submit"
+                  class="communication-stamp-custom-action communication-stamp-custom-action-primary"
+                  type="submit"
+                >
+                  Add
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </div>

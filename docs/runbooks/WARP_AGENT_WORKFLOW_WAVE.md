@@ -8,7 +8,7 @@ Use this when launching the agent-workflow implementation wave for observable ag
   - observable agent mode
   - replayable visible tool driving
   - `Highlight`
-  - `Make Space`
+  - `Stamp`
   - `Remove People`
   - `Polish`
   - `Relight`
@@ -18,7 +18,7 @@ Use this when launching the agent-workflow implementation wave for observable ag
 - Let agents use the real visible canvas tools for research and automated manual testing.
 - Add the first new communication/review tools:
   - `Highlight`
-  - `Make Space`
+  - `Stamp`
 - Add the first new direct affordances:
   - `Remove People`
   - `Polish`
@@ -91,7 +91,7 @@ cd /Users/mainframe/Desktop/projects/juggernaut-agent-verify && codex
   - owns `desktop/src/design_review_contract.js`
   - owns `desktop/src/design_review_bootstrap.js`
   - owns `desktop/src/design_review_pipeline.js`
-  - owns `Highlight` and `Make Space` semantics only
+  - owns `Highlight`, `Stamp`, and runtime-only `Make Space` semantics only
   - does not own `canvas_app.js`
 - `feature/agent-direct-tools`
   - owns `desktop/src/single_image_capability_routing.js`
@@ -116,13 +116,13 @@ cd /Users/mainframe/Desktop/projects/juggernaut-agent-verify && codex
 ## 9. First Flows To Ship
 - `Marker -> Design Review -> Accept Proposal -> Export -> PSD`
 - `Highlight -> Remove People -> Export -> PSD`
-- `Make Space -> Relight -> Export -> PSD`
+- `Stamp (Custom: "Title here") -> Design Review -> Accept Proposal -> Export -> PSD`
 - `Remove People -> Polish -> Export -> PSD`
 
 ## 10. Success Criteria
-- Agents can drive visible `Marker`, `Magic Select`, and `Eraser` actions through stable tool-driver APIs.
+- Agents can drive visible `Marker`, `Highlight`, `Magic Select`, `Stamp`, and `Eraser` actions through stable tool-driver APIs.
 - Observable sessions emit replayable traces suitable for automated manual testing.
-- `Highlight` and `Make Space` become real review/focus semantics.
+- `Highlight` and `Stamp` become real visible review/focus semantics, while `Make Space` stays runtime-only.
 - `Remove People`, `Polish`, and `Relight` are available as direct affordances.
 - The shell exposes the new tools cleanly with correct enabled/disabled states.
 - Verification covers the target flows and receipt generation.

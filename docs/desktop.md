@@ -18,14 +18,14 @@ There is no web app.
 - **Session tab**: an isolated shell state bound to one run directory. Tabs can be created fresh, opened from disk, saved, closed, or forked from the current tab.
 - **Shared canvas**: only the active tab is attached to runtime/events at a time; switching tabs swaps session state into the shared surface.
 - **Visual timeline**: tab-local history shown in a dedicated shelf under the titlebar. It can collapse to a visible stub and restore prior committed states without re-running model work.
-- **Communication overlay**: the `Marker`, `Highlight`, `Magic Select`, and `Eraser` tools used to scope `Design Review`; `Make Space` remains a dormant runtime affordance.
+- **Communication overlay**: the `Marker`, `Highlight`, `Magic Select`, `Stamp`, and `Eraser` tools used to scope `Design Review`; `Make Space` remains a dormant runtime affordance.
 - **Agent Run**: a compact goal-driven panel that can step or auto-run review, tool-preview/create, and export actions against the current tab.
 
 ## Current Primary Workflow
 
 1. Create a new session or open an existing run directory.
 2. Import one or more images.
-3. Use the left rail for direct single-image actions and the right-side communication tools for spatial guidance.
+3. Use the left rail for direct single-image actions and the right-side communication tools for spatial guidance; `Stamp` now opens a compact starter-intent menu at the clicked canvas point so the user can choose `Fix`, `Move`, `Remove`, `Replace`, or `Custom` in place. `Custom` opens a short text field before placement.
 4. Trigger `Design Review` when the edit is ambiguous, aesthetic, or multi-step.
 5. Accept a proposal to run a real in-place single-image apply.
 6. Optionally preview or create a reusable tool from the current edit pattern.

@@ -163,18 +163,27 @@ const SINGLE_IMAGE_RAIL_CAPABILITY_SUPPORT = Object.freeze({
 });
 const SINGLE_IMAGE_RAIL_SUBJECT_ISOLATION_MODEL = "Gemini Nano Banana 2";
 const COMMUNICATION_REVIEW_SCHEMA_VERSION = "juggernaut.communication-review.v1";
-const COMMUNICATION_TOOL_IDS = Object.freeze(["marker", "protect", "magic_select", "make_space", "eraser"]);
+const COMMUNICATION_TOOL_IDS = Object.freeze(["marker", "protect", "magic_select", "stamp", "make_space", "eraser"]);
+const COMMUNICATION_TOOL_LABELS = Object.freeze({
+  marker: "Marker",
+  protect: "Highlight",
+  magic_select: "Magic Select",
+  stamp: "Stamp",
+  make_space: "Make Space",
+  eraser: "Eraser",
+});
 const NATIVE_MENU_COMMUNICATION_TOOLS = Object.freeze([
   { toolId: "marker", label: "Marker" },
   { toolId: "protect", label: "Highlight" },
   { toolId: "magic_select", label: "Magic Select" },
-  { toolId: "make_space", label: "Make Space" },
+  { toolId: "stamp", label: "Stamp" },
   { toolId: "eraser", label: "Eraser" },
 ]);
 const COMMUNICATION_TOOL_BEHAVIOR = Object.freeze({
   marker: "marker",
   protect: "marker",
   magic_select: "magic_select",
+  stamp: "stamp",
   make_space: "magic_select",
   eraser: "eraser",
 });
@@ -196,6 +205,55 @@ const COMMUNICATION_MARK_COMMITTED_SHOULDER_CSS_PX = 11.5;
 const COMMUNICATION_MARK_COMMITTED_CORE_CSS_PX = 8.25;
 const COMMUNICATION_PROTECT_DRAFT_WIDTH_CSS_PX = 22;
 const COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX = 18;
+const COMMUNICATION_STAMP_TARGET_BOX_CSS_PX = Object.freeze({
+  width: 112,
+  height: 72,
+});
+const COMMUNICATION_STAMP_CHIP_PADDING_X_CSS_PX = 14;
+const COMMUNICATION_STAMP_CHIP_HEIGHT_CSS_PX = 34;
+const COMMUNICATION_STAMP_CHIP_OFFSET_X_CSS_PX = 18;
+const COMMUNICATION_STAMP_CHIP_OFFSET_Y_CSS_PX = 28;
+const COMMUNICATION_STAMP_HIT_PADDING_CSS_PX = 12;
+const COMMUNICATION_STAMP_MAX_VISIBLE = 12;
+const COMMUNICATION_STAMP_CUSTOM_TEXT_MAX_CHARS = 48;
+const COMMUNICATION_STAMP_RENDER_LABEL_MAX_CHARS = 16;
+const COMMUNICATION_STAMP_INTENTS = Object.freeze([
+  Object.freeze({
+    intentId: "fix",
+    label: "Fix",
+    instruction: "Fix this area.",
+  }),
+  Object.freeze({
+    intentId: "move",
+    label: "Move",
+    instruction: "Move this element.",
+  }),
+  Object.freeze({
+    intentId: "remove",
+    label: "Remove",
+    instruction: "Remove this element.",
+  }),
+  Object.freeze({
+    intentId: "replace",
+    label: "Replace",
+    instruction: "Replace this element.",
+  }),
+  Object.freeze({
+    intentId: "custom",
+    label: "Custom",
+    instruction: "Follow the custom stamp note.",
+  }),
+  Object.freeze({
+    intentId: "text_here",
+    label: "Text Here",
+    instruction: "Place text here.",
+  }),
+  Object.freeze({
+    intentId: "logo_here",
+    label: "Logo Here",
+    instruction: "Place the logo here.",
+  }),
+]);
 const COMMUNICATION_STATE_CHANGED_EVENT = "juggernaut:communication-state-changed";
 const COMMUNICATION_REVIEW_REQUESTED_EVENT = "juggernaut:design-review-requested";
 const COMMUNICATION_PROPOSAL_TRAY_EVENT = "juggernaut:communication-proposal-tray-changed";
@@ -220,14 +278,84 @@ const SESSION_SNAPSHOT_FILENAME = "juggernaut-session.json";
 function communicationToolDisplayLabel(toolId = "") {
   const normalized = String(toolId || "").trim().toLowerCase();
   if (normalized === "protect") return "Highlight";
-  const entry = NATIVE_MENU_COMMUNICATION_TOOLS.find((item) => item.toolId === normalized);
-  return entry?.label || String(toolId || "").trim() || "Tool";
+  return COMMUNICATION_TOOL_LABELS[normalized] || String(toolId || "").trim() || "Tool";
 }
 
 function communicationReviewToolId(toolId = "") {
   const normalized = String(toolId || "").trim().toLowerCase();
   if (normalized === "protect") return "highlight";
   return normalized || null;
+}
+
+function normalizeCommunicationStampIntentId(value = "") {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return COMMUNICATION_STAMP_INTENTS.some((entry) => entry.intentId === normalized) ? normalized : "";
+}
+
+function communicationStampIntentById(intentId = "") {
+  const normalized = normalizeCommunicationStampIntentId(intentId);
+  return COMMUNICATION_STAMP_INTENTS.find((entry) => entry.intentId === normalized) || null;
+}
+
+function communicationStampLabel(intentId = "") {
+  return communicationStampIntentById(intentId)?.label || "Stamp";
+}
+
+function communicationStampInstruction(intentId = "") {
+  return communicationStampIntentById(intentId)?.instruction || "Adjust this area.";
+}
+
+function normalizeCommunicationStampCustomText(value = "") {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, COMMUNICATION_STAMP_CUSTOM_TEXT_MAX_CHARS);
+}
+
+function normalizeCommunicationStampPickerMode(value = "") {
+  return String(value || "").trim().toLowerCase() === "custom_input" ? "custom_input" : "intent_list";
+}
+
+function communicationStampRecordLabel(stamp = null) {
+  const explicitLabel = normalizeCommunicationStampCustomText(readFirstString(stamp?.label));
+  if (explicitLabel) return explicitLabel;
+  return communicationStampLabel(stamp?.intentId);
+}
+
+function communicationStampRecordInstruction(stamp = null) {
+  const explicitInstruction = normalizeCommunicationStampCustomText(readFirstString(stamp?.instruction));
+  if (explicitInstruction) return explicitInstruction;
+  const explicitLabel = normalizeCommunicationStampCustomText(readFirstString(stamp?.label));
+  if (explicitLabel) return explicitLabel;
+  return communicationStampInstruction(stamp?.intentId);
+}
+
+function communicationStampDisplayLabel(stamp = null) {
+  return clampText(communicationStampRecordLabel(stamp), COMMUNICATION_STAMP_RENDER_LABEL_MAX_CHARS) || "Stamp";
+}
+
+function selectedCommunicationStampIntentId(picker = null) {
+  const sourcePicker = picker && typeof picker === "object" ? picker : state?.communication?.stampPicker || null;
+  return normalizeCommunicationStampIntentId(sourcePicker?.selectedIntentId || "");
+}
+
+function createFreshCommunicationStampPickerState() {
+  return {
+    visible: false,
+    imageId: null,
+    sourceImageId: null,
+    coordinateSpace: null,
+    targetPoint: null,
+    targetBounds: null,
+    anchorCss: null,
+    anchorFrame: "shell",
+    pickerMode: "intent_list",
+    customText: "",
+    selectedIntentId: "",
+  };
 }
 const AGENT_RUNNER_BRIDGE_KEY = "__JUGGERNAUT_AGENT_RUNNER__";
 const AGENT_RUNNER_STATE_EVENT = "juggernaut:agent-runner-state";
@@ -747,12 +875,22 @@ const els = {
   imageFx: document.getElementById("image-fx"),
   imageFx2: document.getElementById("image-fx-2"),
   overlayCanvas: document.getElementById("overlay-canvas"),
+  communicationShell: document.getElementById("communication-shell"),
   communicationRail: document.getElementById("communication-rail"),
   communicationToolMarker: document.getElementById("communication-tool-marker"),
   communicationToolProtect: document.getElementById("communication-tool-protect"),
   communicationToolMagicSelect: document.getElementById("communication-tool-magic-select"),
+  communicationToolStamp: document.getElementById("communication-tool-stamp"),
   communicationToolMakeSpace: document.getElementById("communication-tool-make-space"),
   communicationToolEraser: document.getElementById("communication-tool-eraser"),
+  communicationStampPicker: document.getElementById("communication-stamp-picker"),
+  communicationStampPickerTitle: document.getElementById("communication-stamp-picker-title"),
+  communicationStampPickerSubtitle: document.getElementById("communication-stamp-picker-subtitle"),
+  communicationStampIntentList: document.getElementById("communication-stamp-intent-list"),
+  communicationStampCustomPanel: document.getElementById("communication-stamp-custom-panel"),
+  communicationStampCustomInput: document.getElementById("communication-stamp-custom-input"),
+  communicationStampCustomCancel: document.getElementById("communication-stamp-custom-cancel"),
+  communicationStampCustomSubmit: document.getElementById("communication-stamp-custom-submit"),
   communicationProposalTray: document.getElementById("communication-proposal-tray"),
   communicationProposalTrayClose: document.getElementById("communication-proposal-tray-close"),
   communicationProposalSlotList: document.getElementById("communication-proposal-slot-list"),
@@ -2111,8 +2249,11 @@ function createFreshCommunicationState() {
     tool: null,
     markDraft: null,
     eraseDraft: null,
+    stampPicker: createFreshCommunicationStampPickerState(),
     marksByImageId: new Map(),
     canvasMarks: [],
+    stampsByImageId: new Map(),
+    canvasStamps: [],
     regionProposalsByImageId: new Map(),
     reviewHistory: [],
     lastAnchor: null,
@@ -2138,8 +2279,11 @@ function sanitizeForkedCommunicationState(communication = null) {
   return {
     ...fresh,
     ...current,
+    stampPicker: createFreshCommunicationStampPickerState(),
     marksByImageId: current.marksByImageId instanceof Map ? current.marksByImageId : new Map(),
     canvasMarks: Array.isArray(current.canvasMarks) ? current.canvasMarks : [],
+    stampsByImageId: current.stampsByImageId instanceof Map ? current.stampsByImageId : new Map(),
+    canvasStamps: Array.isArray(current.canvasStamps) ? current.canvasStamps : [],
     regionProposalsByImageId: current.regionProposalsByImageId instanceof Map ? current.regionProposalsByImageId : new Map(),
     reviewHistory: Array.isArray(current.reviewHistory) ? current.reviewHistory : [],
     proposalTray: {
@@ -21550,6 +21694,16 @@ function communicationCanvasMarks() {
   return Array.isArray(state.communication?.canvasMarks) ? state.communication.canvasMarks : [];
 }
 
+function communicationCanvasStamps() {
+  return Array.isArray(state.communication?.canvasStamps) ? state.communication.canvasStamps : [];
+}
+
+function communicationStampsForImage(imageId) {
+  const id = String(imageId || "").trim();
+  const bucket = id ? state.communication?.stampsByImageId?.get(id) : null;
+  return Array.isArray(bucket) ? bucket : [];
+}
+
 function communicationToolArmed() {
   return Boolean(communicationToolId());
 }
@@ -21753,6 +21907,209 @@ function communicationMarkViewportScale(mark = null) {
   return communicationCanvasCssScaleForImageId(imageId);
 }
 
+function buildCommunicationStampTargetBounds({
+  imageId = null,
+  coordinateSpace = "canvas_world",
+  targetPoint = null,
+} = {}) {
+  const point = targetPoint && typeof targetPoint === "object"
+    ? {
+        x: Number(targetPoint.x) || 0,
+        y: Number(targetPoint.y) || 0,
+      }
+    : null;
+  if (!point) return null;
+  const id = String(imageId || "").trim();
+  if (coordinateSpace === "image" && id) {
+    const item = state.imagesById.get(id) || null;
+    const imageWidth = Math.max(1, Number(item?.img?.naturalWidth || item?.width) || 1);
+    const imageHeight = Math.max(1, Number(item?.img?.naturalHeight || item?.height) || 1);
+    const shortEdge = Math.max(24, Math.min(imageWidth, imageHeight));
+    const width = clamp(Math.round(shortEdge * 0.18), 36, Math.max(44, Math.round(imageWidth * 0.42)));
+    const height = clamp(Math.round(width * 0.66), 28, Math.max(32, Math.round(imageHeight * 0.32)));
+    return {
+      x: clamp(Math.round(point.x - width * 0.5), 0, Math.max(0, imageWidth - width)),
+      y: clamp(Math.round(point.y - height * 0.5), 0, Math.max(0, imageHeight - height)),
+      w: width,
+      h: height,
+    };
+  }
+  return {
+    x: Math.round(point.x - COMMUNICATION_STAMP_TARGET_BOX_CSS_PX.width * 0.5),
+    y: Math.round(point.y - COMMUNICATION_STAMP_TARGET_BOX_CSS_PX.height * 0.5),
+    w: COMMUNICATION_STAMP_TARGET_BOX_CSS_PX.width,
+    h: COMMUNICATION_STAMP_TARGET_BOX_CSS_PX.height,
+  };
+}
+
+function communicationStampTargetPointToCanvasCss(stamp = null) {
+  if (!stamp) return null;
+  const coordinateSpace = String(stamp?.coordinateSpace || "").trim();
+  const point = stamp?.targetPoint && typeof stamp.targetPoint === "object"
+    ? {
+        x: Number(stamp.targetPoint.x) || 0,
+        y: Number(stamp.targetPoint.y) || 0,
+      }
+    : null;
+  if (!point) return null;
+  if (coordinateSpace === "image" && String(stamp?.imageId || "").trim()) {
+    const canvasPoint = imageToCanvasForImageId(stamp.imageId, point);
+    if (!canvasPoint) return null;
+    const dpr = Math.max(0.0001, getDpr());
+    return {
+      x: (Number(canvasPoint.x) || 0) / dpr,
+      y: (Number(canvasPoint.y) || 0) / dpr,
+    };
+  }
+  if (coordinateSpace === "canvas_world") {
+    return clampCanvasCssPoint(canvasWorldCssToScreenCss(point));
+  }
+  return clampCanvasCssPoint(point);
+}
+
+function communicationStampChipWidthCss(stamp = null) {
+  const label = communicationStampDisplayLabel(stamp);
+  return clamp(
+    Math.round(label.length * 8.6 + COMMUNICATION_STAMP_CHIP_PADDING_X_CSS_PX * 2 + 18),
+    84,
+    188
+  );
+}
+
+function communicationStampLayoutCss(stamp = null) {
+  const anchorCss = communicationStampTargetPointToCanvasCss(stamp);
+  if (!anchorCss) return null;
+  const wrapWidth = Math.max(1, Number(els.canvasWrap?.clientWidth) || 1);
+  const wrapHeight = Math.max(1, Number(els.canvasWrap?.clientHeight) || 1);
+  const width = communicationStampChipWidthCss(stamp);
+  const height = COMMUNICATION_STAMP_CHIP_HEIGHT_CSS_PX;
+  let left = Number(anchorCss.x) + COMMUNICATION_STAMP_CHIP_OFFSET_X_CSS_PX;
+  if (left + width > wrapWidth - 12) {
+    left = Number(anchorCss.x) - width - COMMUNICATION_STAMP_CHIP_OFFSET_X_CSS_PX;
+  }
+  left = clamp(left, 12, Math.max(12, wrapWidth - width - 12));
+  const top = clamp(
+    Number(anchorCss.y) - COMMUNICATION_STAMP_CHIP_OFFSET_Y_CSS_PX,
+    12,
+    Math.max(12, wrapHeight - height - 12)
+  );
+  const chipRect = {
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+  };
+  const leaderTo =
+    left >= Number(anchorCss.x)
+      ? { x: left, y: top + Math.round(height * 0.5) }
+      : { x: left + width, y: top + Math.round(height * 0.5) };
+  return {
+    anchorCss,
+    chipRect,
+    leaderTo,
+  };
+}
+
+function findCommunicationStampById(stampId = null) {
+  const target = String(stampId || "").trim();
+  if (!target) return null;
+  for (const stamp of communicationCanvasStamps()) {
+    if (String(stamp?.id || "") === target) return stamp;
+  }
+  for (const [imageId, stamps] of Array.from(state.communication?.stampsByImageId?.entries?.() || [])) {
+    const list = Array.isArray(stamps) ? stamps : [];
+    const match = list.find((stamp) => String(stamp?.id || "") === target) || null;
+    if (match) {
+      return {
+        ...match,
+        imageId: String(match?.imageId || imageId || "") || null,
+      };
+    }
+  }
+  return null;
+}
+
+function commitCommunicationStampIntent(intentId = "") {
+  const normalizedIntentId = normalizeCommunicationStampIntentId(intentId);
+  const picker = state.communication?.stampPicker || createFreshCommunicationStampPickerState();
+  const point = picker?.targetPoint && typeof picker.targetPoint === "object"
+    ? {
+        x: Number(picker.targetPoint.x) || 0,
+        y: Number(picker.targetPoint.y) || 0,
+      }
+      : null;
+  if (!normalizedIntentId || !point) return null;
+  const customText = normalizeCommunicationStampCustomText(picker?.customText);
+  const label = normalizedIntentId === "custom" ? customText : communicationStampLabel(normalizedIntentId);
+  const instruction = normalizedIntentId === "custom" ? customText : communicationStampInstruction(normalizedIntentId);
+  if (!label || !instruction) return null;
+  const imageId = String(picker.imageId || "").trim() || null;
+  const coordinateSpace = imageId ? "image" : "canvas_world";
+  const targetBounds =
+    picker?.targetBounds && typeof picker.targetBounds === "object"
+      ? {
+          x: Number(picker.targetBounds.x) || 0,
+          y: Number(picker.targetBounds.y) || 0,
+          w: Math.max(1, Number(picker.targetBounds.w) || 1),
+          h: Math.max(1, Number(picker.targetBounds.h) || 1),
+        }
+      : buildCommunicationStampTargetBounds({
+          imageId,
+          coordinateSpace,
+          targetPoint: point,
+        });
+  const stamp = {
+    id: `stamp-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    imageId,
+    sourceImageId: imageId || String(picker.sourceImageId || "").trim() || null,
+    coordinateSpace,
+    intentId: normalizedIntentId,
+    label,
+    instruction,
+    targetPoint: point,
+    targetBounds,
+    createdAt: Date.now(),
+  };
+  if (imageId) {
+    const existing = communicationStampsForImage(imageId);
+    state.communication.stampsByImageId.set(imageId, existing.concat(stamp));
+  } else {
+    state.communication.canvasStamps = communicationCanvasStamps().concat(stamp);
+  }
+  state.communication.lastAnchor = communicationAnchorFromStamp(stamp);
+  return stamp;
+}
+
+function finalizeCommunicationStampCommit(stamp = null, { source = "communication_stamp_commit" } = {}) {
+  if (!stamp) return null;
+  if (
+    state.communication?.proposalTray?.visible &&
+    !communicationTrayAnchorPinnedToTitlebar(state.communication?.proposalTray?.anchor)
+  ) {
+    state.communication.proposalTray.anchor = state.communication.lastAnchor;
+  }
+  recordTimelineNode({
+    imageId: stamp.imageId || null,
+    action: "Stamp",
+    kind: "annotation",
+    visualMode: "icon",
+    label: communicationStampDisplayLabel(stamp),
+    previewImageId: stamp.imageId || null,
+    previewPath: stamp.imageId ? state.imagesById.get(stamp.imageId)?.path || null : null,
+  });
+  invalidateActiveTabPreview("selection_overlay_change");
+  dispatchJuggernautShellEvent(COMMUNICATION_STATE_CHANGED_EVENT, {
+    source,
+    communication: buildCommunicationBridgeSnapshot(),
+    context: buildJuggernautShellContext(),
+  });
+  renderCommunicationChrome();
+  requestRender();
+  return stamp;
+}
+
 function communicationAnchorFromMark(mark = null) {
   if (!mark) return null;
   const coordinateSpace = String(mark?.coordinateSpace || "").trim();
@@ -21797,6 +22154,48 @@ function communicationAnchorFromMark(mark = null) {
   };
 }
 
+function communicationAnchorFromStamp(stamp = null) {
+  if (!stamp) return null;
+  const coordinateSpace = String(stamp?.coordinateSpace || "").trim();
+  const imageId = String(stamp?.imageId || "").trim();
+  const point = stamp?.targetPoint && typeof stamp.targetPoint === "object"
+    ? {
+        x: Number(stamp.targetPoint.x) || 0,
+        y: Number(stamp.targetPoint.y) || 0,
+      }
+    : null;
+  const bounds = stamp?.targetBounds && typeof stamp.targetBounds === "object"
+    ? {
+        x0: Number(stamp.targetBounds.x) || 0,
+        y0: Number(stamp.targetBounds.y) || 0,
+        x1: (Number(stamp.targetBounds.x) || 0) + Math.max(1, Number(stamp.targetBounds.w) || 1),
+        y1: (Number(stamp.targetBounds.y) || 0) + Math.max(1, Number(stamp.targetBounds.h) || 1),
+        w: Math.max(1, Number(stamp.targetBounds.w) || 1),
+        h: Math.max(1, Number(stamp.targetBounds.h) || 1),
+      }
+    : null;
+  const canvasPoint = communicationStampTargetPointToCanvasCss(stamp);
+  if (coordinateSpace === "image" && imageId) {
+    return {
+      kind: "stamp",
+      imageId,
+      stampId: String(stamp.id || ""),
+      imagePoint: point,
+      imageBounds: bounds,
+      canvasPoint: canvasPoint ? { x: Number(canvasPoint.x) || 0, y: Number(canvasPoint.y) || 0 } : null,
+    };
+  }
+  return {
+    kind: "stamp",
+    imageId: null,
+    stampId: String(stamp.id || ""),
+    sourceImageId: String(stamp?.sourceImageId || stamp?.imageId || "") || null,
+    canvasWorldPoint: point,
+    canvasWorldBounds: bounds,
+    canvasPoint: canvasPoint ? { x: Number(canvasPoint.x) || 0, y: Number(canvasPoint.y) || 0 } : null,
+  };
+}
+
 function communicationAnchorFromRegionGroup(group = null) {
   if (!group || !group.imageId) return null;
   const candidates = Array.isArray(group.candidates) ? group.candidates : [];
@@ -21827,6 +22226,15 @@ function resolveCommunicationReviewAnchor() {
   for (const [, group] of Array.from(state.communication?.regionProposalsByImageId?.entries?.() || [])) {
     const anchor = communicationAnchorFromRegionGroup(group);
     if (anchor) return anchor;
+  }
+  for (const [, stamps] of Array.from(state.communication?.stampsByImageId?.entries?.() || [])) {
+    const list = Array.isArray(stamps) ? stamps : [];
+    const anchor = communicationAnchorFromStamp(list[list.length - 1] || null);
+    if (anchor) return anchor;
+  }
+  const canvasStamps = communicationCanvasStamps();
+  if (canvasStamps.length) {
+    return communicationAnchorFromStamp(canvasStamps[canvasStamps.length - 1]);
   }
   for (const [, marks] of Array.from(state.communication?.marksByImageId?.entries?.() || [])) {
     const list = Array.isArray(marks) ? marks : [];
@@ -21861,6 +22269,9 @@ function designReviewButtonTrayAnchor() {
 
 function communicationAnchorCanvasCss(anchor = resolveCommunicationReviewAnchor()) {
   if (!anchor) return null;
+  if (anchor.kind === "stamp" && anchor.canvasPoint) {
+    return clampCanvasCssPoint(anchor.canvasPoint);
+  }
   if (anchor.canvasOverlayPoint) {
     return clampCanvasCssPoint(anchor.canvasOverlayPoint);
   }
@@ -22292,6 +22703,43 @@ function resolveCommunicationMarkOverlapTarget(mark = null) {
   };
 }
 
+function resolveCommunicationStampTarget(stamp = null) {
+  if (!stamp) return null;
+  const imageId = String(stamp?.imageId || "").trim() || null;
+  if (imageId && state.imagesById.has(imageId)) {
+    return {
+      kind: "image",
+      imageId,
+      regionId: null,
+      markId: null,
+      stampId: String(stamp?.id || "") || null,
+      sourceImageId: String(stamp?.sourceImageId || imageId || "") || null,
+      source: "stamp_image",
+    };
+  }
+  const sourceImageId = String(stamp?.sourceImageId || "").trim() || null;
+  if (sourceImageId && state.imagesById.has(sourceImageId)) {
+    return {
+      kind: "image",
+      imageId: sourceImageId,
+      regionId: null,
+      markId: null,
+      stampId: String(stamp?.id || "") || null,
+      sourceImageId,
+      source: "stamp_source_image",
+    };
+  }
+  return {
+    kind: "canvas",
+    imageId: null,
+    regionId: null,
+    markId: null,
+    stampId: String(stamp?.id || "") || null,
+    sourceImageId,
+    source: "stamp_canvas",
+  };
+}
+
 function resolveCommunicationReviewTarget(anchor = resolveCommunicationReviewAnchor()) {
   if (!anchor) return null;
   if (anchor.kind === "region") {
@@ -22317,6 +22765,21 @@ function resolveCommunicationReviewTarget(anchor = resolveCommunicationReviewAnc
       };
     }
     return resolveCommunicationMarkOverlapTarget(mark);
+  }
+  if (anchor.kind === "stamp") {
+    const stamp = findCommunicationStampById(anchor.stampId);
+    if (!stamp) {
+      return {
+        kind: "canvas",
+        imageId: null,
+        regionId: null,
+        markId: null,
+        stampId: String(anchor.stampId || "") || null,
+        sourceImageId: String(anchor.sourceImageId || "") || null,
+        source: "stamp_missing",
+      };
+    }
+    return resolveCommunicationStampTarget(stamp);
   }
   return null;
 }
@@ -22364,6 +22827,42 @@ function hitTestCommunicationMark(ptCanvas) {
       if (distance <= tolerance) {
         return { imageId: null, mark };
       }
+    }
+  }
+  return null;
+}
+
+function hitTestCommunicationStamp(ptCanvas) {
+  if (!ptCanvas) return null;
+  const pointCss = {
+    x: (Number(ptCanvas.x) || 0) / Math.max(0.0001, getDpr()),
+    y: (Number(ptCanvas.y) || 0) / Math.max(0.0001, getDpr()),
+  };
+  const hitPadding = COMMUNICATION_STAMP_HIT_PADDING_CSS_PX;
+  const all = [];
+  for (const [imageId, stamps] of Array.from(state.communication?.stampsByImageId?.entries?.() || [])) {
+    const list = Array.isArray(stamps) ? stamps : [];
+    for (const stamp of list) {
+      all.push({ imageId: String(imageId || ""), stamp });
+    }
+  }
+  for (const stamp of communicationCanvasStamps()) {
+    all.push({ imageId: null, stamp });
+  }
+  for (let index = all.length - 1; index >= 0; index -= 1) {
+    const entry = all[index];
+    const layout = communicationStampLayoutCss(entry.stamp);
+    if (!layout) continue;
+    const chip = layout.chipRect;
+    const anchor = layout.anchorCss;
+    const inChip =
+      pointCss.x >= chip.left - hitPadding &&
+      pointCss.x <= chip.right + hitPadding &&
+      pointCss.y >= chip.top - hitPadding &&
+      pointCss.y <= chip.bottom + hitPadding;
+    const anchorDistance = Math.hypot(pointCss.x - Number(anchor.x || 0), pointCss.y - Number(anchor.y || 0));
+    if (inChip || anchorDistance <= hitPadding + 6) {
+      return entry;
     }
   }
   return null;
@@ -22569,6 +23068,185 @@ async function commitCommunicationImageEraseDraft(draft = null) {
   return result;
 }
 
+function setCommunicationStampPicker(next = {}, { render = true, requestRender: shouldRequestRender = false } = {}) {
+  const picker = {
+    ...createFreshCommunicationStampPickerState(),
+    ...(state.communication?.stampPicker && typeof state.communication.stampPicker === "object" ? state.communication.stampPicker : {}),
+    ...(next && typeof next === "object" ? next : {}),
+  };
+  picker.selectedIntentId = normalizeCommunicationStampIntentId(picker.selectedIntentId || "");
+  picker.pickerMode = normalizeCommunicationStampPickerMode(picker.pickerMode);
+  picker.customText = normalizeCommunicationStampCustomText(picker.customText);
+  state.communication.stampPicker = picker;
+  if (render) {
+    renderCommunicationChrome();
+  }
+  if (shouldRequestRender) {
+    requestRender();
+  }
+  return picker;
+}
+
+function hideCommunicationStampPicker({
+  clearSelection = false,
+  render = true,
+  requestRender: shouldRequestRender = false,
+} = {}) {
+  const next = {
+    ...(clearSelection ? createFreshCommunicationStampPickerState() : state.communication?.stampPicker || createFreshCommunicationStampPickerState()),
+    visible: false,
+    imageId: null,
+    sourceImageId: null,
+    coordinateSpace: null,
+    targetPoint: null,
+    targetBounds: null,
+    anchorCss: null,
+    anchorFrame: "shell",
+    pickerMode: "intent_list",
+    customText: "",
+    selectedIntentId:
+      clearSelection || selectedCommunicationStampIntentId() === "custom"
+        ? ""
+        : selectedCommunicationStampIntentId(),
+  };
+  return setCommunicationStampPicker(next, {
+    render,
+    requestRender: shouldRequestRender,
+  });
+}
+
+function selectCommunicationStampIntent(intentId = "", { render = true } = {}) {
+  const normalizedIntentId = normalizeCommunicationStampIntentId(intentId);
+  if (!normalizedIntentId) return null;
+  return setCommunicationStampPicker(
+    {
+      pickerMode: normalizedIntentId === "custom" ? "custom_input" : "intent_list",
+      selectedIntentId: normalizedIntentId,
+    },
+    { render }
+  );
+}
+
+function openCommunicationStampPickerAtPoint(ptCanvas, ptCss, imageId = null) {
+  const pickerCss = clampCanvasCssPoint(ptCss);
+  const normalizedImageId = String(imageId || "").trim() || null;
+  const imagePoint = normalizedImageId ? canvasToImageForImageId(ptCanvas, normalizedImageId) : null;
+  const coordinateSpace = normalizedImageId && imagePoint ? "image" : "canvas_world";
+  const targetPoint =
+    coordinateSpace === "image"
+      ? {
+          x: Number(imagePoint?.x) || 0,
+          y: Number(imagePoint?.y) || 0,
+        }
+      : canvasScreenCssToWorldCss(pickerCss);
+  const targetBounds = buildCommunicationStampTargetBounds({
+    imageId: normalizedImageId,
+    coordinateSpace,
+    targetPoint,
+  });
+  return setCommunicationStampPicker(
+    {
+      visible: true,
+      imageId: normalizedImageId,
+      sourceImageId: normalizedImageId,
+      coordinateSpace,
+      targetPoint,
+      targetBounds,
+      anchorCss: pickerCss,
+      anchorFrame: "canvas",
+      pickerMode: "intent_list",
+      customText: "",
+    },
+    { render: true }
+  );
+}
+
+function focusCommunicationStampCustomInput({ select = false } = {}) {
+  if (typeof window === "undefined") return;
+  window.requestAnimationFrame(() => {
+    const inputEl = els.communicationStampCustomInput;
+    if (!inputEl || state.communication?.stampPicker?.visible !== true) return;
+    if (typeof inputEl.focus === "function") inputEl.focus();
+    if (select && typeof inputEl.select === "function") inputEl.select();
+  });
+}
+
+function openCommunicationStampCustomInput() {
+  const picker = state.communication?.stampPicker || createFreshCommunicationStampPickerState();
+  if (!picker?.visible) return null;
+  const next = setCommunicationStampPicker(
+    {
+      pickerMode: "custom_input",
+      selectedIntentId: "custom",
+    },
+    { render: true, requestRender: false }
+  );
+  focusCommunicationStampCustomInput({ select: true });
+  return next;
+}
+
+function commitCommunicationCustomStampFromPicker({ source = "communication_stamp_custom_commit" } = {}) {
+  const customText = normalizeCommunicationStampCustomText(
+    readFirstString(els.communicationStampCustomInput?.value, state.communication?.stampPicker?.customText)
+  );
+  if (!customText) {
+    showToast("Enter stamp text.", "tip", 1400);
+    focusCommunicationStampCustomInput({ select: true });
+    return null;
+  }
+  setCommunicationStampPicker(
+    {
+      selectedIntentId: "custom",
+      pickerMode: "custom_input",
+      customText,
+    },
+    { render: false, requestRender: false }
+  );
+  const stamp = commitCommunicationStampIntent("custom");
+  if (!stamp) return null;
+  hideCommunicationStampPicker({ render: false, requestRender: false });
+  return finalizeCommunicationStampCommit(stamp, { source });
+}
+
+function commitPlacedCommunicationStampAtCanvasPoint(
+  ptCanvas,
+  ptCss,
+  imageId = null,
+  intentId = "",
+  { source = "communication_stamp_commit", customText = "" } = {}
+) {
+  const normalizedIntentId = normalizeCommunicationStampIntentId(intentId || selectedCommunicationStampIntentId());
+  if (!normalizedIntentId) {
+    openCommunicationStampPickerAtPoint(ptCanvas, ptCss, imageId);
+    return null;
+  }
+  const normalizedCustomText = normalizeCommunicationStampCustomText(customText);
+  if (normalizedIntentId === "custom" && !normalizedCustomText) {
+    openCommunicationStampPickerAtPoint(ptCanvas, ptCss, imageId);
+    setCommunicationStampPicker(
+      {
+        pickerMode: "custom_input",
+        selectedIntentId: "custom",
+      },
+      { render: true, requestRender: false }
+    );
+    return null;
+  }
+  openCommunicationStampPickerAtPoint(ptCanvas, ptCss, imageId);
+  setCommunicationStampPicker(
+    {
+      selectedIntentId: normalizedIntentId,
+      pickerMode: normalizedIntentId === "custom" ? "custom_input" : "intent_list",
+      customText: normalizedIntentId === "custom" ? normalizedCustomText : "",
+    },
+    { render: false, requestRender: false }
+  );
+  const stamp = commitCommunicationStampIntent(normalizedIntentId);
+  if (!stamp) return null;
+  hideCommunicationStampPicker({ render: false, requestRender: false });
+  return finalizeCommunicationStampCommit(stamp, { source });
+}
+
 function handleCommunicationCanvasPointerDown(event, p, pCss) {
   const communicationTool = communicationToolId();
   const behaviorTool = communicationBehaviorToolId(communicationTool);
@@ -22592,10 +23270,15 @@ function handleCommunicationCanvasPointerDown(event, p, pCss) {
           : null;
       recordTimelineNode({
         imageId: erased.imageId || null,
-        action: erased.kind === "region" ? "Erase Region" : "Erase Mark",
+        action:
+          erased.kind === "region"
+            ? "Erase Region"
+            : erased.kind === "stamp"
+              ? "Erase Stamp"
+              : "Erase Mark",
         kind: "annotation",
         visualMode: "icon",
-        label: erased.kind === "region" ? "Region" : "Mark",
+        label: erased.kind === "region" ? "Region" : erased.kind === "stamp" ? "Stamp" : "Mark",
         previewImageId: erased.imageId || null,
         previewPath,
       });
@@ -22625,6 +23308,13 @@ function handleCommunicationCanvasPointerDown(event, p, pCss) {
     );
     return true;
   }
+  if (behaviorTool === "stamp") {
+    if (typeof event?.preventDefault === "function") event.preventDefault();
+    if (typeof event?.stopPropagation === "function") event.stopPropagation();
+    bumpInteraction({ semantic: false });
+    openCommunicationStampPickerAtPoint(p, pCss, communicationImageId);
+    return true;
+  }
   const imagePoint = communicationImageId ? canvasToImageForImageId(p, communicationImageId) : null;
   if (behaviorTool === "magic_select" && communicationImageId && imagePoint) {
     return beginCommunicationMagicSelectStroke(event, p, pCss, communicationImageId);
@@ -22642,6 +23332,9 @@ function applyCommunicationToolSelection(tool = null, { source = "communication_
   }
   state.communication.markDraft = null;
   state.communication.eraseDraft = null;
+  if (next !== "stamp") {
+    hideCommunicationStampPicker({ clearSelection: false, render: false, requestRender: false });
+  }
   syncDropHintInteractivity();
   renderCommunicationChrome();
   renderQuickActions();
@@ -22668,6 +23361,7 @@ function renderCommunicationRail() {
     els.communicationToolMarker,
     els.communicationToolProtect,
     els.communicationToolMagicSelect,
+    els.communicationToolStamp,
     els.communicationToolMakeSpace,
     els.communicationToolEraser,
   ].filter(Boolean);
@@ -22835,6 +23529,26 @@ function commitCommunicationMarkDraft() {
 }
 
 function eraseCommunicationAtCanvasPoint(ptCanvas) {
+  const stampHit = hitTestCommunicationStamp(ptCanvas);
+  if (stampHit?.stamp?.id) {
+    const imageId = String(stampHit.imageId || "");
+    if (imageId) {
+      const next = communicationStampsForImage(imageId).filter((stamp) => String(stamp?.id || "") !== String(stampHit.stamp.id || ""));
+      if (next.length) state.communication.stampsByImageId.set(imageId, next);
+      else state.communication.stampsByImageId.delete(imageId);
+    } else {
+      state.communication.canvasStamps = communicationCanvasStamps().filter(
+        (stamp) => String(stamp?.id || "") !== String(stampHit.stamp.id || "")
+      );
+    }
+    if (state.communication.lastAnchor?.stampId === String(stampHit.stamp.id || "")) {
+      state.communication.lastAnchor = resolveCommunicationReviewAnchor();
+    }
+    if (state.communication.proposalTray?.anchor?.stampId === String(stampHit.stamp.id || "")) {
+      hideCommunicationProposalTray({ preserveAnchor: false, source: "eraser" });
+    }
+    return { kind: "stamp", imageId };
+  }
   const markHit = hitTestCommunicationMark(ptCanvas);
   if (markHit?.mark?.id) {
     const imageId = String(markHit.imageId || "");
@@ -22943,6 +23657,88 @@ function buildCommunicationMarksPayload() {
   return out;
 }
 
+function buildCommunicationStampsPayload() {
+  const out = [];
+  for (const [imageId, stamps] of Array.from(state.communication?.stampsByImageId?.entries?.() || [])) {
+    const list = Array.isArray(stamps) ? stamps : [];
+    for (const stamp of list) {
+      out.push({
+        id: String(stamp?.id || ""),
+        intentId: normalizeCommunicationStampIntentId(stamp?.intentId),
+        label: communicationStampRecordLabel(stamp),
+        instruction: communicationStampRecordInstruction(stamp),
+        imageId: String(imageId || "") || null,
+        sourceImageId: String(stamp?.sourceImageId || imageId || "") || null,
+        coordinateSpace: String(stamp?.coordinateSpace || "image"),
+        targetPoint: stamp?.targetPoint
+          ? {
+              x: Number(stamp.targetPoint.x) || 0,
+              y: Number(stamp.targetPoint.y) || 0,
+            }
+          : null,
+        bounds: stamp?.targetBounds
+          ? {
+              x: Number(stamp.targetBounds.x) || 0,
+              y: Number(stamp.targetBounds.y) || 0,
+              w: Math.max(1, Number(stamp.targetBounds.w) || 1),
+              h: Math.max(1, Number(stamp.targetBounds.h) || 1),
+            }
+          : null,
+        createdAt: Number(stamp?.createdAt) || Date.now(),
+      });
+    }
+  }
+  for (const stamp of communicationCanvasStamps()) {
+    out.push({
+      id: String(stamp?.id || ""),
+      intentId: normalizeCommunicationStampIntentId(stamp?.intentId),
+      label: communicationStampRecordLabel(stamp),
+      instruction: communicationStampRecordInstruction(stamp),
+      imageId: null,
+      sourceImageId: String(stamp?.sourceImageId || stamp?.imageId || "") || null,
+      coordinateSpace: String(stamp?.coordinateSpace || "canvas_world"),
+      targetPoint: stamp?.targetPoint
+        ? {
+            x: Number(stamp.targetPoint.x) || 0,
+            y: Number(stamp.targetPoint.y) || 0,
+          }
+        : null,
+      bounds: stamp?.targetBounds
+        ? {
+            x: Number(stamp.targetBounds.x) || 0,
+            y: Number(stamp.targetBounds.y) || 0,
+            w: Math.max(1, Number(stamp.targetBounds.w) || 1),
+            h: Math.max(1, Number(stamp.targetBounds.h) || 1),
+          }
+        : null,
+      createdAt: Number(stamp?.createdAt) || Date.now(),
+    });
+  }
+  return out.slice(0, COMMUNICATION_STAMP_MAX_VISIBLE);
+}
+
+function buildCommunicationStampFocusInputsPayload() {
+  return buildCommunicationStampsPayload().map((stamp, index) => ({
+    focusInputId: `stamp-focus:${readFirstString(stamp?.id) || index + 1}`,
+    kind: "highlight",
+    imageId: readFirstString(stamp?.imageId, stamp?.sourceImageId) || null,
+    bounds: stamp?.bounds
+      ? {
+          x: Number(stamp.bounds.x) || 0,
+          y: Number(stamp.bounds.y) || 0,
+          width: Math.max(1, Number(stamp.bounds.w) || 1),
+          height: Math.max(1, Number(stamp.bounds.h) || 1),
+        }
+      : null,
+    instruction: readFirstString(stamp?.instruction, stamp?.label) || communicationStampInstruction(stamp?.intentId),
+    sourceTool: "stamp",
+    tool: "stamp",
+    stampId: readFirstString(stamp?.id) || null,
+    stampIntentId: normalizeCommunicationStampIntentId(stamp?.intentId) || null,
+    stampLabel: readFirstString(stamp?.label) || null,
+  }));
+}
+
 function buildCommunicationRegionsPayload() {
   const out = [];
   for (const [imageId, group] of Array.from(state.communication?.regionProposalsByImageId?.entries?.() || [])) {
@@ -23007,6 +23803,7 @@ function buildCommunicationReviewHistoryEntry({
 } = {}) {
   const normalizedDetail = detail && typeof detail === "object" ? detail : {};
   const marks = buildCommunicationMarksPayload();
+  const stamps = buildCommunicationStampsPayload();
   const regionSelections = buildCommunicationRegionsPayload();
   const proposal = normalizedDetail?.proposal && typeof normalizedDetail.proposal === "object"
     ? cloneToolRuntimeValue(normalizedDetail.proposal)
@@ -23014,7 +23811,7 @@ function buildCommunicationReviewHistoryEntry({
   const request = normalizedDetail?.request && typeof normalizedDetail.request === "object"
     ? cloneToolRuntimeValue(normalizedDetail.request)
     : null;
-  if (!marks.length && !regionSelections.length && !proposal && !request) return null;
+  if (!marks.length && !stamps.length && !regionSelections.length && !proposal && !request) return null;
   return {
     archivedAt: new Date().toISOString(),
     reason: String(reason || "review_apply_success").trim() || "review_apply_success",
@@ -23023,6 +23820,7 @@ function buildCommunicationReviewHistoryEntry({
     anchor: cloneToolRuntimeValue(resolveCommunicationReviewAnchor()),
     resolvedTarget: cloneToolRuntimeValue(resolveCommunicationReviewTarget()),
     marks,
+    stamps,
     regionSelections,
     proposalTray: buildCommunicationProposalTraySnapshot(),
     request,
@@ -23059,8 +23857,11 @@ function clearVisibleCommunicationReviewState() {
   }
   state.communication.markDraft = null;
   state.communication.eraseDraft = null;
+  state.communication.stampPicker = createFreshCommunicationStampPickerState();
   state.communication.marksByImageId = new Map();
   state.communication.canvasMarks = [];
+  state.communication.stampsByImageId = new Map();
+  state.communication.canvasStamps = [];
   state.communication.regionProposalsByImageId = new Map();
   state.communication.lastAnchor = null;
   return state.communication;
@@ -23097,6 +23898,8 @@ function buildCommunicationReviewPayload({ requestId = null, source = "ui" } = {
     communication: {
       tool: communicationReviewToolId(communicationToolId()),
       marks: buildCommunicationMarksPayload(),
+      stamps: buildCommunicationStampsPayload(),
+      focusInputs: buildCommunicationStampFocusInputsPayload(),
       regionSelections: buildCommunicationRegionsPayload(),
       latestAnchor: resolveCommunicationReviewAnchor(),
       resolvedTarget: resolveCommunicationReviewTarget(),
@@ -23109,6 +23912,7 @@ function buildCommunicationBridgeSnapshot() {
   return {
     tool: communicationToolId(),
     markCount: buildCommunicationMarksPayload().length,
+    stampCount: buildCommunicationStampsPayload().length,
     regionGroupCount: buildCommunicationRegionsPayload().length,
     latestAnchor: resolveCommunicationReviewAnchor(),
     proposalTray: buildCommunicationProposalTraySnapshot(),
@@ -23453,6 +24257,45 @@ async function performObservableCommunicationMagicSelectClick(
   return finishObservableCommunicationMagicSelectClick(pointerEvent);
 }
 
+async function performObservableCommunicationStampClick(request = {}) {
+  assertObservableCommunicationReady("stamp");
+  ensureCommunicationToolActive("stamp", { source: readFirstString(request?.source, "agent_observable_driver") });
+  const pointCss = clampCanvasCssPoint(request?.point || request?.points?.[0]);
+  const pointCanvas = communicationScreenCssPointToCanvas(pointCss);
+  const targetImageId = resolveObservableCommunicationImageId(pointCanvas, request?.image_id);
+  const intentId = normalizeCommunicationStampIntentId(
+    readFirstString(request?.intent_id, request?.intentId, request?.stamp_intent, request?.stampIntent)
+  );
+  const customText = normalizeCommunicationStampCustomText(
+    readFirstString(request?.custom_text, request?.customText, request?.label, request?.text)
+  );
+  if (!intentId) {
+    throw new Error("Stamp requires an intent_id from the starter stamp set.");
+  }
+  if (intentId === "custom" && !customText) {
+    throw new Error("Custom stamp requires custom_text.");
+  }
+  openCommunicationStampPickerAtPoint(pointCanvas, pointCss, targetImageId);
+  await waitObservableCommunicationStep(request?.step_delay_ms);
+  const stamp = commitPlacedCommunicationStampAtCanvasPoint(pointCanvas, pointCss, targetImageId, intentId, {
+    source: "agent_observable_stamp",
+    customText,
+  });
+  if (!stamp) {
+    throw new Error(`Stamp intent "${intentId}" is unavailable.`);
+  }
+  return {
+    ok: true,
+    tool: "stamp",
+    stamp_id: readFirstString(stamp?.id) || null,
+    image_id: readFirstString(stamp?.imageId) || null,
+    intent_id: normalizeCommunicationStampIntentId(stamp?.intentId) || null,
+    label: communicationStampRecordLabel(stamp),
+    instruction: communicationStampRecordInstruction(stamp),
+    communication: buildCommunicationBridgeSnapshot(),
+  };
+}
+
 async function performObservableCommunicationEraserStroke(request = {}) {
   assertObservableCommunicationReady("eraser");
   ensureCommunicationToolActive("eraser", { source: readFirstString(request?.source, "agent_observable_driver") });
@@ -23493,6 +24336,7 @@ function installAgentObservableDriverRuntime() {
     performProtectStroke: (request = {}) =>
       performObservableCommunicationMarkerStroke(request, { toolId: "protect", toolLabel: "highlight" }),
     performMagicSelectClick: performObservableCommunicationMagicSelectClick,
+    performStampClick: performObservableCommunicationStampClick,
     performMakeSpaceClick: (request = {}) =>
       performObservableCommunicationMagicSelectClick(request, { toolId: "make_space", toolLabel: "make space" }),
     performEraserStroke: performObservableCommunicationEraserStroke,
@@ -23739,8 +24583,112 @@ function renderCommunicationProposalTray() {
   });
 }
 
+function renderCommunicationStampPicker() {
+  const pickerEl = els.communicationStampPicker;
+  const titleEl = els.communicationStampPickerTitle;
+  const subtitleEl = els.communicationStampPickerSubtitle;
+  const listEl = els.communicationStampIntentList;
+  const customPanelEl = els.communicationStampCustomPanel;
+  const customInputEl = els.communicationStampCustomInput;
+  const pickerState = state.communication?.stampPicker || createFreshCommunicationStampPickerState();
+  if (!pickerEl) return;
+  const visible = Boolean(pickerState.visible && communicationToolId() === "stamp");
+  pickerEl.classList.toggle("hidden", !visible);
+  pickerEl.hidden = !visible;
+  pickerEl.setAttribute("aria-hidden", visible ? "false" : "true");
+  const selectedIntentId = selectedCommunicationStampIntentId(pickerState);
+  const pickerMode = normalizeCommunicationStampPickerMode(pickerState?.pickerMode);
+  const customMode = pickerMode === "custom_input";
+  if (titleEl) {
+    titleEl.textContent = customMode ? "Custom" : "Stamp";
+  }
+  if (subtitleEl) {
+    subtitleEl.textContent = customMode ? "Type note" : "Choose";
+  }
+  if (pickerEl.dataset) {
+    pickerEl.dataset.pickerMode = customMode ? "custom" : "intents";
+  }
+  if (listEl) {
+    listEl.hidden = customMode;
+    if (listEl.classList?.toggle) listEl.classList.toggle("hidden", customMode);
+  }
+  if (customPanelEl) {
+    customPanelEl.hidden = !customMode;
+    if (customPanelEl.classList?.toggle) customPanelEl.classList.toggle("hidden", !customMode);
+  }
+  const activeElement = typeof document !== "undefined" ? document.activeElement : null;
+  if (customInputEl && customInputEl !== activeElement) {
+    customInputEl.value = normalizeCommunicationStampCustomText(pickerState?.customText);
+  }
+  if (listEl && typeof listEl.querySelectorAll === "function") {
+    for (const button of Array.from(listEl.querySelectorAll("[data-stamp-intent]"))) {
+      const intentId = normalizeCommunicationStampIntentId(button.dataset?.stampIntent || "");
+      const selected = Boolean(intentId && intentId === selectedIntentId);
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+    }
+  }
+  if (!visible) {
+    pickerEl.style.left = "-9999px";
+    pickerEl.style.top = "-9999px";
+    pickerEl.style.right = "auto";
+    pickerEl.style.bottom = "auto";
+    if (pickerEl.dataset) {
+      pickerEl.dataset.anchorPlacement = "";
+      pickerEl.dataset.pickerMode = customMode ? "custom" : "intents";
+    }
+    return;
+  }
+  const shellRect = els.communicationShell?.getBoundingClientRect?.() || pickerEl.parentElement?.getBoundingClientRect?.() || {
+    left: 0,
+    top: 0,
+    width: Math.max(1, Number(els.communicationShell?.clientWidth) || 1),
+    height: Math.max(1, Number(els.communicationShell?.clientHeight) || 1),
+  };
+  const viewportWidth =
+    (typeof window !== "undefined" && Number(window.innerWidth)) ||
+    Math.max(1, (typeof document !== "undefined" && Number(document.documentElement?.clientWidth)) || 1);
+  const viewportHeight =
+    (typeof window !== "undefined" && Number(window.innerHeight)) ||
+    Math.max(1, (typeof document !== "undefined" && Number(document.documentElement?.clientHeight)) || 1);
+  const width = Math.max(144, Number(pickerEl.offsetWidth) || 168);
+  const height = Math.max(144, Number(pickerEl.offsetHeight) || 168);
+  let anchorViewportX = Number(shellRect.left || 0) + Math.max(0, Math.round((Number(shellRect.width || 0) || width) * 0.5));
+  let anchorViewportY = Number(shellRect.top || 0) + 20;
+  if (pickerState.anchorFrame === "canvas" && pickerState.anchorCss && els.canvasWrap?.getBoundingClientRect) {
+    const wrapRect = els.canvasWrap.getBoundingClientRect();
+    const anchorCss = clampCanvasCssPoint(pickerState.anchorCss);
+    anchorViewportX = Number(wrapRect.left || 0) + Number(anchorCss.x || 0);
+    anchorViewportY = Number(wrapRect.top || 0) + Number(anchorCss.y || 0);
+  } else if (pickerState.anchorCss) {
+    anchorViewportX = Number(shellRect.left || 0) + Number(pickerState.anchorCss.x || 0);
+    anchorViewportY = Number(shellRect.top || 0) + Number(pickerState.anchorCss.y || 0);
+  } else if (els.communicationToolStamp?.getBoundingClientRect) {
+    const buttonRect = els.communicationToolStamp.getBoundingClientRect();
+    anchorViewportX = Number(buttonRect.left || 0) + Number(buttonRect.width || 0) * 0.5;
+    anchorViewportY = Number(buttonRect.top || 0);
+  }
+  const horizontalGap = 12;
+  let anchorPlacement = "right";
+  let viewportLeft = anchorViewportX + horizontalGap;
+  if (viewportLeft + width > viewportWidth - 12) {
+    anchorPlacement = "left";
+    viewportLeft = anchorViewportX - width - horizontalGap;
+  }
+  viewportLeft = clamp(viewportLeft, 12, Math.max(12, viewportWidth - width - 12));
+  const viewportTop = clamp(anchorViewportY - height * 0.5, 12, Math.max(12, viewportHeight - height - 12));
+  pickerEl.style.left = `${viewportLeft - Number(shellRect.left || 0)}px`;
+  pickerEl.style.top = `${viewportTop - Number(shellRect.top || 0)}px`;
+  pickerEl.style.right = "auto";
+  pickerEl.style.bottom = "auto";
+  if (pickerEl.dataset) {
+    pickerEl.dataset.anchorPlacement = anchorPlacement;
+  }
+}
+
 function renderCommunicationChrome() {
   renderCommunicationRail();
+  renderCommunicationStampPicker();
   renderCommunicationProposalTray();
   if (typeof window !== "undefined") {
     syncJuggernautShellState();
@@ -23771,7 +24719,7 @@ function syncCommunicationProposalTrayFromReviewState(reviewState = {}, { source
 function requestCommunicationDesignReview({ source = "titlebar" } = {}) {
   const reviewAnchor = resolveCommunicationReviewAnchor();
   if (!reviewAnchor) {
-    showToast("Add a mark or Magic Select region first.", "tip", 1800);
+    showToast("Add a mark, stamp, or Magic Select region first.", "tip", 1800);
     return { ok: false, reason: "missing_anchor" };
   }
   const pinToTitlebar = shouldPinCommunicationReviewTrayToTitlebar(source);
@@ -24394,8 +25342,11 @@ function clearVisibleCommunicationReviewStateForSession(session = null, { hideTr
       : createFreshCommunicationState();
   communication.markDraft = null;
   communication.eraseDraft = null;
+  communication.stampPicker = createFreshCommunicationStampPickerState();
   communication.marksByImageId = new Map();
   communication.canvasMarks = [];
+  communication.stampsByImageId = new Map();
+  communication.canvasStamps = [];
   communication.regionProposalsByImageId = new Map();
   communication.lastAnchor = null;
   if (hideTray) {
@@ -24825,12 +25776,16 @@ function dropCommunicationStateForImageId(imageId) {
   const id = String(imageId || "").trim();
   if (!id) return;
   state.communication?.marksByImageId?.delete(id);
+  state.communication?.stampsByImageId?.delete(id);
   state.communication?.regionProposalsByImageId?.delete(id);
   if (state.communication?.markDraft?.imageId === id) {
     state.communication.markDraft = null;
   }
   if (state.communication?.eraseDraft?.imageId === id) {
     state.communication.eraseDraft = null;
+  }
+  if (state.communication?.stampPicker?.imageId === id) {
+    state.communication.stampPicker = createFreshCommunicationStampPickerState();
   }
   if (state.communication?.lastAnchor?.imageId === id) {
     state.communication.lastAnchor = resolveCommunicationReviewAnchor();
@@ -24968,6 +25923,240 @@ function renderCommunicationOverlay(octx) {
   }
   for (const mark of communicationCanvasMarks()) {
     drawMark(mark);
+  }
+  let stampBackdropCtx = null;
+  if (els.workCanvas && typeof els.workCanvas.getContext === "function") {
+    try {
+      stampBackdropCtx = els.workCanvas.getContext("2d", { willReadFrequently: true }) || els.workCanvas.getContext("2d");
+    } catch {
+      stampBackdropCtx = els.workCanvas.getContext("2d");
+    }
+  }
+  const traceStampChipPath = (ctx, left, top, width, height, radius) => {
+    const bevel = clamp(
+      Math.round(Number(radius) || 0),
+      0,
+      Math.max(0, Math.floor(Math.min(Math.abs(width), Math.abs(height)) * 0.48))
+    );
+    ctx.beginPath();
+    if (!(bevel > 0)) {
+      ctx.rect(left, top, width, height);
+      return;
+    }
+    ctx.moveTo(left + bevel, top);
+    ctx.lineTo(left + width - bevel, top);
+    ctx.lineTo(left + width, top + bevel);
+    ctx.lineTo(left + width, top + height - bevel);
+    ctx.lineTo(left + width - bevel, top + height);
+    ctx.lineTo(left + bevel, top + height);
+    ctx.lineTo(left, top + height - bevel);
+    ctx.lineTo(left, top + bevel);
+    ctx.closePath();
+  };
+  const sampleStampBackdropLuminance = (centerX, centerY) => {
+    if (!stampBackdropCtx || !els.workCanvas?.width || !els.workCanvas?.height) return null;
+    const sampleRadius = Math.max(3, Math.round(7 * dpr));
+    const sampleSize = sampleRadius * 2;
+    const sampleX = clamp(
+      Math.round(centerX - sampleRadius),
+      0,
+      Math.max(0, Number(els.workCanvas.width || 0) - sampleSize)
+    );
+    const sampleY = clamp(
+      Math.round(centerY - sampleRadius),
+      0,
+      Math.max(0, Number(els.workCanvas.height || 0) - sampleSize)
+    );
+    try {
+      const imageData = stampBackdropCtx.getImageData(sampleX, sampleY, sampleSize, sampleSize);
+      const data = imageData?.data || null;
+      if (!data?.length) return null;
+      let total = 0;
+      let count = 0;
+      for (let index = 0; index < data.length; index += 4) {
+        const alpha = Number(data[index + 3]) / 255;
+        if (!(alpha > 0.01)) continue;
+        const r = Number(data[index]) || 0;
+        const g = Number(data[index + 1]) || 0;
+        const b = Number(data[index + 2]) || 0;
+        total += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        count += 1;
+      }
+      return count ? total / count : null;
+    } catch {
+      return null;
+    }
+  };
+  const stampRotationDeg = (stamp) => {
+    const source = `${readFirstString(stamp?.id)}:${readFirstString(stamp?.intentId)}`;
+    let hash = 0;
+    for (let index = 0; index < source.length; index += 1) {
+      hash = (hash * 33 + source.charCodeAt(index)) | 0;
+    }
+    return ((((hash % 1000) + 1000) % 1000) / 999 - 0.5) * 3.2;
+  };
+  const resolveStampPalette = (chipCenterX, chipCenterY) => {
+    const luminance = sampleStampBackdropLuminance(chipCenterX, chipCenterY);
+    if (Number.isFinite(luminance) && luminance < 88) {
+      return {
+        ink: "rgba(248, 239, 230, 0.96)",
+        inkSoft: "rgba(248, 239, 230, 0.34)",
+        wash: "rgba(248, 239, 230, 0.10)",
+        halo: "rgba(10, 12, 16, 0.34)",
+        ghost: "rgba(10, 12, 16, 0.18)",
+        leaderBase: "rgba(8, 10, 14, 0.58)",
+        leaderTop: "rgba(248, 239, 230, 0.78)",
+        anchorOuter: "rgba(248, 239, 230, 0.96)",
+        anchorInner: "rgba(12, 16, 20, 0.94)",
+        anchorHalo: "rgba(8, 10, 14, 0.30)",
+        registration: "rgba(248, 239, 230, 0.28)",
+      };
+    }
+    return {
+      ink: "rgba(174, 56, 44, 0.94)",
+      inkSoft: "rgba(174, 56, 44, 0.34)",
+      wash: "rgba(174, 56, 44, 0.08)",
+      halo: "rgba(255, 255, 255, 0.44)",
+      ghost: "rgba(18, 22, 28, 0.14)",
+      leaderBase: "rgba(120, 26, 19, 0.52)",
+      leaderTop: "rgba(255, 247, 243, 0.72)",
+      anchorOuter: "rgba(174, 56, 44, 0.94)",
+      anchorInner: "rgba(255, 247, 243, 0.98)",
+      anchorHalo: "rgba(255, 255, 255, 0.40)",
+      registration: "rgba(174, 56, 44, 0.22)",
+    };
+  };
+  const drawStamp = (stamp) => {
+    const layout = communicationStampLayoutCss(stamp);
+    if (!layout) return;
+    const chipLeft = Math.round(layout.chipRect.left * dpr);
+    const chipTop = Math.round(layout.chipRect.top * dpr);
+    const chipWidth = Math.max(1, Math.round(layout.chipRect.width * dpr));
+    const chipHeight = Math.max(1, Math.round(layout.chipRect.height * dpr));
+    const anchorX = Math.round(Number(layout.anchorCss.x || 0) * dpr);
+    const anchorY = Math.round(Number(layout.anchorCss.y || 0) * dpr);
+    const leaderX = Math.round(Number(layout.leaderTo.x || 0) * dpr);
+    const leaderY = Math.round(Number(layout.leaderTo.y || 0) * dpr);
+    const label = communicationStampDisplayLabel(stamp).toUpperCase();
+    const chipCenterX = chipLeft + Math.round(chipWidth * 0.5);
+    const chipCenterY = chipTop + Math.round(chipHeight * 0.5);
+    const palette = resolveStampPalette(chipCenterX, chipCenterY);
+    const bevel = Math.max(3, Math.round(4.75 * dpr));
+    const rotationRad = (stampRotationDeg(stamp) * Math.PI) / 180;
+    const anchorRadius = Math.max(3, Math.round(3.7 * dpr));
+    const anchorInnerRadius = Math.max(1, Math.round(1.65 * dpr));
+    const haloStroke = Math.max(2, Math.round(2.8 * dpr));
+    const outerStroke = Math.max(1, Math.round(1.35 * dpr));
+    const innerStroke = Math.max(1, Math.round(0.85 * dpr));
+    const imprintNudge = Math.max(1, Math.round(0.75 * dpr));
+    const registrationWidth = Math.max(10, Math.round(14 * dpr));
+    const registrationHeight = Math.max(1, Math.round(1.1 * dpr));
+    octx.save();
+    octx.lineCap = "round";
+    octx.lineJoin = "round";
+    octx.strokeStyle = palette.leaderBase;
+    octx.lineWidth = Math.max(1, Math.round(2.8 * dpr));
+    octx.beginPath();
+    octx.moveTo(anchorX, anchorY);
+    octx.lineTo(leaderX, leaderY);
+    octx.stroke();
+    octx.strokeStyle = palette.leaderTop;
+    octx.lineWidth = Math.max(1, Math.round(1.4 * dpr));
+    octx.beginPath();
+    octx.moveTo(anchorX, anchorY);
+    octx.lineTo(leaderX, leaderY);
+    octx.stroke();
+    octx.fillStyle = palette.anchorHalo;
+    octx.beginPath();
+    octx.arc(anchorX, anchorY, anchorRadius + Math.max(1, Math.round(1.2 * dpr)), 0, Math.PI * 2);
+    octx.fill();
+    octx.fillStyle = palette.anchorOuter;
+    octx.beginPath();
+    octx.arc(anchorX, anchorY, anchorRadius, 0, Math.PI * 2);
+    octx.fill();
+    octx.fillStyle = palette.anchorInner;
+    octx.beginPath();
+    octx.arc(anchorX, anchorY, anchorInnerRadius, 0, Math.PI * 2);
+    octx.fill();
+    octx.translate(chipCenterX, chipCenterY);
+    octx.rotate(rotationRad);
+    octx.translate(-chipCenterX, -chipCenterY);
+    octx.save();
+    traceStampChipPath(
+      octx,
+      chipLeft - Math.max(1, Math.round(1.6 * dpr)),
+      chipTop - Math.max(1, Math.round(1.6 * dpr)),
+      chipWidth + Math.max(2, Math.round(3.2 * dpr)),
+      chipHeight + Math.max(2, Math.round(3.2 * dpr)),
+      bevel + Math.max(1, Math.round(1.4 * dpr))
+    );
+    octx.lineWidth = haloStroke;
+    octx.strokeStyle = palette.halo;
+    octx.stroke();
+    octx.restore();
+    traceStampChipPath(octx, chipLeft, chipTop, chipWidth, chipHeight, bevel);
+    octx.fillStyle = palette.wash;
+    octx.fill();
+    octx.save();
+    octx.translate(imprintNudge, imprintNudge);
+    traceStampChipPath(octx, chipLeft, chipTop, chipWidth, chipHeight, bevel);
+    octx.lineWidth = outerStroke;
+    octx.strokeStyle = palette.ghost;
+    octx.stroke();
+    octx.restore();
+    traceStampChipPath(octx, chipLeft, chipTop, chipWidth, chipHeight, bevel);
+    octx.lineWidth = outerStroke;
+    octx.strokeStyle = palette.ink;
+    octx.stroke();
+    traceStampChipPath(
+      octx,
+      chipLeft + Math.max(2, Math.round(2.1 * dpr)),
+      chipTop + Math.max(2, Math.round(2.1 * dpr)),
+      Math.max(1, chipWidth - Math.max(4, Math.round(4.2 * dpr))),
+      Math.max(1, chipHeight - Math.max(4, Math.round(4.2 * dpr))),
+      Math.max(2, bevel - Math.round(1 * dpr))
+    );
+    octx.lineWidth = innerStroke;
+    octx.strokeStyle = palette.inkSoft;
+    octx.stroke();
+    const registrationCenterX = chipLeft + Math.round(chipWidth * 0.5);
+    octx.fillStyle = palette.registration;
+    octx.fillRect(
+      Math.round(registrationCenterX - registrationWidth * 0.5),
+      chipTop + Math.max(4, Math.round(4 * dpr)),
+      registrationWidth,
+      registrationHeight
+    );
+    octx.fillRect(
+      Math.round(registrationCenterX - registrationWidth * 0.5),
+      chipTop + chipHeight - Math.max(5, Math.round(5 * dpr)),
+      registrationWidth,
+      registrationHeight
+    );
+    octx.fillRect(
+      chipLeft + Math.max(8, Math.round(9 * dpr)),
+      chipTop + Math.max(6, Math.round(6 * dpr)),
+      Math.max(9, Math.round(10 * dpr)),
+      registrationHeight
+    );
+    octx.fillStyle = palette.ink;
+    octx.font = `600 ${Math.max(10, Math.round(11.5 * dpr))}px "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", "Segoe UI", sans-serif`;
+    octx.textBaseline = "middle";
+    octx.fillText(
+      label,
+      chipLeft + Math.max(12, Math.round(14 * dpr)),
+      chipTop + Math.round(chipHeight * 0.545)
+    );
+    octx.restore();
+  };
+  for (const [, stamps] of Array.from(state.communication?.stampsByImageId?.entries?.() || [])) {
+    const list = Array.isArray(stamps) ? stamps : [];
+    for (const stamp of list) {
+      drawStamp(stamp);
+    }
+  }
+  for (const stamp of communicationCanvasStamps()) {
+    drawStamp(stamp);
   }
   if (state.communication?.markDraft) {
     drawMark(state.communication.markDraft, { draft: true });
@@ -43693,10 +44882,13 @@ function installCanvasHandlers() {
       const behaviorTool = communicationBehaviorToolId(communicationTool);
       if (communicationTool) {
         if (behaviorTool === "eraser") {
-          if (hitTestCommunicationMark(p) || hitTestCommunicationRegionCandidate(p) || hitTestVisibleCanvasImage(p)) {
+          if (hitTestCommunicationStamp(p) || hitTestCommunicationMark(p) || hitTestCommunicationRegionCandidate(p) || hitTestVisibleCanvasImage(p)) {
             setOverlayCursor("cell");
             return;
           }
+        } else if (behaviorTool === "stamp") {
+          setOverlayCursor("crosshair");
+          return;
         } else if (behaviorTool === "marker" || hitTestVisibleCanvasImage(p)) {
           setOverlayCursor("crosshair");
           return;
@@ -46443,6 +47635,75 @@ function installUi() {
       setCommunicationTool(button.dataset?.communicationTool || null, { source: "communication_rail" });
     });
   }
+  if (els.communicationStampIntentList && els.communicationStampIntentList.dataset.bound !== "1") {
+    els.communicationStampIntentList.dataset.bound = "1";
+    els.communicationStampIntentList.addEventListener("click", (event) => {
+      const button = event?.target?.closest ? event.target.closest("[data-stamp-intent]") : null;
+      if (!button || !els.communicationStampIntentList.contains(button)) return;
+      bumpInteraction({ semantic: false });
+      const intentId = normalizeCommunicationStampIntentId(button.dataset?.stampIntent || "");
+      if (!intentId) return;
+      if (intentId === "custom") {
+        openCommunicationStampCustomInput();
+        return;
+      }
+      setCommunicationStampPicker(
+        {
+          selectedIntentId: intentId,
+          pickerMode: "intent_list",
+          customText: "",
+        },
+        { render: false, requestRender: false }
+      );
+      const stamp = commitCommunicationStampIntent(intentId);
+      if (!stamp) return;
+      hideCommunicationStampPicker({ render: false });
+      finalizeCommunicationStampCommit(stamp, { source: "communication_stamp_commit" });
+    });
+  }
+  if (els.communicationStampCustomInput && els.communicationStampCustomInput.dataset.bound !== "1") {
+    els.communicationStampCustomInput.dataset.bound = "1";
+    els.communicationStampCustomInput.addEventListener("input", (event) => {
+      const value = normalizeCommunicationStampCustomText(event?.target?.value);
+      setCommunicationStampPicker(
+        {
+          customText: value,
+        },
+        { render: false, requestRender: false }
+      );
+    });
+    els.communicationStampCustomInput.addEventListener("keydown", (event) => {
+      if (String(event?.key || "").toLowerCase() !== "escape") return;
+      event.preventDefault();
+      setCommunicationStampPicker(
+        {
+          pickerMode: "intent_list",
+          customText: "",
+        },
+        { render: true, requestRender: false }
+      );
+    });
+  }
+  if (els.communicationStampCustomCancel) {
+    els.communicationStampCustomCancel.addEventListener("click", () => {
+      bumpInteraction({ semantic: false });
+      setCommunicationStampPicker(
+        {
+          pickerMode: "intent_list",
+          customText: "",
+        },
+        { render: true, requestRender: false }
+      );
+    });
+  }
+  if (els.communicationStampCustomPanel && els.communicationStampCustomPanel.dataset.bound !== "1") {
+    els.communicationStampCustomPanel.dataset.bound = "1";
+    els.communicationStampCustomPanel.addEventListener("submit", (event) => {
+      event.preventDefault();
+      bumpInteraction({ semantic: false });
+      commitCommunicationCustomStampFromPicker({ source: "communication_stamp_custom_commit" });
+    });
+  }
   if (els.communicationProposalTrayClose) {
     els.communicationProposalTrayClose.addEventListener("click", () => {
       bumpInteraction({ semantic: false });
@@ -46475,6 +47736,16 @@ function installUi() {
   }
 
   document.addEventListener("pointerdown", (event) => {
+    if (state.communication?.stampPicker?.visible) {
+      const pickerHit = event?.target?.closest ? event.target.closest("#communication-stamp-picker") : null;
+      const stampToolHit = event?.target?.closest
+        ? event.target.closest('[data-communication-tool="stamp"]')
+        : null;
+      const canvasHit = event?.target?.closest ? event.target.closest("#canvas-wrap") : null;
+      if (!pickerHit && !stampToolHit && !(canvasHit && communicationToolId() === "stamp")) {
+        hideCommunicationStampPicker({ render: true });
+      }
+    }
     if (!els.imageMenu || els.imageMenu.classList.contains("hidden")) return;
     const hit = event?.target?.closest ? event.target.closest("#image-menu") : null;
     if (hit) return;
@@ -46556,6 +47827,10 @@ function installUi() {
 		        els.settingsDrawer.classList.add("hidden");
 		        return;
 		      }
+          if (state.communication?.stampPicker?.visible) {
+            hideCommunicationStampPicker({ render: true });
+            return;
+          }
 	        if (els.markPanel && !els.markPanel.classList.contains("hidden")) {
 	          hideMarkPanel();
 	          requestRender();

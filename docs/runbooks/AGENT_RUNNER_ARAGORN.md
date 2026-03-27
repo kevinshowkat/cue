@@ -134,11 +134,11 @@ What to look for:
   - immediate edit with no observable focus step
   - marking a random low-value area
 
-### 4. Copy-Space Variant With Manual Make Space
+### 4. Copy-Space Variant With Manual Stamp
 
 Manual pre-step:
 
-- before starting Agent Run, use `Make Space` yourself on the left side of the frame where title text might go
+- before starting Agent Run, place a `Stamp` with `Custom` text like `Title here` on the left side of the frame where title text might go
 
 Goal:
 
@@ -148,13 +148,13 @@ What to look for:
 
 - good first move:
   - `request_design_review`
-  - then accept a proposal that respects reserved space
+  - then accept a proposal that respects the stamped text-placement intent
 - success signal:
   - left-side negative space opens up
   - subject remains dominant
 - failure signal:
   - subject shifted or cropped badly
-  - reserved area ignored
+  - stamped placement intent ignored
 
 ### 5. Manual Highlight Focus Test
 

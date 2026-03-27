@@ -1,7 +1,7 @@
 # Cue Agent Workflow PRD
 
-Status: Draft v0.1  
-Last updated: 2026-03-13  
+Status: Draft v0.1
+Last updated: 2026-03-26
 Document owner: Product / founding team
 
 ## Purpose
@@ -140,7 +140,7 @@ Minimum mutate primitives:
 Agent Workflow should support an explicit `observable agent mode` for research, demos, and automated manual testing.
 
 In this mode:
-- agents must express focus and communication through visible canvas tools such as `Marker`, `Highlight`, `Magic Select`, and `Eraser`
+- agents must express focus and communication through visible canvas tools such as `Marker`, `Highlight`, `Magic Select`, `Stamp`, and `Eraser`
 - these actions must render real marks, region candidates, and tray anchors on the canvas
 - tool use must flow through the same runtime state a human session would mutate
 - the system should use stable tool-driver APIs instead of brittle raw OS-level pointer automation
@@ -149,6 +149,7 @@ Example observable tool-driver calls:
 - `marker.stroke(points, brushSpec)`
 - `highlight.stroke(points, brushSpec)`
 - `magic_select.click(x, y)`
+- `stamp.click(x, y, intentId)`
 - `eraser.stroke(points, brushSpec)`
 
 Dormant runtime-only compatibility to preserve for now:
@@ -180,15 +181,18 @@ Initial focus affordances map to the current right-side communication rail:
 - `Marker`
 - `Highlight`
 - `Magic Select`
+- `Stamp`
 - `Eraser`
 
 These do not commit image edits by themselves. They define focus and scope for review or later execution.
+
+`Stamp` places short directive labels that planning should consume as structured focus input. In the current shell, users click the canvas with `Stamp` armed and then choose `Fix`, `Move`, `Remove`, `Replace`, or `Custom` from a compact menu at that location. `Custom` opens a short text field and stamps the typed note.
 
 `Make Space` remains a dormant runtime affordance in this phase, but it is not part of the current visible communication rail.
 
 ### Design Review
 Initial proposal generation uses the current `Design review` flow:
-- review consumes the visible canvas plus marks and region candidates
+- review consumes the visible canvas plus marks, stamp labels, and region candidates
 - review returns 2-3 ranked action-first proposals
 - proposal acceptance routes through the normal execution layer
 - final apply replaces the target image in place on the active tab
@@ -430,7 +434,7 @@ V1 Agent Workflow should support:
 - single active tab observation
 - branch tabs for speculative work
 - direct invocation of current single-image affordances
-- observable canvas-tool driving for `Marker`, `Highlight`, `Magic Select`, and `Eraser`
+- observable canvas-tool driving for `Marker`, `Highlight`, `Magic Select`, `Stamp`, and `Eraser`
 - design review request and proposal acceptance
 - checkpoint creation and revert
 - goal evaluation and tab comparison
@@ -442,7 +446,7 @@ V1 Agent Workflow should support:
 ## V1 Acceptance Criteria
 - An agent can inspect the current tab without mutating state.
 - An agent can call one current direct affordance on a target tab.
-- An agent can drive visible `Marker`, `Highlight`, `Magic Select`, and `Eraser` interactions through a stable tool-driver API.
+- An agent can drive visible `Marker`, `Highlight`, `Magic Select`, `Stamp`, and `Eraser` interactions through a stable tool-driver API.
 - An agent can create spatial focus and request design review.
 - An agent can receive structured proposals and choose one.
 - An agent can accept a proposal in place or in a branch tab.
@@ -463,7 +467,7 @@ V1 Agent Workflow should support:
 1. Add `goal packet` and `focusSpec` contracts.
 2. Expose observe-only runtime state for tabs, canvas items, history, review, and receipts.
 3. Wrap current seeded affordances and review apply behind agent-safe mutate calls.
-4. Add observable tool-driver APIs for `Marker`, `Highlight`, `Magic Select`, and `Eraser` plus replay traces, while preserving dormant `make_space` runtime compatibility.
+4. Add observable tool-driver APIs for `Marker`, `Highlight`, `Magic Select`, `Stamp`, and `Eraser` plus replay traces, while preserving dormant `make_space` runtime compatibility.
 5. Add checkpoints and branch-tab compare/promote flows.
 6. Add preflight cost estimation and post-run usage accounting.
 7. Add evaluator packets for goal progress.

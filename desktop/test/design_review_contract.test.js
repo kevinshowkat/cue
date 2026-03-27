@@ -201,6 +201,39 @@ test("design review request builder scopes Highlight to the circled images only"
   );
 });
 
+test("design review planner prompt preserves stamp directives as structured focus context", () => {
+  const request = buildDesignReviewRequest({
+    shellContext: {
+      runDir: "/tmp/stamp-run",
+      activeImageId: "img-1",
+      images: [{ id: "img-1", path: "/tmp/stamp.png" }],
+    },
+    visualPrompt: {
+      canvas: { mode: "single", active_image_id: "img-1" },
+      marks: [],
+    },
+    focusInputs: [
+      {
+        focusInputId: "stamp-focus:1",
+        kind: "highlight",
+        imageId: "img-1",
+        bounds: { x: 84, y: 40, width: 132, height: 76 },
+        instruction: "Place text here.",
+        sourceTool: "stamp",
+      },
+    ],
+    reviewTool: "stamp",
+  });
+
+  assert.equal(request.focusInputs.length, 1);
+  assert.equal(request.focusInputs[0].instruction, "Place text here.");
+  assert.equal(request.focusInputs[0].sourceTool, "stamp");
+
+  const prompt = buildDesignReviewPlannerPrompt(request);
+  assert.match(prompt, /Stamp focus inputs are short directive labels/);
+  assert.match(prompt, /Place text here\./);
+});
+
 test("design review planner response parser accepts fenced JSON and normalizes proposal fields", () => {
   const response = parseDesignReviewPlannerResponse(
     [

@@ -184,7 +184,7 @@ test("observable driver can replay a persisted trace entry through the same hand
   assert.equal(replayed.trace.replay.method, "markerStroke");
 });
 
-test("observable driver supports highlight and make-space actions as first-class observable calls", async () => {
+test("observable driver supports highlight, stamp, and make-space actions as first-class observable calls", async () => {
   const requests = [];
   const driver = createAgentObservableDriver({
     performProtectStroke: async (request = {}) => {
@@ -193,6 +193,15 @@ test("observable driver supports highlight and make-space actions as first-class
         ok: true,
         tool: request.tool,
         point_count: Array.isArray(request.points) ? request.points.length : 0,
+      };
+    },
+    performStampClick: async (request = {}) => {
+      requests.push(request);
+      return {
+        ok: true,
+        tool: request.tool,
+        image_id: request.image_id,
+        intent_id: request.intent_id,
       };
     },
     performMakeSpaceClick: async (request = {}) => {
@@ -213,6 +222,13 @@ test("observable driver supports highlight and make-space actions as first-class
       { x: 28, y: 36 },
     ],
   });
+  const stamp = await driver.stampClick({
+    request_id: "req-stamp",
+    image_id: "img-hero",
+    point: { x: 52, y: 60 },
+    intent_id: "custom",
+    custom_text: "Headline",
+  });
   const makeSpace = await driver.run({
     action: "make_space",
     request_id: "req-space",
@@ -223,12 +239,17 @@ test("observable driver supports highlight and make-space actions as first-class
   assert.equal(protect.ok, true);
   assert.equal(protect.trace.action.tool, "highlight");
   assert.equal(protect.trace.replay.method, "protectStroke");
+  assert.equal(stamp.ok, true);
+  assert.equal(stamp.trace.action.tool, "stamp");
+  assert.equal(stamp.trace.action.intent_id, "custom");
+  assert.equal(stamp.trace.action.custom_text, "Headline");
+  assert.equal(stamp.trace.replay.method, "stampClick");
   assert.equal(makeSpace.ok, true);
   assert.equal(makeSpace.trace.action.tool, "make_space");
   assert.equal(makeSpace.trace.replay.method, "makeSpaceClick");
   assert.deepEqual(
     requests.map((request) => request.tool),
-    ["highlight", "make_space"]
+    ["highlight", "stamp", "make_space"]
   );
 });
 
@@ -264,6 +285,7 @@ test("observable driver bridge exposes stable window APIs and result events", as
 
   assert.equal(typeof windowObj[AGENT_OBSERVABLE_DRIVER_KEY]?.magicSelectClick, "function");
   assert.equal(typeof windowObj[AGENT_OBSERVABLE_DRIVER_KEY]?.protectStroke, "function");
+  assert.equal(typeof windowObj[AGENT_OBSERVABLE_DRIVER_KEY]?.stampClick, "function");
   assert.equal(typeof windowObj[AGENT_OBSERVABLE_DRIVER_KEY]?.makeSpaceClick, "function");
 
   windowObj.dispatchEvent(

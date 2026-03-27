@@ -19,15 +19,31 @@ test("communication rail markup exposes bottom rail tools and proposal tray scaf
   assert.match(html, /id="communication-tool-marker"[\s\S]*class="communication-tool communication-tool-marker"/);
   assert.match(html, /id="communication-tool-protect"[\s\S]*class="communication-tool communication-tool-protect"/);
   assert.match(html, /id="communication-tool-magic-select"[\s\S]*class="communication-tool communication-tool-magic-select"/);
+  assert.match(html, /id="communication-tool-stamp"[\s\S]*class="communication-tool communication-tool-stamp"/);
   assert.match(html, /id="communication-tool-eraser"[\s\S]*class="communication-tool communication-tool-eraser"/);
   assert.match(html, /id="communication-tool-marker"[\s\S]*class="communication-icon communication-icon-marker"/);
   assert.match(html, /id="communication-tool-protect"[\s\S]*class="communication-icon communication-icon-protect"/);
   assert.match(html, /id="communication-tool-magic-select"[\s\S]*class="communication-icon communication-icon-magic-select"/);
+  assert.match(html, /id="communication-tool-stamp"[\s\S]*class="communication-icon communication-icon-stamp"/);
   assert.match(html, /id="communication-tool-eraser"[\s\S]*class="communication-icon communication-icon-eraser"/);
   assert.match(html, /id="communication-tool-marker"[\s\S]*viewBox="0 0 24 48"/);
   assert.match(html, /id="communication-tool-protect"[\s\S]*viewBox="0 0 24 48"/);
   assert.match(html, /id="communication-tool-magic-select"[\s\S]*viewBox="0 0 24 48"/);
+  assert.match(html, /id="communication-tool-stamp"[\s\S]*viewBox="0 0 24 48"/);
   assert.match(html, /id="communication-tool-eraser"[\s\S]*viewBox="0 0 24 48"/);
+  assert.match(html, /id="communication-stamp-picker"/);
+  assert.match(html, /id="communication-stamp-picker-title"/);
+  assert.match(html, /id="communication-stamp-picker-subtitle"/);
+  assert.match(html, /id="communication-stamp-intent-list"/);
+  assert.match(html, /data-stamp-intent="fix"/);
+  assert.match(html, /data-stamp-intent="move"/);
+  assert.match(html, /data-stamp-intent="remove"/);
+  assert.match(html, /data-stamp-intent="replace"/);
+  assert.match(html, /data-stamp-intent="custom"/);
+  assert.match(html, /id="communication-stamp-custom-panel"/);
+  assert.match(html, /id="communication-stamp-custom-input"/);
+  assert.match(html, /id="communication-stamp-custom-cancel"/);
+  assert.match(html, /id="communication-stamp-custom-submit"/);
   assert.doesNotMatch(html, /id="communication-tool-make-space"/);
 });
 
@@ -64,9 +80,23 @@ test("communication rail css anchors a partially submerged pouch rail at the bot
     css,
     /\.communication-tool\.is-active svg\s*\{[\s\S]*drop-shadow\(0 26px 30px rgba\(18,\s*31,\s*46,\s*0\.18\)\)/
   );
-  assert.match(css, /\.communication-tool-label\s*\{[\s\S]*position:\s*absolute[\s\S]*bottom:\s*70px/);
-  assert.match(css, /\.communication-tool-label\s*\{[\s\S]*box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.76\);/);
-  assert.doesNotMatch(css, /\.communication-tool-label\s*\{[\s\S]*0 10px 22px rgba\(18,\s*31,\s*46,\s*0\.1\)/);
+  assert.match(css, /\.communication-shell\s*\{[\s\S]*width:\s*var\(--jg-communication-shell-width\)/);
+  assert.match(css, /\.communication-rail\s*\{[\s\S]*justify-content:\s*center/);
+  assert.match(css, /\.communication-rail\s*\{[\s\S]*gap:\s*2px/);
+  assert.match(css, /\.communication-tool\s*\{[\s\S]*width:\s*70px[\s\S]*min-width:\s*70px/);
+  assert.match(css, /\.communication-tool-label\s*\{\s*display:\s*none;\s*\}/);
+  assert.match(css, /\.communication-tool\.communication-tool-stamp\s*\{/);
+  assert.match(css, /\.communication-tool\.communication-tool-stamp svg\s*\{/);
+  assert.match(css, /\.communication-stamp-picker-orbit\s*\{/);
+  assert.match(css, /\.communication-stamp-picker-core\s*\{/);
+  assert.match(css, /\.communication-stamp-picker\s*\{[\s\S]*pointer-events:\s*auto/);
+  assert.match(css, /\.communication-stamp-picker\[data-picker-mode="custom"\]\s*\{/);
+  assert.match(css, /\.communication-stamp-intent-list\s*\{/);
+  assert.match(css, /\.communication-stamp-intent\s*\{/);
+  assert.match(css, /\.communication-stamp-intent\.is-selected\s*\{/);
+  assert.match(css, /\.communication-stamp-custom-panel\s*\{/);
+  assert.match(css, /\.communication-stamp-custom-input\s*\{/);
+  assert.match(css, /\.communication-stamp-custom-action\s*\{/);
   assert.doesNotMatch(css, /\.communication-tool\.communication-tool-make-space/);
   assert.match(css, /\.communication-proposal-tray\s*\{/);
   assert.match(css, /\.communication-proposal-slot\.is-skeleton::before\s*\{/);
@@ -86,14 +116,16 @@ test("communication state is tab-local and design review is exposed through the 
   assert.match(app, /resolvedTarget:\s*resolveCommunicationReviewTarget\(\)/);
 });
 
-test("communication input layer retains semantic protect and dormant make-space behavior while reusing marker and magic-select behavior", () => {
-  assert.match(app, /COMMUNICATION_TOOL_IDS = Object\.freeze\(\["marker", "protect", "magic_select", "make_space", "eraser"\]\)/);
+test("communication input layer retains semantic highlight, stamp, and dormant make-space behavior while reusing marker and magic-select behavior", () => {
+  assert.match(app, /COMMUNICATION_TOOL_IDS = Object\.freeze\(\["marker", "protect", "magic_select", "stamp", "make_space", "eraser"\]\)/);
   assert.match(app, /COMMUNICATION_TOOL_BEHAVIOR = Object\.freeze\(\{/);
   assert.match(app, /COMMUNICATION_POINTER_KINDS = Object\.freeze\(\{/);
   assert.match(app, /function handleCommunicationCanvasPointerDown\(event, p, pCss\) \{/);
   assert.equal((app.match(/handleCommunicationCanvasPointerDown\(event, p, pCss\)/g) || []).length, 3);
   assert.match(app, /const behaviorTool = communicationBehaviorToolId\(communicationTool\);/);
   assert.match(app, /if \(behaviorTool === "eraser"\) \{/);
+  assert.match(app, /if \(behaviorTool === "stamp"\) \{/);
+  assert.match(app, /openCommunicationStampPickerAtPoint\(p, pCss, communicationImageId\);/);
   assert.match(
     app,
     /function beginCommunicationMarkerStroke\(event, p, pCss, communicationImageId = null(?:, markKind = "freehand_marker")?\) \{/

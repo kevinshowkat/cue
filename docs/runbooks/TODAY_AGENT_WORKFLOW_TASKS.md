@@ -138,7 +138,7 @@ Build:
   - Highlight
   - Remove People
   - Polish
-  - Make Space
+  - Stamp
   - Relight
 - Keep shell behavior aligned with worker-owned runtime semantics
 
@@ -169,7 +169,7 @@ Mission:
 - Verify these flows:
   1. Marker -> Design Review -> Accept Proposal -> Export -> PSD
   2. Highlight -> Remove People -> Export -> PSD
-  3. Make Space -> Relight -> Export -> PSD
+  3. Stamp (Custom: "Title here") -> Design Review -> Accept Proposal -> Export -> PSD
   4. Remove People -> Polish -> Export -> PSD
 - Use replay traces where available
 - Validate receipts and exported artifacts

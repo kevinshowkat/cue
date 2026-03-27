@@ -29,8 +29,9 @@ test("native system menu exposes a sync command for dynamic slot state", () => {
 test("native tools menu mirrors communication rail tools before custom tools", () => {
   assert.match(
     appSource,
-    /const NATIVE_MENU_COMMUNICATION_TOOLS = Object\.freeze\(\[[\s\S]*Marker[\s\S]*Highlight[\s\S]*Magic Select[\s\S]*Make Space[\s\S]*Eraser[\s\S]*\]\);/
+    /const NATIVE_MENU_COMMUNICATION_TOOLS = Object\.freeze\(\[[\s\S]*Marker[\s\S]*Highlight[\s\S]*Magic Select[\s\S]*Stamp[\s\S]*Eraser[\s\S]*\]\);/
   );
+  assert.doesNotMatch(appSource, /const NATIVE_MENU_COMMUNICATION_TOOLS = Object\.freeze\(\[[\s\S]*Make Space[\s\S]*\]\);/);
   assert.match(
     appSource,
     /function buildNativeToolSlots\(\) \{[\s\S]*NATIVE_MENU_COMMUNICATION_TOOLS[\s\S]*visibleCustomTools = sessionToolRegistry\.visible\(\{ limit: customToolLimit \}\)[\s\S]*kind: "communication_tool"/

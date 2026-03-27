@@ -515,11 +515,18 @@ test("communication tool selection refreshes quick actions so left-rail selectio
       tool: null,
       markDraft: { id: "draft-mark" },
       eraseDraft: { id: "draft-erase" },
+      stampPicker: { visible: true, anchorCss: { x: 12, y: 18 }, selectedIntentId: "fix" },
     },
   };
   const applyCommunicationToolSelection = instantiateFunction("applyCommunicationToolSelection", {
-    COMMUNICATION_TOOL_IDS: ["marker", "protect", "magic_select", "make_space", "eraser"],
+    COMMUNICATION_TOOL_IDS: ["marker", "protect", "magic_select", "stamp", "make_space", "eraser"],
     state,
+    hideCommunicationStampPicker: ({ clearSelection = false } = {}) => {
+      state.communication.stampPicker = clearSelection
+        ? { visible: false, anchorCss: null, selectedIntentId: "" }
+        : { ...state.communication.stampPicker, visible: false, anchorCss: null };
+      return state.communication.stampPicker;
+    },
     syncDropHintInteractivity: () => calls.push(["syncDropHintInteractivity"]),
     renderCommunicationChrome: () => calls.push(["renderCommunicationChrome"]),
     renderQuickActions: () => calls.push(["renderQuickActions"]),
@@ -539,6 +546,7 @@ test("communication tool selection refreshes quick actions so left-rail selectio
   assert.equal(state.communication.tool, "marker");
   assert.equal(state.communication.markDraft, null);
   assert.equal(state.communication.eraseDraft, null);
+  assert.deepEqual(state.communication.stampPicker, { visible: false, anchorCss: null, selectedIntentId: "fix" });
   assert.ok(calls.some(([name]) => name === "renderQuickActions"));
 });
 
@@ -638,8 +646,12 @@ test("communication overlay renders marker as a thick red stroke and highlight a
       });
     },
   };
+  const els = {
+    workCanvas: null,
+  };
   const renderCommunicationOverlay = instantiateFunction("renderCommunicationOverlay", {
     getDpr: () => 1,
+    els,
     state,
     imageToCanvasForImageId: () => null,
     COMMUNICATION_REGION_ACTIVE: "active",
@@ -657,6 +669,9 @@ test("communication overlay renders marker as a thick red stroke and highlight a
     COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX: 18,
     traceCommunicationMarkPath: () => true,
     communicationCanvasMarks: () => state.communication.canvasMarks,
+    communicationCanvasStamps: () => [],
+    communicationStampLayoutCss: () => null,
+    communicationStampLabel: () => "Stamp",
     communicationCanvasCssScaleForImageId: () => 1,
     communicationMarkViewportScale: () => 1,
   });
@@ -718,8 +733,12 @@ test("communication overlay keeps image-space marker width fixed on screen regar
       });
     },
   };
+  const els = {
+    workCanvas: null,
+  };
   const renderCommunicationOverlay = instantiateFunction("renderCommunicationOverlay", {
     getDpr: () => 1,
+    els,
     state,
     imageToCanvasForImageId: () => null,
     COMMUNICATION_REGION_ACTIVE: "active",
@@ -736,6 +755,9 @@ test("communication overlay keeps image-space marker width fixed on screen regar
     COMMUNICATION_PROTECT_COMMITTED_WIDTH_CSS_PX: 2,
     traceCommunicationMarkPath: () => true,
     communicationCanvasMarks: () => state.communication.canvasMarks,
+    communicationCanvasStamps: () => [],
+    communicationStampLayoutCss: () => null,
+    communicationStampLabel: () => "Stamp",
     communicationCanvasCssScaleForImageId: () => 0.5,
     communicationMarkViewportScale: () => 0.5,
   });
@@ -752,6 +774,180 @@ test("communication overlay keeps image-space marker width fixed on screen regar
       strokeStyle: "rgba(255, 94, 190, 0.94)",
     },
   ]);
+});
+
+test("stamp picker positions a compact radial menu to the right of the clicked canvas target", () => {
+  const intentToggles = [];
+  const pickerEl = {
+    offsetWidth: 168,
+    offsetHeight: 168,
+    dataset: {},
+    style: {},
+    classList: {
+      toggle() {},
+    },
+    hidden: true,
+    setAttribute() {},
+    parentElement: {
+      getBoundingClientRect() {
+        return {
+          left: 300,
+          top: 600,
+          width: 488,
+          height: 214,
+        };
+      },
+    },
+  };
+  const titleEl = { textContent: "" };
+  const subtitleEl = { textContent: "" };
+  const buttons = [
+    {
+      dataset: { stampIntent: "fix" },
+      classList: { toggle(name, value) { intentToggles.push(["fix", name, value]); } },
+      setAttribute() {},
+    },
+    {
+      dataset: { stampIntent: "move" },
+      classList: { toggle(name, value) { intentToggles.push(["move", name, value]); } },
+      setAttribute() {},
+    },
+  ];
+  const state = {
+    communication: {
+      stampPicker: {
+        visible: true,
+        anchorFrame: "canvas",
+        anchorCss: {
+          x: 190,
+          y: 180,
+        },
+        selectedIntentId: "fix",
+      },
+    },
+  };
+  const els = {
+    communicationStampPicker: pickerEl,
+    communicationStampPickerTitle: titleEl,
+    communicationStampPickerSubtitle: subtitleEl,
+    communicationStampIntentList: {
+      querySelectorAll() {
+        return buttons;
+      },
+    },
+    communicationToolStamp: {
+      getBoundingClientRect() {
+        return {
+          left: 452,
+          top: 620,
+          width: 70,
+          height: 188,
+        };
+      },
+    },
+    communicationShell: {
+      getBoundingClientRect() {
+        return {
+          left: 300,
+          top: 600,
+          width: 392,
+          height: 214,
+        };
+      },
+    },
+    canvasWrap: {
+      getBoundingClientRect() {
+        return {
+          left: 100,
+          top: 50,
+          width: 1000,
+          height: 700,
+        };
+      },
+    },
+  };
+  const renderCommunicationStampPicker = instantiateFunction("renderCommunicationStampPicker", {
+    els,
+    state,
+    window: {
+      innerWidth: 1200,
+      innerHeight: 800,
+    },
+    createFreshCommunicationStampPickerState: () => ({
+      visible: false,
+      anchorCss: null,
+    }),
+    selectedCommunicationStampIntentId: (picker) => picker?.selectedIntentId || "",
+    communicationStampLabel: (intentId) => (intentId === "fix" ? "Fix" : "Stamp"),
+    normalizeCommunicationStampIntentId: (value) => String(value || ""),
+    normalizeCommunicationStampPickerMode: (value) => (value === "custom_input" ? "custom_input" : "intent_list"),
+    normalizeCommunicationStampCustomText: (value) => String(value || "").trim(),
+    communicationToolId: () => "stamp",
+    clampCanvasCssPoint: (point) => point,
+    clamp: instantiateFunction("clamp"),
+  });
+
+  renderCommunicationStampPicker();
+
+  assert.equal(pickerEl.hidden, false);
+  assert.equal(titleEl.textContent, "Stamp");
+  assert.equal(subtitleEl.textContent, "Choose");
+  assert.equal(pickerEl.style.left, "2px");
+  assert.equal(pickerEl.style.top, "-454px");
+  assert.equal(pickerEl.style.right, "auto");
+  assert.equal(pickerEl.style.bottom, "auto");
+  assert.equal(pickerEl.dataset.anchorPlacement, "right");
+  assert.ok(intentToggles.some(([intent, name, value]) => intent === "fix" && name === "is-selected" && value === true));
+});
+
+test("stamp canvas click opens the picker at the clicked target", () => {
+  const calls = [];
+  const state = {
+    canvasMode: "single",
+    pointer: {},
+    communication: {
+      stampPicker: { visible: false },
+    },
+  };
+  const handleCommunicationCanvasPointerDown = instantiateFunction("handleCommunicationCanvasPointerDown", {
+    state,
+    communicationToolId: () => "stamp",
+    communicationBehaviorToolId: (tool) => tool,
+    eraseCommunicationAtCanvasPoint: () => null,
+    dispatchJuggernautShellEvent: () => null,
+    COMMUNICATION_STATE_CHANGED_EVENT: "juggernaut:communication-state-changed",
+    buildCommunicationBridgeSnapshot: () => ({}),
+    buildJuggernautShellContext: () => ({}),
+    requestRender: () => calls.push(["render"]),
+    hitTestVisibleCanvasImage: () => "img-hero",
+    beginCommunicationMarkerStroke: () => {
+      calls.push(["marker"]);
+    },
+    canvasToImageForImageId: () => ({ x: 18, y: 24 }),
+    beginCommunicationMagicSelectStroke: () => false,
+    bumpInteraction: (meta) => calls.push(["bump", meta]),
+    openCommunicationStampPickerAtPoint: (point, pointCss, imageId) => {
+      calls.push(["open-picker", point, pointCss, imageId]);
+      return { visible: true };
+    },
+  });
+
+  const consumed = handleCommunicationCanvasPointerDown(
+    {
+      button: 0,
+      preventDefault() {
+        calls.push(["prevent"]);
+      },
+      stopPropagation() {
+        calls.push(["stop"]);
+      },
+    },
+    { x: 120, y: 160 },
+    { x: 60, y: 80 }
+  );
+
+  assert.equal(consumed, true);
+  assert.ok(calls.some(([name]) => name === "open-picker"));
 });
 
 test("image-space communication anchors preserve image coordinates for downstream targeting", () => {
