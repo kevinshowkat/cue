@@ -66,22 +66,23 @@ def resolve_default_helper() -> Path:
     return Path(__file__).resolve().parent / "magic_select_mobile_sam.py"
 
 
-def build_request(
+def build_prepare_request(
     image_path: Path,
     model_path: Path,
-    click_anchor: tuple[float, float],
-    output_mask_path: Path,
     *,
+    image_id: str,
+    prepared_image_id: str,
+    image_cache_key: str,
     model_id: str,
     model_revision: str,
 ) -> dict:
-    x, y = click_anchor
     return {
         "contract": "juggernaut.magic_select.local.prepared.v1",
-        "action": "magic_select_warm_click",
+        "action": "magic_select_prepare",
+        "imageId": image_id,
+        "preparedImageId": prepared_image_id,
+        "imageCacheKey": image_cache_key,
         "imagePath": str(image_path),
-        "clickAnchor": {"x": x, "y": y},
-        "outputMaskPath": str(output_mask_path),
         "model": {
             "id": model_id,
             "revision": model_revision,
@@ -91,6 +92,24 @@ def build_request(
             "maskThreshold": 127,
             "maxContourPoints": 256,
         },
+    }
+
+
+def build_warm_click_request(
+    click_anchor: tuple[float, float],
+    output_mask_path: Path,
+    *,
+    image_id: str,
+    prepared_image_id: str,
+) -> dict:
+    x, y = click_anchor
+    return {
+        "contract": "juggernaut.magic_select.local.prepared.v1",
+        "action": "magic_select_warm_click",
+        "imageId": image_id,
+        "preparedImageId": prepared_image_id,
+        "clickAnchor": {"x": x, "y": y},
+        "outputMaskPath": str(output_mask_path),
     }
 
 
@@ -106,21 +125,37 @@ def run_cold_helper_once(
     threads: int,
 ) -> tuple[dict, float]:
     with tempfile.TemporaryDirectory(prefix="juggernaut_magic_select_cold_") as tmpdir:
-        request = build_request(
+        image_id = f"benchmark:{image_path.stem}"
+        prepared_image_id = f"{image_id}:prepared"
+        image_cache_key = f"{image_path.resolve()}::{model_id}:{model_revision}"
+        prepare_request = build_prepare_request(
             image_path,
             model_path,
-            click_anchor,
-            Path(tmpdir) / "cold-mask.png",
             model_id=model_id,
             model_revision=model_revision,
+            image_id=image_id,
+            prepared_image_id=prepared_image_id,
+            image_cache_key=image_cache_key,
+        )
+        warm_click_request = build_warm_click_request(
+            click_anchor,
+            Path(tmpdir) / "cold-mask.png",
+            image_id=image_id,
+            prepared_image_id=prepared_image_id,
         )
         env = os.environ.copy()
         env.setdefault("CUDA_VISIBLE_DEVICES", "")
         env["JUGGERNAUT_MAGIC_SELECT_THREADS"] = str(threads)
+        input_payload = "\n".join(
+            (
+                json.dumps(prepare_request),
+                json.dumps(warm_click_request),
+            )
+        )
         started = now_ns()
         completed = subprocess.run(
-            [python_bin, str(helper_path), "--input-json", "-"],
-            input=json.dumps(request),
+            [python_bin, str(helper_path), "--worker"],
+            input=f"{input_payload}\n",
             text=True,
             capture_output=True,
             check=False,
@@ -132,11 +167,22 @@ def run_cold_helper_once(
         if completed.returncode != 0:
             detail = stderr or stdout or f"helper exited {completed.returncode}"
             raise SystemExit(f"cold helper invocation failed: {detail}")
+        output_lines = [line for line in stdout.splitlines() if line.strip()]
+        if len(output_lines) < 2:
+            raise SystemExit(f"cold helper returned too few worker responses: {stdout}")
         try:
-            payload = json.loads(stdout)
+            prepare_payload = json.loads(output_lines[0])
+            warm_click_payload = json.loads(output_lines[1])
         except json.JSONDecodeError as exc:
-            raise SystemExit(f"cold helper returned invalid JSON: {exc}: {stdout}") from exc
-        return payload, duration_ms
+            raise SystemExit(f"cold helper returned invalid worker JSON: {exc}: {stdout}") from exc
+        if not prepare_payload.get("ok"):
+            raise SystemExit(f"cold helper prepare failed: {json.dumps(prepare_payload)}")
+        if not warm_click_payload.get("ok"):
+            raise SystemExit(f"cold helper warm click failed: {json.dumps(warm_click_payload)}")
+        return {
+            "prepare": prepare_payload,
+            "warmClick": warm_click_payload,
+        }, duration_ms
 
 
 def main() -> None:
