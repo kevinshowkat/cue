@@ -22,8 +22,7 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use reqwest::blocking::Client;
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
-#[cfg(target_family = "unix")]
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::TcpListener;
@@ -33,10 +32,10 @@ use std::os::unix::fs::PermissionsExt;
 #[cfg(target_family = "unix")]
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::process;
+use std::process::{self, Stdio};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 use tauri::{AboutMetadata, CustomMenuItem, Manager, Menu, MenuItem, State, Submenu};
 use tungstenite::client::IntoClientRequest;
 use tungstenite::stream::MaybeTlsStream;
@@ -79,6 +78,16 @@ const REVIEW_OPENAI_RESPONSES_WS_FIRST_EVENT_TIMEOUT: Duration = Duration::from_
 const REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT: Duration = Duration::from_secs(90);
 const REVIEW_FAST_PLANNER_HTTP_TIMEOUT: Duration = Duration::from_secs(45);
 const REVIEW_STANDARD_PLANNER_HTTP_TIMEOUT: Duration = Duration::from_secs(90);
+const MAGIC_SELECT_LOCAL_CONTRACT: &str = "juggernaut.magic_select.local.prepared.v1";
+const MAGIC_SELECT_LOCAL_PREPARE_ACTION: &str = "magic_select_prepare";
+const MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION: &str = "magic_select_warm_click";
+const MAGIC_SELECT_LOCAL_RELEASE_ACTION: &str = "magic_select_release";
+const MAGIC_SELECT_LOCAL_DEFAULT_MODEL_ID: &str = "mobile_sam_vit_t";
+const MAGIC_SELECT_LOCAL_DEFAULT_HELPER_SCRIPT: &str = "scripts/magic_select_mobile_sam.py";
+const MAGIC_SELECT_LOCAL_DEFAULT_PYTHON: &str = "python3";
+const MAGIC_SELECT_LOCAL_DEFAULT_MASK_THRESHOLD: u8 = 127;
+const MAGIC_SELECT_LOCAL_DEFAULT_MAX_CONTOUR_POINTS: usize = 256;
+const MAGIC_SELECT_LOCAL_STDERR_TAIL_LINES: usize = 64;
 
 fn build_placeholder_menu(prefix: &str, slot_count: usize, label_prefix: &str) -> Menu {
     let mut menu = Menu::new();
@@ -95,30 +104,20 @@ fn build_placeholder_menu(prefix: &str, slot_count: usize, label_prefix: &str) -
 }
 
 fn build_file_menu() -> Menu {
-    let new_session =
-        CustomMenuItem::new(MENU_FILE_NEW_SESSION.to_string(), "New Session")
-            .accelerator("CmdOrCtrl+N");
-    let open_session =
-        CustomMenuItem::new(MENU_FILE_OPEN_SESSION.to_string(), "Open Session…")
-            .accelerator("CmdOrCtrl+O");
-    let save_session =
-        CustomMenuItem::new(MENU_FILE_SAVE_SESSION.to_string(), "Save Session")
-            .accelerator("CmdOrCtrl+S");
-    let close_session =
-        CustomMenuItem::new(MENU_FILE_CLOSE_SESSION.to_string(), "Close Session")
-            .accelerator("CmdOrCtrl+Shift+W");
-    let import_photos = CustomMenuItem::new(
-        MENU_FILE_IMPORT_PHOTOS.to_string(),
-        "Import Photos…",
-    );
-    let export_session = CustomMenuItem::new(
-        MENU_FILE_EXPORT_SESSION.to_string(),
-        "Export Session…",
-    )
-    .accelerator("CmdOrCtrl+Shift+E");
+    let new_session = CustomMenuItem::new(MENU_FILE_NEW_SESSION.to_string(), "New Session")
+        .accelerator("CmdOrCtrl+N");
+    let open_session = CustomMenuItem::new(MENU_FILE_OPEN_SESSION.to_string(), "Open Session…")
+        .accelerator("CmdOrCtrl+O");
+    let save_session = CustomMenuItem::new(MENU_FILE_SAVE_SESSION.to_string(), "Save Session")
+        .accelerator("CmdOrCtrl+S");
+    let close_session = CustomMenuItem::new(MENU_FILE_CLOSE_SESSION.to_string(), "Close Session")
+        .accelerator("CmdOrCtrl+Shift+W");
+    let import_photos = CustomMenuItem::new(MENU_FILE_IMPORT_PHOTOS.to_string(), "Import Photos…");
+    let export_session =
+        CustomMenuItem::new(MENU_FILE_EXPORT_SESSION.to_string(), "Export Session…")
+            .accelerator("CmdOrCtrl+Shift+E");
     let settings =
-        CustomMenuItem::new(MENU_FILE_SETTINGS.to_string(), "Settings…")
-            .accelerator("CmdOrCtrl+,");
+        CustomMenuItem::new(MENU_FILE_SETTINGS.to_string(), "Settings…").accelerator("CmdOrCtrl+,");
 
     #[allow(unused_mut)]
     let mut file_menu = Menu::new()
@@ -143,8 +142,7 @@ fn build_file_menu() -> Menu {
 }
 
 fn build_tools_menu() -> Menu {
-    let create_tool =
-        CustomMenuItem::new(MENU_TOOLS_CREATE_TOOL.to_string(), "Create Tool");
+    let create_tool = CustomMenuItem::new(MENU_TOOLS_CREATE_TOOL.to_string(), "Create Tool");
     let slot_labels = [
         "Marker",
         "Highlight",
@@ -663,7 +661,11 @@ fn remove_dotenv_key(path: &Path, key: &str) -> Result<bool, String> {
         return Ok(false);
     }
 
-    while lines.last().map(|line| line.trim().is_empty()).unwrap_or(false) {
+    while lines
+        .last()
+        .map(|line| line.trim().is_empty())
+        .unwrap_or(false)
+    {
         lines.pop();
     }
 
@@ -1495,6 +1497,1041 @@ fn get_repo_root() -> Result<String, String> {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct MagicSelectPointPayload {
+    x: f64,
+    y: f64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct MagicSelectSettingsPayload {
+    mask_threshold: Option<u8>,
+    max_contour_points: Option<usize>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MagicSelectPrepareImageRequest {
+    image_id: String,
+    image_path: String,
+    run_dir: String,
+    stable_source_ref: String,
+    source: String,
+    settings: MagicSelectSettingsPayload,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MagicSelectWarmClickRequest {
+    prepared_image_id: String,
+    image_id: String,
+    click_anchor: MagicSelectPointPayload,
+    source: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MagicSelectReleaseRequest {
+    prepared_image_id: String,
+    image_id: String,
+    reason: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MagicSelectClickRequest {
+    image_id: String,
+    image_path: String,
+    run_dir: Option<String>,
+    stable_source_ref: Option<String>,
+    click_anchor: MagicSelectPointPayload,
+    source: Option<String>,
+    settings: Option<MagicSelectSettingsPayload>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MagicSelectHelperModelPayload {
+    id: String,
+    revision: String,
+    path: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MagicSelectHelperInput {
+    contract: &'static str,
+    action: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prepared_image_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_cache_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    click_anchor: Option<MagicSelectPointPayload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_mask_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<MagicSelectHelperModelPayload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    settings: Option<MagicSelectSettingsPayload>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MagicSelectHelperOutput {
+    ok: Option<bool>,
+    action: Option<String>,
+    image_id: Option<String>,
+    prepared_image_id: Option<String>,
+    code: Option<String>,
+    details: Option<serde_json::Value>,
+    mask_path: Option<String>,
+    confidence: Option<f64>,
+    model_id: Option<String>,
+    model_revision: Option<String>,
+    runtime: Option<String>,
+    warnings: Option<Vec<String>>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct MagicSelectRuntimeConfig {
+    python_bin: String,
+    helper_path: PathBuf,
+    model_path: PathBuf,
+    model_id: String,
+    model_revision: String,
+    runtime_id: String,
+}
+
+#[derive(Debug, Clone)]
+struct NormalizedMagicSelectSettings {
+    mask_threshold: u8,
+    max_contour_points: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct MagicSelectContourPoint {
+    x: i32,
+    y: i32,
+}
+
+#[derive(Debug, Clone)]
+struct MagicSelectMaskSummary {
+    width: u32,
+    height: u32,
+    bounds_x: u32,
+    bounds_y: u32,
+    bounds_w: u32,
+    bounds_h: u32,
+    contour_points: Vec<MagicSelectContourPoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MagicSelectFileFingerprint {
+    len: u64,
+    modified_unix_nanos: Option<u128>,
+}
+
+#[derive(Debug, Clone)]
+struct MagicSelectCachedFileHash {
+    fingerprint: MagicSelectFileFingerprint,
+    sha256: String,
+}
+
+#[derive(Debug, Clone)]
+struct MagicSelectPreparedImageState {
+    prepared_image_id: String,
+    image_cache_key: String,
+    image_id: String,
+    image_path: PathBuf,
+    artifact_root: PathBuf,
+    stable_source_ref: String,
+    source: String,
+    settings: NormalizedMagicSelectSettings,
+    image_sha256: String,
+    runtime_id: String,
+    model_id: String,
+    model_revision: String,
+    prepared_at_millis: i64,
+}
+
+#[derive(Debug)]
+struct MagicSelectWorkerClient {
+    runtime_signature: String,
+    child: process::Child,
+    stdin: process::ChildStdin,
+    stdout: BufReader<process::ChildStdout>,
+    stderr_tail: Arc<Mutex<VecDeque<String>>>,
+    prepared_image_ids: HashSet<String>,
+}
+
+#[derive(Debug, Default)]
+struct MagicSelectWorkerSession {
+    client: Option<MagicSelectWorkerClient>,
+    cached_image_hashes: HashMap<PathBuf, MagicSelectCachedFileHash>,
+    prepared_images: HashMap<String, MagicSelectPreparedImageState>,
+}
+
+#[derive(Debug, Clone)]
+struct MagicSelectWorkerError {
+    action: String,
+    image_id: Option<String>,
+    prepared_image_id: Option<String>,
+    code: String,
+    warnings: Vec<String>,
+    details: Option<serde_json::Value>,
+}
+
+#[tauri::command]
+fn prepare_local_magic_select_image(
+    request: MagicSelectPrepareImageRequest,
+) -> Result<serde_json::Value, serde_json::Value> {
+    magic_select_prepare_local_image_impl(request)
+}
+
+#[tauri::command]
+fn run_local_magic_select_warm_click(
+    request: MagicSelectWarmClickRequest,
+) -> Result<serde_json::Value, serde_json::Value> {
+    magic_select_run_local_warm_click_impl(request)
+}
+
+#[tauri::command]
+fn release_local_magic_select_image(
+    request: MagicSelectReleaseRequest,
+) -> Result<serde_json::Value, serde_json::Value> {
+    magic_select_release_local_image_impl(request)
+}
+
+#[tauri::command]
+fn run_local_magic_select_click(
+    request: MagicSelectClickRequest,
+) -> Result<serde_json::Value, String> {
+    let image_id = request.image_id.trim().to_string();
+    if image_id.is_empty() {
+        return Err("magic_select_click requires imageId".to_string());
+    }
+    let image_path = request.image_path.trim().to_string();
+    if image_path.is_empty() {
+        return Err("magic_select_click requires imagePath".to_string());
+    }
+    let run_dir = if let Some(run_dir) = request
+        .run_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        run_dir.to_string()
+    } else {
+        magic_select_resolve_artifact_root(None)
+            .map_err(|e| format!("failed to resolve run dir for magic_select_click: {e}"))?
+            .to_string_lossy()
+            .to_string()
+    };
+    let source = request
+        .source
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("canvas_magic_select")
+        .to_string();
+    let stable_source_ref = request
+        .stable_source_ref
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&image_path)
+        .to_string();
+    let settings = magic_select_normalize_settings(request.settings.clone());
+    let prepare_response = magic_select_prepare_local_image_impl(MagicSelectPrepareImageRequest {
+        image_id: image_id.clone(),
+        image_path: image_path.clone(),
+        run_dir,
+        stable_source_ref,
+        source: source.clone(),
+        settings: MagicSelectSettingsPayload {
+            mask_threshold: Some(settings.mask_threshold),
+            max_contour_points: Some(settings.max_contour_points),
+        },
+    })
+    .map_err(magic_select_error_payload_to_string)?;
+    let prepared_image_id = prepare_response
+        .get("preparedImageId")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            "prepare_local_magic_select_image did not return preparedImageId".to_string()
+        })?
+        .to_string();
+    magic_select_run_local_warm_click_impl(MagicSelectWarmClickRequest {
+        prepared_image_id,
+        image_id,
+        click_anchor: request.click_anchor,
+        source,
+    })
+    .map_err(magic_select_error_payload_to_string)
+}
+
+fn magic_select_error_payload(
+    action: &str,
+    code: &str,
+    image_id: Option<&str>,
+    prepared_image_id: Option<&str>,
+    details: Option<serde_json::Value>,
+    warnings: Option<Vec<String>>,
+) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "code": code,
+        "nonDestructive": true,
+        "contract": MAGIC_SELECT_LOCAL_CONTRACT,
+        "action": action,
+        "imageId": image_id.map(str::to_string),
+        "preparedImageId": prepared_image_id.map(str::to_string),
+    });
+    if let Some(map) = payload.as_object_mut() {
+        if let Some(details) = details {
+            map.insert("details".to_string(), details);
+        }
+        if let Some(warnings) = warnings {
+            if !warnings.is_empty() {
+                map.insert("warnings".to_string(), serde_json::json!(warnings));
+            }
+        }
+    }
+    payload
+}
+
+fn magic_select_error_message_details(message: impl Into<String>) -> serde_json::Value {
+    serde_json::json!({ "message": message.into() })
+}
+
+fn magic_select_error_payload_to_string(payload: serde_json::Value) -> String {
+    payload
+        .get("details")
+        .and_then(|value| value.get("message"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            payload
+                .get("code")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| payload.to_string())
+}
+
+fn magic_select_prepare_local_image_impl(
+    request: MagicSelectPrepareImageRequest,
+) -> Result<serde_json::Value, serde_json::Value> {
+    let image_id = request.image_id.trim().to_string();
+    if image_id.is_empty() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+            "magic_select_prepare_requires_image_id",
+            None,
+            None,
+            Some(magic_select_error_message_details(
+                "prepare_local_magic_select_image requires imageId",
+            )),
+            None,
+        ));
+    }
+    let image_path_text = request.image_path.trim().to_string();
+    if image_path_text.is_empty() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+            "magic_select_prepare_requires_image_path",
+            Some(&image_id),
+            None,
+            Some(magic_select_error_message_details(
+                "prepare_local_magic_select_image requires imagePath",
+            )),
+            None,
+        ));
+    }
+    let image_path = PathBuf::from(&image_path_text);
+    if !image_path.is_file() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+            "magic_select_prepare_source_image_missing",
+            Some(&image_id),
+            None,
+            Some(magic_select_error_message_details(format!(
+                "Magic Select source image not found at {}.",
+                image_path.to_string_lossy()
+            ))),
+            None,
+        ));
+    }
+    let run_dir = request.run_dir.trim().to_string();
+    if run_dir.is_empty() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+            "magic_select_prepare_requires_run_dir",
+            Some(&image_id),
+            None,
+            Some(magic_select_error_message_details(
+                "prepare_local_magic_select_image requires runDir",
+            )),
+            None,
+        ));
+    }
+    let stable_source_ref = request.stable_source_ref.trim().to_string();
+    if stable_source_ref.is_empty() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+            "magic_select_prepare_requires_stable_source_ref",
+            Some(&image_id),
+            None,
+            Some(magic_select_error_message_details(
+                "prepare_local_magic_select_image requires stableSourceRef",
+            )),
+            None,
+        ));
+    }
+    let source = request.source.trim().to_string();
+    if source.is_empty() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+            "magic_select_prepare_requires_source",
+            Some(&image_id),
+            None,
+            Some(magic_select_error_message_details(
+                "prepare_local_magic_select_image requires source",
+            )),
+            None,
+        ));
+    }
+
+    let settings = magic_select_normalize_settings(Some(request.settings.clone()));
+    let artifact_root = magic_select_resolve_artifact_root(Some(&run_dir)).map_err(|detail| {
+        magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+            "magic_select_prepare_run_dir_invalid",
+            Some(&image_id),
+            None,
+            Some(magic_select_error_message_details(detail)),
+            None,
+        )
+    })?;
+    let runtime = magic_select_resolve_runtime_config().map_err(|detail| {
+        magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+            "magic_select_runtime_unavailable",
+            Some(&image_id),
+            None,
+            Some(magic_select_error_message_details(detail)),
+            None,
+        )
+    })?;
+    let mut session = magic_select_worker_session().lock().map_err(|_| {
+        magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+            "magic_select_worker_session_lock_failed",
+            Some(&image_id),
+            None,
+            Some(magic_select_error_message_details(
+                "Magic Select worker session lock poisoned",
+            )),
+            None,
+        )
+    })?;
+    let image_sha256 =
+        magic_select_sha256_file_cached(&mut session, &image_path).map_err(|detail| {
+            magic_select_error_payload(
+                MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+                "magic_select_prepare_hash_failed",
+                Some(&image_id),
+                None,
+                Some(magic_select_error_message_details(detail)),
+                None,
+            )
+        })?;
+    let image_cache_key = magic_select_image_cache_key(&stable_source_ref, &image_sha256);
+    let prepared_image_id =
+        magic_select_prepared_image_id(&image_cache_key, &image_id, &artifact_root, &settings);
+    let prepared_at_millis = chrono::Utc::now().timestamp_millis();
+    let mut state = MagicSelectPreparedImageState {
+        prepared_image_id: prepared_image_id.clone(),
+        image_cache_key: image_cache_key.clone(),
+        image_id: image_id.clone(),
+        image_path: image_path.clone(),
+        artifact_root: artifact_root.clone(),
+        stable_source_ref: stable_source_ref.clone(),
+        source: source.clone(),
+        settings: settings.clone(),
+        image_sha256: image_sha256.clone(),
+        runtime_id: runtime.runtime_id.clone(),
+        model_id: runtime.model_id.clone(),
+        model_revision: runtime.model_revision.clone(),
+        prepared_at_millis,
+    };
+    let helper_output =
+        magic_select_prepare_worker_image(&mut session, &runtime, &state).map_err(|err| {
+            magic_select_worker_error_payload(
+                MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+                Some(&image_id),
+                Some(&prepared_image_id),
+                err,
+            )
+        })?;
+    state.model_id = helper_output
+        .model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&runtime.model_id)
+        .to_string();
+    state.model_revision = helper_output
+        .model_revision
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&runtime.model_revision)
+        .to_string();
+    state.runtime_id = helper_output
+        .runtime
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&runtime.runtime_id)
+        .to_string();
+    let warnings = helper_output.warnings.unwrap_or_default();
+    session
+        .prepared_images
+        .insert(prepared_image_id.clone(), state.clone());
+    drop(session);
+
+    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%3f").to_string();
+    let prepared_image = magic_select_prepared_image_payload(&state);
+    let receipt_path = artifact_root.join(format!("receipt-magic-select-prepare-{stamp}.json"));
+    let reproducibility = serde_json::json!({
+        "runtime": state.runtime_id,
+        "modelId": state.model_id,
+        "modelRevision": state.model_revision,
+        "imageHash": state.image_sha256,
+        "imageCacheKey": state.image_cache_key,
+        "preparedImageId": state.prepared_image_id,
+        "stableSourceRef": state.stable_source_ref,
+        "settings": {
+            "maskThreshold": state.settings.mask_threshold,
+            "maxContourPoints": state.settings.max_contour_points,
+        },
+    });
+    let receipt_payload = serde_json::json!({
+        "schema_version": 1,
+        "contract": MAGIC_SELECT_LOCAL_CONTRACT,
+        "action": MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+        "request": {
+            "image_id": image_id.clone(),
+            "image_path": image_path.to_string_lossy().to_string(),
+            "run_dir": artifact_root.to_string_lossy().to_string(),
+            "stable_source_ref": stable_source_ref,
+            "source": source,
+            "settings": {
+                "mask_threshold": settings.mask_threshold,
+                "max_contour_points": settings.max_contour_points,
+            },
+        },
+        "prepared_image": prepared_image.clone(),
+        "reproducibility": reproducibility.clone(),
+        "warnings": warnings.clone(),
+    });
+    let encoded_receipt = serde_json::to_string_pretty(&receipt_payload).map_err(|detail| {
+        magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+            "magic_select_prepare_receipt_encode_failed",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(detail.to_string())),
+            None,
+        )
+    })?;
+    std::fs::write(&receipt_path, encoded_receipt).map_err(|detail| {
+        magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+            "magic_select_prepare_receipt_write_failed",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(format!(
+                "{}: {detail}",
+                receipt_path.to_string_lossy()
+            ))),
+            None,
+        )
+    })?;
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "contract": MAGIC_SELECT_LOCAL_CONTRACT,
+        "action": MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+        "imageId": image_id,
+        "preparedImageId": prepared_image_id,
+        "preparedImage": prepared_image,
+        "receipt": {
+            "path": receipt_path.to_string_lossy().to_string(),
+            "reproducibility": reproducibility,
+        },
+        "warnings": warnings,
+    }))
+}
+
+fn magic_select_run_local_warm_click_impl(
+    request: MagicSelectWarmClickRequest,
+) -> Result<serde_json::Value, serde_json::Value> {
+    let prepared_image_id = request.prepared_image_id.trim().to_string();
+    if prepared_image_id.is_empty() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            "magic_select_warm_click_requires_prepared_image_id",
+            None,
+            None,
+            Some(magic_select_error_message_details(
+                "run_local_magic_select_warm_click requires preparedImageId",
+            )),
+            None,
+        ));
+    }
+    let image_id = request.image_id.trim().to_string();
+    if image_id.is_empty() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            "magic_select_warm_click_requires_image_id",
+            None,
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(
+                "run_local_magic_select_warm_click requires imageId",
+            )),
+            None,
+        ));
+    }
+    let source = request.source.trim().to_string();
+    if source.is_empty() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            "magic_select_warm_click_requires_source",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(
+                "run_local_magic_select_warm_click requires source",
+            )),
+            None,
+        ));
+    }
+
+    let runtime = magic_select_resolve_runtime_config().map_err(|detail| {
+        magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            "magic_select_runtime_unavailable",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(detail)),
+            None,
+        )
+    })?;
+    let mut session = magic_select_worker_session().lock().map_err(|_| {
+        magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            "magic_select_worker_session_lock_failed",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(
+                "Magic Select worker session lock poisoned",
+            )),
+            None,
+        )
+    })?;
+    let state = session
+        .prepared_images
+        .get(&prepared_image_id)
+        .cloned()
+        .ok_or_else(|| {
+            magic_select_error_payload(
+                MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+                "prepared_image_not_found",
+                Some(&image_id),
+                Some(&prepared_image_id),
+                Some(magic_select_error_message_details(
+                    "Prepared Magic Select image was not found. Prepare it again before clicking.",
+                )),
+                None,
+            )
+        })?;
+    if state.image_id != image_id {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            "magic_select_warm_click_image_id_mismatch",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(format!(
+                "preparedImageId {} belongs to imageId {}, not {}",
+                prepared_image_id, state.image_id, image_id
+            ))),
+            None,
+        ));
+    }
+    if state.model_id != runtime.model_id || state.model_revision != runtime.model_revision {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            "magic_select_prepared_image_runtime_mismatch",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(
+                "Magic Select runtime configuration changed after prepare. Release and prepare the image again.",
+            )),
+            None,
+        ));
+    }
+
+    let (image_width, image_height) =
+        image::image_dimensions(&state.image_path).map_err(|detail| {
+            magic_select_error_payload(
+                MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+                "magic_select_warm_click_image_dimensions_failed",
+                Some(&image_id),
+                Some(&prepared_image_id),
+                Some(magic_select_error_message_details(format!(
+                    "{}: {detail}",
+                    state.image_path.to_string_lossy()
+                ))),
+                None,
+            )
+        })?;
+    let click_x = (request.click_anchor.x.round() as i64)
+        .clamp(0, i64::from(image_width.saturating_sub(1))) as u32;
+    let click_y = (request.click_anchor.y.round() as i64)
+        .clamp(0, i64::from(image_height.saturating_sub(1))) as u32;
+    let click_anchor = MagicSelectPointPayload {
+        x: f64::from(click_x),
+        y: f64::from(click_y),
+    };
+
+    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%3f").to_string();
+    let output_mask_path = state
+        .artifact_root
+        .join(format!("artifact-{stamp}-magic-select-mask.png"));
+    let helper_output = magic_select_run_worker_warm_click(
+        &mut session,
+        &runtime,
+        &state,
+        &click_anchor,
+        &source,
+        &output_mask_path,
+    )
+    .map_err(|err| {
+        magic_select_worker_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            Some(&image_id),
+            Some(&prepared_image_id),
+            err,
+        )
+    })?;
+    drop(session);
+
+    let resolved_mask_path = helper_output
+        .mask_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| output_mask_path.clone());
+    if !resolved_mask_path.is_file() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            "magic_select_warm_click_mask_missing",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(format!(
+                "Local Magic Select helper completed without writing a mask at {}.",
+                resolved_mask_path.to_string_lossy()
+            ))),
+            None,
+        ));
+    }
+
+    let model_id = helper_output
+        .model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&state.model_id)
+        .to_string();
+    let model_revision = helper_output
+        .model_revision
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&state.model_revision)
+        .to_string();
+    let runtime_id = helper_output
+        .runtime
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&state.runtime_id)
+        .to_string();
+    let confidence = helper_output
+        .confidence
+        .filter(|value| value.is_finite())
+        .unwrap_or(1.0)
+        .clamp(0.0, 1.0);
+    let warnings = helper_output.warnings.unwrap_or_default();
+    let mask_sha256 = sha256_file(&resolved_mask_path).map_err(|detail| {
+        magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            "magic_select_warm_click_mask_hash_failed",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(detail)),
+            None,
+        )
+    })?;
+    let mask_summary = magic_select_read_mask_summary(
+        &resolved_mask_path,
+        state.settings.mask_threshold,
+        state.settings.max_contour_points,
+    )
+    .map_err(|detail| {
+        magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            "magic_select_warm_click_mask_summary_failed",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(detail)),
+            None,
+        )
+    })?;
+    let candidate_id = format!("magic-select-{}", &mask_sha256[..12]);
+    let contour_points: Vec<serde_json::Value> = mask_summary
+        .contour_points
+        .iter()
+        .map(|point| serde_json::json!({ "x": point.x, "y": point.y }))
+        .collect();
+    let mask_ref = serde_json::json!({
+        "path": resolved_mask_path.to_string_lossy().to_string(),
+        "sha256": mask_sha256,
+        "width": mask_summary.width,
+        "height": mask_summary.height,
+        "format": "png",
+    });
+    let candidate = serde_json::json!({
+        "id": candidate_id,
+        "label": "Magic Select",
+        "bounds": {
+            "x": mask_summary.bounds_x,
+            "y": mask_summary.bounds_y,
+            "w": mask_summary.bounds_w,
+            "h": mask_summary.bounds_h,
+        },
+        "contourPoints": contour_points.clone(),
+        "polygon": contour_points,
+        "maskRef": mask_ref.clone(),
+        "confidence": confidence,
+        "source": format!("local_model:{model_id}"),
+    });
+    let prepared_image = magic_select_prepared_image_payload(&state);
+    let reproducibility = serde_json::json!({
+        "runtime": runtime_id,
+        "modelId": model_id,
+        "modelRevision": model_revision,
+        "imageHash": state.image_sha256,
+        "imageCacheKey": state.image_cache_key,
+        "preparedImageId": state.prepared_image_id,
+        "stableSourceRef": state.stable_source_ref,
+        "clickAnchor": click_anchor,
+        "settings": {
+            "maskThreshold": state.settings.mask_threshold,
+            "maxContourPoints": state.settings.max_contour_points,
+        },
+        "outputMaskPath": resolved_mask_path.to_string_lossy().to_string(),
+        "outputMaskHash": mask_ref["sha256"].clone(),
+    });
+    let group = serde_json::json!({
+        "imageId": image_id.clone(),
+        "anchor": request.click_anchor,
+        "candidates": [candidate.clone()],
+        "activeCandidateIndex": 0,
+        "chosenCandidateId": candidate["id"].clone(),
+        "updatedAt": chrono::Utc::now().timestamp_millis(),
+        "reproducibility": reproducibility.clone(),
+        "warnings": warnings.clone(),
+    });
+    let receipt_path = state
+        .artifact_root
+        .join(format!("receipt-magic-select-warm-click-{stamp}.json"));
+    let receipt_payload = serde_json::json!({
+        "schema_version": 1,
+        "contract": MAGIC_SELECT_LOCAL_CONTRACT,
+        "action": MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+        "request": {
+            "image_id": image_id.clone(),
+            "prepared_image_id": prepared_image_id.clone(),
+            "source": source,
+            "click_anchor": click_anchor,
+        },
+        "prepared_image": prepared_image.clone(),
+        "artifacts": {
+            "mask_path": resolved_mask_path.to_string_lossy().to_string(),
+            "mask_sha256": mask_ref["sha256"].clone(),
+        },
+        "result_metadata": {
+            "candidate_id": candidate["id"].clone(),
+            "candidate_bounds": candidate["bounds"].clone(),
+            "confidence": confidence,
+            "contour_point_count": mask_summary.contour_points.len(),
+            "created_at": chrono::Utc::now().to_rfc3339(),
+        },
+        "reproducibility": reproducibility.clone(),
+        "warnings": warnings.clone(),
+    });
+    let encoded_receipt = serde_json::to_string_pretty(&receipt_payload).map_err(|detail| {
+        magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            "magic_select_warm_click_receipt_encode_failed",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(detail.to_string())),
+            None,
+        )
+    })?;
+    std::fs::write(&receipt_path, encoded_receipt).map_err(|detail| {
+        magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            "magic_select_warm_click_receipt_write_failed",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(format!(
+                "{}: {detail}",
+                receipt_path.to_string_lossy()
+            ))),
+            None,
+        )
+    })?;
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "contract": MAGIC_SELECT_LOCAL_CONTRACT,
+        "action": MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+        "imageId": image_id,
+        "candidate": candidate,
+        "group": group,
+        "receipt": {
+            "path": receipt_path.to_string_lossy().to_string(),
+            "reproducibility": reproducibility,
+            "artifacts": receipt_payload["artifacts"].clone(),
+        },
+        "warnings": warnings,
+        "preparedImageId": prepared_image_id,
+        "preparedImage": prepared_image,
+    }))
+}
+
+fn magic_select_release_local_image_impl(
+    request: MagicSelectReleaseRequest,
+) -> Result<serde_json::Value, serde_json::Value> {
+    let prepared_image_id = request.prepared_image_id.trim().to_string();
+    if prepared_image_id.is_empty() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_RELEASE_ACTION,
+            "magic_select_release_requires_prepared_image_id",
+            None,
+            None,
+            Some(magic_select_error_message_details(
+                "release_local_magic_select_image requires preparedImageId",
+            )),
+            None,
+        ));
+    }
+    let image_id = request.image_id.trim().to_string();
+    if image_id.is_empty() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_RELEASE_ACTION,
+            "magic_select_release_requires_image_id",
+            None,
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(
+                "release_local_magic_select_image requires imageId",
+            )),
+            None,
+        ));
+    }
+    let reason = request.reason.trim().to_string();
+    if reason.is_empty() {
+        return Err(magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_RELEASE_ACTION,
+            "magic_select_release_requires_reason",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(
+                "release_local_magic_select_image requires reason",
+            )),
+            None,
+        ));
+    }
+
+    let mut session = magic_select_worker_session().lock().map_err(|_| {
+        magic_select_error_payload(
+            MAGIC_SELECT_LOCAL_RELEASE_ACTION,
+            "magic_select_worker_session_lock_failed",
+            Some(&image_id),
+            Some(&prepared_image_id),
+            Some(magic_select_error_message_details(
+                "Magic Select worker session lock poisoned",
+            )),
+            None,
+        )
+    })?;
+    if let Some(state) = session.prepared_images.get(&prepared_image_id) {
+        if state.image_id != image_id {
+            return Err(magic_select_error_payload(
+                MAGIC_SELECT_LOCAL_RELEASE_ACTION,
+                "magic_select_release_image_id_mismatch",
+                Some(&image_id),
+                Some(&prepared_image_id),
+                Some(magic_select_error_message_details(format!(
+                    "preparedImageId {} belongs to imageId {}, not {}",
+                    prepared_image_id, state.image_id, image_id
+                ))),
+                None,
+            ));
+        }
+    }
+    session.prepared_images.remove(&prepared_image_id);
+    let mut warnings = Vec::new();
+    if let Err(err) =
+        magic_select_release_worker_image(&mut session, &image_id, &prepared_image_id, &reason)
+    {
+        if let Some(message) = err
+            .details
+            .as_ref()
+            .and_then(|value| value.get("message"))
+            .and_then(serde_json::Value::as_str)
+        {
+            warnings.push(message.to_string());
+        } else {
+            warnings.push(err.code);
+        }
+    }
+    Ok(serde_json::json!({
+        "ok": true,
+        "contract": MAGIC_SELECT_LOCAL_CONTRACT,
+        "action": MAGIC_SELECT_LOCAL_RELEASE_ACTION,
+        "imageId": image_id,
+        "preparedImageId": prepared_image_id,
+        "warnings": warnings,
+    }))
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ExportRectPayload {
     x: f64,
     y: f64,
@@ -1581,6 +2618,25 @@ struct ExportTimelineNodePayload {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ScreenshotPolishExportPayload {
+    #[serde(default)]
+    proposal_id: Option<String>,
+    #[serde(default)]
+    selected_proposal_id: Option<String>,
+    #[serde(default)]
+    preview_image_path: Option<String>,
+    #[serde(default)]
+    changed_region_bounds: Option<serde_json::Value>,
+    #[serde(default)]
+    preserve_region_ids: Vec<String>,
+    #[serde(default)]
+    rationale_codes: Vec<String>,
+    #[serde(default)]
+    frame_context: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ExportRunRequest {
     #[serde(default)]
     schema_version: Option<u32>,
@@ -1612,6 +2668,8 @@ struct ExportRunRequest {
     edit_receipts: Vec<ExportEditReceiptPayload>,
     #[serde(default)]
     limitations: Vec<String>,
+    #[serde(default)]
+    screenshot_polish: Option<ScreenshotPolishExportPayload>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1700,6 +2758,7 @@ struct ResolvedExportRunRequest {
     action_sequence: Vec<String>,
     edit_receipts: Vec<ExportEditReceiptPayload>,
     limitations: Vec<String>,
+    screenshot_polish: Option<ScreenshotPolishExportPayload>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2063,6 +3122,948 @@ fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(sha256_hex(&bytes))
 }
 
+fn magic_select_normalize_settings(
+    settings: Option<MagicSelectSettingsPayload>,
+) -> NormalizedMagicSelectSettings {
+    let raw = settings.unwrap_or_default();
+    let mask_threshold = raw
+        .mask_threshold
+        .unwrap_or(MAGIC_SELECT_LOCAL_DEFAULT_MASK_THRESHOLD)
+        .clamp(1, u8::MAX);
+    let max_contour_points = raw
+        .max_contour_points
+        .unwrap_or(MAGIC_SELECT_LOCAL_DEFAULT_MAX_CONTOUR_POINTS)
+        .clamp(16, 4096);
+    NormalizedMagicSelectSettings {
+        mask_threshold,
+        max_contour_points,
+    }
+}
+
+fn magic_select_default_model_revision(model_path: &Path) -> Result<String, String> {
+    let digest = sha256_file(model_path)?;
+    Ok(format!("sha256:{}", &digest[..12]))
+}
+
+static MAGIC_SELECT_WORKER_SESSION: OnceLock<Mutex<MagicSelectWorkerSession>> = OnceLock::new();
+
+fn magic_select_worker_session() -> &'static Mutex<MagicSelectWorkerSession> {
+    MAGIC_SELECT_WORKER_SESSION.get_or_init(|| Mutex::new(MagicSelectWorkerSession::default()))
+}
+
+impl MagicSelectWorkerClient {
+    fn runtime_signature(runtime: &MagicSelectRuntimeConfig) -> String {
+        format!(
+            "{}|{}|{}|{}|{}|{}",
+            runtime.python_bin,
+            runtime.helper_path.to_string_lossy(),
+            runtime.model_path.to_string_lossy(),
+            runtime.model_id,
+            runtime.model_revision,
+            runtime.runtime_id,
+        )
+    }
+
+    fn spawn(runtime: &MagicSelectRuntimeConfig) -> Result<Self, String> {
+        let working_dir = runtime
+            .helper_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(std::env::temp_dir);
+        let mut child = process::Command::new(&runtime.python_bin)
+            .arg(&runtime.helper_path)
+            .arg("--worker")
+            .current_dir(working_dir)
+            .env("PYTHONUNBUFFERED", "1")
+            .env("PYTHONHASHSEED", "0")
+            .env("CUDA_VISIBLE_DEVICES", "")
+            .env("OMP_NUM_THREADS", "1")
+            .env("MKL_NUM_THREADS", "1")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("failed to spawn local Magic Select worker: {e}"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "local Magic Select worker stdin unavailable".to_string())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "local Magic Select worker stdout unavailable".to_string())?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "local Magic Select worker stderr unavailable".to_string())?;
+        let stderr_tail = Arc::new(Mutex::new(VecDeque::new()));
+        magic_select_spawn_stderr_drain(stderr, Arc::clone(&stderr_tail));
+
+        Ok(Self {
+            runtime_signature: Self::runtime_signature(runtime),
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+            stderr_tail,
+            prepared_image_ids: HashSet::new(),
+        })
+    }
+
+    fn matches_runtime(&self, runtime: &MagicSelectRuntimeConfig) -> bool {
+        self.runtime_signature == Self::runtime_signature(runtime)
+    }
+
+    fn stderr_snapshot(&self) -> String {
+        let Ok(lines) = self.stderr_tail.lock() else {
+            return String::new();
+        };
+        lines.iter().cloned().collect::<Vec<_>>().join("\n")
+    }
+
+    fn send_request(
+        &mut self,
+        input: &MagicSelectHelperInput,
+    ) -> Result<MagicSelectHelperOutput, MagicSelectWorkerError> {
+        let mut encoded = serde_json::to_vec(input).map_err(|e| MagicSelectWorkerError {
+            action: input.action.to_string(),
+            image_id: input.image_id.clone(),
+            prepared_image_id: input.prepared_image_id.clone(),
+            code: "magic_select_worker_encode_failed".to_string(),
+            warnings: Vec::new(),
+            details: Some(magic_select_error_message_details(e.to_string())),
+        })?;
+        encoded.push(b'\n');
+        self.stdin
+            .write_all(&encoded)
+            .map_err(|e| MagicSelectWorkerError {
+                action: input.action.to_string(),
+                image_id: input.image_id.clone(),
+                prepared_image_id: input.prepared_image_id.clone(),
+                code: "magic_select_worker_write_failed".to_string(),
+                warnings: Vec::new(),
+                details: Some(magic_select_error_message_details(format!(
+                    "failed to write request to the local Magic Select worker: {e}"
+                ))),
+            })?;
+        self.stdin.flush().map_err(|e| MagicSelectWorkerError {
+            action: input.action.to_string(),
+            image_id: input.image_id.clone(),
+            prepared_image_id: input.prepared_image_id.clone(),
+            code: "magic_select_worker_flush_failed".to_string(),
+            warnings: Vec::new(),
+            details: Some(magic_select_error_message_details(format!(
+                "failed to flush request to the local Magic Select worker: {e}"
+            ))),
+        })?;
+
+        let stdout = loop {
+            let mut line = String::new();
+            let read = self
+                .stdout
+                .read_line(&mut line)
+                .map_err(|e| MagicSelectWorkerError {
+                    action: input.action.to_string(),
+                    image_id: input.image_id.clone(),
+                    prepared_image_id: input.prepared_image_id.clone(),
+                    code: "magic_select_worker_read_failed".to_string(),
+                    warnings: Vec::new(),
+                    details: Some(magic_select_error_message_details(format!(
+                        "failed to read response from the local Magic Select worker: {e}"
+                    ))),
+                })?;
+            if read == 0 {
+                let stderr = self.stderr_snapshot();
+                let status = self
+                    .child
+                    .try_wait()
+                    .ok()
+                    .flatten()
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "still running".to_string());
+                let detail = if stderr.is_empty() {
+                    format!("worker closed stdout unexpectedly (status: {status})")
+                } else {
+                    format!(
+                        "worker closed stdout unexpectedly (status: {status}). stderr: {stderr}"
+                    )
+                };
+                return Err(MagicSelectWorkerError {
+                    action: input.action.to_string(),
+                    image_id: input.image_id.clone(),
+                    prepared_image_id: input.prepared_image_id.clone(),
+                    code: "magic_select_worker_closed_stdout".to_string(),
+                    warnings: Vec::new(),
+                    details: Some(magic_select_error_message_details(detail)),
+                });
+            }
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                break trimmed.to_string();
+            }
+        };
+
+        let parsed = serde_json::from_str::<MagicSelectHelperOutput>(&stdout).map_err(|e| {
+            let stderr = self.stderr_snapshot();
+            let detail = if stderr.is_empty() {
+                format!("Local Magic Select worker returned invalid JSON: {e}. stdout='{stdout}'")
+            } else {
+                format!(
+                    "Local Magic Select worker returned invalid JSON: {e}. stdout='{stdout}' stderr='{stderr}'"
+                )
+            };
+            MagicSelectWorkerError {
+                action: input.action.to_string(),
+                image_id: input.image_id.clone(),
+                prepared_image_id: input.prepared_image_id.clone(),
+                code: "magic_select_worker_invalid_json".to_string(),
+                warnings: Vec::new(),
+                details: Some(magic_select_error_message_details(detail)),
+            }
+        })?;
+        if parsed.ok == Some(false) {
+            let detail = parsed
+                .details
+                .clone()
+                .or_else(|| parsed.error.clone().map(magic_select_error_message_details))
+                .or_else(|| {
+                    let stderr = self.stderr_snapshot();
+                    (!stderr.is_empty()).then_some(magic_select_error_message_details(stderr))
+                });
+            return Err(MagicSelectWorkerError {
+                action: parsed
+                    .action
+                    .clone()
+                    .unwrap_or_else(|| input.action.to_string()),
+                image_id: parsed.image_id.clone().or_else(|| input.image_id.clone()),
+                prepared_image_id: parsed
+                    .prepared_image_id
+                    .clone()
+                    .or_else(|| input.prepared_image_id.clone()),
+                code: parsed
+                    .code
+                    .clone()
+                    .unwrap_or_else(|| "magic_select_worker_failed".to_string()),
+                warnings: parsed.warnings.clone().unwrap_or_default(),
+                details: detail,
+            });
+        }
+        Ok(parsed)
+    }
+
+    fn ensure_prepared(
+        &mut self,
+        runtime: &MagicSelectRuntimeConfig,
+        state: &MagicSelectPreparedImageState,
+    ) -> Result<MagicSelectHelperOutput, MagicSelectWorkerError> {
+        if self.prepared_image_ids.contains(&state.prepared_image_id) {
+            return Ok(MagicSelectHelperOutput {
+                ok: Some(true),
+                action: Some(MAGIC_SELECT_LOCAL_PREPARE_ACTION.to_string()),
+                image_id: Some(state.image_id.clone()),
+                prepared_image_id: Some(state.prepared_image_id.clone()),
+                code: None,
+                details: None,
+                mask_path: None,
+                confidence: None,
+                model_id: Some(runtime.model_id.clone()),
+                model_revision: Some(runtime.model_revision.clone()),
+                runtime: Some(runtime.runtime_id.clone()),
+                warnings: Some(Vec::new()),
+                error: None,
+            });
+        }
+        let response = self.send_request(&MagicSelectHelperInput {
+            contract: MAGIC_SELECT_LOCAL_CONTRACT,
+            action: MAGIC_SELECT_LOCAL_PREPARE_ACTION,
+            image_id: Some(state.image_id.clone()),
+            prepared_image_id: Some(state.prepared_image_id.clone()),
+            image_cache_key: Some(state.image_cache_key.clone()),
+            image_path: Some(state.image_path.to_string_lossy().to_string()),
+            click_anchor: None,
+            output_mask_path: None,
+            source: Some(state.source.clone()),
+            reason: None,
+            model: Some(magic_select_helper_model_payload(runtime)),
+            settings: Some(magic_select_settings_payload(&state.settings)),
+        })?;
+        let prepared_image_id = response
+            .prepared_image_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(&state.prepared_image_id)
+            .to_string();
+        self.prepared_image_ids.insert(prepared_image_id);
+        Ok(response)
+    }
+
+    fn run_warm_click(
+        &mut self,
+        state: &MagicSelectPreparedImageState,
+        click_anchor: &MagicSelectPointPayload,
+        source: &str,
+        output_mask_path: &Path,
+    ) -> Result<MagicSelectHelperOutput, MagicSelectWorkerError> {
+        let response = self.send_request(&MagicSelectHelperInput {
+            contract: MAGIC_SELECT_LOCAL_CONTRACT,
+            action: MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
+            image_id: Some(state.image_id.clone()),
+            prepared_image_id: Some(state.prepared_image_id.clone()),
+            image_cache_key: None,
+            image_path: None,
+            click_anchor: Some(click_anchor.clone()),
+            output_mask_path: Some(output_mask_path.to_string_lossy().to_string()),
+            source: Some(source.to_string()),
+            reason: None,
+            model: None,
+            settings: None,
+        })?;
+        let prepared_image_id = response
+            .prepared_image_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(&state.prepared_image_id)
+            .to_string();
+        self.prepared_image_ids.insert(prepared_image_id);
+        Ok(response)
+    }
+
+    fn release_prepared_image(
+        &mut self,
+        image_id: &str,
+        prepared_image_id: &str,
+        reason: &str,
+    ) -> Result<(), MagicSelectWorkerError> {
+        let response = self.send_request(&MagicSelectHelperInput {
+            contract: MAGIC_SELECT_LOCAL_CONTRACT,
+            action: MAGIC_SELECT_LOCAL_RELEASE_ACTION,
+            image_id: Some(image_id.to_string()),
+            prepared_image_id: Some(prepared_image_id.to_string()),
+            image_cache_key: None,
+            image_path: None,
+            click_anchor: None,
+            output_mask_path: None,
+            source: None,
+            reason: Some(reason.to_string()),
+            model: None,
+            settings: None,
+        })?;
+        let prepared_image_id = response
+            .prepared_image_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(prepared_image_id)
+            .to_string();
+        self.prepared_image_ids.remove(&prepared_image_id);
+        Ok(())
+    }
+}
+
+impl Drop for MagicSelectWorkerClient {
+    fn drop(&mut self) {
+        let _ = self.stdin.flush();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn magic_select_spawn_stderr_drain(
+    stderr: process::ChildStderr,
+    stderr_tail: Arc<Mutex<VecDeque<String>>>,
+) {
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stderr);
+        loop {
+            let mut line = String::new();
+            let Ok(read) = reader.read_line(&mut line) else {
+                break;
+            };
+            if read == 0 {
+                break;
+            }
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let Ok(mut tail) = stderr_tail.lock() else {
+                break;
+            };
+            if tail.len() >= MAGIC_SELECT_LOCAL_STDERR_TAIL_LINES {
+                tail.pop_front();
+            }
+            tail.push_back(trimmed.to_string());
+        }
+    });
+}
+
+fn magic_select_file_fingerprint(path: &Path) -> Result<MagicSelectFileFingerprint, String> {
+    let metadata =
+        std::fs::metadata(path).map_err(|e| format!("{}: {e}", path.to_string_lossy()))?;
+    let modified_unix_nanos = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_nanos());
+    Ok(MagicSelectFileFingerprint {
+        len: metadata.len(),
+        modified_unix_nanos,
+    })
+}
+
+fn magic_select_sha256_file_cached(
+    session: &mut MagicSelectWorkerSession,
+    path: &Path,
+) -> Result<String, String> {
+    let fingerprint = magic_select_file_fingerprint(path)?;
+    if let Some(cached) = session.cached_image_hashes.get(path) {
+        if cached.fingerprint == fingerprint {
+            return Ok(cached.sha256.clone());
+        }
+    }
+    let digest = sha256_file(path)?;
+    session.cached_image_hashes.insert(
+        path.to_path_buf(),
+        MagicSelectCachedFileHash {
+            fingerprint,
+            sha256: digest.clone(),
+        },
+    );
+    Ok(digest)
+}
+
+fn magic_select_helper_model_payload(
+    runtime: &MagicSelectRuntimeConfig,
+) -> MagicSelectHelperModelPayload {
+    MagicSelectHelperModelPayload {
+        id: runtime.model_id.clone(),
+        revision: runtime.model_revision.clone(),
+        path: runtime.model_path.to_string_lossy().to_string(),
+    }
+}
+
+fn magic_select_settings_payload(
+    settings: &NormalizedMagicSelectSettings,
+) -> MagicSelectSettingsPayload {
+    MagicSelectSettingsPayload {
+        mask_threshold: Some(settings.mask_threshold),
+        max_contour_points: Some(settings.max_contour_points),
+    }
+}
+
+fn magic_select_image_cache_key(stable_source_ref: &str, image_sha256: &str) -> String {
+    let stable_source_ref = stable_source_ref.trim();
+    let digest = sha256_hex(format!("{stable_source_ref}\n{image_sha256}").as_bytes());
+    format!("magic-select-image-{}", &digest[..16])
+}
+
+fn magic_select_prepared_image_id(
+    image_cache_key: &str,
+    image_id: &str,
+    artifact_root: &Path,
+    settings: &NormalizedMagicSelectSettings,
+) -> String {
+    let digest = sha256_hex(
+        format!(
+            "{image_cache_key}\n{image_id}\n{}\n{}\n{}",
+            artifact_root.to_string_lossy(),
+            settings.mask_threshold,
+            settings.max_contour_points,
+        )
+        .as_bytes(),
+    );
+    format!("magic-select-prepared-{}", &digest[..16])
+}
+
+fn magic_select_prepared_image_payload(state: &MagicSelectPreparedImageState) -> serde_json::Value {
+    serde_json::json!({
+        "id": state.prepared_image_id,
+        "imageId": state.image_id,
+        "imagePath": state.image_path.to_string_lossy().to_string(),
+        "stableSourceRef": state.stable_source_ref,
+        "source": state.source,
+        "settings": {
+            "maskThreshold": state.settings.mask_threshold,
+            "maxContourPoints": state.settings.max_contour_points,
+        },
+        "imageHash": state.image_sha256,
+        "runtime": state.runtime_id,
+        "modelId": state.model_id,
+        "modelRevision": state.model_revision,
+        "preparedAt": state.prepared_at_millis,
+    })
+}
+
+fn magic_select_worker_client<'a>(
+    session: &'a mut MagicSelectWorkerSession,
+    runtime: &MagicSelectRuntimeConfig,
+) -> Result<&'a mut MagicSelectWorkerClient, String> {
+    let needs_restart = session
+        .client
+        .as_ref()
+        .map(|client| !client.matches_runtime(runtime))
+        .unwrap_or(false);
+    if needs_restart {
+        session.client = None;
+    }
+    if session.client.is_none() {
+        session.client = Some(MagicSelectWorkerClient::spawn(runtime)?);
+    }
+    session
+        .client
+        .as_mut()
+        .ok_or_else(|| "local Magic Select worker unavailable".to_string())
+}
+
+fn magic_select_prepare_worker_image(
+    session: &mut MagicSelectWorkerSession,
+    runtime: &MagicSelectRuntimeConfig,
+    state: &MagicSelectPreparedImageState,
+) -> Result<MagicSelectHelperOutput, MagicSelectWorkerError> {
+    let result = {
+        let client = magic_select_worker_client(session, runtime).map_err(|detail| {
+            MagicSelectWorkerError {
+                action: MAGIC_SELECT_LOCAL_PREPARE_ACTION.to_string(),
+                image_id: Some(state.image_id.clone()),
+                prepared_image_id: Some(state.prepared_image_id.clone()),
+                code: "magic_select_worker_unavailable".to_string(),
+                warnings: Vec::new(),
+                details: Some(magic_select_error_message_details(detail)),
+            }
+        })?;
+        client.ensure_prepared(runtime, state)
+    };
+    match result {
+        Ok(response) => Ok(response),
+        Err(err) => {
+            session.client = None;
+            Err(err)
+        }
+    }
+}
+
+fn magic_select_run_worker_warm_click(
+    session: &mut MagicSelectWorkerSession,
+    runtime: &MagicSelectRuntimeConfig,
+    state: &MagicSelectPreparedImageState,
+    click_anchor: &MagicSelectPointPayload,
+    source: &str,
+    output_mask_path: &Path,
+) -> Result<MagicSelectHelperOutput, MagicSelectWorkerError> {
+    let first_attempt = {
+        let client = magic_select_worker_client(session, runtime).map_err(|detail| {
+            MagicSelectWorkerError {
+                action: MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION.to_string(),
+                image_id: Some(state.image_id.clone()),
+                prepared_image_id: Some(state.prepared_image_id.clone()),
+                code: "magic_select_worker_unavailable".to_string(),
+                warnings: Vec::new(),
+                details: Some(magic_select_error_message_details(detail)),
+            }
+        })?;
+        if !client.prepared_image_ids.contains(&state.prepared_image_id) {
+            client.ensure_prepared(runtime, state)?;
+        }
+        client.run_warm_click(state, click_anchor, source, output_mask_path)
+    };
+    match first_attempt {
+        Ok(response) => Ok(response),
+        Err(err) if err.code == "prepared_image_not_found" => {
+            let retry = {
+                let client = magic_select_worker_client(session, runtime).map_err(|detail| {
+                    MagicSelectWorkerError {
+                        action: MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION.to_string(),
+                        image_id: Some(state.image_id.clone()),
+                        prepared_image_id: Some(state.prepared_image_id.clone()),
+                        code: "magic_select_worker_unavailable".to_string(),
+                        warnings: Vec::new(),
+                        details: Some(magic_select_error_message_details(detail)),
+                    }
+                })?;
+                client.prepared_image_ids.remove(&state.prepared_image_id);
+                client.ensure_prepared(runtime, state)?;
+                client.run_warm_click(state, click_anchor, source, output_mask_path)
+            };
+            match retry {
+                Ok(response) => Ok(response),
+                Err(err) => {
+                    session.client = None;
+                    Err(err)
+                }
+            }
+        }
+        Err(err) => {
+            session.client = None;
+            Err(err)
+        }
+    }
+}
+
+fn magic_select_release_worker_image(
+    session: &mut MagicSelectWorkerSession,
+    image_id: &str,
+    prepared_image_id: &str,
+    reason: &str,
+) -> Result<(), MagicSelectWorkerError> {
+    let Some(client) = session.client.as_mut() else {
+        return Ok(());
+    };
+    let result = client.release_prepared_image(image_id, prepared_image_id, reason);
+    match result {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            session.client = None;
+            Err(err)
+        }
+    }
+}
+
+fn magic_select_worker_error_payload(
+    action: &str,
+    fallback_image_id: Option<&str>,
+    fallback_prepared_image_id: Option<&str>,
+    err: MagicSelectWorkerError,
+) -> serde_json::Value {
+    let resolved_action = if err.action.trim().is_empty() {
+        action
+    } else {
+        err.action.as_str()
+    };
+    magic_select_error_payload(
+        resolved_action,
+        &err.code,
+        err.image_id.as_deref().or(fallback_image_id),
+        err.prepared_image_id
+            .as_deref()
+            .or(fallback_prepared_image_id),
+        err.details,
+        Some(err.warnings),
+    )
+}
+
+fn magic_select_resolve_runtime_config() -> Result<MagicSelectRuntimeConfig, String> {
+    let python_bin = std::env::var("JUGGERNAUT_MAGIC_SELECT_PYTHON")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| MAGIC_SELECT_LOCAL_DEFAULT_PYTHON.to_string());
+
+    let helper_path = if let Ok(path) = std::env::var("JUGGERNAUT_MAGIC_SELECT_HELPER") {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            return Err(
+                "JUGGERNAUT_MAGIC_SELECT_HELPER is set but empty; point it at the local MobileSAM helper."
+                    .to_string(),
+            );
+        }
+        PathBuf::from(trimmed)
+    } else {
+        let repo_root = find_repo_root_best_effort().ok_or_else(|| {
+            "repo root not found while resolving the Magic Select helper".to_string()
+        })?;
+        repo_root.join(MAGIC_SELECT_LOCAL_DEFAULT_HELPER_SCRIPT)
+    };
+    if !helper_path.is_file() {
+        return Err(format!(
+            "Local Magic Select helper not found at {}. Set JUGGERNAUT_MAGIC_SELECT_HELPER to the MobileSAM helper script.",
+            helper_path.to_string_lossy()
+        ));
+    }
+
+    let model_path = std::env::var("JUGGERNAUT_MAGIC_SELECT_MODEL_PATH")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            "JUGGERNAUT_MAGIC_SELECT_MODEL_PATH is required for local Magic Select. Install MobileSAM weights locally and set that path."
+                .to_string()
+        })?;
+    if !model_path.is_file() {
+        return Err(format!(
+            "Local Magic Select model weights not found at {}.",
+            model_path.to_string_lossy()
+        ));
+    }
+
+    let model_id = std::env::var("JUGGERNAUT_MAGIC_SELECT_MODEL_ID")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| MAGIC_SELECT_LOCAL_DEFAULT_MODEL_ID.to_string());
+    let model_revision = std::env::var("JUGGERNAUT_MAGIC_SELECT_MODEL_REVISION")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(Ok)
+        .unwrap_or_else(|| magic_select_default_model_revision(&model_path))?;
+
+    Ok(MagicSelectRuntimeConfig {
+        python_bin,
+        helper_path,
+        model_path,
+        model_id,
+        model_revision,
+        runtime_id: "tauri_mobile_sam_python_worker_cpu".to_string(),
+    })
+}
+
+fn magic_select_resolve_artifact_root(run_dir: Option<&str>) -> Result<PathBuf, String> {
+    if let Some(run_dir) = run_dir.map(str::trim).filter(|value| !value.is_empty()) {
+        let path = PathBuf::from(run_dir);
+        std::fs::create_dir_all(&path).map_err(|e| format!("{}: {e}", path.to_string_lossy()))?;
+        return Ok(path);
+    }
+
+    let root = std::env::temp_dir().join("juggernaut_magic_select");
+    std::fs::create_dir_all(&root).map_err(|e| format!("{}: {e}", root.to_string_lossy()))?;
+    Ok(root)
+}
+
+fn magic_select_read_mask_summary(
+    path: &Path,
+    threshold: u8,
+    max_contour_points: usize,
+) -> Result<MagicSelectMaskSummary, String> {
+    let rgba = read_image_rgba(path)?;
+    let (width, height) = rgba.dimensions();
+    let pixel_count = usize::try_from(width)
+        .ok()
+        .and_then(|w| usize::try_from(height).ok().map(|h| w.saturating_mul(h)))
+        .ok_or_else(|| "magic select mask dimensions overflow".to_string())?;
+    let mut positives = vec![false; pixel_count];
+    let mut min_x = width;
+    let mut min_y = height;
+    let mut max_x = 0u32;
+    let mut max_y = 0u32;
+    let mut positive_count = 0usize;
+
+    for y in 0..height {
+        for x in 0..width {
+            let pixel = rgba.get_pixel(x, y);
+            let value = pixel[0].max(pixel[1]).max(pixel[2]);
+            if value < threshold {
+                continue;
+            }
+            let index = usize::try_from(y)
+                .ok()
+                .and_then(|row| usize::try_from(width).ok().map(|w| row.saturating_mul(w)))
+                .and_then(|base| usize::try_from(x).ok().map(|col| base.saturating_add(col)))
+                .ok_or_else(|| "magic select mask index overflow".to_string())?;
+            positives[index] = true;
+            positive_count += 1;
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+    }
+
+    if positive_count == 0 {
+        return Err("Local Magic Select produced an empty mask.".to_string());
+    }
+
+    let contour_points =
+        magic_select_extract_contour(&positives, width, height, max_contour_points)?;
+    Ok(MagicSelectMaskSummary {
+        width,
+        height,
+        bounds_x: min_x,
+        bounds_y: min_y,
+        bounds_w: max_x.saturating_sub(min_x).saturating_add(1),
+        bounds_h: max_y.saturating_sub(min_y).saturating_add(1),
+        contour_points,
+    })
+}
+
+fn magic_select_mask_at(mask: &[bool], width: u32, height: u32, x: i32, y: i32) -> bool {
+    if x < 0 || y < 0 {
+        return false;
+    }
+    let Ok(xu) = u32::try_from(x) else {
+        return false;
+    };
+    let Ok(yu) = u32::try_from(y) else {
+        return false;
+    };
+    if xu >= width || yu >= height {
+        return false;
+    }
+    let Some(index) = usize::try_from(yu)
+        .ok()
+        .and_then(|row| usize::try_from(width).ok().map(|w| row.saturating_mul(w)))
+        .and_then(|base| usize::try_from(xu).ok().map(|col| base.saturating_add(col)))
+    else {
+        return false;
+    };
+    mask.get(index).copied().unwrap_or(false)
+}
+
+fn magic_select_extract_contour(
+    mask: &[bool],
+    width: u32,
+    height: u32,
+    max_points: usize,
+) -> Result<Vec<MagicSelectContourPoint>, String> {
+    let mut outgoing: HashMap<MagicSelectContourPoint, Vec<MagicSelectContourPoint>> =
+        HashMap::new();
+    for y in 0..i32::try_from(height).unwrap_or(0) {
+        for x in 0..i32::try_from(width).unwrap_or(0) {
+            if !magic_select_mask_at(mask, width, height, x, y) {
+                continue;
+            }
+            if !magic_select_mask_at(mask, width, height, x, y - 1) {
+                outgoing
+                    .entry(MagicSelectContourPoint { x, y })
+                    .or_default()
+                    .push(MagicSelectContourPoint { x: x + 1, y });
+            }
+            if !magic_select_mask_at(mask, width, height, x + 1, y) {
+                outgoing
+                    .entry(MagicSelectContourPoint { x: x + 1, y })
+                    .or_default()
+                    .push(MagicSelectContourPoint { x: x + 1, y: y + 1 });
+            }
+            if !magic_select_mask_at(mask, width, height, x, y + 1) {
+                outgoing
+                    .entry(MagicSelectContourPoint { x: x + 1, y: y + 1 })
+                    .or_default()
+                    .push(MagicSelectContourPoint { x, y: y + 1 });
+            }
+            if !magic_select_mask_at(mask, width, height, x - 1, y) {
+                outgoing
+                    .entry(MagicSelectContourPoint { x, y: y + 1 })
+                    .or_default()
+                    .push(MagicSelectContourPoint { x, y });
+            }
+        }
+    }
+
+    if outgoing.is_empty() {
+        return Err("Local Magic Select produced no contour edges.".to_string());
+    }
+    for targets in outgoing.values_mut() {
+        targets.sort_by_key(|point| (point.y, point.x));
+    }
+
+    let mut loops: Vec<Vec<MagicSelectContourPoint>> = Vec::new();
+    loop {
+        let next_start = outgoing
+            .iter()
+            .filter(|(_, targets)| !targets.is_empty())
+            .map(|(point, _)| *point)
+            .min_by_key(|point| (point.y, point.x));
+        let Some(start) = next_start else {
+            break;
+        };
+        let mut current = start;
+        let mut loop_points = vec![start];
+        let mut steps = 0usize;
+        let max_steps = mask.len().saturating_mul(8).max(8);
+        loop {
+            let Some(targets) = outgoing.get_mut(&current) else {
+                break;
+            };
+            if targets.is_empty() {
+                break;
+            }
+            let next = targets.remove(0);
+            if next == start {
+                break;
+            }
+            loop_points.push(next);
+            current = next;
+            steps = steps.saturating_add(1);
+            if steps > max_steps {
+                return Err(
+                    "Local Magic Select contour tracing exceeded the safety limit.".to_string(),
+                );
+            }
+        }
+        if loop_points.len() >= 3 {
+            loops.push(loop_points);
+        }
+    }
+
+    let mut contour = loops
+        .into_iter()
+        .max_by_key(|points| magic_select_polygon_area_twice(points).unsigned_abs())
+        .ok_or_else(|| "Local Magic Select could not derive an outer contour.".to_string())?;
+    contour = magic_select_remove_collinear_points(&contour);
+    contour = magic_select_downsample_polygon(&contour, max_points);
+    if contour.len() < 3 {
+        return Err("Local Magic Select contour is too small to use.".to_string());
+    }
+    Ok(contour)
+}
+
+fn magic_select_polygon_area_twice(points: &[MagicSelectContourPoint]) -> i64 {
+    if points.len() < 3 {
+        return 0;
+    }
+    let mut total = 0i64;
+    for index in 0..points.len() {
+        let current = points[index];
+        let next = points[(index + 1) % points.len()];
+        total +=
+            i64::from(current.x) * i64::from(next.y) - i64::from(next.x) * i64::from(current.y);
+    }
+    total
+}
+
+fn magic_select_remove_collinear_points(
+    points: &[MagicSelectContourPoint],
+) -> Vec<MagicSelectContourPoint> {
+    if points.len() <= 3 {
+        return points.to_vec();
+    }
+    let mut out = Vec::with_capacity(points.len());
+    for index in 0..points.len() {
+        let prev = points[(index + points.len() - 1) % points.len()];
+        let current = points[index];
+        let next = points[(index + 1) % points.len()];
+        let collinear_x = prev.x == current.x && current.x == next.x;
+        let collinear_y = prev.y == current.y && current.y == next.y;
+        if collinear_x || collinear_y {
+            continue;
+        }
+        out.push(current);
+    }
+    if out.len() >= 3 {
+        out
+    } else {
+        points.to_vec()
+    }
+}
+
+fn magic_select_downsample_polygon(
+    points: &[MagicSelectContourPoint],
+    max_points: usize,
+) -> Vec<MagicSelectContourPoint> {
+    if points.len() <= max_points {
+        return points.to_vec();
+    }
+    let mut out = Vec::with_capacity(max_points);
+    let last_index = points.len().saturating_sub(1);
+    for slot in 0..max_points {
+        let index = if slot + 1 >= max_points {
+            last_index
+        } else {
+            slot.saturating_mul(points.len()) / max_points
+        };
+        let point = points[index];
+        if out.last().copied() != Some(point) {
+            out.push(point);
+        }
+    }
+    if out.len() >= 3 {
+        out
+    } else {
+        points.to_vec()
+    }
+}
+
 fn encode_flattened_psd_rgba(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, String> {
     let expected_len = usize::try_from(width)
         .ok()
@@ -2423,6 +4424,7 @@ fn resolve_provided_export_request(
     } else {
         request.edit_receipts.clone()
     };
+    let screenshot_polish = normalize_screenshot_polish_export_payload(request.screenshot_polish);
 
     Ok(ResolvedExportRunRequest {
         schema_version: request.schema_version.unwrap_or(1),
@@ -2449,6 +4451,60 @@ fn resolve_provided_export_request(
         },
         edit_receipts,
         limitations: merge_limitations(&default_export_limitations(format), &request.limitations),
+        screenshot_polish,
+    })
+}
+
+fn normalize_optional_export_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn normalize_export_string_list(values: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for value in values {
+        let trimmed = value.trim();
+        if trimmed.is_empty() || normalized.iter().any(|existing| existing == trimmed) {
+            continue;
+        }
+        normalized.push(trimmed.to_string());
+    }
+    normalized
+}
+
+fn normalize_screenshot_polish_export_payload(
+    payload: Option<ScreenshotPolishExportPayload>,
+) -> Option<ScreenshotPolishExportPayload> {
+    let Some(payload) = payload else {
+        return None;
+    };
+    let proposal_id = normalize_optional_export_string(payload.proposal_id);
+    let selected_proposal_id = normalize_optional_export_string(payload.selected_proposal_id)
+        .or_else(|| proposal_id.clone());
+    let preview_image_path = normalize_optional_export_string(payload.preview_image_path);
+    let preserve_region_ids = normalize_export_string_list(payload.preserve_region_ids);
+    let rationale_codes = normalize_export_string_list(payload.rationale_codes);
+    let changed_region_bounds = payload.changed_region_bounds;
+    let frame_context = payload.frame_context;
+    if proposal_id.is_none()
+        && selected_proposal_id.is_none()
+        && preview_image_path.is_none()
+        && changed_region_bounds.is_none()
+        && preserve_region_ids.is_empty()
+        && rationale_codes.is_empty()
+        && frame_context.is_none()
+    {
+        return None;
+    }
+    Some(ScreenshotPolishExportPayload {
+        proposal_id,
+        selected_proposal_id,
+        preview_image_path,
+        changed_region_bounds,
+        preserve_region_ids,
+        rationale_codes,
+        frame_context,
     })
 }
 
@@ -2502,6 +4558,7 @@ fn resolve_legacy_export_request(
         action_sequence: derive_action_sequence(&edit_receipts),
         edit_receipts,
         limitations: merge_limitations(&default_export_limitations(format), &extra_limits),
+        screenshot_polish: None,
     })
 }
 
@@ -2557,6 +4614,57 @@ fn write_legacy_export_pointer(
         .map_err(|e| format!("{}: {e}", requested_path.to_string_lossy()))
 }
 
+fn build_screenshot_polish_receipt_metadata(
+    screenshot_polish: &ScreenshotPolishExportPayload,
+) -> Option<serde_json::Value> {
+    let mut metadata = serde_json::Map::new();
+    if let Some(proposal_id) = screenshot_polish.proposal_id.as_ref() {
+        metadata.insert("proposalId".to_string(), serde_json::json!(proposal_id));
+    }
+    if let Some(selected_proposal_id) = screenshot_polish.selected_proposal_id.as_ref() {
+        metadata.insert(
+            "selectedProposalId".to_string(),
+            serde_json::json!(selected_proposal_id),
+        );
+        metadata.insert(
+            "approvedProposalId".to_string(),
+            serde_json::json!(selected_proposal_id),
+        );
+    }
+    if let Some(preview_image_path) = screenshot_polish.preview_image_path.as_ref() {
+        metadata.insert(
+            "previewImagePath".to_string(),
+            serde_json::json!(preview_image_path),
+        );
+    }
+    if let Some(changed_region_bounds) = screenshot_polish.changed_region_bounds.as_ref() {
+        metadata.insert(
+            "changedRegionBounds".to_string(),
+            changed_region_bounds.clone(),
+        );
+    }
+    if !screenshot_polish.preserve_region_ids.is_empty() {
+        metadata.insert(
+            "preserveRegionIds".to_string(),
+            serde_json::json!(screenshot_polish.preserve_region_ids),
+        );
+    }
+    if !screenshot_polish.rationale_codes.is_empty() {
+        metadata.insert(
+            "rationaleCodes".to_string(),
+            serde_json::json!(screenshot_polish.rationale_codes),
+        );
+    }
+    if let Some(frame_context) = screenshot_polish.frame_context.as_ref() {
+        metadata.insert("frameContext".to_string(), frame_context.clone());
+    }
+    if metadata.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Object(metadata))
+    }
+}
+
 fn build_export_receipt_payload(
     request: &ResolvedExportRunRequest,
     receipt_path: &Path,
@@ -2571,7 +4679,11 @@ fn build_export_receipt_payload(
     let export_contract = request.format.export_contract();
     let writer_id = request.format.writer_id();
     let background = request.format.background();
-    let channel_count = if request.format.supports_alpha() { 4 } else { 3 };
+    let channel_count = if request.format.supports_alpha() {
+        4
+    } else {
+        3
+    };
 
     let source_images: Vec<serde_json::Value> = request
         .source_images
@@ -2646,6 +4758,15 @@ fn build_export_receipt_payload(
         .iter()
         .map(|receipt| serde_json::json!(receipt))
         .collect();
+    let screenshot_polish_metadata = if request.format == NativeExportFormat::Psd {
+        request
+            .screenshot_polish
+            .as_ref()
+            .and_then(build_screenshot_polish_receipt_metadata)
+    } else {
+        None
+    };
+    let include_screenshot_polish_trace = screenshot_polish_metadata.is_some();
 
     let mut provider_response = serde_json::json!({
         "writer": writer_id,
@@ -2690,6 +4811,80 @@ fn build_export_receipt_payload(
         }
     }
 
+    let mut request_metadata = serde_json::json!({
+        "operation": operation,
+        "export_contract": export_contract,
+        "document_name": request.document_name,
+        "canvas_mode": request.canvas_mode,
+        "active_image_id": request.active_image_id,
+        "timeline_schema_version": request.timeline_schema_version,
+        "timeline_head_node_id": request.timeline_head_node_id,
+        "action_sequence": request.action_sequence,
+        "limitations": limitations.clone(),
+        "export_bounds_css": request.export_bounds_css,
+        "flattened_size_px": request.flattened_size_px,
+        "input_snapshot": {
+            "documentName": request.document_name,
+            "images": request.source_images.iter().map(|image| serde_json::json!({
+                "id": image.id,
+                "path": image.path,
+                "label": image.label,
+            })).collect::<Vec<_>>(),
+            "activeImageId": request.active_image_id,
+            "editReceipts": edit_receipts.clone(),
+        },
+    });
+    if include_screenshot_polish_trace {
+        if let Some(metadata) = request_metadata.as_object_mut() {
+            if let Some(screenshot_polish) = screenshot_polish_metadata.as_ref() {
+                metadata.insert("screenshotPolish".to_string(), screenshot_polish.clone());
+            }
+        }
+    }
+
+    let mut provider_request = serde_json::json!({
+        "document_name": request.document_name,
+        "flattened_source_path": request.flattened_source_path,
+        "source_image_count": request.source_images.len(),
+        "source_images": source_images,
+        "timeline_nodes": timeline_nodes,
+        "timeline_schema_version": request.timeline_schema_version,
+        "timeline_head_node_id": request.timeline_head_node_id,
+        "edit_receipts": edit_receipts.clone(),
+    });
+    if include_screenshot_polish_trace {
+        if let Some(metadata) = provider_request.as_object_mut() {
+            if let Some(screenshot_polish) = screenshot_polish_metadata.as_ref() {
+                metadata.insert("screenshotPolish".to_string(), screenshot_polish.clone());
+            }
+        }
+    }
+
+    let mut result_metadata = serde_json::json!({
+        "operation": operation,
+        "created_at": chrono::Utc::now().to_rfc3339(),
+        "format": format_id,
+        "document_name": request.document_name,
+        "source_image_count": request.source_images.len(),
+        "timeline_node_count": request.timeline_nodes.len(),
+        "timeline_schema_version": request.timeline_schema_version,
+        "timeline_head_node_id": request.timeline_head_node_id,
+        "editable_layer_count": 0,
+        "fidelity": request.format.fidelity(),
+        "canvas_mode": request.canvas_mode,
+        "active_image_id": request.active_image_id,
+        "output_sha256": output_sha256,
+        "flattened_source_sha256": flattened_source_sha256,
+        "limitations": limitations.clone(),
+    });
+    if include_screenshot_polish_trace {
+        if let Some(metadata) = result_metadata.as_object_mut() {
+            if let Some(screenshot_polish) = screenshot_polish_metadata.as_ref() {
+                metadata.insert("screenshotPolish".to_string(), screenshot_polish.clone());
+            }
+        }
+    }
+
     serde_json::json!({
         "schema_version": request.schema_version,
         "request": {
@@ -2708,29 +4903,7 @@ fn build_export_receipt_payload(
             "model": writer_id,
             "provider_options": {},
             "out_dir": request.run_dir,
-            "metadata": {
-                "operation": operation,
-                "export_contract": export_contract,
-                "document_name": request.document_name,
-                "canvas_mode": request.canvas_mode,
-                "active_image_id": request.active_image_id,
-                "timeline_schema_version": request.timeline_schema_version,
-                "timeline_head_node_id": request.timeline_head_node_id,
-                "action_sequence": request.action_sequence,
-                "limitations": limitations,
-                "export_bounds_css": request.export_bounds_css,
-                "flattened_size_px": request.flattened_size_px,
-                "input_snapshot": {
-                    "documentName": request.document_name,
-                    "images": request.source_images.iter().map(|image| serde_json::json!({
-                        "id": image.id,
-                        "path": image.path,
-                        "label": image.label,
-                    })).collect::<Vec<_>>(),
-                    "activeImageId": request.active_image_id,
-                    "editReceipts": edit_receipts,
-                },
-            },
+            "metadata": request_metadata,
         },
         "resolved": {
             "provider": "local",
@@ -2757,18 +4930,9 @@ fn build_export_receipt_payload(
                 "color_mode": "rgb",
                 "alpha_preserved": request.format.supports_alpha(),
             },
-            "warnings": limitations,
+            "warnings": limitations.clone(),
         },
-        "provider_request": {
-            "document_name": request.document_name,
-            "flattened_source_path": request.flattened_source_path,
-            "source_image_count": request.source_images.len(),
-            "source_images": source_images,
-            "timeline_nodes": timeline_nodes,
-            "timeline_schema_version": request.timeline_schema_version,
-            "timeline_head_node_id": request.timeline_head_node_id,
-            "edit_receipts": edit_receipts,
-        },
+        "provider_request": provider_request,
         "provider_response": provider_response,
         "warnings": limitations,
         "artifacts": {
@@ -2776,23 +4940,7 @@ fn build_export_receipt_payload(
             "export_path": out_path.to_string_lossy().to_string(),
             "receipt_path": receipt_path.to_string_lossy().to_string(),
         },
-        "result_metadata": {
-            "operation": operation,
-            "created_at": chrono::Utc::now().to_rfc3339(),
-            "format": format_id,
-            "document_name": request.document_name,
-            "source_image_count": request.source_images.len(),
-            "timeline_node_count": request.timeline_nodes.len(),
-            "timeline_schema_version": request.timeline_schema_version,
-            "timeline_head_node_id": request.timeline_head_node_id,
-            "editable_layer_count": 0,
-            "fidelity": request.format.fidelity(),
-            "canvas_mode": request.canvas_mode,
-            "active_image_id": request.active_image_id,
-            "output_sha256": output_sha256,
-            "flattened_source_sha256": flattened_source_sha256,
-            "limitations": limitations,
-        },
+        "result_metadata": result_metadata,
     })
 }
 
@@ -4088,19 +6236,21 @@ fn review_extract_openrouter_images(
 }
 
 fn review_apply_image_path(value: Option<&serde_json::Value>) -> Option<String> {
-    value.and_then(|entry| {
-        entry
-            .get("path")
-            .and_then(|value| value.as_str())
-            .map(|value| value.to_string())
-            .or_else(|| entry.as_str().map(|value| value.to_string()))
-    })
-    .map(|value| value.trim().to_string())
-    .filter(|value| !value.is_empty())
+    value
+        .and_then(|entry| {
+            entry
+                .get("path")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+                .or_else(|| entry.as_str().map(|value| value.to_string()))
+        })
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn review_apply_reference_paths(value: Option<&serde_json::Value>) -> Vec<String> {
-    value.and_then(|entry| entry.as_array())
+    value
+        .and_then(|entry| entry.as_array())
         .cloned()
         .unwrap_or_default()
         .into_iter()
@@ -4166,7 +6316,10 @@ fn review_normalize_apply_model(raw: &str) -> String {
         return DESIGN_REVIEW_APPLY_MODEL.to_string();
     }
     let lower = trimmed.to_ascii_lowercase();
-    if lower == "gemini nano banana 2" || lower == "nano banana 2" || lower == "gemini-nano-banana-2" {
+    if lower == "gemini nano banana 2"
+        || lower == "nano banana 2"
+        || lower == "gemini-nano-banana-2"
+    {
         return DESIGN_REVIEW_APPLY_MODEL.to_string();
     }
     let without_models = trimmed
@@ -4374,7 +6527,10 @@ fn run_design_review_apply_request(
     reference_image_paths.retain(|path| path != &target_image_path);
     let mut deduped_reference_image_paths = Vec::new();
     for path in reference_image_paths {
-        if deduped_reference_image_paths.iter().any(|existing| existing == &path) {
+        if deduped_reference_image_paths
+            .iter()
+            .any(|existing| existing == &path)
+        {
             continue;
         }
         deduped_reference_image_paths.push(path);
@@ -4513,20 +6669,21 @@ fn run_design_review_apply_request(
                 &output_path,
             )
         })?;
-        let parts = review_build_google_apply_parts(&prompt, &target_image_path, &reference_image_paths)
-            .map_err(|error| {
-                review_apply_error(
-                    &format!("design review apply could not stage image inputs: {error}"),
-                    "google",
-                    &requested_model,
-                    &normalized_model,
-                    REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
-                    &prompt,
-                    &target_image_path,
-                    &reference_image_paths,
-                    &output_path,
-                )
-            })?;
+        let parts =
+            review_build_google_apply_parts(&prompt, &target_image_path, &reference_image_paths)
+                .map_err(|error| {
+                    review_apply_error(
+                        &format!("design review apply could not stage image inputs: {error}"),
+                        "google",
+                        &requested_model,
+                        &normalized_model,
+                        REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
+                        &prompt,
+                        &target_image_path,
+                        &reference_image_paths,
+                        &output_path,
+                    )
+                })?;
         let endpoint_base = review_first_non_empty(vars, &["GEMINI_API_BASE"])
             .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string());
         let endpoint = format!("{endpoint_base}/models/{normalized_model}:generateContent");
@@ -4619,8 +6776,8 @@ fn run_design_review_apply_request(
             ));
         }
 
-        let parsed: serde_json::Value =
-            serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
+        let parsed: serde_json::Value = serde_json::from_str(&body)
+            .unwrap_or_else(|_| serde_json::json!({ "raw": body.clone() }));
         let images = review_google_extract_images(&parsed).map_err(|error| {
             review_apply_error(
                 &format!("Google final apply image decode failed: {error}"),
@@ -4715,22 +6872,25 @@ fn run_design_review_apply_request(
             &output_path,
         )
     })?;
-    let openrouter_model =
-        review_normalize_openrouter_model(&normalized_model, "google/gemini-3.1-flash-image-preview");
+    let openrouter_model = review_normalize_openrouter_model(
+        &normalized_model,
+        "google/gemini-3.1-flash-image-preview",
+    );
     let content =
-        review_build_openrouter_apply_input(&prompt, &target_image_path, &reference_image_paths).map_err(|error| {
-            review_apply_error(
-                &format!("design review apply could not stage image inputs: {error}"),
-                "openrouter",
-                &requested_model,
-                &openrouter_model,
-                REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
-                &prompt,
-                &target_image_path,
-                &reference_image_paths,
-                &output_path,
-            )
-        })?;
+        review_build_openrouter_apply_input(&prompt, &target_image_path, &reference_image_paths)
+            .map_err(|error| {
+                review_apply_error(
+                    &format!("design review apply could not stage image inputs: {error}"),
+                    "openrouter",
+                    &requested_model,
+                    &openrouter_model,
+                    REVIEW_OPENROUTER_RESPONSES_TRANSPORT,
+                    &prompt,
+                    &target_image_path,
+                    &reference_image_paths,
+                    &output_path,
+                )
+            })?;
     let payload = serde_json::json!({
         "model": openrouter_model,
         "input": [{
@@ -5758,15 +7918,9 @@ fn main() {
         .on_menu_event(|event| {
             let menu_id = event.menu_item_id();
             match menu_id {
-                MENU_FILE_NEW_SESSION => {
-                    emit_native_menu_action(&event.window(), "new_session")
-                }
-                MENU_FILE_OPEN_SESSION => {
-                    emit_native_menu_action(&event.window(), "open_session")
-                }
-                MENU_FILE_SAVE_SESSION => {
-                    emit_native_menu_action(&event.window(), "save_session")
-                }
+                MENU_FILE_NEW_SESSION => emit_native_menu_action(&event.window(), "new_session"),
+                MENU_FILE_OPEN_SESSION => emit_native_menu_action(&event.window(), "open_session"),
+                MENU_FILE_SAVE_SESSION => emit_native_menu_action(&event.window(), "save_session"),
                 MENU_FILE_CLOSE_SESSION => {
                     emit_native_menu_action(&event.window(), "close_session")
                 }
@@ -5776,9 +7930,7 @@ fn main() {
                 MENU_FILE_EXPORT_SESSION => {
                     emit_native_menu_action(&event.window(), "export_session")
                 }
-                MENU_FILE_SETTINGS => {
-                    emit_native_menu_action(&event.window(), "open_settings")
-                }
+                MENU_FILE_SETTINGS => emit_native_menu_action(&event.window(), "open_settings"),
                 MENU_SETTINGS_ICON_PACK_DEFAULT_CLASSIC => {
                     emit_native_menu_action(&event.window(), "settings_icon_pack:default_classic")
                 }
@@ -5786,35 +7938,21 @@ fn main() {
                     emit_native_menu_action(&event.window(), "settings_icon_pack:oscillo_ink")
                 }
                 MENU_SETTINGS_ICON_PACK_INDUSTRIAL_MONO => {
-                    emit_native_menu_action(
-                        &event.window(),
-                        "settings_icon_pack:industrial_mono",
-                    )
+                    emit_native_menu_action(&event.window(), "settings_icon_pack:industrial_mono")
                 }
                 MENU_SETTINGS_ICON_PACK_PAINTERLY_FOLK => {
-                    emit_native_menu_action(
-                        &event.window(),
-                        "settings_icon_pack:painterly_folk",
-                    )
+                    emit_native_menu_action(&event.window(), "settings_icon_pack:painterly_folk")
                 }
                 MENU_SETTINGS_ICON_PACK_KINETIC_MARKER => {
-                    emit_native_menu_action(
-                        &event.window(),
-                        "settings_icon_pack:kinetic_marker",
-                    )
+                    emit_native_menu_action(&event.window(), "settings_icon_pack:kinetic_marker")
                 }
                 MENU_TOOLS_CREATE_TOOL => {
                     emit_native_menu_action(&event.window(), "open_create_tool")
                 }
                 _ => {
                     if let Some(index) = menu_id.strip_prefix(MENU_TOOLS_SLOT_PREFIX) {
-                        emit_native_menu_action(
-                            &event.window(),
-                            &format!("tools_slot_{index}"),
-                        );
-                    } else if let Some(index) =
-                        menu_id.strip_prefix(MENU_SHORTCUTS_SLOT_PREFIX)
-                    {
+                        emit_native_menu_action(&event.window(), &format!("tools_slot_{index}"));
+                    } else if let Some(index) = menu_id.strip_prefix(MENU_SHORTCUTS_SLOT_PREFIX) {
                         emit_native_menu_action(
                             &event.window(),
                             &format!("shortcuts_slot_{index}"),
@@ -5834,6 +7972,10 @@ fn main() {
             resize_pty,
             create_run_dir,
             get_repo_root,
+            prepare_local_magic_select_image,
+            run_local_magic_select_warm_click,
+            release_local_magic_select_image,
+            run_local_magic_select_click,
             export_run,
             get_key_status,
             get_install_telemetry_defaults,
@@ -5866,24 +8008,32 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    #[cfg(target_family = "unix")]
+    use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        encode_flattened_export, encode_flattened_psd_rgba, flatten_rgba_for_opaque_export,
-        is_native_engine_placeholder, normalize_export_out_path, parse_export_format,
-        push_native_path_candidate, resolve_existing_env_binary_path, review_build_google_apply_parts,
-        review_build_openai_planner_payload,
-        review_choose_apply_aspect_ratio, review_choose_apply_image_size,
-        review_normalize_apply_model, review_resolve_apply_image_config, run_design_review_apply_request,
-        review_build_openai_planner_ws_event, review_format_planner_http_error,
+        build_export_receipt_payload, encode_flattened_export, encode_flattened_psd_rgba,
+        flatten_rgba_for_opaque_export, is_native_engine_placeholder,
+        magic_select_prepare_worker_image, magic_select_read_mask_summary,
+        magic_select_release_worker_image, magic_select_run_worker_warm_click,
+        magic_select_sha256_file_cached, normalize_export_out_path, parse_export_format,
+        push_native_path_candidate, resolve_existing_env_binary_path,
+        review_build_google_apply_parts, review_build_openai_planner_payload,
+        review_build_openai_planner_ws_event, review_choose_apply_aspect_ratio,
+        review_choose_apply_image_size, review_format_planner_http_error,
         review_format_planner_http_error_for_transport, review_format_planner_remote_failure,
-        review_format_planner_transport_timeout, review_normalize_planner_model,
-        review_should_fallback_openai_ws_error, EngineProgramCandidate, ReviewPlannerRequestError,
-        NativeExportFormat, DESIGN_REVIEW_APPLY_MODEL, DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL,
-        DESIGN_REVIEW_PLANNER_MODEL, REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT,
-        REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT, REVIEW_OPENAI_RESPONSES_WS_TRANSPORT,
-        REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT,
+        review_format_planner_transport_timeout, review_normalize_apply_model,
+        review_normalize_planner_model, review_resolve_apply_image_config,
+        review_should_fallback_openai_ws_error, run_design_review_apply_request,
+        EngineProgramCandidate, MagicSelectContourPoint, MagicSelectPointPayload,
+        MagicSelectPreparedImageState, MagicSelectRuntimeConfig, MagicSelectWorkerSession,
+        NativeExportFormat, NormalizedMagicSelectSettings, ResolvedExportRunRequest,
+        ReviewPlannerRequestError, ScreenshotPolishExportPayload, DESIGN_REVIEW_APPLY_MODEL,
+        DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL, DESIGN_REVIEW_PLANNER_MODEL,
+        REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT, REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT,
+        REVIEW_OPENAI_RESPONSES_WS_TRANSPORT, REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT,
     };
 
     #[test]
@@ -5915,8 +8065,14 @@ mod tests {
     #[test]
     fn export_format_parser_accepts_low_effort_aliases() {
         assert_eq!(parse_export_format("psd").unwrap(), NativeExportFormat::Psd);
-        assert_eq!(parse_export_format("jpeg").unwrap(), NativeExportFormat::Jpg);
-        assert_eq!(parse_export_format("tif").unwrap(), NativeExportFormat::Tiff);
+        assert_eq!(
+            parse_export_format("jpeg").unwrap(),
+            NativeExportFormat::Jpg
+        );
+        assert_eq!(
+            parse_export_format("tif").unwrap(),
+            NativeExportFormat::Tiff
+        );
         assert!(parse_export_format("pdf").is_err());
     }
 
@@ -5924,11 +8080,19 @@ mod tests {
     fn export_path_normalizer_preserves_supported_aliases() {
         let run_dir = PathBuf::from("/tmp/cue-export-test");
         assert_eq!(
-            normalize_export_out_path(Path::new("/tmp/output.jpeg"), &run_dir, NativeExportFormat::Jpg),
+            normalize_export_out_path(
+                Path::new("/tmp/output.jpeg"),
+                &run_dir,
+                NativeExportFormat::Jpg
+            ),
             PathBuf::from("/tmp/output.jpeg")
         );
         assert_eq!(
-            normalize_export_out_path(Path::new("/tmp/output.tif"), &run_dir, NativeExportFormat::Tiff),
+            normalize_export_out_path(
+                Path::new("/tmp/output.tif"),
+                &run_dir,
+                NativeExportFormat::Tiff
+            ),
             PathBuf::from("/tmp/output.tif")
         );
         assert_eq!(
@@ -5963,6 +8127,346 @@ mod tests {
         let little_endian = &tiff[0..4] == b"II*\0";
         let big_endian = &tiff[0..4] == b"MM\0*";
         assert!(little_endian || big_endian);
+    }
+
+    #[test]
+    fn psd_export_receipt_includes_screenshot_polish_trace_when_present() {
+        let request = ResolvedExportRunRequest {
+            schema_version: 1,
+            document_name: "Compare Export".to_string(),
+            format: NativeExportFormat::Psd,
+            run_dir: "/tmp/run".to_string(),
+            requested_out_path: "/tmp/run/export.psd".to_string(),
+            out_path: "/tmp/run/export.psd".to_string(),
+            flattened_source_path: "/tmp/run/export.flattened.png".to_string(),
+            canvas_mode: Some("multi".to_string()),
+            active_image_id: Some("img-1".to_string()),
+            export_bounds_css: None,
+            flattened_size_px: None,
+            source_images: Vec::new(),
+            timeline_nodes: Vec::new(),
+            timeline_schema_version: Some(1),
+            timeline_head_node_id: Some("tl-2".to_string()),
+            action_sequence: Vec::new(),
+            edit_receipts: Vec::new(),
+            limitations: vec!["flattened".to_string()],
+            screenshot_polish: Some(ScreenshotPolishExportPayload {
+                proposal_id: Some("proposal-1".to_string()),
+                selected_proposal_id: Some("proposal-1".to_string()),
+                preview_image_path: Some("/tmp/run/preview.png".to_string()),
+                changed_region_bounds: Some(serde_json::json!({
+                    "x": 4,
+                    "y": 8,
+                    "w": 64,
+                    "h": 48
+                })),
+                preserve_region_ids: vec!["subject".to_string()],
+                rationale_codes: vec!["preserve_subject".to_string()],
+                frame_context: Some(serde_json::json!({
+                    "targetImageId": "img-1",
+                    "originalFrame": { "path": "/tmp/run/original.png" },
+                    "approvedFrame": { "path": "/tmp/run/approved.png" }
+                })),
+            }),
+        };
+
+        let receipt = build_export_receipt_payload(
+            &request,
+            Path::new("/tmp/run/receipt-export.json"),
+            Path::new("/tmp/run/export.psd"),
+            1920,
+            1080,
+            "flat-sha",
+            "out-sha",
+        );
+
+        assert_eq!(
+            receipt["request"]["metadata"]["screenshotPolish"]["approvedProposalId"],
+            serde_json::json!("proposal-1")
+        );
+        assert_eq!(
+            receipt["provider_request"]["screenshotPolish"]["frameContext"]["targetImageId"],
+            serde_json::json!("img-1")
+        );
+        assert_eq!(
+            receipt["result_metadata"]["screenshotPolish"]["approvedProposalId"],
+            serde_json::json!("proposal-1")
+        );
+    }
+
+    #[test]
+    fn raster_export_receipt_omits_screenshot_polish_trace_even_if_request_carries_it() {
+        let request = ResolvedExportRunRequest {
+            schema_version: 1,
+            document_name: "Raster Export".to_string(),
+            format: NativeExportFormat::Png,
+            run_dir: "/tmp/run".to_string(),
+            requested_out_path: "/tmp/run/export.png".to_string(),
+            out_path: "/tmp/run/export.png".to_string(),
+            flattened_source_path: "/tmp/run/export.flattened.png".to_string(),
+            canvas_mode: Some("multi".to_string()),
+            active_image_id: Some("img-1".to_string()),
+            export_bounds_css: None,
+            flattened_size_px: None,
+            source_images: Vec::new(),
+            timeline_nodes: Vec::new(),
+            timeline_schema_version: Some(1),
+            timeline_head_node_id: Some("tl-2".to_string()),
+            action_sequence: Vec::new(),
+            edit_receipts: Vec::new(),
+            limitations: vec!["flattened".to_string()],
+            screenshot_polish: Some(ScreenshotPolishExportPayload {
+                proposal_id: Some("proposal-1".to_string()),
+                selected_proposal_id: Some("proposal-1".to_string()),
+                preview_image_path: None,
+                changed_region_bounds: None,
+                preserve_region_ids: Vec::new(),
+                rationale_codes: Vec::new(),
+                frame_context: Some(serde_json::json!({ "targetImageId": "img-1" })),
+            }),
+        };
+
+        let receipt = build_export_receipt_payload(
+            &request,
+            Path::new("/tmp/run/receipt-export.json"),
+            Path::new("/tmp/run/export.png"),
+            1920,
+            1080,
+            "flat-sha",
+            "out-sha",
+        );
+
+        assert!(receipt["request"]["metadata"]
+            .get("screenshotPolish")
+            .is_none());
+        assert!(receipt["provider_request"]
+            .get("screenshotPolish")
+            .is_none());
+        assert!(receipt["result_metadata"].get("screenshotPolish").is_none());
+    }
+
+    #[test]
+    fn magic_select_mask_summary_extracts_bounds_and_rectangle_contour() {
+        let mask_path = temp_file_path("magic-select-mask.png");
+        let _ = std::fs::remove_file(&mask_path);
+        let mut image = image::GrayImage::from_pixel(12, 12, image::Luma([0]));
+        for y in 3..9 {
+            for x in 2..8 {
+                image.put_pixel(x, y, image::Luma([255]));
+            }
+        }
+        image
+            .save_with_format(&mask_path, image::ImageFormat::Png)
+            .expect("write mask png");
+
+        let summary = magic_select_read_mask_summary(&mask_path, 127, 64).expect("mask summary");
+        assert_eq!(summary.bounds_x, 2);
+        assert_eq!(summary.bounds_y, 3);
+        assert_eq!(summary.bounds_w, 6);
+        assert_eq!(summary.bounds_h, 6);
+        assert_eq!(
+            summary.contour_points,
+            vec![
+                MagicSelectContourPoint { x: 2, y: 3 },
+                MagicSelectContourPoint { x: 8, y: 3 },
+                MagicSelectContourPoint { x: 8, y: 9 },
+                MagicSelectContourPoint { x: 2, y: 9 },
+            ]
+        );
+
+        let _ = std::fs::remove_file(mask_path);
+    }
+
+    #[test]
+    fn magic_select_sha256_file_cache_reuses_and_invalidates() {
+        let path = temp_file_path("magic-select-cache.txt");
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, b"alpha").expect("write initial file");
+
+        let mut session = MagicSelectWorkerSession::default();
+        let first = magic_select_sha256_file_cached(&mut session, &path).expect("first hash");
+        let second = magic_select_sha256_file_cached(&mut session, &path).expect("cached hash");
+        assert_eq!(first, second);
+
+        std::fs::write(&path, b"beta-updated").expect("rewrite file");
+        let third = magic_select_sha256_file_cached(&mut session, &path).expect("updated hash");
+        assert_ne!(first, third);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn magic_select_worker_session_reuses_process_and_prepare_cache() {
+        let helper_path = temp_file_path("magic-select-worker.sh");
+        let log_path = temp_file_path("magic-select-worker.log");
+        let image_path = temp_file_path("magic-select-image.bin");
+        let model_path = temp_file_path("magic-select-model.bin");
+        let artifact_root = temp_file_path("magic-select-artifacts");
+        let output_mask_one = temp_file_path("magic-select-mask-one.png");
+        let output_mask_two = temp_file_path("magic-select-mask-two.png");
+        let _ = std::fs::remove_file(&helper_path);
+        let _ = std::fs::remove_file(&log_path);
+        let _ = std::fs::remove_file(&image_path);
+        let _ = std::fs::remove_file(&model_path);
+        let _ = std::fs::remove_dir_all(&artifact_root);
+        let _ = std::fs::remove_file(&output_mask_one);
+        let _ = std::fs::remove_file(&output_mask_two);
+
+        std::fs::write(&image_path, b"image-bytes").expect("write image");
+        std::fs::write(&model_path, b"model-bytes").expect("write model");
+        std::fs::create_dir_all(&artifact_root).expect("create artifact root");
+
+        let quoted_log_path = log_path.to_string_lossy().replace('\'', "'\"'\"'");
+        let helper_script = format!(
+            r#"#!/bin/sh
+set -eu
+log_file='{quoted_log_path}'
+printf 'spawn\n' >>"$log_file"
+while IFS= read -r line; do
+  action=$(printf '%s\n' "$line" | sed -n 's/.*"action":"\([^"]*\)".*/\1/p')
+  prepared_id=$(printf '%s\n' "$line" | sed -n 's/.*"preparedImageId":"\([^"]*\)".*/\1/p')
+  image_id=$(printf '%s\n' "$line" | sed -n 's/.*"imageId":"\([^"]*\)".*/\1/p')
+  mask_path=$(printf '%s\n' "$line" | sed -n 's/.*"outputMaskPath":"\([^"]*\)".*/\1/p')
+  case "$action" in
+    magic_select_prepare)
+      printf 'prepare:%s\n' "$prepared_id" >>"$log_file"
+      printf '{{"ok":true,"contract":"juggernaut.magic_select.local.prepared.v1","action":"magic_select_prepare","imageId":"%s","preparedImageId":"%s","runtime":"stub_worker","warnings":[]}}\n' "$image_id" "$prepared_id"
+      ;;
+    magic_select_warm_click)
+      printf 'warm_click:%s\n' "$prepared_id" >>"$log_file"
+      if [ -n "$mask_path" ]; then
+        : > "$mask_path"
+      fi
+      printf '{{"ok":true,"contract":"juggernaut.magic_select.local.prepared.v1","action":"magic_select_warm_click","imageId":"%s","preparedImageId":"%s","maskPath":"%s","confidence":1.0,"runtime":"stub_worker","warnings":[]}}\n' "$image_id" "$prepared_id" "$mask_path"
+      ;;
+    magic_select_release)
+      printf 'release:%s\n' "$prepared_id" >>"$log_file"
+      printf '{{"ok":true,"contract":"juggernaut.magic_select.local.prepared.v1","action":"magic_select_release","imageId":"%s","preparedImageId":"%s","warnings":[]}}\n' "$image_id" "$prepared_id"
+      ;;
+    *)
+      printf '{{"ok":false,"code":"unknown_action","nonDestructive":true,"contract":"juggernaut.magic_select.local.prepared.v1","action":"%s","imageId":"%s","preparedImageId":"%s","details":{{"message":"unknown action"}}}}\n' "$action" "$image_id" "$prepared_id"
+      ;;
+  esac
+done
+"#
+        );
+        std::fs::write(&helper_path, helper_script).expect("write helper");
+        let mut permissions = std::fs::metadata(&helper_path)
+            .expect("helper metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&helper_path, permissions).expect("chmod helper");
+
+        let runtime = MagicSelectRuntimeConfig {
+            python_bin: "/bin/sh".to_string(),
+            helper_path: helper_path.clone(),
+            model_path: model_path.clone(),
+            model_id: "mobile_sam_vit_t".to_string(),
+            model_revision: "sha256:test-model".to_string(),
+            runtime_id: "tauri_mobile_sam_python_worker_cpu".to_string(),
+        };
+        let state = MagicSelectPreparedImageState {
+            prepared_image_id: "prepared-1".to_string(),
+            image_cache_key: "image-cache-1".to_string(),
+            image_id: "img-1".to_string(),
+            image_path: image_path.clone(),
+            artifact_root: artifact_root.clone(),
+            stable_source_ref: "stable-ref".to_string(),
+            source: "canvas_magic_select".to_string(),
+            settings: NormalizedMagicSelectSettings {
+                mask_threshold: 127,
+                max_contour_points: 256,
+            },
+            image_sha256: "sha256-image".to_string(),
+            runtime_id: runtime.runtime_id.clone(),
+            model_id: runtime.model_id.clone(),
+            model_revision: runtime.model_revision.clone(),
+            prepared_at_millis: 123,
+        };
+
+        let mut session = MagicSelectWorkerSession::default();
+        let prepared =
+            magic_select_prepare_worker_image(&mut session, &runtime, &state).expect("prepare");
+        let first = magic_select_run_worker_warm_click(
+            &mut session,
+            &runtime,
+            &state,
+            &MagicSelectPointPayload { x: 24.0, y: 32.0 },
+            "canvas_magic_select",
+            &output_mask_one,
+        )
+        .expect("first warm click");
+        let second = magic_select_run_worker_warm_click(
+            &mut session,
+            &runtime,
+            &state,
+            &MagicSelectPointPayload { x: 40.0, y: 48.0 },
+            "canvas_magic_select",
+            &output_mask_two,
+        )
+        .expect("second warm click");
+        magic_select_release_worker_image(
+            &mut session,
+            &state.image_id,
+            &state.prepared_image_id,
+            "done",
+        )
+        .expect("release");
+
+        assert_eq!(
+            prepared.prepared_image_id.as_deref(),
+            Some(state.prepared_image_id.as_str())
+        );
+        assert_eq!(
+            first.prepared_image_id.as_deref(),
+            Some(state.prepared_image_id.as_str())
+        );
+        assert_eq!(
+            second.prepared_image_id.as_deref(),
+            Some(state.prepared_image_id.as_str())
+        );
+
+        let log = std::fs::read_to_string(&log_path).expect("read worker log");
+        let lines: Vec<&str> = log.lines().collect();
+        assert_eq!(
+            lines.iter().filter(|line| **line == "spawn").count(),
+            1,
+            "worker should spawn once: {lines:?}"
+        );
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|line| line.starts_with("prepare:"))
+                .count(),
+            1,
+            "prepare should run once: {lines:?}"
+        );
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|line| line.starts_with("warm_click:"))
+                .count(),
+            2,
+            "warm click should run twice: {lines:?}"
+        );
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|line| line.starts_with("release:"))
+                .count(),
+            1,
+            "release should run once: {lines:?}"
+        );
+
+        session.client = None;
+        let _ = std::fs::remove_file(helper_path);
+        let _ = std::fs::remove_file(log_path);
+        let _ = std::fs::remove_file(image_path);
+        let _ = std::fs::remove_file(model_path);
+        let _ = std::fs::remove_dir_all(artifact_root);
+        let _ = std::fs::remove_file(output_mask_one);
+        let _ = std::fs::remove_file(output_mask_two);
     }
 
     fn temp_file_path(name: &str) -> PathBuf {
@@ -6306,9 +8810,18 @@ mod tests {
         )
         .expect("build apply parts");
 
-        assert_eq!(parts[0].get("text").and_then(|value| value.as_str()), Some("Edit only targetImage. Use referenceImages[] as guidance only."));
-        assert_eq!(parts[1].get("text").and_then(|value| value.as_str()), Some("targetImage (editable image to modify)"));
-        assert_eq!(parts[3].get("text").and_then(|value| value.as_str()), Some("referenceImages[0] (guidance only; do not edit directly)"));
+        assert_eq!(
+            parts[0].get("text").and_then(|value| value.as_str()),
+            Some("Edit only targetImage. Use referenceImages[] as guidance only.")
+        );
+        assert_eq!(
+            parts[1].get("text").and_then(|value| value.as_str()),
+            Some("targetImage (editable image to modify)")
+        );
+        assert_eq!(
+            parts[3].get("text").and_then(|value| value.as_str()),
+            Some("referenceImages[0] (guidance only; do not edit directly)")
+        );
         assert_eq!(
             parts[2]
                 .pointer("/inlineData/mimeType")
@@ -6342,7 +8855,8 @@ mod tests {
             "outputPath": "/tmp/review-apply-output.png"
         });
         let error = run_design_review_apply_request(&request, &HashMap::new()).unwrap_err();
-        let parsed: serde_json::Value = serde_json::from_str(&error).expect("parse apply error envelope");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&error).expect("parse apply error envelope");
 
         assert_eq!(
             parsed
