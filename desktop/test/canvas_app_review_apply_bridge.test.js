@@ -77,12 +77,13 @@ function buildReviewApplyHarness({
   pendingRequestId = "review-1",
   pendingSessionKey = "tab:tab-a",
   targetPath = "/tmp/source.png",
+  communicationTool = "marker",
 } = {}) {
   const state = {
     activeTabId,
     runDir: "/runs/a",
     communication: {
-      tool: "marker",
+      tool: communicationTool,
       reviewHistory: [],
       proposalTray: {
         requestId: pendingRequestId,
@@ -179,6 +180,22 @@ function buildReviewApplyHarness({
     readFirstString,
     state,
   });
+  const reviewApplyShouldPreserveCommunicationTool = instantiateFunction("reviewApplyShouldPreserveCommunicationTool", {
+    readFirstString,
+  });
+  const designReviewApplyRequestUsesMagicSelect = instantiateFunction("designReviewApplyRequestUsesMagicSelect", {
+    asRecord,
+    readFirstString,
+  });
+  const designReviewApplyProposalUsesMagicSelect = instantiateFunction("designReviewApplyProposalUsesMagicSelect", {
+    asRecord,
+    readFirstString,
+  });
+  const resolveReviewApplyCommunicationTool = instantiateFunction("resolveReviewApplyCommunicationTool", {
+    designReviewApplyRequestUsesMagicSelect,
+    designReviewApplyProposalUsesMagicSelect,
+    reviewApplyShouldPreserveCommunicationTool,
+  });
   const updateDesignReviewApplyCostLatency = instantiateFunction("updateDesignReviewApplyCostLatency", {
     readFirstString,
     readFirstNumber,
@@ -245,6 +262,11 @@ function buildReviewApplyHarness({
     state.communication.tool = tool;
     return tool;
   };
+  const ensureCommunicationToolActive = (tool = null, options = {}) => {
+    communicationToolCalls.push({ tool, options });
+    state.communication.tool = tool;
+    return tool;
+  };
   const setTool = (tool) => {
     toolCalls.push(tool);
     state.tool = tool;
@@ -302,6 +324,9 @@ function buildReviewApplyHarness({
     uniqueStringList,
     removeImageFromCanvas,
     archiveCommunicationReviewContext,
+    resolveReviewApplyCommunicationTool,
+    reviewApplyShouldPreserveCommunicationTool,
+    ensureCommunicationToolActive,
     setCommunicationTool,
     setTool,
     clearVisibleCommunicationReviewState,
@@ -357,6 +382,7 @@ function buildBackgroundReviewApplyHarness({
   targetTabId = "tab-a",
   targetPath = "/tmp/source.png",
   referencePath = "/tmp/ref.png",
+  communicationTool = "marker",
 } = {}) {
   const session = {
     runDir: "/runs/a",
@@ -392,7 +418,7 @@ function buildBackgroundReviewApplyHarness({
       referenceImageIds: ["img-2"],
     },
     communication: {
-      tool: "marker",
+      tool: communicationTool,
       proposalTray: {
         visible: true,
         requestId: "review-1",
@@ -460,6 +486,22 @@ function buildBackgroundReviewApplyHarness({
     cloneDesignReviewApplyState,
     readFirstString,
   });
+  const reviewApplyShouldPreserveCommunicationTool = instantiateFunction("reviewApplyShouldPreserveCommunicationTool", {
+    readFirstString,
+  });
+  const designReviewApplyRequestUsesMagicSelect = instantiateFunction("designReviewApplyRequestUsesMagicSelect", {
+    asRecord,
+    readFirstString,
+  });
+  const designReviewApplyProposalUsesMagicSelect = instantiateFunction("designReviewApplyProposalUsesMagicSelect", {
+    asRecord,
+    readFirstString,
+  });
+  const resolveReviewApplyCommunicationTool = instantiateFunction("resolveReviewApplyCommunicationTool", {
+    designReviewApplyRequestUsesMagicSelect,
+    designReviewApplyProposalUsesMagicSelect,
+    reviewApplyShouldPreserveCommunicationTool,
+  });
 
   const receiptCalls = [];
   const timelineCalls = [];
@@ -505,11 +547,12 @@ function buildBackgroundReviewApplyHarness({
       return true;
     },
     clearVisibleCommunicationReviewStateForSession: (_session) => {
-      session.communication.tool = null;
       session.communication.proposalTray.visible = false;
       session.communication.proposalTray.requestId = null;
       return session.communication;
     },
+    resolveReviewApplyCommunicationTool,
+    reviewApplyShouldPreserveCommunicationTool,
     syncSessionTabRecordFromSession: (_record, options = {}) => {
       syncCalls.push(options);
       record.reviewFlowState = options.reviewFlowState ?? record.reviewFlowState;
@@ -612,6 +655,39 @@ test("review apply success replaces the target image in place and records a time
   });
 });
 
+test("review apply success keeps magic select armed for immediate post-apply clicks", async () => {
+  const harness = buildReviewApplyHarness({ communicationTool: "magic_select" });
+
+  const ok = await harness.applyAcceptedDesignReviewOutput({
+    phase: "succeeded",
+    sessionKey: "tab:tab-a",
+    requestId: "review-1",
+    proposal: {
+      proposalId: "proposal-1",
+      label: "Swap background",
+      actionType: "background_replace",
+    },
+    request: {
+      requestId: "review-1",
+      sessionId: "tab-a",
+      primaryImageId: "img-1",
+      visibleCanvasContext: {
+        images: [
+          { id: "img-1", path: "/tmp/source.png" },
+          { id: "img-2", path: "/tmp/ref.png" },
+        ],
+      },
+    },
+    targetImageId: "img-1",
+    referenceImageIds: ["img-2"],
+    outputPath: "/tmp/out.png",
+  });
+
+  assert.equal(ok, true);
+  assert.deepEqual(harness.communicationToolCalls, []);
+  assert.equal(harness.state.communication.tool, "magic_select");
+});
+
 test("background review apply completion updates the owning tab session without touching active-tab UI", async () => {
   const harness = buildBackgroundReviewApplyHarness();
 
@@ -668,6 +744,203 @@ test("background review apply completion updates the owning tab session without 
     reviewFlowState: "",
   });
   assert.equal(harness.removeFileCalls.length, 0);
+});
+
+test("background review apply completion keeps magic select armed in the owning session", async () => {
+  const harness = buildBackgroundReviewApplyHarness({ communicationTool: "magic_select" });
+
+  const ok = await harness.applyAcceptedDesignReviewOutputToSessionRecord(harness.record, {
+    phase: "succeeded",
+    sessionKey: "tab:tab-a",
+    requestId: "review-1",
+    proposal: {
+      proposalId: "proposal-1",
+      label: "Swap background",
+      actionType: "background_replace",
+    },
+    request: {
+      requestId: "review-1",
+      sessionId: "tab-a",
+      primaryImageId: "img-1",
+      visibleCanvasContext: {
+        images: [
+          { id: "img-1", path: "/tmp/source.png" },
+          { id: "img-2", path: "/tmp/ref.png" },
+        ],
+      },
+    },
+    targetImageId: "img-1",
+    outputPath: "/tmp/out.png",
+    referenceImageIds: ["img-2"],
+  });
+
+  assert.equal(ok, true);
+  assert.equal(harness.session.communication.tool, "magic_select");
+  assert.equal(harness.session.communication.proposalTray.visible, false);
+});
+
+test("review apply success re-arms magic select when the request carried a magic select region under highlight", async () => {
+  const harness = buildReviewApplyHarness({ communicationTool: "protect" });
+
+  const ok = await harness.applyAcceptedDesignReviewOutput({
+    phase: "succeeded",
+    sessionKey: "tab:tab-a",
+    requestId: "review-1",
+    proposal: {
+      proposalId: "proposal-1",
+      label: "Swap background",
+      actionType: "background_replace",
+    },
+    request: {
+      requestId: "review-1",
+      sessionId: "tab-a",
+      primaryImageId: "img-1",
+      reviewTool: "highlight",
+      chosenRegionCandidate: {
+        id: "candidate-1",
+        source: "magic_select",
+      },
+      regionCandidates: [
+        { id: "candidate-1", source: "magic_select" },
+      ],
+      visibleCanvasContext: {
+        images: [
+          { id: "img-1", path: "/tmp/source.png" },
+          { id: "img-2", path: "/tmp/ref.png" },
+        ],
+      },
+    },
+    targetImageId: "img-1",
+    referenceImageIds: ["img-2"],
+    outputPath: "/tmp/out.png",
+  });
+
+  assert.equal(ok, true);
+  assert.deepEqual(harness.communicationToolCalls, [
+    {
+      tool: "magic_select",
+      options: { source: "review_apply_success" },
+    },
+  ]);
+  assert.equal(harness.state.communication.tool, "magic_select");
+});
+
+test("review apply success re-arms magic select when the request only preserves the active region candidate id", async () => {
+  const harness = buildReviewApplyHarness({ communicationTool: "marker" });
+
+  const ok = await harness.applyAcceptedDesignReviewOutput({
+    phase: "succeeded",
+    sessionKey: "tab:tab-a",
+    requestId: "review-1",
+    proposal: {
+      proposalId: "proposal-1",
+      label: "Shift hero right",
+      actionType: "move_subject",
+    },
+    request: {
+      requestId: "review-1",
+      sessionId: "tab-a",
+      primaryImageId: "img-1",
+      reviewTool: "marker",
+      activeRegionCandidateId: "magic-select-1",
+      selectionState: "region",
+      chosenRegionCandidate: {
+        id: "magic-select-1",
+      },
+      visibleCanvasContext: {
+        images: [
+          { id: "img-1", path: "/tmp/source.png" },
+        ],
+      },
+    },
+    targetImageId: "img-1",
+    referenceImageIds: [],
+    outputPath: "/tmp/out.png",
+  });
+
+  assert.equal(ok, true);
+  assert.deepEqual(harness.communicationToolCalls, [
+    {
+      tool: "magic_select",
+      options: { source: "review_apply_success" },
+    },
+  ]);
+  assert.equal(harness.state.communication.tool, "magic_select");
+});
+
+test("background review apply re-arms magic select when the request carried a magic select region under highlight", async () => {
+  const harness = buildBackgroundReviewApplyHarness({ communicationTool: "protect" });
+
+  const ok = await harness.applyAcceptedDesignReviewOutputToSessionRecord(harness.record, {
+    phase: "succeeded",
+    sessionKey: "tab:tab-a",
+    requestId: "review-1",
+    proposal: {
+      proposalId: "proposal-1",
+      label: "Swap background",
+      actionType: "background_replace",
+    },
+    request: {
+      requestId: "review-1",
+      sessionId: "tab-a",
+      primaryImageId: "img-1",
+      reviewTool: "highlight",
+      chosenRegionCandidate: {
+        id: "candidate-1",
+        source: "magic_select",
+      },
+      regionCandidates: [
+        { id: "candidate-1", source: "magic_select" },
+      ],
+      visibleCanvasContext: {
+        images: [
+          { id: "img-1", path: "/tmp/source.png" },
+          { id: "img-2", path: "/tmp/ref.png" },
+        ],
+      },
+    },
+    targetImageId: "img-1",
+    outputPath: "/tmp/out.png",
+    referenceImageIds: ["img-2"],
+  });
+
+  assert.equal(ok, true);
+  assert.equal(harness.session.communication.tool, "magic_select");
+});
+
+test("background review apply re-arms magic select when only the proposal target region preserves the candidate id", async () => {
+  const harness = buildBackgroundReviewApplyHarness({ communicationTool: "marker" });
+
+  const ok = await harness.applyAcceptedDesignReviewOutputToSessionRecord(harness.record, {
+    phase: "succeeded",
+    sessionKey: "tab:tab-a",
+    requestId: "review-1",
+    proposal: {
+      proposalId: "proposal-1",
+      label: "Shift hero right",
+      actionType: "move_subject",
+      targetRegion: {
+        regionCandidateId: "magic-select-1",
+      },
+    },
+    request: {
+      requestId: "review-1",
+      sessionId: "tab-a",
+      primaryImageId: "img-1",
+      reviewTool: "marker",
+      visibleCanvasContext: {
+        images: [
+          { id: "img-1", path: "/tmp/source.png" },
+        ],
+      },
+    },
+    targetImageId: "img-1",
+    outputPath: "/tmp/out.png",
+    referenceImageIds: [],
+  });
+
+  assert.equal(ok, true);
+  assert.equal(harness.session.communication.tool, "magic_select");
 });
 
 test("review apply detail falls back to request-visible reference images and parses ISO timestamps", () => {
