@@ -67,7 +67,13 @@ import {
   installAgentObservableDriverBridge,
 } from "./agent_observable_driver.js";
 import { createAgentTraceLog } from "./agent_trace_log.js";
-import { runLocalMagicSelectClick } from "./magic_select_runtime.js";
+import {
+  evictLocalMagicSelectImage,
+  prepareLocalMagicSelectImage,
+  releaseLocalMagicSelectImage,
+  runLocalMagicSelectClick,
+  runWarmLocalMagicSelectClick,
+} from "./magic_select_runtime.js";
 import {
   AGENT_RUNNER_DEFAULT_MAX_STEPS,
   AGENT_RUNNER_MAX_STEPS_LIMIT,
@@ -2149,6 +2155,305 @@ function sanitizeForkedCommunicationState(communication = null) {
     reviewRequestSeq: 0,
     lastReviewRequestedAt: 0,
   };
+}
+
+const LOCAL_MAGIC_SELECT_UI_PREWARM_TAB_FALLBACK_ID = "__canvas__";
+const localMagicSelectUiPrewarmByTabId = new Map();
+const LOCAL_MAGIC_SELECT_PREPARE_STATUS = "Engine: prewarming local Magic Select...";
+const LOCAL_MAGIC_SELECT_RUN_STATUS = "Engine: running local Magic Select...";
+const localMagicSelectUiActivity = {
+  prepareCount: 0,
+  clickCount: 0,
+  snapshotActive: false,
+  snapshotText: "",
+  snapshotError: false,
+};
+
+function createLocalMagicSelectUiPrewarmRuntime() {
+  return {
+    preparedByImageId: new Map(),
+    preparingByImageId: new Map(),
+    primaryImageId: null,
+    hoverImageId: null,
+  };
+}
+
+function isLocalMagicSelectUiStatus(message = "") {
+  const normalized = String(message || "").trim();
+  return normalized === LOCAL_MAGIC_SELECT_PREPARE_STATUS || normalized === LOCAL_MAGIC_SELECT_RUN_STATUS;
+}
+
+function localMagicSelectUiStatusBaseline() {
+  return state.ptySpawned ? "Engine: ready" : "Engine: idle";
+}
+
+function localMagicSelectUiStatusMessage() {
+  if (localMagicSelectUiActivity.clickCount > 0) return LOCAL_MAGIC_SELECT_RUN_STATUS;
+  if (localMagicSelectUiActivity.prepareCount > 0) return LOCAL_MAGIC_SELECT_PREPARE_STATUS;
+  return "";
+}
+
+function syncLocalMagicSelectUiActivityStatus() {
+  const nextStatus = localMagicSelectUiStatusMessage();
+  if (nextStatus) {
+    const currentStatus = String(state.lastStatusText || "");
+    if (!localMagicSelectUiActivity.snapshotActive && !isLocalMagicSelectUiStatus(currentStatus)) {
+      localMagicSelectUiActivity.snapshotActive = true;
+      localMagicSelectUiActivity.snapshotText = currentStatus;
+      localMagicSelectUiActivity.snapshotError = Boolean(state.lastStatusError);
+    }
+    const canWrite =
+      !Boolean(state.lastStatusError) &&
+      (!currentStatus ||
+        currentStatus === "Engine: ready" ||
+        currentStatus === "Engine: idle" ||
+        isLocalMagicSelectUiStatus(currentStatus));
+    if (canWrite && currentStatus !== nextStatus) {
+      setStatus(nextStatus);
+    }
+    return;
+  }
+  if (!localMagicSelectUiActivity.snapshotActive) return;
+  const currentStatus = String(state.lastStatusText || "");
+  const snapshotText = String(localMagicSelectUiActivity.snapshotText || "").trim();
+  const snapshotError = Boolean(localMagicSelectUiActivity.snapshotError);
+  localMagicSelectUiActivity.snapshotActive = false;
+  localMagicSelectUiActivity.snapshotText = "";
+  localMagicSelectUiActivity.snapshotError = false;
+  if (isLocalMagicSelectUiStatus(currentStatus)) {
+    setStatus(snapshotText || localMagicSelectUiStatusBaseline(), snapshotError);
+  }
+}
+
+function beginLocalMagicSelectUiActivity(kind = "prepare") {
+  if (kind === "click") {
+    localMagicSelectUiActivity.clickCount += 1;
+  } else {
+    localMagicSelectUiActivity.prepareCount += 1;
+  }
+  syncLocalMagicSelectUiActivityStatus();
+}
+
+function endLocalMagicSelectUiActivity(kind = "prepare") {
+  if (kind === "click") {
+    localMagicSelectUiActivity.clickCount = Math.max(0, Number(localMagicSelectUiActivity.clickCount) - 1);
+  } else {
+    localMagicSelectUiActivity.prepareCount = Math.max(0, Number(localMagicSelectUiActivity.prepareCount) - 1);
+  }
+  syncLocalMagicSelectUiActivityStatus();
+}
+
+function localMagicSelectUiPrewarmTabId(tabId = state.activeTabId || null) {
+  const normalized = String(tabId || "").trim();
+  return normalized || LOCAL_MAGIC_SELECT_UI_PREWARM_TAB_FALLBACK_ID;
+}
+
+function localMagicSelectUiPrewarmRuntimeForTab(tabId = state.activeTabId || null, { create = true } = {}) {
+  const key = localMagicSelectUiPrewarmTabId(tabId);
+  let runtime = localMagicSelectUiPrewarmByTabId.get(key) || null;
+  if (!runtime && create) {
+    runtime = createLocalMagicSelectUiPrewarmRuntime();
+    localMagicSelectUiPrewarmByTabId.set(key, runtime);
+  }
+  return runtime;
+}
+
+function cleanupLocalMagicSelectUiPrewarmRuntime(tabId = state.activeTabId || null) {
+  const key = localMagicSelectUiPrewarmTabId(tabId);
+  const runtime = localMagicSelectUiPrewarmByTabId.get(key) || null;
+  if (!runtime) return;
+  if (
+    runtime.preparedByImageId.size === 0 &&
+    runtime.preparingByImageId.size === 0 &&
+    !runtime.primaryImageId &&
+    !runtime.hoverImageId
+  ) {
+    localMagicSelectUiPrewarmByTabId.delete(key);
+  }
+}
+
+function localMagicSelectPreparedImageForUi(
+  imageId,
+  { tabId = state.activeTabId || null, imagePath = "", runDir = state.runDir || null } = {}
+) {
+  const normalizedImageId = String(imageId || "").trim();
+  if (!normalizedImageId) return null;
+  const runtime = localMagicSelectUiPrewarmRuntimeForTab(tabId, { create: false });
+  const preparedImage = runtime?.preparedByImageId?.get(normalizedImageId) || null;
+  if (!preparedImage) return null;
+  const normalizedImagePath = readFirstString(imagePath);
+  const normalizedRunDir = readFirstString(runDir) || null;
+  const staleImagePath = Boolean(normalizedImagePath) && readFirstString(preparedImage?.imagePath) !== normalizedImagePath;
+  const staleRunDir = Boolean(normalizedRunDir) && readFirstString(preparedImage?.runDir) !== normalizedRunDir;
+  if (!staleImagePath && !staleRunDir) return preparedImage;
+  runtime.preparedByImageId.delete(normalizedImageId);
+  if (runtime.primaryImageId === normalizedImageId) runtime.primaryImageId = null;
+  if (runtime.hoverImageId === normalizedImageId) runtime.hoverImageId = null;
+  cleanupLocalMagicSelectUiPrewarmRuntime(tabId);
+  void releaseLocalMagicSelectImage({
+    preparedImage,
+    imageId: normalizedImageId,
+    reason: staleRunDir ? "run_dir_changed" : "image_path_changed",
+  }).catch(() => {});
+  return null;
+}
+
+function rememberLocalMagicSelectPreparedImageForUi(preparedImage = null, { tabId = state.activeTabId || null } = {}) {
+  if (!preparedImage || typeof preparedImage !== "object") return null;
+  const normalizedImageId = String(preparedImage.imageId || "").trim();
+  const normalizedPreparedImageId = String(preparedImage.id || "").trim();
+  if (!normalizedImageId || !normalizedPreparedImageId) return null;
+  const runtime = localMagicSelectUiPrewarmRuntimeForTab(tabId);
+  const normalizedPreparedImage = JSON.parse(JSON.stringify(preparedImage));
+  runtime.preparedByImageId.set(normalizedImageId, normalizedPreparedImage);
+  return normalizedPreparedImage;
+}
+
+async function prepareLocalMagicSelectImageForUi(
+  imageId,
+  { tabId = state.activeTabId || null, source = "communication_magic_select" } = {}
+) {
+  const normalizedImageId = String(imageId || "").trim();
+  const item = state.imagesById.get(normalizedImageId) || null;
+  if (!normalizedImageId || !item?.path) return null;
+  const runtime = localMagicSelectUiPrewarmRuntimeForTab(tabId);
+  const existing = localMagicSelectPreparedImageForUi(normalizedImageId, {
+    tabId,
+    imagePath: String(item.path),
+    runDir: state.runDir || null,
+  });
+  if (existing) return existing;
+  const currentTask = runtime.preparingByImageId.get(normalizedImageId) || null;
+  if (currentTask) return currentTask;
+
+  let task = null;
+  task = (async () => {
+    beginLocalMagicSelectUiActivity("prepare");
+    try {
+      const response = await prepareLocalMagicSelectImage({
+        imageId: normalizedImageId,
+        imagePath: String(item.path),
+        runDir: state.runDir || null,
+        stableSourceRef: readFirstString(item?.receiptPath, item?.path) || null,
+        source,
+      });
+      const activeRuntime = localMagicSelectUiPrewarmRuntimeForTab(tabId, { create: false });
+      if (!activeRuntime || activeRuntime.preparingByImageId.get(normalizedImageId) !== task) return null;
+      return rememberLocalMagicSelectPreparedImageForUi(response?.preparedImage, { tabId });
+    } catch {
+      return null;
+    } finally {
+      endLocalMagicSelectUiActivity("prepare");
+      const activeRuntime = localMagicSelectUiPrewarmRuntimeForTab(tabId, { create: false });
+      if (activeRuntime?.preparingByImageId.get(normalizedImageId) === task) {
+        activeRuntime.preparingByImageId.delete(normalizedImageId);
+      }
+      cleanupLocalMagicSelectUiPrewarmRuntime(tabId);
+    }
+  })();
+
+  runtime.preparingByImageId.set(normalizedImageId, task);
+  return task;
+}
+
+async function dropLocalMagicSelectPreparedImageForUi(
+  imageId,
+  { tabId = state.activeTabId || null, reason = "caller_release", evict = false } = {}
+) {
+  const normalizedImageId = String(imageId || "").trim();
+  if (!normalizedImageId) return null;
+  const runtime = localMagicSelectUiPrewarmRuntimeForTab(tabId, { create: false });
+  if (!runtime) return null;
+  runtime.preparingByImageId.delete(normalizedImageId);
+  const preparedImage = runtime.preparedByImageId.get(normalizedImageId) || null;
+  runtime.preparedByImageId.delete(normalizedImageId);
+  if (runtime.primaryImageId === normalizedImageId) runtime.primaryImageId = null;
+  if (runtime.hoverImageId === normalizedImageId) runtime.hoverImageId = null;
+  cleanupLocalMagicSelectUiPrewarmRuntime(tabId);
+  if (!preparedImage) return null;
+  const releaseFn = evict ? evictLocalMagicSelectImage : releaseLocalMagicSelectImage;
+  try {
+    return await releaseFn({
+      preparedImage,
+      imageId: normalizedImageId,
+      reason,
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function releaseLocalMagicSelectUiPrewarmForTab(
+  tabId = state.activeTabId || null,
+  { reason = "caller_release", evict = false } = {}
+) {
+  const runtime = localMagicSelectUiPrewarmRuntimeForTab(tabId, { create: false });
+  if (!runtime) return [];
+  const preparedImageIds = Array.from(runtime.preparedByImageId.keys());
+  runtime.primaryImageId = null;
+  runtime.hoverImageId = null;
+  runtime.preparingByImageId.clear();
+  const results = await Promise.all(
+    preparedImageIds.map((imageId) =>
+      dropLocalMagicSelectPreparedImageForUi(imageId, {
+        tabId,
+        reason,
+        evict,
+      })
+    )
+  );
+  cleanupLocalMagicSelectUiPrewarmRuntime(tabId);
+  return results;
+}
+
+function syncLocalMagicSelectUiPrewarmTargets(
+  {
+    primaryImageId = null,
+    hoverImageId = null,
+    tabId = state.activeTabId || null,
+    source = "communication_magic_select",
+  } = {}
+) {
+  const runtime = localMagicSelectUiPrewarmRuntimeForTab(tabId);
+  const magicSelectArmed = communicationBehaviorToolId() === "magic_select";
+  const normalizeTargetImageId = (value) => {
+    const normalizedImageId = String(value || "").trim();
+    const item = normalizedImageId ? state.imagesById.get(normalizedImageId) || null : null;
+    return item?.path ? normalizedImageId : null;
+  };
+  const nextPrimaryImageId = normalizeTargetImageId(primaryImageId);
+  const nextHoverImageId = magicSelectArmed ? normalizeTargetImageId(hoverImageId) : null;
+  const keepImageIds = new Set([nextPrimaryImageId, nextHoverImageId].filter(Boolean));
+  const staleImageIds = new Set(
+    [
+      ...runtime.preparedByImageId.keys(),
+      ...runtime.preparingByImageId.keys(),
+      String(runtime.primaryImageId || "").trim(),
+      String(runtime.hoverImageId || "").trim(),
+    ].filter(Boolean)
+  );
+  const targetsUnchanged =
+    String(runtime.primaryImageId || "") === String(nextPrimaryImageId || "") &&
+    String(runtime.hoverImageId || "") === String(nextHoverImageId || "");
+  const trackedMatchKeep =
+    staleImageIds.size === keepImageIds.size &&
+    Array.from(keepImageIds).every((imageId) => staleImageIds.has(imageId));
+  if (targetsUnchanged && trackedMatchKeep) {
+    return keepImageIds.size > 0;
+  }
+  runtime.primaryImageId = nextPrimaryImageId;
+  runtime.hoverImageId = nextHoverImageId;
+  for (const imageId of keepImageIds) {
+    void prepareLocalMagicSelectImageForUi(imageId, { tabId, source }).catch(() => {});
+  }
+  for (const imageId of staleImageIds) {
+    if (keepImageIds.has(imageId)) continue;
+    void dropLocalMagicSelectPreparedImageForUi(imageId, {
+      tabId,
+      reason: "prewarm_target_changed",
+    }).catch(() => {});
+  }
+  return keepImageIds.size > 0;
 }
 
 const state = {
@@ -22848,6 +23153,11 @@ function applyCommunicationToolSelection(tool = null, { source = "communication_
   }
   state.communication.markDraft = null;
   state.communication.eraseDraft = null;
+  syncLocalMagicSelectUiPrewarmTargets({
+    primaryImageId: state.activeId || null,
+    hoverImageId: null,
+    source: "communication_magic_select",
+  });
   syncDropHintInteractivity();
   renderCommunicationChrome();
   renderQuickActions();
@@ -23013,29 +23323,64 @@ async function runLocalCommunicationMagicSelectAtPoint(
     group = applyCommunicationMagicSelectAtPoint(id, anchor);
   } else {
     await ensureRun();
-    setStatus("Engine: running local Magic Select...");
+    beginLocalMagicSelectUiActivity("click");
+    const directClickRequest = {
+      imageId: id,
+      imagePath: String(item.path),
+      runDir: state.runDir || null,
+      stableSourceRef: readFirstString(item?.receiptPath, item?.path) || null,
+      clickAnchor: anchor,
+      source,
+    };
+    const applyDeterministicResponse = (result = null) => {
+      if (result?.preparedImage) {
+        rememberLocalMagicSelectPreparedImageForUi(result.preparedImage);
+      }
+      return applyCommunicationMagicSelectAtPoint(id, anchor, {
+        ...(result?.group && typeof result.group === "object" ? result.group : {}),
+        receipt: result?.receipt || null,
+        reproducibility: result?.group?.reproducibility ?? result?.receipt?.reproducibility ?? null,
+        warnings: Array.isArray(result?.warnings) ? result.warnings : [],
+      });
+    };
+    const directClick = async () => {
+      const result = await runLocalMagicSelectClick(directClickRequest);
+      void prepareLocalMagicSelectImageForUi(id, { source }).catch(() => {});
+      return result;
+    };
+    const preparedImage = localMagicSelectPreparedImageForUi(id, {
+      imagePath: String(item.path),
+      runDir: state.runDir || null,
+    });
     try {
-      response = await runLocalMagicSelectClick({
-        imageId: id,
-        imagePath: String(item.path),
-        runDir: state.runDir || null,
-        stableSourceRef: readFirstString(item?.receiptPath, item?.path) || null,
-        clickAnchor: anchor,
-        source,
-      });
-      group = applyCommunicationMagicSelectAtPoint(id, anchor, {
-        ...(response?.group && typeof response.group === "object" ? response.group : {}),
-        receipt: response?.receipt || null,
-        reproducibility: response?.group?.reproducibility ?? response?.receipt?.reproducibility ?? null,
-        warnings: Array.isArray(response?.warnings) ? response.warnings : [],
-      });
+      if (preparedImage) {
+        try {
+          response = await runWarmLocalMagicSelectClick({
+            preparedImageId: preparedImage.id,
+            preparedImage,
+            imageId: id,
+            clickAnchor: anchor,
+            source,
+          });
+        } catch (error) {
+          void dropLocalMagicSelectPreparedImageForUi(id, {
+            reason: "warm_click_failed",
+          }).catch(() => {});
+          response = await directClick().catch((directError) => {
+            throw directError?.message ? directError : error;
+          });
+        }
+      } else {
+        response = await directClick();
+      }
+      group = applyDeterministicResponse(response);
     } catch (error) {
       fallbackWarning = readFirstString(error?.message, "Magic Select local runtime failed.");
       group = applyCommunicationMagicSelectAtPoint(id, anchor, {
         warnings: [fallbackWarning],
       });
     } finally {
-      setStatus("Engine: ready");
+      endLocalMagicSelectUiActivity("click");
     }
   }
 
@@ -25166,6 +25511,10 @@ function bindDesignReviewApplyRuntimeBridge() {
 function dropCommunicationStateForImageId(imageId) {
   const id = String(imageId || "").trim();
   if (!id) return;
+  void dropLocalMagicSelectPreparedImageForUi(id, {
+    reason: "image_remove",
+    evict: true,
+  }).catch(() => {});
   state.communication?.marksByImageId?.delete(id);
   state.communication?.regionProposalsByImageId?.delete(id);
   if (state.communication?.markDraft?.imageId === id) {
@@ -34199,6 +34548,11 @@ async function setActiveImage(id, { preserveSelection = false, source = "system"
     setSelectedIds([id]);
   }
   invalidateActiveTabPreview("active_image_change");
+  syncLocalMagicSelectUiPrewarmTargets({
+    primaryImageId: id,
+    hoverImageId: null,
+    source: "communication_magic_select",
+  });
   if (prevActive !== id) {
     const eventActor = activeImageEventActorForSource(source, actor);
     recordUserEvent("active_image_change", {
@@ -34237,6 +34591,7 @@ async function setActiveImage(id, { preserveSelection = false, source = "system"
 function addImage(item, { select = false } = {}) {
   if (!item || !item.id || !item.path) return;
   if (state.imagesById.has(item.id)) return;
+  const hadActiveImage = Boolean(state.activeId);
   const assignedPaletteIndex = Number(item.uiPaletteIndex);
   if (!Number.isFinite(assignedPaletteIndex) || assignedPaletteIndex < 0) {
     const nextPaletteIndex = Math.max(0, Math.floor(Number(state.imagePaletteSeed) || 0));
@@ -34271,6 +34626,11 @@ function addImage(item, { select = false } = {}) {
   updateEmptyCanvasHint();
   if (intentModeActive()) {
     scheduleIntentStateWrite();
+  }
+  if (communicationBehaviorToolId() === "magic_select" || select || !hadActiveImage) {
+    void prepareLocalMagicSelectImageForUi(item.id, {
+      source: "communication_magic_select",
+    }).catch(() => {});
   }
   if (select || !state.activeId) {
     setActiveImage(item.id).catch(() => {});
@@ -38287,6 +38647,9 @@ function subscribeTabs(listener) {
 }
 
 function suspendActiveTabRuntimeForSwitch() {
+  void releaseLocalMagicSelectUiPrewarmForTab(state.activeTabId || null, {
+    reason: "tab_switch",
+  }).catch(() => {});
   if (tabHydrationRaf && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
     window.cancelAnimationFrame(tabHydrationRaf);
   }
@@ -38525,6 +38888,11 @@ async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate"
   if (normalized === String(state.activeTabId || "").trim()) {
     syncActiveTabPreviewRuntime();
     publishActiveTabVisibleState();
+    syncLocalMagicSelectUiPrewarmTargets({
+      primaryImageId: state.activeId || null,
+      hoverImageId: null,
+      source: "communication_magic_select",
+    });
     const hydration = scheduleTabHydration(normalized, reason, { spawnEngine, engineFailureToast });
     if (waitForHydration) await hydration;
     return finalize(
@@ -38549,6 +38917,11 @@ async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate"
   tabbedSessions.setActiveTab(normalized);
   syncActiveTabPreviewRuntime();
   syncActiveTabRecord({ capture: false, publish: true });
+  syncLocalMagicSelectUiPrewarmTargets({
+    primaryImageId: state.activeId || null,
+    hoverImageId: null,
+    source: "communication_magic_select",
+  });
   publishActiveTabVisibleState({ allowTabSwitchPreview: true, reason });
   const hydration = scheduleTabHydration(normalized, reason, { spawnEngine, engineFailureToast });
   if (waitForHydration) await hydration;
@@ -44023,6 +44396,21 @@ function installCanvasHandlers() {
     }
 
     if (!state.pointer.active) {
+      const communicationTool = communicationToolId();
+      const behaviorTool = communicationBehaviorToolId(communicationTool);
+      if (behaviorTool === "magic_select") {
+        syncLocalMagicSelectUiPrewarmTargets({
+          primaryImageId: state.activeId || null,
+          hoverImageId: hitTestVisibleCanvasImage(p),
+          source: "communication_magic_select",
+        });
+      } else if (communicationTool || localMagicSelectUiPrewarmRuntimeForTab(state.activeTabId || null, { create: false })) {
+        syncLocalMagicSelectUiPrewarmTargets({
+          primaryImageId: state.activeId || null,
+          hoverImageId: null,
+          source: "communication_magic_select",
+        });
+      }
       const motherOverlayHit = hitTestMotherOverlayUi(p);
       if (motherOverlayHit) {
         setOverlayCursor("pointer");
@@ -44048,8 +44436,6 @@ function installCanvasHandlers() {
         setOverlayCursor("grab");
         return;
       }
-      const communicationTool = communicationToolId();
-      const behaviorTool = communicationBehaviorToolId(communicationTool);
       if (communicationTool) {
         if (behaviorTool === "eraser") {
           if (hitTestCommunicationMark(p) || hitTestCommunicationRegionCandidate(p) || hitTestVisibleCanvasImage(p)) {

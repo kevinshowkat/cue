@@ -239,6 +239,67 @@ test("magic select re-click near the same anchor cycles existing candidates with
   });
 });
 
+test("magic select prewarm target sync primes the active image before the tool is armed and skips identical rerender work", () => {
+  const state = {
+    activeTabId: "tab-1",
+    imagesById: new Map([
+      [
+        "img-hero",
+        {
+          id: "img-hero",
+          path: "/tmp/source.png",
+        },
+      ],
+    ]),
+  };
+  const runtime = {
+    preparedByImageId: new Map(),
+    preparingByImageId: new Map(),
+    primaryImageId: null,
+    hoverImageId: null,
+  };
+  const calls = [];
+  const syncLocalMagicSelectUiPrewarmTargets = instantiateFunction("syncLocalMagicSelectUiPrewarmTargets", {
+    state,
+    communicationBehaviorToolId: () => null,
+    localMagicSelectUiPrewarmRuntimeForTab: () => runtime,
+    prepareLocalMagicSelectImageForUi: async (imageId, options) => {
+      calls.push(["prepare", imageId, options]);
+      return null;
+    },
+    dropLocalMagicSelectPreparedImageForUi: async (imageId, options) => {
+      calls.push(["drop", imageId, options]);
+      return null;
+    },
+  });
+
+  const first = syncLocalMagicSelectUiPrewarmTargets({
+    primaryImageId: "img-hero",
+    hoverImageId: null,
+    source: "communication_magic_select",
+  });
+  const second = syncLocalMagicSelectUiPrewarmTargets({
+    primaryImageId: "img-hero",
+    hoverImageId: null,
+    source: "communication_magic_select",
+  });
+
+  assert.equal(first, true);
+  assert.equal(second, true);
+  assert.equal(runtime.primaryImageId, "img-hero");
+  assert.equal(runtime.hoverImageId, null);
+  assert.deepEqual(calls, [
+    [
+      "prepare",
+      "img-hero",
+      {
+        tabId: "tab-1",
+        source: "communication_magic_select",
+      },
+    ],
+  ]);
+});
+
 test("single-image rail magic select selection prefers contour points and carries mask metadata", () => {
   const { communicationPointsBounds, communicationRegionCandidateImagePoints } = createMagicSelectHelpers();
   const state = {
@@ -370,6 +431,22 @@ test("local communication magic select writes runtime-backed groups into communi
     setStatus: (message) => {
       calls.push(["status", message]);
     },
+    beginLocalMagicSelectUiActivity: (kind) => {
+      calls.push(["activity_begin", kind]);
+    },
+    endLocalMagicSelectUiActivity: (kind) => {
+      calls.push(["activity_end", kind]);
+    },
+    localMagicSelectPreparedImageForUi: () => null,
+    rememberLocalMagicSelectPreparedImageForUi: () => null,
+    prepareLocalMagicSelectImageForUi: async (imageId, options) => {
+      calls.push(["prepare", imageId, options]);
+      return null;
+    },
+    dropLocalMagicSelectPreparedImageForUi: async () => null,
+    runWarmLocalMagicSelectClick: async () => {
+      throw new Error("warm click should not run without a prepared image");
+    },
     runLocalMagicSelectClick: async (request) => {
       calls.push(["runtime", request]);
       return {
@@ -461,6 +538,215 @@ test("local communication magic select writes runtime-backed groups into communi
       source: "communication_magic_select",
     },
   ]);
+  assert.deepEqual(calls.find(([name]) => name === "prepare"), [
+    "prepare",
+    "img-hero",
+    {
+      source: "communication_magic_select",
+    },
+  ]);
+  assert.deepEqual(calls.find(([name]) => name === "activity_begin"), ["activity_begin", "click"]);
+  assert.deepEqual(calls.findLast(([name]) => name === "activity_end"), ["activity_end", "click"]);
+});
+
+test("local communication magic select uses the warm prepared-image path when prewarmed", async () => {
+  const {
+    resolveCommunicationMagicSelectCandidates,
+  } = createMagicSelectHelpers();
+  const readFirstString = instantiateFunction("readFirstString");
+  const calls = [];
+  const state = {
+    runDir: "/tmp/run-hero",
+    imagesById: new Map([
+      [
+        "img-hero",
+        {
+          id: "img-hero",
+          path: "/tmp/source.png",
+          width: 320,
+          height: 240,
+          receiptPath: "/tmp/source-receipt.json",
+        },
+      ],
+    ]),
+    communication: {
+      regionProposalsByImageId: new Map(),
+      lastAnchor: null,
+      proposalTray: {
+        visible: false,
+        anchor: null,
+      },
+    },
+  };
+  const communicationRegionGroupForImage = (imageId = "") =>
+    state.communication.regionProposalsByImageId.get(String(imageId || "").trim()) || null;
+  const communicationAnchorFromRegionGroup = (group = null) =>
+    group
+      ? {
+          kind: "region",
+          imageId: group.imageId,
+          regionId: group.chosenCandidateId,
+        }
+      : null;
+  const applyCommunicationMagicSelectAtPoint = instantiateFunction("applyCommunicationMagicSelectAtPoint", {
+    state,
+    clamp,
+    readFirstString,
+    communicationRegionGroupForImage,
+    communicationAnchorFromRegionGroup,
+    resolveCommunicationMagicSelectCandidates,
+  });
+  const runLocalCommunicationMagicSelectAtPoint = instantiateFunction("runLocalCommunicationMagicSelectAtPoint", {
+    state,
+    clamp,
+    readFirstString,
+    ensureRun: async () => {
+      calls.push(["ensureRun"]);
+    },
+    setStatus: (message) => {
+      calls.push(["status", message]);
+    },
+    beginLocalMagicSelectUiActivity: (kind) => {
+      calls.push(["activity_begin", kind]);
+    },
+    endLocalMagicSelectUiActivity: (kind) => {
+      calls.push(["activity_end", kind]);
+    },
+    localMagicSelectPreparedImageForUi: (imageId, options) => {
+      calls.push(["prepared_lookup", imageId, options]);
+      return {
+        id: "prepared-img-hero",
+        imageId: "img-hero",
+        imagePath: "/tmp/source.png",
+        runDir: "/tmp/run-hero",
+        stableSourceRef: "/tmp/source-receipt.json",
+        source: "communication_magic_select",
+      };
+    },
+    rememberLocalMagicSelectPreparedImageForUi: (preparedImage) => {
+      calls.push(["remember", preparedImage]);
+      return preparedImage;
+    },
+    prepareLocalMagicSelectImageForUi: async () => {
+      throw new Error("prepare should not rerun when a warm handle is available");
+    },
+    dropLocalMagicSelectPreparedImageForUi: async () => {
+      throw new Error("drop should not run when warm click succeeds");
+    },
+    runWarmLocalMagicSelectClick: async (request) => {
+      calls.push(["warm_runtime", request]);
+      return {
+        ok: true,
+        contract: "juggernaut.magic_select.local.prepared.v1",
+        action: "magic_select_warm_click",
+        imageId: "img-hero",
+        preparedImageId: "prepared-img-hero",
+        preparedImage: {
+          id: "prepared-img-hero",
+          imageId: "img-hero",
+          imagePath: "/tmp/source.png",
+          runDir: "/tmp/run-hero",
+          stableSourceRef: "/tmp/source-receipt.json",
+          source: "communication_magic_select",
+          lastUsedAt: 1712345679900,
+        },
+        group: {
+          chosenCandidateId: "candidate-warm",
+          reproducibility: {
+            modelId: "mobile_sam_vit_t",
+          },
+          candidates: [
+            {
+              id: "candidate-warm",
+              bounds: { x: 28, y: 34, w: 80, h: 92 },
+              contourPoints: [
+                { x: 28, y: 34 },
+                { x: 106, y: 30 },
+                { x: 108, y: 122 },
+                { x: 30, y: 126 },
+              ],
+              maskRef: {
+                path: "/tmp/run-hero/mask-warm.png",
+                sha256: "warm123",
+                width: 120,
+                height: 144,
+                format: "png",
+              },
+              confidence: 0.95,
+              source: "local_model:mobile_sam_vit_t",
+            },
+          ],
+        },
+        receipt: {
+          path: "/tmp/run-hero/receipt-magic-select-warm.json",
+          reproducibility: {
+            modelId: "mobile_sam_vit_t",
+          },
+        },
+        warnings: ["cache_hit"],
+      };
+    },
+    runLocalMagicSelectClick: async () => {
+      throw new Error("cold runtime should not run when a warm handle is available");
+    },
+    applyCommunicationMagicSelectAtPoint,
+    communicationRegionGroupForImage,
+    communicationTrayAnchorPinnedToTitlebar: () => false,
+    invalidateActiveTabPreview: (reason) => {
+      calls.push(["invalidate", reason]);
+    },
+    dispatchJuggernautShellEvent: (name, detail) => {
+      calls.push(["dispatch", name, detail]);
+    },
+    COMMUNICATION_STATE_CHANGED_EVENT: "juggernaut:communication-state-changed",
+    buildCommunicationBridgeSnapshot: () => ({ regionSelections: [] }),
+    buildJuggernautShellContext: () => ({ activeImageId: "img-hero" }),
+    requestRender: () => {
+      calls.push(["render"]);
+    },
+  });
+
+  const response = await runLocalCommunicationMagicSelectAtPoint("img-hero", { x: 60, y: 72 }, {
+    source: "communication_magic_select",
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.fallback, false);
+  assert.equal(response.action, "magic_select_warm_click");
+  assert.equal(response.receipt?.path, "/tmp/run-hero/receipt-magic-select-warm.json");
+  assert.equal(response.group?.chosenCandidateId, "candidate-warm");
+  assert.deepEqual(response.warnings, ["cache_hit"]);
+  assert.deepEqual(calls.find(([name]) => name === "warm_runtime"), [
+    "warm_runtime",
+    {
+      preparedImageId: "prepared-img-hero",
+      preparedImage: {
+        id: "prepared-img-hero",
+        imageId: "img-hero",
+        imagePath: "/tmp/source.png",
+        runDir: "/tmp/run-hero",
+        stableSourceRef: "/tmp/source-receipt.json",
+        source: "communication_magic_select",
+      },
+      imageId: "img-hero",
+      clickAnchor: { x: 60, y: 72 },
+      source: "communication_magic_select",
+    },
+  ]);
+  assert.deepEqual(calls.find(([name]) => name === "remember"), [
+    "remember",
+    {
+      id: "prepared-img-hero",
+      imageId: "img-hero",
+      imagePath: "/tmp/source.png",
+      runDir: "/tmp/run-hero",
+      stableSourceRef: "/tmp/source-receipt.json",
+      source: "communication_magic_select",
+      lastUsedAt: 1712345679900,
+    },
+  ]);
+  assert.deepEqual(calls.find(([name]) => name === "activity_begin"), ["activity_begin", "click"]);
+  assert.deepEqual(calls.findLast(([name]) => name === "activity_end"), ["activity_end", "click"]);
 });
 
 test("local communication magic select falls back to coarse candidates when the runtime fails", async () => {
@@ -514,6 +800,15 @@ test("local communication magic select falls back to coarse candidates when the 
     readFirstString,
     ensureRun: async () => {},
     setStatus: () => {},
+    beginLocalMagicSelectUiActivity: () => {},
+    endLocalMagicSelectUiActivity: () => {},
+    localMagicSelectPreparedImageForUi: () => null,
+    rememberLocalMagicSelectPreparedImageForUi: () => null,
+    prepareLocalMagicSelectImageForUi: async () => null,
+    dropLocalMagicSelectPreparedImageForUi: async () => null,
+    runWarmLocalMagicSelectClick: async () => {
+      throw new Error("warm click should not run without a prepared image");
+    },
     runLocalMagicSelectClick: async () => {
       throw new Error("missing local weights");
     },
