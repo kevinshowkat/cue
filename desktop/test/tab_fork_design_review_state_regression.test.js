@@ -48,12 +48,28 @@ function instantiateFunction(name, deps = {}) {
 }
 
 test("fork communication sanitization preserves working marks while dropping design-review runtime state", () => {
+  const createFreshCommunicationStampPickerState = () => ({
+    visible: false,
+    imageId: null,
+    sourceImageId: null,
+    coordinateSpace: null,
+    targetPoint: null,
+    targetBounds: null,
+    anchorCss: null,
+    anchorFrame: "shell",
+    pickerMode: "intent_list",
+    customText: "",
+    selectedIntentId: "",
+  });
   const createFreshCommunicationState = () => ({
     tool: null,
     markDraft: null,
     eraseDraft: null,
+    stampPicker: createFreshCommunicationStampPickerState(),
     marksByImageId: new Map(),
     canvasMarks: [],
+    stampsByImageId: new Map(),
+    canvasStamps: [],
     regionProposalsByImageId: new Map(),
     reviewHistory: [],
     lastAnchor: null,
@@ -71,6 +87,7 @@ test("fork communication sanitization preserves working marks while dropping des
   });
   const sanitizeForkedCommunicationState = instantiateFunction("sanitizeForkedCommunicationState", {
     createFreshCommunicationState,
+    createFreshCommunicationStampPickerState,
     Map,
     Array,
   });
@@ -80,8 +97,11 @@ test("fork communication sanitization preserves working marks while dropping des
     tool: "marker",
     markDraft,
     eraseDraft: { imageId: "img-1", points: [{ x: 4, y: 5 }] },
+    stampPicker: { visible: true, selectedIntentId: "fix" },
     marksByImageId: new Map([["img-1", [{ id: "mark-1" }]]]),
     canvasMarks: [{ id: "mark-1", imageId: "img-1" }],
+    stampsByImageId: new Map([["img-1", [{ id: "stamp-1", intentId: "fix" }]]]),
+    canvasStamps: [{ id: "stamp-canvas-1", intentId: "move" }],
     regionProposalsByImageId: new Map([["img-1", [{ id: "region-1" }]]]),
     reviewHistory: [{ requestId: "review-old" }],
     lastAnchor: { kind: "mark", imageId: "img-1", markId: "mark-1" },
@@ -103,8 +123,11 @@ test("fork communication sanitization preserves working marks while dropping des
   assert.notEqual(result, source);
   assert.equal(result.tool, "marker");
   assert.equal(result.markDraft, markDraft);
+  assert.deepEqual(result.stampPicker, createFreshCommunicationStampPickerState());
   assert.deepEqual(Array.from(result.marksByImageId.entries()), [["img-1", [{ id: "mark-1" }]]]);
   assert.deepEqual(result.canvasMarks, [{ id: "mark-1", imageId: "img-1" }]);
+  assert.deepEqual(Array.from(result.stampsByImageId.entries()), [["img-1", [{ id: "stamp-1", intentId: "fix" }]]]);
+  assert.deepEqual(result.canvasStamps, [{ id: "stamp-canvas-1", intentId: "move" }]);
   assert.deepEqual(Array.from(result.regionProposalsByImageId.entries()), [["img-1", [{ id: "region-1" }]]]);
   assert.deepEqual(result.reviewHistory, [{ requestId: "review-old" }]);
   assert.deepEqual(result.lastAnchor, { kind: "mark", imageId: "img-1", markId: "mark-1" });

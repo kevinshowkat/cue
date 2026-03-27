@@ -47,6 +47,11 @@ test("communication rail markup exposes bottom rail tools and proposal tray scaf
   assert.doesNotMatch(html, /id="communication-tool-make-space"/);
 });
 
+test("communication rail markup includes a canvas-local cursor host for the selected tool svg", () => {
+  assert.match(html, /id="communication-canvas-cursor"[^>]*aria-hidden="true"/);
+  assert.match(html, /id="communication-canvas-cursor"[\s\S]*id="communication-canvas-cursor-art"/);
+});
+
 test("communication rail css anchors a partially submerged pouch rail at the bottom and keeps the proposal tray floating", () => {
   assert.match(css, /\.communication-shell\s*\{/);
   assert.match(
@@ -100,6 +105,27 @@ test("communication rail css anchors a partially submerged pouch rail at the bot
   assert.doesNotMatch(css, /\.communication-tool\.communication-tool-make-space/);
   assert.match(css, /\.communication-proposal-tray\s*\{/);
   assert.match(css, /\.communication-proposal-slot\.is-skeleton::before\s*\{/);
+});
+
+test("communication rail css and app wiring keep the selected tool svg as a rotated on-canvas cursor", () => {
+  assert.match(css, /\.communication-canvas-cursor\s*\{/);
+  assert.match(css, /\.communication-canvas-cursor\.is-visible\s*\{/);
+  assert.match(css, /\.communication-canvas-cursor-art\s*\{[\s\S]*--communication-canvas-cursor-angle:\s*-140deg/);
+  assert.match(css, /\.communication-canvas-cursor-art\s*\{[\s\S]*width:\s*30\.375px[\s\S]*height:\s*60\.75px/);
+  assert.match(css, /\.communication-canvas-cursor-art\s*\{[\s\S]*translate\(var\(--communication-canvas-cursor-forward-x\), var\(--communication-canvas-cursor-forward-y\)\)/);
+  assert.match(css, /\.communication-canvas-cursor\[data-tool="marker"\] \.communication-canvas-cursor-art/);
+  assert.match(css, /\.communication-canvas-cursor\[data-tool="protect"\] \.communication-canvas-cursor-art/);
+  assert.match(css, /\.communication-canvas-cursor\[data-tool="magic_select"\] \.communication-canvas-cursor-art/);
+  assert.match(css, /\.communication-canvas-cursor\[data-tool="stamp"\] \.communication-canvas-cursor-art/);
+  assert.match(css, /\.communication-canvas-cursor\[data-tool="eraser"\] \.communication-canvas-cursor-art/);
+  assert.match(app, /const COMMUNICATION_CANVAS_CURSOR_FORWARD_SHIFT_CSS = Object\.freeze\(\{ x: -10, y: 8 \}\);/);
+  assert.match(app, /function communicationCanvasCursorMarkup\(toolId = ""\) \{/);
+  assert.match(app, /function syncCommunicationCanvasCursor\(\) \{/);
+  assert.match(app, /overlay\.style\.cursor = visible \? "none" : requestedCursor;/);
+  assert.match(app, /communicationCanvasCursor:\s*document\.getElementById\("communication-canvas-cursor"\)/);
+  assert.match(app, /communicationCanvasCursorArt:\s*document\.getElementById\("communication-canvas-cursor-art"\)/);
+  assert.match(app, /communicationCursor:\s*\{[\s\S]*requestedCursor:\s*"default"/);
+  assert.match(app, /updateCommunicationCanvasCursorState\(pCss, \{ inside: true \}\);/);
 });
 
 test("communication state is tab-local and design review is exposed through the shell bridge", () => {

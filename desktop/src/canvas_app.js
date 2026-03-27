@@ -270,6 +270,7 @@ const COMMUNICATION_MARK_STROKE = "rgba(220, 28, 28, 0.96)";
 const COMMUNICATION_PROTECT_STROKE = "rgba(255, 228, 76, 0.7)";
 const COMMUNICATION_REGION_ACTIVE = "rgba(100, 210, 255, 0.94)";
 const COMMUNICATION_REGION_IDLE = "rgba(100, 210, 255, 0.34)";
+const COMMUNICATION_CANVAS_CURSOR_FORWARD_SHIFT_CSS = Object.freeze({ x: -10, y: 8 });
 const IMAGE_SELECTION_INACTIVE_STROKE = "rgba(118, 211, 255, 0.56)";
 const DEFAULT_UNTITLED_TAB_TITLE = "Untitled Canvas";
 const SESSION_TAB_TITLE_MAX_LENGTH = 40;
@@ -356,6 +357,88 @@ function createFreshCommunicationStampPickerState() {
     customText: "",
     selectedIntentId: "",
   };
+}
+
+function communicationCanvasCursorToolId(toolId = "") {
+  const normalized = String(toolId || "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "make_space") return "magic_select";
+  return COMMUNICATION_TOOL_IDS.includes(normalized) ? normalized : null;
+}
+
+function communicationCanvasCursorButton(toolId = "") {
+  const normalized = communicationCanvasCursorToolId(toolId);
+  if (!normalized || !els.communicationRail) return null;
+  const selectorValue =
+    typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(normalized) : normalized.replace(/"/g, '\\"');
+  return els.communicationRail.querySelector(`[data-communication-tool="${selectorValue}"]`);
+}
+
+function communicationCanvasCursorMarkup(toolId = "") {
+  const button = communicationCanvasCursorButton(toolId);
+  const svg = button?.querySelector?.("svg");
+  return svg?.outerHTML || "";
+}
+
+function communicationPointerKindActive(kind = state.pointer?.kind) {
+  return (
+    kind === COMMUNICATION_POINTER_KINDS.MARKER ||
+    kind === COMMUNICATION_POINTER_KINDS.MAGIC_SELECT ||
+    kind === COMMUNICATION_POINTER_KINDS.ERASER
+  );
+}
+
+function communicationCanvasCursorPointWithinCanvas(ptCss = null) {
+  const overlay = els.overlayCanvas;
+  const x = Number(ptCss?.x);
+  const y = Number(ptCss?.y);
+  if (!overlay || !Number.isFinite(x) || !Number.isFinite(y)) return false;
+  return x >= 0 && x <= (Number(overlay.clientWidth) || 0) && y >= 0 && y <= (Number(overlay.clientHeight) || 0);
+}
+
+function syncCommunicationCanvasCursor() {
+  const overlay = els.overlayCanvas;
+  const cursorEl = els.communicationCanvasCursor;
+  const artEl = els.communicationCanvasCursorArt;
+  const cursorState = state.communicationCursor;
+  if (!overlay || !cursorEl || !artEl || !cursorState) return false;
+  const requestedCursor = String(cursorState.requestedCursor || INTENT_IMPORT_CURSOR || "default").trim() || INTENT_IMPORT_CURSOR;
+  const selectedToolId = communicationCanvasCursorToolId(communicationToolId());
+  const activePointer = communicationPointerKindActive();
+  const visible =
+    !isReelSizeLocked() &&
+    Boolean(selectedToolId) &&
+    Boolean(cursorState.hasPoint) &&
+    (Boolean(cursorState.inside) || activePointer);
+  const renderedToolId = String(cursorEl.dataset.tool || "").trim();
+  if (renderedToolId !== String(selectedToolId || "").trim()) {
+    cursorEl.dataset.tool = String(selectedToolId || "").trim();
+    artEl.innerHTML = selectedToolId ? communicationCanvasCursorMarkup(selectedToolId) : "";
+  }
+  if (cursorState.hasPoint) {
+    cursorEl.style.transform = `translate(${Math.round(Number(cursorState.x) || 0)}px, ${Math.round(Number(cursorState.y) || 0)}px)`;
+  }
+  const forwardShift = activePointer ? COMMUNICATION_CANVAS_CURSOR_FORWARD_SHIFT_CSS : { x: 0, y: 0 };
+  artEl.style.setProperty("--communication-canvas-cursor-forward-x", `${Math.round(Number(forwardShift.x) || 0)}px`);
+  artEl.style.setProperty("--communication-canvas-cursor-forward-y", `${Math.round(Number(forwardShift.y) || 0)}px`);
+  cursorEl.classList.toggle("is-visible", visible);
+  overlay.style.cursor = visible ? "none" : requestedCursor;
+  return visible;
+}
+
+function updateCommunicationCanvasCursorState(ptCss = null, { inside = null } = {}) {
+  const cursorState = state.communicationCursor;
+  if (!cursorState) return false;
+  if (ptCss && typeof ptCss === "object") {
+    const clamped = clampCanvasCssPoint(ptCss);
+    cursorState.x = Number(clamped?.x) || 0;
+    cursorState.y = Number(clamped?.y) || 0;
+    cursorState.hasPoint = true;
+  }
+  if (typeof inside === "boolean") {
+    cursorState.inside = inside;
+  }
+  return syncCommunicationCanvasCursor();
 }
 const AGENT_RUNNER_BRIDGE_KEY = "__JUGGERNAUT_AGENT_RUNNER__";
 const AGENT_RUNNER_STATE_EVENT = "juggernaut:agent-runner-state";
@@ -876,6 +959,8 @@ const els = {
   imageFx2: document.getElementById("image-fx-2"),
   overlayCanvas: document.getElementById("overlay-canvas"),
   communicationShell: document.getElementById("communication-shell"),
+  communicationCanvasCursor: document.getElementById("communication-canvas-cursor"),
+  communicationCanvasCursorArt: document.getElementById("communication-canvas-cursor-art"),
   communicationRail: document.getElementById("communication-rail"),
   communicationToolMarker: document.getElementById("communication-tool-marker"),
   communicationToolProtect: document.getElementById("communication-tool-protect"),
@@ -2480,6 +2565,13 @@ const state = {
     wheelOnTap: false,
     moved: false,
     semanticInteractionEmitted: false,
+  },
+  communicationCursor: {
+    inside: false,
+    x: 0,
+    y: 0,
+    hasPoint: false,
+    requestedCursor: "default",
   },
   promptGenerateHoverCss: null, // last known canvas hover point in CSS px
   reelTouch: {
@@ -24690,6 +24782,7 @@ function renderCommunicationChrome() {
   renderCommunicationRail();
   renderCommunicationStampPicker();
   renderCommunicationProposalTray();
+  syncCommunicationCanvasCursor();
   if (typeof window !== "undefined") {
     syncJuggernautShellState();
   }
@@ -44273,9 +44366,12 @@ function installCanvasHandlers() {
   let lastOverlayCursor = null;
   const setOverlayCursor = (value) => {
     const next = isReelSizeLocked() ? "none" : value || INTENT_IMPORT_CURSOR;
+    if (state.communicationCursor) {
+      state.communicationCursor.requestedCursor = next;
+    }
+    syncCommunicationCanvasCursor();
     if (next === lastOverlayCursor) return;
     lastOverlayCursor = next;
-    els.overlayCanvas.style.cursor = next;
   };
 
   // Keep a stable baseline cursor so the browser arrow does not flash between move events.
@@ -44287,13 +44383,17 @@ function installCanvasHandlers() {
   };
   resetCanvasCursor();
   const handlePointerEnter = (event) => {
+    updateCommunicationCanvasCursorState(canvasCssPointFromEvent(event), { inside: true });
     resetCanvasCursor();
     rememberPromptGenerateHoverCss(canvasCssPointFromEvent(event));
     if (!isReelSizeLocked()) return;
     reelTouchPulseFromCanvasPoint(canvasPointFromEvent(event), { down: false, lingerMs: REEL_TOUCH_MOVE_VISIBLE_MS });
     requestRender();
   };
-  const handlePointerLeave = () => {
+  const handlePointerLeave = (event) => {
+    updateCommunicationCanvasCursorState(event ? canvasCssPointFromEvent(event) : null, {
+      inside: Boolean(state.pointer?.active && communicationPointerKindActive()),
+    });
     resetCanvasCursor();
     if (!isReelSizeLocked()) return;
     clearReelTouchPulse();
@@ -44382,12 +44482,13 @@ function installCanvasHandlers() {
 		        state.multiRects = computeFreeformRectsPx(canvas.width, canvas.height);
 		      }
 
-	      const p = canvasPointFromEvent(event);
+      const p = canvasPointFromEvent(event);
+      const pCss = canvasCssPointFromEvent(event);
+      updateCommunicationCanvasCursorState(pCss, { inside: true });
           if (isReelSizeLocked()) {
             reelTouchPulseFromCanvasPoint(p, { down: event.button === 0, lingerMs: REEL_TOUCH_TAP_VISIBLE_MS });
             requestRender();
           }
-          const pCss = canvasCssPointFromEvent(event);
           rememberPromptGenerateHoverCss(pCss);
           const intentActive = intentModeActive();
           const wheelModifier = Boolean(event.metaKey || event.ctrlKey);
@@ -44729,6 +44830,7 @@ function installCanvasHandlers() {
 		    if (!img) return;
         const p = canvasPointFromEvent(event);
         const pCss = canvasCssPointFromEvent(event);
+        updateCommunicationCanvasCursorState(pCss, { inside: true });
         rememberPromptGenerateHoverCss(pCss);
         const wheelModifier = Boolean(event.metaKey || event.ctrlKey);
         if (isReelSizeLocked()) {
@@ -44836,6 +44938,9 @@ function installCanvasHandlers() {
   const handlePointerMove = (event) => {
     const p = canvasPointFromEvent(event);
     const pCss = canvasCssPointFromEvent(event);
+    updateCommunicationCanvasCursorState(pCss, {
+      inside: communicationCanvasCursorPointWithinCanvas(pCss) || Boolean(state.pointer?.active && communicationPointerKindActive()),
+    });
     rememberPromptGenerateHoverCss(pCss);
     if (isReelSizeLocked()) {
       const down = Boolean(state.pointer?.active && (Number(event?.buttons) & 1));
@@ -45326,6 +45431,10 @@ function installCanvasHandlers() {
 
 		  function finalizePointer(event) {
 		    if (!state.pointer.active) return;
+        const releaseCss = event ? canvasCssPointFromEvent(event) : null;
+        updateCommunicationCanvasCursorState(releaseCss, {
+          inside: communicationCanvasCursorPointWithinCanvas(releaseCss),
+        });
 		    const kind = state.pointer.kind;
 		    const imageId = state.pointer.imageId;
         const roleKey = state.pointer.role;
