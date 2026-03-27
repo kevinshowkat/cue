@@ -1,5 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   MAGIC_SELECT_LOCAL_RUNTIME_CONTRACT,
@@ -11,91 +15,84 @@ import {
   runWarmLocalMagicSelectClick,
 } from "../src/magic_select_runtime.js";
 
-test("runLocalMagicSelectClick normalizes the native contract into a canvas-friendly region group", async () => {
-  const calls = [];
-  const result = await runLocalMagicSelectClick({
-    imageId: "img-7",
-    imagePath: "/tmp/source.png",
-    runDir: "/tmp/run-7",
-    stableSourceRef: "receipt-local-7",
-    clickAnchor: { x: 18.6, y: 29.2 },
-    settings: {
-      maskThreshold: 200,
-      maxContourPoints: 64,
-    },
-    invokeFn: async (command, payload) => {
-      calls.push({ command, payload });
-      return {
-        ok: true,
-        contract: MAGIC_SELECT_LOCAL_RUNTIME_CONTRACT,
-        candidate: {
-          id: "magic-select-a1b2c3",
-          bounds: { x: 12, y: 18, w: 40, h: 50 },
-          contourPoints: [
-            { x: 12, y: 18 },
-            { x: 52, y: 18 },
-            { x: 52, y: 68 },
-            { x: 12, y: 68 },
-          ],
-          maskRef: {
-            path: "/tmp/run-7/artifact-mask.png",
-            sha256: "abc123",
-            width: 90,
-            height: 120,
-            format: "png",
-          },
-          confidence: 0.91,
-          source: "local_model:mobile_sam_vit_t",
-        },
-        receipt: {
-          path: "/tmp/run-7/receipt-magic-select.json",
-          reproducibility: {
-            modelId: "mobile_sam_vit_t",
-            modelRevision: "sha256:1234567890ab",
-            imageHash: "imgsha",
-          },
-        },
-      };
-    },
-  });
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(here, "..", "..");
+const protocolCommit = "382794399b46b6f59d43196bc4c620511351edc5";
+const runtimeCommit = "7c6b834dc2dba9d418f7a23f24f6376fad1b7611";
+const preparedContract = "juggernaut.magic_select.local.prepared.v1";
 
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].command, "run_local_magic_select_click");
-  assert.deepEqual(calls[0].payload.request.clickAnchor, { x: 19, y: 29 });
-  assert.deepEqual(calls[0].payload.request.settings, {
-    maskThreshold: 200,
-    maxContourPoints: 64,
+function gitShow(objectPath) {
+  return execFileSync("git", ["show", objectPath], {
+    cwd: repoRoot,
+    encoding: "utf8",
   });
+}
 
-  assert.equal(result.contract, MAGIC_SELECT_LOCAL_RUNTIME_CONTRACT);
-  assert.equal(result.action, "magic_select_click");
-  assert.equal(result.candidate.id, "magic-select-a1b2c3");
-  assert.deepEqual(result.group.anchor, { x: 19, y: 29 });
-  assert.equal(result.group.chosenCandidateId, "magic-select-a1b2c3");
-  assert.equal(result.group.candidates.length, 1);
-  assert.deepEqual(result.group.candidates[0].polygon, result.group.candidates[0].contourPoints);
-  assert.equal(result.group.reproducibility.modelId, "mobile_sam_vit_t");
-  assert.equal(result.receipt.path, "/tmp/run-7/receipt-magic-select.json");
+const protocolRuntime = gitShow(`${protocolCommit}:desktop/src/magic_select_runtime.js`);
+const workerRuntime = gitShow(`${runtimeCommit}:desktop/src-tauri/src/main.rs`);
+const runbook = readFileSync(join(repoRoot, "docs", "runbooks", "LOCAL_MAGIC_SELECT_RUNTIME.md"), "utf8");
+const prompts = readFileSync(join(repoRoot, "AGENT_PROMPTS.md"), "utf8");
+const benchmarkScript = readFileSync(join(repoRoot, "scripts", "benchmark_magic_select_runtime.py"), "utf8");
+
+test("worker-protocol source of truth exports the prepared runtime contract and exact JS names", () => {
+  assert.match(protocolRuntime, new RegExp(`export const MAGIC_SELECT_LOCAL_PREPARED_RUNTIME_CONTRACT = "${preparedContract}";`));
+  assert.match(protocolRuntime, /const MAGIC_SELECT_ACTIONS = Object\.freeze\(\{\s*click: "magic_select_click",\s*prepare: "magic_select_prepare",\s*warmClick: "magic_select_warm_click",\s*release: "magic_select_release",\s*\}\);/s);
+  assert.match(protocolRuntime, /export async function prepareLocalMagicSelectImage\(/);
+  assert.match(protocolRuntime, /export async function runWarmLocalMagicSelectClick\(/);
+  assert.match(protocolRuntime, /export async function releaseLocalMagicSelectImage\(/);
+  assert.match(protocolRuntime, /export const evictLocalMagicSelectImage = releaseLocalMagicSelectImage;/);
+  assert.match(protocolRuntime, /"prepare_local_magic_select_image"/);
+  assert.match(protocolRuntime, /"run_local_magic_select_warm_click"/);
+  assert.match(protocolRuntime, /"release_local_magic_select_image"/);
 });
 
-test("runLocalMagicSelectClick exposes explicit non-destructive runtime failures", async () => {
-  await assert.rejects(
-    () =>
-      runLocalMagicSelectClick({
-        imageId: "img-9",
-        imagePath: "/tmp/source.png",
-        clickAnchor: { x: 4, y: 8 },
-        invokeFn: async () => {
-          throw new Error("Local Magic Select helper failed: missing model weights");
-        },
-      }),
-    (error) => {
-      assert.equal(error.code, "local_magic_select_failed");
-      assert.equal(error.nonDestructive, true);
-      assert.match(error.message, /missing model weights/);
-      return true;
-    }
-  );
+test("worker-runtime source of truth exposes the exact Tauri commands, actions, and error payload fields", () => {
+  assert.match(workerRuntime, new RegExp(`const MAGIC_SELECT_LOCAL_CONTRACT: &str = "${preparedContract}";`));
+  assert.match(workerRuntime, /const MAGIC_SELECT_LOCAL_PREPARE_ACTION: &str = "magic_select_prepare";/);
+  assert.match(workerRuntime, /const MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION: &str = "magic_select_warm_click";/);
+  assert.match(workerRuntime, /const MAGIC_SELECT_LOCAL_RELEASE_ACTION: &str = "magic_select_release";/);
+  assert.match(workerRuntime, /fn prepare_local_magic_select_image\(/);
+  assert.match(workerRuntime, /fn run_local_magic_select_warm_click\(/);
+  assert.match(workerRuntime, /fn release_local_magic_select_image\(/);
+  assert.match(workerRuntime, /"code": code,/);
+  assert.match(workerRuntime, /"nonDestructive": true,/);
+  assert.match(workerRuntime, /"contract": MAGIC_SELECT_LOCAL_CONTRACT,/);
+  assert.match(workerRuntime, /"action": action,/);
+  assert.match(workerRuntime, /"imageId": image_id\.map\(str::to_string\),/);
+  assert.match(workerRuntime, /"preparedImageId": prepared_image_id\.map\(str::to_string\),/);
+  assert.match(workerRuntime, /map\.insert\("details"\.to_string\(\), details\);/);
+  assert.match(workerRuntime, /map\.insert\("warnings"\.to_string\(\), serde_json::json!\(warnings\)\);/);
+});
+
+test("worker-runtime source of truth returns the documented prepare, warm-click, and release success fields", () => {
+  assert.match(workerRuntime, /"ok": true,\s*"contract": MAGIC_SELECT_LOCAL_CONTRACT,\s*"action": MAGIC_SELECT_LOCAL_PREPARE_ACTION,\s*"imageId": image_id,\s*"preparedImageId": prepared_image_id,\s*"preparedImage": prepared_image,\s*"receipt": \{/s);
+  assert.match(workerRuntime, /"ok": true,\s*"contract": MAGIC_SELECT_LOCAL_CONTRACT,\s*"action": MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,\s*"imageId": image_id,\s*"candidate": candidate,\s*"group": group,\s*"receipt": \{/s);
+  assert.match(workerRuntime, /"warnings": warnings,\s*"preparedImageId": prepared_image_id,\s*"preparedImage": prepared_image,/s);
+  assert.match(workerRuntime, /"ok": true,\s*"contract": MAGIC_SELECT_LOCAL_CONTRACT,\s*"action": MAGIC_SELECT_LOCAL_RELEASE_ACTION,\s*"imageId": image_id,\s*"preparedImageId": prepared_image_id,\s*"warnings": warnings,/s);
+});
+
+test("local docs and benchmark support files describe the committed prepared runtime names", () => {
+  assert.match(runbook, new RegExp(`Contract: \`${preparedContract.replace(/\./g, "\\.")}\``));
+  assert.match(runbook, /prepareLocalMagicSelectImage/);
+  assert.match(runbook, /runWarmLocalMagicSelectClick/);
+  assert.match(runbook, /releaseLocalMagicSelectImage/);
+  assert.match(runbook, /evictLocalMagicSelectImage/);
+  assert.match(runbook, /prepare_local_magic_select_image/);
+  assert.match(runbook, /run_local_magic_select_warm_click/);
+  assert.match(runbook, /release_local_magic_select_image/);
+  assert.match(runbook, /magic_select_prepare/);
+  assert.match(runbook, /magic_select_warm_click/);
+  assert.match(runbook, /magic_select_release/);
+  assert.match(runbook, /`preparedImageId`/);
+  assert.match(runbook, /`preparedImage`/);
+  assert.match(runbook, /`details` when present/);
+  assert.match(prompts, new RegExp(preparedContract.replace(/\./g, "\\.")));
+  assert.match(prompts, /prepareLocalMagicSelectImage/);
+  assert.match(prompts, /runWarmLocalMagicSelectClick/);
+  assert.match(prompts, /releaseLocalMagicSelectImage/);
+  assert.match(prompts, /evictLocalMagicSelectImage/);
+  assert.match(benchmarkScript, new RegExp(`"${preparedContract.replace(/\./g, "\\.")}"`));
+  assert.match(benchmarkScript, /"magic_select_warm_click"/);
 });
 
 test("prepareLocalMagicSelectImage normalizes the prepared-image contract into a reusable handle", async () => {
