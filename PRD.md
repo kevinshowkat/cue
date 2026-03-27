@@ -140,7 +140,7 @@ Users can open the app, keep multiple isolated runs in one window through sessio
 14. `Eraser` clears communication marks and region proposals only; it does not delete image pixels or committed edits.
 15. The user triggers `Design review` explicitly with the existing `Design review` button.
 16. Review analyzes the whole visible canvas plus the marked region or active region candidate, can infer the relevant image or region from mark overlap and intersection at review time, and immediately opens a floating proposal tray near that area with 2-3 proposal skeleton slots.
-17. The planner/reviewer uses `GPT-5.4 vision`, and accepting a proposal routes through the normal execution layer to produce a real single-image replacement edit in the active tab.
+17. The planner/reviewer uses `GPT-5.4 vision`; proposal cards become selectable as soon as planning finishes, async Nano Banana 2 thumbnails may upgrade those cards in the background, selecting one proposal may trigger a higher-fidelity Nano Banana Pro compare rerender, and accepting a proposal still routes through the normal execution layer to produce a real single-image replacement edit in the active tab.
 18. If the active tab is busy, tab switching is blocked or deferred until the session reaches a safe boundary.
 19. After a useful edit, the user can open a secondary `Save Shortcut` / `Create Tool` surface to save or generalize that action.
 20. At export time, the app produces the asset plus a structured receipt showing how to reproduce the result.
@@ -262,6 +262,9 @@ Notes:
 - The proposal tray floats near the marked region or active region candidate rather than opening as chat.
 - The tray reserves 2-3 proposal slots immediately as skeletons while planning completes.
 - `GPT-5.4 vision` is the planner/reviewer for design-review reasoning.
+- Proposal readiness must not wait for preview image generation.
+- Ready proposals may start async Nano Banana 2 thumbnail generation against the visible frame, and thumbnail failure must not make the proposal unavailable.
+- Selecting a ready proposal may trigger one higher-fidelity Nano Banana Pro compare rerender for that proposal only.
 - Final apply of any accepted proposal remains routed through the normal execution layer and receipt system, replacing the target image in place for the active tab when a valid target image is present.
 - When an accepted proposal depends on multiple images, final apply sends one editable target image plus any additional reference images needed for guidance, and replaces only the target image.
 - Upload-time analysis must never block `Design review`; review can run with cached context, fresh context, or no prior upload analysis.
@@ -448,6 +451,10 @@ Rules:
     markIds: ["mark_123"],
     regionCandidateId: "region_123" | null
   },
+  previewImagePath: "/absolute/path/to/proposal-preview.png" | null,
+  previewStatus: "queued" | "running" | "succeeded" | "failed" | null,
+  selectedPreviewImagePath: "/absolute/path/to/proposal-selected-preview.png" | null,
+  selectedPreviewStatus: "idle" | "running" | "succeeded" | "failed" | null,
   rank: 1,
   status: "ready"
 }
@@ -457,6 +464,8 @@ Rules:
 - Proposals are action-first and must resolve to an executable action intent or capability, not freeform critique alone.
 - `rationaleCodes` may explain ranking internally without exposing provider details in the main workflow.
 - `status` is `ready` once planning returns a valid proposal and advances independently of final apply.
+- `previewStatus` is optional media state and does not gate proposal selection.
+- `selectedPreviewStatus` is request-local compare state for the currently selected proposal and does not replace final apply by default.
 
 ### 12. 2D And 3D Outputs
 - 2D outputs: layered raster export plus native design-tool outputs.
@@ -506,6 +515,7 @@ Rules:
 - Suggested edits appear as previews or icon cards, not chat bubbles.
 - The editing surface must feel closer to Photoshop or Figma than to a chatbot.
 - `Design review` proposals appear in a floating tray near the marked region, with 2-3 proposal skeletons visible immediately.
+- Proposal cards may upgrade from text-first to image-backed in place after async thumbnail generation completes.
 
 ## Technical Direction
 ### Baseline Architecture
@@ -547,6 +557,8 @@ Rules:
 - Local routing must remain compatible with no-network mode.
 - V1 design-review defaults:
   - planner/reviewer: `GPT-5.4 vision`
+  - proposal thumbnail generation: `Nano Banana 2` (`gemini-3.1-flash-image-preview`) with async low-latency defaults and no grounding by default
+  - selected proposal compare rerender: `Nano Banana Pro` (`gemini-3-pro-image-preview`)
   - final apply generation: `Nano Banana 2` (`gemini-3.1-flash-image-preview`)
 
 ## Export Targets
@@ -654,7 +666,7 @@ Rules:
 
 ### Milestone 2: Guided Intent Loop
 - Add live single-image intent inference, visual suggestions, and non-blocking proposal pipeline.
-- Add communication-driven design review with floating proposal trays and planner-driven proposal cards.
+- Add communication-driven design review with floating proposal trays, planner-driven proposal cards, async proposal thumbnails, and selected-proposal compare rerender.
 - Stabilize concurrent provider calls and queue behavior.
 
 ### Milestone 3: Tool Runtime
