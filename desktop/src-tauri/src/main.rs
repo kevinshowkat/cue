@@ -1712,6 +1712,127 @@ fn release_local_magic_select_image(
     magic_select_release_local_image_impl(request)
 }
 
+#[derive(Debug, Clone, Copy)]
+struct MagicSelectCandidateBounds {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+}
+
+#[derive(Debug, Clone)]
+struct MagicSelectWarmClickReceiptPersistence {
+    contract: String,
+    action: String,
+    image_id: String,
+    prepared_image_id: String,
+    source: String,
+    click_anchor: MagicSelectPointPayload,
+    prepared_image: serde_json::Value,
+    mask_path: PathBuf,
+    mask_sha256: String,
+    receipt_path: PathBuf,
+    reproducibility: serde_json::Value,
+    candidate_id: String,
+    candidate_bounds: MagicSelectCandidateBounds,
+    confidence: f64,
+    contour_point_count: usize,
+    created_at: String,
+    warnings: Vec<String>,
+}
+
+fn build_magic_select_candidate_bounds_value(
+    bounds: MagicSelectCandidateBounds,
+) -> serde_json::Value {
+    serde_json::json!({
+        "x": bounds.x,
+        "y": bounds.y,
+        "w": bounds.w,
+        "h": bounds.h,
+    })
+}
+
+fn build_magic_select_warm_click_receipt_artifacts(
+    persistence: &MagicSelectWarmClickReceiptPersistence,
+) -> serde_json::Value {
+    serde_json::json!({
+        "mask_path": persistence.mask_path.to_string_lossy().to_string(),
+        "mask_sha256": persistence.mask_sha256.as_str(),
+    })
+}
+
+fn build_magic_select_warm_click_receipt_payload(
+    persistence: &MagicSelectWarmClickReceiptPersistence,
+) -> serde_json::Value {
+    serde_json::json!({
+        "schema_version": 1,
+        "contract": persistence.contract.as_str(),
+        "action": persistence.action.as_str(),
+        "request": {
+            "image_id": persistence.image_id.as_str(),
+            "prepared_image_id": persistence.prepared_image_id.as_str(),
+            "source": persistence.source.as_str(),
+            "click_anchor": persistence.click_anchor.clone(),
+        },
+        "prepared_image": persistence.prepared_image.clone(),
+        "artifacts": build_magic_select_warm_click_receipt_artifacts(persistence),
+        "result_metadata": {
+            "candidate_id": persistence.candidate_id.as_str(),
+            "candidate_bounds": build_magic_select_candidate_bounds_value(persistence.candidate_bounds),
+            "confidence": persistence.confidence,
+            "contour_point_count": persistence.contour_point_count,
+            "created_at": persistence.created_at.as_str(),
+        },
+        "reproducibility": persistence.reproducibility.clone(),
+        "warnings": persistence.warnings.clone(),
+    })
+}
+
+fn persist_magic_select_warm_click_receipt(
+    persistence: &MagicSelectWarmClickReceiptPersistence,
+) -> Result<(), String> {
+    let receipt_payload = build_magic_select_warm_click_receipt_payload(persistence);
+    let encoded_receipt =
+        serde_json::to_string_pretty(&receipt_payload).map_err(|e| e.to_string())?;
+    std::fs::write(&persistence.receipt_path, encoded_receipt)
+        .map_err(|e| format!("{}: {e}", persistence.receipt_path.to_string_lossy()))?;
+    Ok(())
+}
+
+fn spawn_magic_select_warm_click_receipt_persistence<F>(
+    persistence: MagicSelectWarmClickReceiptPersistence,
+    before_persist: F,
+) -> Result<std::thread::JoinHandle<()>, String>
+where
+    F: FnOnce() + Send + 'static,
+{
+    let receipt_path = persistence.receipt_path.clone();
+    std::thread::Builder::new()
+        .name("magic-select-warm-click-receipt".to_string())
+        .spawn(move || {
+            before_persist();
+            if let Err(error) = persist_magic_select_warm_click_receipt(&persistence) {
+                eprintln!(
+                    "Magic Select warm-click receipt persistence failed at {}: {error}",
+                    receipt_path.to_string_lossy()
+                );
+            }
+        })
+        .map_err(|e| e.to_string())
+}
+
+fn schedule_magic_select_warm_click_receipt_persistence(
+    persistence: MagicSelectWarmClickReceiptPersistence,
+) -> Option<String> {
+    spawn_magic_select_warm_click_receipt_persistence(persistence, || {})
+        .map(|_| None)
+        .unwrap_or_else(|error| {
+            Some(format!(
+                "Magic Select receipt persistence could not start: {error}"
+            ))
+        })
+}
+
 #[tauri::command]
 fn run_local_magic_select_click(
     request: MagicSelectClickRequest,
@@ -2283,7 +2404,7 @@ fn magic_select_run_local_warm_click_impl(
         .filter(|value| value.is_finite())
         .unwrap_or(1.0)
         .clamp(0.0, 1.0);
-    let warnings = helper_output.warnings.unwrap_or_default();
+    let mut warnings = helper_output.warnings.unwrap_or_default();
     let mask_sha256 = sha256_file(&resolved_mask_path).map_err(|detail| {
         magic_select_error_payload(
             MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
@@ -2322,15 +2443,16 @@ fn magic_select_run_local_warm_click_impl(
         "height": mask_summary.height,
         "format": "png",
     });
+    let candidate_bounds = MagicSelectCandidateBounds {
+        x: mask_summary.bounds_x,
+        y: mask_summary.bounds_y,
+        w: mask_summary.bounds_w,
+        h: mask_summary.bounds_h,
+    };
     let candidate = serde_json::json!({
         "id": candidate_id,
         "label": "Magic Select",
-        "bounds": {
-            "x": mask_summary.bounds_x,
-            "y": mask_summary.bounds_y,
-            "w": mask_summary.bounds_w,
-            "h": mask_summary.bounds_h,
-        },
+        "bounds": build_magic_select_candidate_bounds_value(candidate_bounds),
         "contourPoints": contour_points.clone(),
         "polygon": contour_points,
         "maskRef": mask_ref.clone(),
@@ -2338,6 +2460,7 @@ fn magic_select_run_local_warm_click_impl(
         "source": format!("local_model:{model_id}"),
     });
     let prepared_image = magic_select_prepared_image_payload(&state);
+    let created_at = chrono::Utc::now();
     let reproducibility = serde_json::json!({
         "runtime": runtime_id,
         "modelId": model_id,
@@ -2346,7 +2469,7 @@ fn magic_select_run_local_warm_click_impl(
         "imageCacheKey": state.image_cache_key,
         "preparedImageId": state.prepared_image_id,
         "stableSourceRef": state.stable_source_ref,
-        "clickAnchor": click_anchor,
+        "clickAnchor": click_anchor.clone(),
         "settings": {
             "maskThreshold": state.settings.mask_threshold,
             "maxContourPoints": state.settings.max_contour_points,
@@ -2360,61 +2483,39 @@ fn magic_select_run_local_warm_click_impl(
         "candidates": [candidate.clone()],
         "activeCandidateIndex": 0,
         "chosenCandidateId": candidate["id"].clone(),
-        "updatedAt": chrono::Utc::now().timestamp_millis(),
+        "updatedAt": created_at.timestamp_millis(),
         "reproducibility": reproducibility.clone(),
         "warnings": warnings.clone(),
     });
     let receipt_path = state
         .artifact_root
         .join(format!("receipt-magic-select-warm-click-{stamp}.json"));
-    let receipt_payload = serde_json::json!({
-        "schema_version": 1,
-        "contract": MAGIC_SELECT_LOCAL_CONTRACT,
-        "action": MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
-        "request": {
-            "image_id": image_id.clone(),
-            "prepared_image_id": prepared_image_id.clone(),
-            "source": source,
-            "click_anchor": click_anchor,
-        },
-        "prepared_image": prepared_image.clone(),
-        "artifacts": {
-            "mask_path": resolved_mask_path.to_string_lossy().to_string(),
-            "mask_sha256": mask_ref["sha256"].clone(),
-        },
-        "result_metadata": {
-            "candidate_id": candidate["id"].clone(),
-            "candidate_bounds": candidate["bounds"].clone(),
-            "confidence": confidence,
-            "contour_point_count": mask_summary.contour_points.len(),
-            "created_at": chrono::Utc::now().to_rfc3339(),
-        },
-        "reproducibility": reproducibility.clone(),
-        "warnings": warnings.clone(),
-    });
-    let encoded_receipt = serde_json::to_string_pretty(&receipt_payload).map_err(|detail| {
-        magic_select_error_payload(
-            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
-            "magic_select_warm_click_receipt_encode_failed",
-            Some(&image_id),
-            Some(&prepared_image_id),
-            Some(magic_select_error_message_details(detail.to_string())),
-            None,
-        )
-    })?;
-    std::fs::write(&receipt_path, encoded_receipt).map_err(|detail| {
-        magic_select_error_payload(
-            MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
-            "magic_select_warm_click_receipt_write_failed",
-            Some(&image_id),
-            Some(&prepared_image_id),
-            Some(magic_select_error_message_details(format!(
-                "{}: {detail}",
-                receipt_path.to_string_lossy()
-            ))),
-            None,
-        )
-    })?;
+    let receipt_persistence = MagicSelectWarmClickReceiptPersistence {
+        contract: MAGIC_SELECT_LOCAL_CONTRACT.to_string(),
+        action: MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION.to_string(),
+        image_id: image_id.clone(),
+        prepared_image_id: prepared_image_id.clone(),
+        source: source.clone(),
+        click_anchor: click_anchor.clone(),
+        prepared_image: prepared_image.clone(),
+        mask_path: resolved_mask_path.clone(),
+        mask_sha256: mask_sha256.clone(),
+        receipt_path: receipt_path.clone(),
+        reproducibility: reproducibility.clone(),
+        candidate_id: candidate_id.clone(),
+        candidate_bounds,
+        confidence,
+        contour_point_count: mask_summary.contour_points.len(),
+        created_at: created_at.to_rfc3339(),
+        warnings: warnings.clone(),
+    };
+    let receipt_artifacts =
+        build_magic_select_warm_click_receipt_artifacts(&receipt_persistence);
+    if let Some(warning) =
+        schedule_magic_select_warm_click_receipt_persistence(receipt_persistence)
+    {
+        warnings.push(warning);
+    }
 
     Ok(serde_json::json!({
         "ok": true,
@@ -2422,11 +2523,20 @@ fn magic_select_run_local_warm_click_impl(
         "action": MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
         "imageId": image_id,
         "candidate": candidate,
-        "group": group,
+        "group": {
+            "imageId": group["imageId"].clone(),
+            "anchor": group["anchor"].clone(),
+            "candidates": group["candidates"].clone(),
+            "activeCandidateIndex": group["activeCandidateIndex"].clone(),
+            "chosenCandidateId": group["chosenCandidateId"].clone(),
+            "updatedAt": group["updatedAt"].clone(),
+            "reproducibility": group["reproducibility"].clone(),
+            "warnings": warnings.clone(),
+        },
         "receipt": {
             "path": receipt_path.to_string_lossy().to_string(),
             "reproducibility": reproducibility,
-            "artifacts": receipt_payload["artifacts"].clone(),
+            "artifacts": receipt_artifacts,
         },
         "warnings": warnings,
         "preparedImageId": prepared_image_id,
@@ -8011,14 +8121,16 @@ mod tests {
     #[cfg(target_family = "unix")]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::mpsc;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use super::{
         build_export_receipt_payload, encode_flattened_export, encode_flattened_psd_rgba,
         flatten_rgba_for_opaque_export, is_native_engine_placeholder,
         magic_select_prepare_worker_image, magic_select_read_mask_summary,
         magic_select_release_worker_image, magic_select_run_worker_warm_click,
-        magic_select_sha256_file_cached, normalize_export_out_path, parse_export_format,
+        magic_select_sha256_file_cached, normalize_export_out_path, parse_export_format, sha256_file,
+        spawn_magic_select_warm_click_receipt_persistence,
         push_native_path_candidate, resolve_existing_env_binary_path,
         review_build_google_apply_parts, review_build_openai_planner_payload,
         review_build_openai_planner_ws_event, review_choose_apply_aspect_ratio,
@@ -8027,11 +8139,13 @@ mod tests {
         review_format_planner_transport_timeout, review_normalize_apply_model,
         review_normalize_planner_model, review_resolve_apply_image_config,
         review_should_fallback_openai_ws_error, run_design_review_apply_request,
-        EngineProgramCandidate, MagicSelectContourPoint, MagicSelectPointPayload,
-        MagicSelectPreparedImageState, MagicSelectRuntimeConfig, MagicSelectWorkerSession,
+        EngineProgramCandidate, MagicSelectCandidateBounds, MagicSelectContourPoint,
+        MagicSelectPointPayload, MagicSelectPreparedImageState, MagicSelectRuntimeConfig,
+        MagicSelectWarmClickReceiptPersistence, MagicSelectWorkerSession,
         NativeExportFormat, NormalizedMagicSelectSettings, ResolvedExportRunRequest,
         ReviewPlannerRequestError, ScreenshotPolishExportPayload, DESIGN_REVIEW_APPLY_MODEL,
         DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL, DESIGN_REVIEW_PLANNER_MODEL,
+        MAGIC_SELECT_LOCAL_CONTRACT, MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
         REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT, REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT,
         REVIEW_OPENAI_RESPONSES_WS_TRANSPORT, REVIEW_OPENROUTER_CHAT_COMPLETIONS_TRANSPORT,
     };
@@ -8467,6 +8581,152 @@ done
         let _ = std::fs::remove_dir_all(artifact_root);
         let _ = std::fs::remove_file(output_mask_one);
         let _ = std::fs::remove_file(output_mask_two);
+    }
+
+    #[test]
+    fn magic_select_receipt_persistence_stays_off_the_return_path() {
+        let mask_path = temp_file_path("magic-select-artifact.png");
+        let receipt_path = temp_file_path("magic-select-receipt.json");
+        let _ = std::fs::remove_file(&mask_path);
+        let _ = std::fs::remove_file(&receipt_path);
+
+        image::GrayImage::from_pixel(4, 4, image::Luma([255]))
+            .save_with_format(&mask_path, image::ImageFormat::Png)
+            .expect("write mask image");
+
+        let persistence = MagicSelectWarmClickReceiptPersistence {
+            contract: MAGIC_SELECT_LOCAL_CONTRACT.to_string(),
+            action: MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION.to_string(),
+            image_id: "img-hero".to_string(),
+            prepared_image_id: "prepared-hero".to_string(),
+            source: "canvas_magic_select".to_string(),
+            click_anchor: MagicSelectPointPayload { x: 8.0, y: 9.0 },
+            prepared_image: serde_json::json!({
+                "preparedImageId": "prepared-hero",
+                "imageId": "img-hero",
+            }),
+            mask_path: mask_path.clone(),
+            mask_sha256: sha256_file(&mask_path).expect("mask sha"),
+            receipt_path: receipt_path.clone(),
+            reproducibility: serde_json::json!({
+                "runtime": "stub_worker",
+                "modelId": "mobile_sam_vit_t",
+                "modelRevision": "sha256:abcd1234",
+                "imageHash": "image-sha",
+                "preparedImageId": "prepared-hero",
+            }),
+            candidate_id: "magic-select-a1b2c3d4".to_string(),
+            candidate_bounds: MagicSelectCandidateBounds {
+                x: 1,
+                y: 2,
+                w: 3,
+                h: 4,
+            },
+            confidence: 0.91,
+            contour_point_count: 4,
+            created_at: "2026-03-26T12:34:56Z".to_string(),
+            warnings: vec!["helper-warning".to_string()],
+        };
+
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let handle = spawn_magic_select_warm_click_receipt_persistence(persistence, move || {
+            started_tx.send(()).expect("started signal");
+            release_rx.recv().expect("release signal");
+        })
+        .expect("spawn persistence thread");
+
+        started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("persistence thread started");
+        assert!(
+            !receipt_path.exists(),
+            "receipt should still be pending while the selection result can return"
+        );
+
+        release_tx.send(()).expect("release persistence");
+        handle.join().expect("join persistence thread");
+
+        let receipt_text = std::fs::read_to_string(&receipt_path).expect("read persisted receipt");
+        let receipt: serde_json::Value =
+            serde_json::from_str(&receipt_text).expect("parse persisted receipt");
+        assert_eq!(
+            receipt["request"]["prepared_image_id"],
+            serde_json::json!("prepared-hero")
+        );
+        assert_eq!(
+            receipt["artifacts"]["mask_sha256"],
+            serde_json::json!(sha256_file(&mask_path).expect("mask sha"))
+        );
+        assert_eq!(
+            receipt["reproducibility"]["imageHash"],
+            serde_json::json!("image-sha")
+        );
+        assert_eq!(
+            receipt["prepared_image"]["preparedImageId"],
+            serde_json::json!("prepared-hero")
+        );
+
+        let _ = std::fs::remove_file(mask_path);
+        let _ = std::fs::remove_file(receipt_path);
+    }
+
+    #[test]
+    fn magic_select_receipt_persistence_failure_does_not_delete_the_mask_artifact() {
+        let mask_path = temp_file_path("magic-select-persisted-mask.png");
+        let receipt_dir = temp_file_path("magic-select-missing-receipt-dir");
+        let receipt_path = receipt_dir.join("receipt-magic-select-warm-click.json");
+        let _ = std::fs::remove_file(&mask_path);
+        let _ = std::fs::remove_dir_all(&receipt_dir);
+
+        image::GrayImage::from_pixel(3, 3, image::Luma([255]))
+            .save_with_format(&mask_path, image::ImageFormat::Png)
+            .expect("write mask image");
+
+        let handle = spawn_magic_select_warm_click_receipt_persistence(
+            MagicSelectWarmClickReceiptPersistence {
+                contract: MAGIC_SELECT_LOCAL_CONTRACT.to_string(),
+                action: MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION.to_string(),
+                image_id: "img-missing".to_string(),
+                prepared_image_id: "prepared-missing".to_string(),
+                source: "canvas_magic_select".to_string(),
+                click_anchor: MagicSelectPointPayload { x: 2.0, y: 3.0 },
+                prepared_image: serde_json::json!({
+                    "preparedImageId": "prepared-missing",
+                    "imageId": "img-missing",
+                }),
+                mask_path: mask_path.clone(),
+                mask_sha256: sha256_file(&mask_path).expect("mask sha"),
+                receipt_path: receipt_path.clone(),
+                reproducibility: serde_json::json!({
+                    "runtime": "stub_worker",
+                    "preparedImageId": "prepared-missing",
+                }),
+                candidate_id: "magic-select-missing".to_string(),
+                candidate_bounds: MagicSelectCandidateBounds {
+                    x: 0,
+                    y: 0,
+                    w: 3,
+                    h: 3,
+                },
+                confidence: 1.0,
+                contour_point_count: 4,
+                created_at: "2026-03-26T12:34:56Z".to_string(),
+                warnings: Vec::new(),
+            },
+            || {},
+        )
+        .expect("spawn persistence thread");
+
+        handle.join().expect("join persistence thread");
+        assert!(mask_path.is_file(), "mask artifact should remain available");
+        assert!(
+            !receipt_path.exists(),
+            "receipt file should not be created when persistence fails"
+        );
+
+        let _ = std::fs::remove_file(mask_path);
+        let _ = std::fs::remove_dir_all(receipt_dir);
     }
 
     fn temp_file_path(name: &str) -> PathBuf {
