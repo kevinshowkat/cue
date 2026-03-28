@@ -954,6 +954,189 @@ test("magic select prewarm target sync re-primes the same image id after its sou
   ]);
 });
 
+test("stale magic select prewarm completion releases the discarded prepared handle", async () => {
+  const calls = [];
+  const state = {
+    activeTabId: "tab-1",
+    runDir: "/tmp/run-hero",
+    imagesById: new Map([
+      [
+        "img-hero",
+        {
+          id: "img-hero",
+          path: "/tmp/source.png",
+          receiptPath: "/tmp/source-receipt.json",
+        },
+      ],
+    ]),
+  };
+  const runtime = {
+    preparedByImageId: new Map(),
+    preparingByImageId: new Map(),
+  };
+  let finishPrepare = null;
+  const prepareGate = new Promise((resolve) => {
+    finishPrepare = resolve;
+  });
+  const prepareLocalMagicSelectImageForUi = instantiateFunction("prepareLocalMagicSelectImageForUi", {
+    state,
+    localMagicSelectUiPrewarmRuntimeForTab: () => runtime,
+    localMagicSelectPreparedImageForUi: () => null,
+    localMagicSelectPreparingTaskForUi: () => null,
+    beginLocalMagicSelectUiActivity: (kind) => calls.push(["begin", kind]),
+    prepareLocalMagicSelectImage: async (detail) => {
+      calls.push(["runtime_prepare", detail]);
+      await prepareGate;
+      return {
+        preparedImage: {
+          id: "prepared-img-hero",
+          imageId: "img-hero",
+          imagePath: "/tmp/source.png",
+          runDir: "/tmp/run-hero",
+        },
+      };
+    },
+    readFirstString: (...values) => values.find((value) => typeof value === "string" && value.trim()) || "",
+    localMagicSelectUiPrepareTaskFromEntry: (entry) => {
+      if (entry && typeof entry.then === "function") return entry;
+      if (entry?.task && typeof entry.task.then === "function") return entry.task;
+      return null;
+    },
+    rememberLocalMagicSelectPreparedImageForUi: (preparedImage) => {
+      calls.push(["remember", preparedImage]);
+      return preparedImage;
+    },
+    releaseLocalMagicSelectImage: async (detail) => {
+      calls.push(["release", detail]);
+      return { ok: true };
+    },
+    endLocalMagicSelectUiActivity: (kind) => calls.push(["end", kind]),
+    cleanupLocalMagicSelectUiPrewarmRuntime: () => calls.push(["cleanup"]),
+    requestRender: () => calls.push(["request_render"]),
+  });
+
+  const task = prepareLocalMagicSelectImageForUi("img-hero", {
+    tabId: "tab-1",
+    source: "communication_magic_select",
+  });
+  assert.equal(runtime.preparingByImageId.has("img-hero"), true);
+
+  runtime.preparingByImageId.delete("img-hero");
+  finishPrepare();
+
+  const result = await task;
+
+  assert.equal(result, null);
+  assert.equal(runtime.preparedByImageId.size, 0);
+  assert.equal(calls.some(([name]) => name === "remember"), false);
+  assert.deepEqual(calls.find(([name]) => name === "release"), [
+    "release",
+    {
+      preparedImage: {
+        id: "prepared-img-hero",
+        imageId: "img-hero",
+        imagePath: "/tmp/source.png",
+        runDir: "/tmp/run-hero",
+      },
+      imageId: "img-hero",
+      reason: "prepare_task_stale",
+    },
+  ]);
+});
+
+test("single-canvas loading placeholder uses the known view-aligned image geometry when available", () => {
+  const singleCanvasLoadingPlaceholderPolygon = instantiateFunction("singleCanvasLoadingPlaceholderPolygon", {
+    state: {
+      view: {
+        scale: 0.5,
+        offsetX: 120,
+        offsetY: 64,
+      },
+    },
+    clamp,
+    getDpr: () => 1,
+    freeformDefaultTileCss: () => {
+      throw new Error("fallback size should not be used when view geometry is valid");
+    },
+    transformedRectPolygonPoints: ({ x, y, w, h, rotateDeg = 0, skewXDeg = 0 }) => [
+      { x, y },
+      { x: x + w, y },
+      { x: x + w, y: y + h },
+      { x, y: y + h },
+      { rotateDeg, skewXDeg },
+    ],
+    window: {
+      matchMedia: () => ({ matches: false }),
+    },
+  });
+
+  const polygon = singleCanvasLoadingPlaceholderPolygon(
+    {
+      id: "img-hero",
+      width: 1600,
+      height: 900,
+    },
+    {
+      width: 1440,
+      height: 900,
+    },
+    {
+      rotateDeg: 3,
+      skewXDeg: 1,
+    }
+  );
+
+  assert.deepEqual(polygon, [
+    { x: 120, y: 64 },
+    { x: 920, y: 64 },
+    { x: 920, y: 514 },
+    { x: 120, y: 514 },
+    { rotateDeg: 3, skewXDeg: 1 },
+  ]);
+});
+
+test("single-canvas loading placeholder falls back to a fitted frame when the current view is unusable", () => {
+  const singleCanvasLoadingPlaceholderPolygon = instantiateFunction("singleCanvasLoadingPlaceholderPolygon", {
+    state: {
+      view: {
+        scale: 1,
+        offsetX: 5000,
+        offsetY: 5000,
+      },
+    },
+    clamp,
+    getDpr: () => 1,
+    freeformDefaultTileCss: () => {
+      throw new Error("generic tile fallback should not be used when image dimensions are known");
+    },
+    transformedRectPolygonPoints: ({ x, y, w, h }) => [{ x, y, w, h }],
+    window: {
+      matchMedia: () => ({ matches: false }),
+    },
+  });
+
+  const polygon = singleCanvasLoadingPlaceholderPolygon(
+    {
+      id: "img-hero",
+      width: 1920,
+      height: 1080,
+    },
+    {
+      width: 1200,
+      height: 800,
+    }
+  );
+
+  assert.deepEqual(polygon, [
+    {
+      x: 240,
+      y: 48,
+      w: 720,
+      h: 405,
+    },
+  ]);
+});
+
 test("replace image in place clears stale magic select prewarm state and re-syncs the active target", async () => {
   const calls = [];
   const state = {

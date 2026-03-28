@@ -2625,11 +2625,21 @@ async function prepareLocalMagicSelectImageForUi(
         stableSourceRef: readFirstString(item?.receiptPath, item?.path) || null,
         source,
       });
+      const preparedImage = response?.preparedImage || null;
       const activeRuntime = localMagicSelectUiPrewarmRuntimeForTab(tabId, { create: false });
       if (!activeRuntime || localMagicSelectUiPrepareTaskFromEntry(activeRuntime.preparingByImageId.get(normalizedImageId)) !== task) {
+        if (preparedImage) {
+          try {
+            await releaseLocalMagicSelectImage({
+              preparedImage,
+              imageId: normalizedImageId,
+              reason: "prepare_task_stale",
+            });
+          } catch {}
+        }
         return null;
       }
-      return rememberLocalMagicSelectPreparedImageForUi(response?.preparedImage, { tabId });
+      return rememberLocalMagicSelectPreparedImageForUi(preparedImage, { tabId });
     } catch {
       return null;
     } finally {
@@ -29233,6 +29243,80 @@ function renderCanvasImagePlaceholder(ctx, polygon = []) {
   return true;
 }
 
+function singleCanvasLoadingPlaceholderPolygon(item = null, workCanvas = null, singleTransform = null) {
+  const canvasW = Number(workCanvas?.width) || 0;
+  const canvasH = Number(workCanvas?.height) || 0;
+  if (!(canvasW > 0 && canvasH > 0)) return [];
+  const rotateDeg = Number(singleTransform?.rotateDeg) || 0;
+  const skewXDeg = Number(singleTransform?.skewXDeg) || 0;
+  const imageW = Math.max(0, Number(item?.width) || 0);
+  const imageH = Math.max(0, Number(item?.height) || 0);
+  const viewScale = Math.max(0.05, Number(state.view?.scale) || 1);
+  const viewRect = imageW > 0 && imageH > 0
+    ? {
+        x: Number(state.view?.offsetX) || 0,
+        y: Number(state.view?.offsetY) || 0,
+        w: imageW * viewScale,
+        h: imageH * viewScale,
+      }
+    : null;
+  const viewRectLooksUsable =
+    viewRect &&
+    viewRect.w > 0 &&
+    viewRect.h > 0 &&
+    viewRect.x < canvasW &&
+    viewRect.y < canvasH &&
+    viewRect.x + viewRect.w > 0 &&
+    viewRect.y + viewRect.h > 0 &&
+    viewRect.w <= canvasW * 4 &&
+    viewRect.h <= canvasH * 4;
+  if (viewRectLooksUsable) {
+    return transformedRectPolygonPoints({
+      ...viewRect,
+      rotateDeg,
+      skewXDeg,
+    });
+  }
+  if (imageW > 0 && imageH > 0) {
+    const isMobile =
+      window.matchMedia && typeof window.matchMedia === "function"
+        ? window.matchMedia("(max-width: 980px)").matches
+        : false;
+    const maxWidthFrac = isMobile ? 0.92 : 0.6;
+    const maxHeightFrac = isMobile ? 0.9 : 0.86;
+    const fitScale = clamp(Math.min((canvasW * maxWidthFrac) / imageW, (canvasH * maxHeightFrac) / imageH), 0.05, 20);
+    const fitW = imageW * fitScale;
+    const fitH = imageH * fitScale;
+    const slackX = canvasW - fitW;
+    const slackY = canvasH - fitH;
+    const desiredTop = Math.round(canvasH * (isMobile ? 0.04 : 0.06));
+    return transformedRectPolygonPoints({
+      x: slackX / 2,
+      y: slackY <= desiredTop ? slackY / 2 : desiredTop,
+      w: fitW,
+      h: fitH,
+      rotateDeg,
+      skewXDeg,
+    });
+  }
+  const dpr = getDpr();
+  const fallbackCssSize = freeformDefaultTileCss(
+    canvasW / Math.max(dpr, 0.0001),
+    canvasH / Math.max(dpr, 0.0001),
+    { count: 1 }
+  );
+  const fallbackW = Math.max(1, Math.round(fallbackCssSize * dpr));
+  const fallbackH = Math.max(1, Math.round(fallbackCssSize * dpr));
+  return transformedRectPolygonPoints({
+    x: Math.round((canvasW - fallbackW) * 0.5),
+    y: Math.round((canvasH - fallbackH) * 0.5),
+    w: fallbackW,
+    h: fallbackH,
+    rotateDeg,
+    skewXDeg,
+  });
+}
+
 function renderCanvasImageStatusPill(ctx, polygon = [], affordance = null) {
   if (!ctx || !affordance?.statusLabel) return false;
   const bounds = polygonCanvasBounds(polygon);
@@ -45400,23 +45484,8 @@ function render() {
 	          targetId: item.id,
 	        });
 	      }
-	    } else if (item?.path && imageLoading?.showPlaceholder) {
-      const dpr = getDpr();
-      const fallbackCssSize = freeformDefaultTileCss(
-        (Number(work.width) || 0) / Math.max(dpr, 0.0001),
-        (Number(work.height) || 0) / Math.max(dpr, 0.0001),
-        { count: 1 }
-      );
-      const fallbackW = Math.max(1, Math.round(fallbackCssSize * dpr));
-      const fallbackH = Math.max(1, Math.round(fallbackCssSize * dpr));
-      const placeholderPoints = transformedRectPolygonPoints({
-        x: Math.round(((Number(work.width) || 0) - fallbackW) * 0.5),
-        y: Math.round(((Number(work.height) || 0) - fallbackH) * 0.5),
-        w: fallbackW,
-        h: fallbackH,
-        rotateDeg: singleTransform.rotateDeg,
-        skewXDeg: singleTransform.skewXDeg,
-      });
+    } else if (item?.path && imageLoading?.showPlaceholder) {
+      const placeholderPoints = singleCanvasLoadingPlaceholderPolygon(item, work, singleTransform);
       renderCanvasImagePlaceholder(wctx, placeholderPoints);
       singleImageStatusPill = {
         polygon: placeholderPoints,
