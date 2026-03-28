@@ -1256,8 +1256,8 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-uti
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-pressing {
   transform: translate3d(0, 1px, 0);
   border-color: var(--jg-shell-button-border-active);
-  border-top-color: rgba(255, 255, 255, 0.5);
-  border-left-color: rgba(255, 255, 255, 0.38);
+  border-top-color: rgba(255, 255, 255, 0.34);
+  border-left-color: rgba(255, 255, 255, 0.26);
   background: var(--jg-shell-button-fill-active);
   color: var(--jg-shell-button-ink);
   box-shadow: var(--jg-shell-button-shadow-active);
@@ -1269,11 +1269,11 @@ body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-p
 body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.depressed {
   transform: translate3d(0, 1px, 0);
   border-color: var(--jg-shell-button-border-active);
-  border-top-color: rgba(255, 255, 255, 0.44);
-  border-left-color: rgba(255, 255, 255, 0.34);
+  border-top-color: rgba(255, 255, 255, 0.28);
+  border-left-color: rgba(255, 255, 255, 0.22);
   background: var(--jg-shell-button-fill-active);
   color: var(--jg-shell-button-ink);
-  box-shadow: var(--jg-shell-button-shadow-active);
+  box-shadow: var(--jg-shell-button-shadow-depressed);
   filter: none;
 }
 

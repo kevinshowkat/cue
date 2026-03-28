@@ -15056,7 +15056,7 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.depressed .session-
 body.juggernaut-shell {
   --jg-shell-button-border: var(--jg-pack-border);
   --jg-shell-button-border-strong: var(--jg-pack-border-strong);
-  --jg-shell-button-border-active: var(--jg-pack-accent-strong);
+  --jg-shell-button-border-active: var(--jg-pack-border-strong);
   --jg-shell-button-ink: var(--jg-pack-ink);
   --jg-shell-button-ink-muted: var(--jg-pack-ink-muted);
   --jg-shell-button-fill:
@@ -15066,8 +15066,8 @@ body.juggernaut-shell {
     linear-gradient(180deg, rgba(255, 255, 255, 0.88), transparent 60%),
     var(--jg-pack-surface-strong);
   --jg-shell-button-fill-active:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.56), transparent 58%),
-    var(--jg-pack-paper-soft);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.46), rgba(255, 255, 255, 0.08) 54%, transparent 82%),
+    var(--jg-pack-surface-deep);
   --jg-shell-button-fill-disabled:
     linear-gradient(180deg, rgba(255, 255, 255, 0.48), transparent 60%),
     var(--jg-pack-surface);
@@ -15078,12 +15078,17 @@ body.juggernaut-shell {
     inset 0 1px 0 rgba(255, 255, 255, 0.94),
     0 2px 4px var(--jg-pack-shadow);
   --jg-shell-button-shadow-active:
-    inset 0 4px 12px var(--jg-pack-accent-soft),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    inset 0 3px 9px var(--jg-pack-shadow),
+    inset 0 14px 18px rgba(255, 255, 255, 0.08);
+  --jg-shell-button-shadow-depressed:
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    inset 0 5px 12px var(--jg-pack-shadow),
+    inset 0 18px 20px rgba(255, 255, 255, 0.05);
   --jg-shell-button-shadow-disabled: inset 0 1px 0 rgba(255, 255, 255, 0.64);
   --jg-shell-button-focus: var(--jg-pack-accent-soft);
-  --jg-shell-button-badge: var(--jg-pack-accent-strong);
-  --jg-shell-button-badge-halo: var(--jg-pack-accent-soft);
+  --jg-shell-button-badge: var(--jg-pack-secondary);
+  --jg-shell-button-badge-halo: var(--jg-pack-secondary-soft);
 }
 
 body.juggernaut-shell .tool[data-provenance]:not(.juggernaut-tool),
@@ -15105,6 +15110,7 @@ body.juggernaut-shell .tool[data-provenance]:not(.juggernaut-tool):focus-visible
 body.juggernaut-shell .tool.has-action-provenance:hover,
 body.juggernaut-shell .brand-strip .session-tab-strip-action:hover:not(:disabled):not(.is-active-request):not(.is-open):not([aria-pressed="true"]):not(.depressed),
 body.juggernaut-shell .brand-strip .session-tab-strip-action:focus-visible {
+  transform: translate3d(0, -0.5px, 0);
   border-color: var(--jg-shell-button-border-strong);
   background: var(--jg-shell-button-fill-hover);
   color: var(--jg-shell-button-ink);
@@ -15126,8 +15132,8 @@ body.juggernaut-shell .brand-strip .session-tab-strip-action.is-open,
 body.juggernaut-shell .brand-strip .session-tab-strip-action[aria-pressed="true"] {
   transform: translate3d(0, 1px, 0);
   border-color: var(--jg-shell-button-border-active);
-  border-top-color: rgba(255, 255, 255, 0.5);
-  border-left-color: rgba(255, 255, 255, 0.38);
+  border-top-color: rgba(255, 255, 255, 0.34);
+  border-left-color: rgba(255, 255, 255, 0.26);
   background: var(--jg-shell-button-fill-active);
   color: var(--jg-shell-button-ink);
   box-shadow: var(--jg-shell-button-shadow-active);
@@ -15139,11 +15145,11 @@ body.juggernaut-shell .tool.has-action-provenance.depressed,
 body.juggernaut-shell .brand-strip .session-tab-strip-action.depressed {
   transform: translate3d(0, 1px, 0);
   border-color: var(--jg-shell-button-border-active);
-  border-top-color: rgba(255, 255, 255, 0.44);
-  border-left-color: rgba(255, 255, 255, 0.34);
+  border-top-color: rgba(255, 255, 255, 0.28);
+  border-left-color: rgba(255, 255, 255, 0.22);
   background: var(--jg-shell-button-fill-active);
   color: var(--jg-shell-button-ink);
-  box-shadow: var(--jg-shell-button-shadow-active);
+  box-shadow: var(--jg-shell-button-shadow-depressed);
   filter: none;
 }
 
@@ -15254,7 +15260,9 @@ body.juggernaut-shell .session-tab-strip-action .action-provenance-model-dot {
 }
 
 body.juggernaut-shell .action-provenance-model-dot {
-  background: var(--jg-shell-button-badge);
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.42) 34%, transparent 38%),
+    var(--jg-shell-button-badge);
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.94),
     0 0 0 3px var(--jg-shell-button-badge-halo),

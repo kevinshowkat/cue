@@ -100,13 +100,15 @@ test("Juggernaut shell rail selected hover keeps a light-shell pressed treatment
 test("Shell buttons now share one neutral chassis regardless of provenance", () => {
   assert.match(css, /Shell button chassis unification: one neutral material, provenance via badge, variance only by form factor\./);
   assert.match(css, /--jg-shell-button-fill:[\s\S]*var\(--jg-pack-surface\);/);
+  assert.match(css, /--jg-shell-button-border-active:\s*var\(--jg-pack-border-strong\);/);
+  assert.match(css, /--jg-shell-button-fill-active:[\s\S]*var\(--jg-pack-surface-deep\);/);
   assert.match(
     css,
     /body\.juggernaut-shell \.tool\[data-provenance\]:not\(\.juggernaut-tool\),[\s\S]*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.has-action-provenance,[\s\S]*background:\s*var\(--jg-shell-button-fill\);[\s\S]*color:\s*var\(--jg-shell-button-ink\);/s
   );
   assert.match(
     css,
-    /body\.juggernaut-shell \.tool\.has-action-provenance\.selected,[\s\S]*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.is-open,[\s\S]*background:\s*var\(--jg-shell-button-fill-active\);[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow-active\);/s
+    /body\.juggernaut-shell \.tool\.has-action-provenance\.selected,[\s\S]*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.is-open,[\s\S]*border-color:\s*var\(--jg-shell-button-border-active\);[\s\S]*background:\s*var\(--jg-shell-button-fill-active\);[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow-active\);/s
   );
   assert.match(
     css,
@@ -122,17 +124,25 @@ test("Rail buttons use the same neutral chassis for local-only and model-bearing
   );
   assert.match(
     visualSystemCss,
-    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.selected,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-pressing,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-pressing\s*\{[\s\S]*background:\s*var\(--jg-shell-button-fill-active\);[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow-active\);/s
+    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.selected,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-pressing,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-pressing\s*\{[\s\S]*border-color:\s*var\(--jg-shell-button-border-active\);[\s\S]*background:\s*var\(--jg-shell-button-fill-active\);[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow-active\);/s
   );
   assert.match(
     visualSystemCss,
     /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button:disabled,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance:disabled,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility:disabled\s*\{[\s\S]*background:\s*var\(--jg-shell-button-fill-disabled\);[\s\S]*color:\s*var\(--jg-shell-button-ink-muted\);/s
   );
+  assert.match(
+    visualSystemCss,
+    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.depressed,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.depressed\s*\{[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow-depressed\);/s
+  );
 });
 
 test("Provenance is now communicated with a badge instead of a separate model-backed fill", () => {
-  assert.match(css, /--jg-shell-button-badge:\s*var\(--jg-pack-accent-strong\);/);
-  assert.match(css, /body\.juggernaut-shell \.action-provenance-model-dot\s*\{[\s\S]*background:\s*var\(--jg-shell-button-badge\);/s);
+  assert.match(css, /--jg-shell-button-badge:\s*var\(--jg-pack-secondary\);/);
+  assert.match(css, /--jg-shell-button-badge-halo:\s*var\(--jg-pack-secondary-soft\);/);
+  assert.match(
+    css,
+    /body\.juggernaut-shell \.action-provenance-model-dot\s*\{[\s\S]*radial-gradient\(circle at 32% 28%,\s*rgba\(255,\s*255,\s*255,\s*0\.96\),\s*rgba\(255,\s*255,\s*255,\s*0\.42\)\s*34%,\s*transparent\s*38%\),[\s\S]*var\(--jg-shell-button-badge\);/s
+  );
   assert.match(css, /body\.juggernaut-shell \.session-tab-strip-action \.action-provenance-model-dot\s*\{[\s\S]*top:\s*6px[\s\S]*right:\s*6px[\s\S]*width:\s*6px[\s\S]*height:\s*6px;/s);
   assert.match(visualSystemCss, /body\.juggernaut-shell \.juggernaut-tool-rail \.action-provenance-model-dot\s*\{[\s\S]*top:\s*6px[\s\S]*right:\s*6px[\s\S]*width:\s*6px[\s\S]*height:\s*6px;/s);
 });

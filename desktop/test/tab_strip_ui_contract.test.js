@@ -135,15 +135,17 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /#juggernaut-agent-runner-open \.session-tab-action-icon \.tool-icon\s*\{[\s\S]*transform:\s*translateX\(0\.75px\);/);
   assert.match(css, /Shell button chassis unification: one neutral material, provenance via badge, variance only by form factor\./);
   assert.match(css, /--jg-shell-button-border:\s*var\(--jg-pack-border\);/);
+  assert.match(css, /--jg-shell-button-border-active:\s*var\(--jg-pack-border-strong\);/);
   assert.match(css, /--jg-shell-button-fill:[\s\S]*var\(--jg-pack-surface\);/);
-  assert.match(css, /--jg-shell-button-badge:\s*var\(--jg-pack-accent-strong\);/);
+  assert.match(css, /--jg-shell-button-fill-active:[\s\S]*var\(--jg-pack-surface-deep\);/);
+  assert.match(css, /--jg-shell-button-badge:\s*var\(--jg-pack-secondary\);/);
   assert.match(
     css,
     /body\.juggernaut-shell \.tool\[data-provenance\]:not\(\.juggernaut-tool\),[\s\S]*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.has-action-provenance,[\s\S]*background:\s*var\(--jg-shell-button-fill\);[\s\S]*color:\s*var\(--jg-shell-button-ink\);[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow\);/s
   );
   assert.match(
     css,
-    /body\.juggernaut-shell \.brand-strip \.session-tab-strip-action:hover:not\(:disabled\):not\(\.is-active-request\):not\(\.is-open\):not\(\[aria-pressed="true"\]\):not\(\.depressed\),[\s\S]*background:\s*var\(--jg-shell-button-fill-hover\);[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow-hover\);/s
+    /body\.juggernaut-shell \.brand-strip \.session-tab-strip-action:hover:not\(:disabled\):not\(\.is-active-request\):not\(\.is-open\):not\(\[aria-pressed="true"\]\):not\(\.depressed\),[\s\S]*transform:\s*translate3d\(0,\s*-0\.5px,\s*0\);[\s\S]*background:\s*var\(--jg-shell-button-fill-hover\);[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow-hover\);/s
   );
   assert.match(
     css,
@@ -158,7 +160,7 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-strip-pill-action > span:not\(\.sr-only\)\s*\{[\s\S]*font-weight:\s*600;/s);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-action-menu-toggle,[\s\S]*gap:\s*7px[\s\S]*padding:\s*0 13px 0 12px;/s);
   assert.match(css, /body\.juggernaut-shell \.session-tab-strip-action \.action-provenance-model-dot\s*\{[\s\S]*top:\s*6px[\s\S]*right:\s*6px[\s\S]*width:\s*6px[\s\S]*height:\s*6px;/s);
-  assert.match(css, /body\.juggernaut-shell \.action-provenance-model-dot\s*\{[\s\S]*background:\s*var\(--jg-shell-button-badge\);/);
+  assert.match(css, /body\.juggernaut-shell \.action-provenance-model-dot\s*\{[\s\S]*radial-gradient\(circle at 32% 28%,[\s\S]*var\(--jg-shell-button-badge\);/s);
   assert.doesNotMatch(css, /:root:not\(\[data-rail-icon-pack="default_classic"\]\) body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.is-external-model/);
   assert.match(css, /\.session-tab-runtime-action\.is-pending-hook\s*\{/);
   assert.match(css, /\.session-tab-action-menu-panel\s*\{/);
