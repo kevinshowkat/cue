@@ -75,10 +75,12 @@ test("Session tab strip seeds generated icon slots for new, fork, and titlebar a
   const forkButtonStart = html.indexOf('id="session-tab-fork"', newButtonStart);
   assert.ok(newButtonStart >= 0 && forkButtonStart > newButtonStart, "expected new-session button before fork button");
   const newButtonChunk = html.slice(newButtonStart, forkButtonStart);
+  assert.match(newButtonChunk, /data-provenance=\"local_only\"/);
   assert.match(newButtonChunk, /data-juggernaut-icon-slot=\"new_session\"/);
   assert.match(newButtonChunk, /class=\"session-tab-action-icon\"/);
   assert.doesNotMatch(newButtonChunk, /<svg/);
   const forkButtonChunk = html.slice(forkButtonStart, html.indexOf('</button>', forkButtonStart));
+  assert.match(forkButtonChunk, /data-provenance=\"local_only\"/);
   assert.match(forkButtonChunk, /data-juggernaut-icon-slot=\"fork_session\"/);
   assert.doesNotMatch(forkButtonChunk, /<svg/);
 });
@@ -139,6 +141,8 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   assert.match(css, /\.session-tab-runtime-action\[data-provenance="local_only"\],\s*\.session-tab-runtime-action\[data-provenance="local_only"\]\.is-ready\s*\{/);
   assert.match(css, /\.session-tab-runtime-action\[data-provenance="local_only"\],\s*\.session-tab-runtime-action\[data-provenance="local_only"\]\.is-ready\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(252,\s*253,\s*254,\s*0\.99\),\s*rgba\(241,\s*244,\s*248,\s*0\.98\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);/);
   assert.match(css, /\.session-tab-strip-action\[data-provenance="local_only"\]:active,\s*\.session-tab-runtime-action\[data-provenance="local_only"\]:active,\s*\.session-tab-runtime-action\[data-provenance="local_only"\]\.is-active-request\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(233,\s*238,\s*244,\s*0\.99\),\s*rgba\(221,\s*227,\s*234,\s*0\.98\)\),[\s\S]*transform:\s*translateY\(1px\);/);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\[data-provenance="local_only"\]:active,\s*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\[data-provenance="local_only"\]\.is-active-request,\s*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\[data-provenance="local_only"\]\.is-open,\s*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\[data-provenance="local_only"\]\[aria-pressed="true"\]\s*\{[\s\S]*transform:\s*translate3d\(0,\s*1px,\s*0\);/);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-strip-action:active \.session-tab-action-icon \.tool-icon,\s*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action:active \.session-tab-action-menu-caret,\s*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.is-active-request \.session-tab-action-icon \.tool-icon,\s*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.is-active-request \.session-tab-action-menu-caret,\s*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.is-open \.session-tab-action-icon \.tool-icon,\s*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.is-open \.session-tab-action-menu-caret[\s\S]*transform:\s*translateY\(0\.75px\);/);
   assert.match(css, /\.session-tab-runtime-action\[data-provenance="local_only"\]:disabled\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(249,\s*250,\s*252,\s*0\.98\),\s*rgba\(242,\s*245,\s*248,\s*0\.96\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/);
   assert.match(css, /--jg-pack-new-action-fill:\s*rgba\(/);
   assert.match(css, /--jg-pack-fork-action-fill:\s*rgba\(/);
