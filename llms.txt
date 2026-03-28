@@ -1,41 +1,61 @@
 # Cue
 
-Cue is an image-first desktop app. This file is the short repo map for tools that want a small amount of context before reading code.
+> Image-first desktop design workstation with reproducible local/native runtime paths. Public launch support is macOS-first (Tauri), with Windows and Linux still documented as roadmap targets.
 
-## Read First
+## Overview
 
-- [`README.md`](README.md)
-- [`PRD.md`](PRD.md)
-- [`AGENTS.md`](AGENTS.md)
-- [`docs/README.md`](docs/README.md)
+- Expanded agent context: [`llms-full.txt`](llms-full.txt)
+- Canonical repo conventions: [`AGENTS.md`](AGENTS.md)
+- Public docs index: [`docs/README.md`](docs/README.md)
+- Practical task routing: [`docs/agent_quickstart.md`](docs/agent_quickstart.md)
 
-## Optional Intake
+## Agent Intake (Preferred)
 
-- [`agent-intake.json`](agent-intake.json)
-- [`docs/agent_intake_status.md`](docs/agent_intake_status.md)
-- [`docs/agent_quickstart.md`](docs/agent_quickstart.md)
-- [`docs/aip-1.schema.json`](docs/aip-1.schema.json)
+- Intake contract and endpoint: [`agent-intake.json`](agent-intake.json)
+- AIP schema: [`docs/aip-1.schema.json`](docs/aip-1.schema.json)
+- Intake health/fallback cue: [`docs/agent_intake_status.md`](docs/agent_intake_status.md)
+- Compact intake roundtrip example: [`docs/agent_intake_roundtrip.sample.json`](docs/agent_intake_roundtrip.sample.json)
+- If `intake_endpoint` is reachable, POST an intake request to get curated `entrypoints`, optional `packs`, and `suggested_tags`.
+- If intake is unavailable, fall back to the local docs and source entrypoints below.
 
-If intake is unavailable, fall back to the local docs and entrypoints below.
+## Start Here (No Network Needed)
 
-## Key Repo Areas
+- [`README.md`](README.md): user-facing quickstart, build notes, and release status
+- [`AGENTS.md`](AGENTS.md): repository workflow, worktree rules, build/test status
+- [`docs/desktop.md`](docs/desktop.md): current desktop behavior, run artifacts, and shell/runtime layout
+- [`docs/agent-runtime.md`](docs/agent-runtime.md): agent-facing runtime model
+- [`docs/local-magic-select-runtime.md`](docs/local-magic-select-runtime.md): prepared-runtime contract for local Magic Select
 
-- Desktop app: [`desktop/src/canvas_app.js`](desktop/src/canvas_app.js), [`desktop/src/index.html`](desktop/src/index.html), [`desktop/src/styles.css`](desktop/src/styles.css)
-- Tauri backend: [`desktop/src-tauri/src/main.rs`](desktop/src-tauri/src/main.rs), [`desktop/src-tauri/tauri.conf.json`](desktop/src-tauri/tauri.conf.json)
-- Native runtime: [`rust_engine/crates/brood-cli/src/main.rs`](rust_engine/crates/brood-cli/src/main.rs), [`rust_engine/crates/brood-engine/src/lib.rs`](rust_engine/crates/brood-engine/src/lib.rs)
-- Event contracts: [`rust_engine/crates/brood-contracts/src/events.rs`](rust_engine/crates/brood-contracts/src/events.rs)
-- Release automation: [`RELEASING.md`](RELEASING.md), [`scripts/release_check.sh`](scripts/release_check.sh)
+## High-Signal Code Entrypoints
 
-## Common Commands
+- Rust engine CLI routing: [`rust_engine/crates/brood-cli/src/main.rs`](rust_engine/crates/brood-cli/src/main.rs)
+- Rust engine orchestration: [`rust_engine/crates/brood-engine/src/lib.rs`](rust_engine/crates/brood-engine/src/lib.rs)
+- Rust contracts/events: [`rust_engine/crates/brood-contracts/src/events.rs`](rust_engine/crates/brood-contracts/src/events.rs)
+- Desktop UI and canvas runtime: [`desktop/src/canvas_app.js`](desktop/src/canvas_app.js)
+- Desktop shell bootstrap: [`desktop/src/index.html`](desktop/src/index.html)
+- Tauri backend and filesystem scope: [`desktop/src-tauri/src/main.rs`](desktop/src-tauri/src/main.rs), [`desktop/src-tauri/tauri.conf.json`](desktop/src-tauri/tauri.conf.json)
+- Release/build automation: [`scripts/release_check.sh`](scripts/release_check.sh), [`scripts/stage_rust_engine_binary.sh`](scripts/stage_rust_engine_binary.sh)
+
+## Task Routing
+
+- Desktop shell, tabs, and canvas behavior: [`desktop/src/canvas_app.js`](desktop/src/canvas_app.js), [`desktop/src/index.html`](desktop/src/index.html), [`desktop/src/styles.css`](desktop/src/styles.css)
+- Native runtime, providers, and env handling: [`rust_engine/crates/brood-engine/src/lib.rs`](rust_engine/crates/brood-engine/src/lib.rs), [`desktop/src-tauri/src/main.rs`](desktop/src-tauri/src/main.rs), [`.env.example`](.env.example)
+- Run artifacts and `events.jsonl`: [`rust_engine/crates/brood-contracts/src/events.rs`](rust_engine/crates/brood-contracts/src/events.rs), [`docs/desktop.md`](docs/desktop.md)
+- Release and packaging: [`RELEASING.md`](RELEASING.md), [`scripts/release_check.sh`](scripts/release_check.sh), [`desktop/src-tauri/tauri.conf.json`](desktop/src-tauri/tauri.conf.json)
+- Legacy identifiers that should not be renamed casually: [`docs/legacy-internals.md`](docs/legacy-internals.md)
+
+## Safe Commands
 
 - `./scripts/dev_desktop.sh`
 - `cd desktop && npm test`
 - `cd desktop && npm run build`
 - `cd desktop/src-tauri && cargo check`
+- `cd rust_engine && cargo check`
 - `./scripts/release_check.sh`
 
 ## Notes
 
-- prefer `CUE_*` environment variables; `BROOD_*` still works as a temporary compatibility layer
-- keep user-facing naming on Cue
-- do not commit secrets; use `.env` based on [`.env.example`](.env.example)
+- Public configuration should prefer `CUE_*` variables first; `BROOD_*` aliases remain only as documented compatibility fallbacks.
+- Desktop runtime is native-only and packages the legacy internal engine resource `brood-rs`.
+- Multi-agent rule: one feature per git worktree. Do not run concurrent agents in the same worktree or branch.
+- Do not commit secrets; use `.env` (gitignored) based on [`.env.example`](.env.example).

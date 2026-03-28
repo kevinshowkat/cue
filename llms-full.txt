@@ -1,41 +1,40 @@
-# Cue Repository Context
+# Cue llms-full.txt
 
-This file is the expanded repo map for tools that want more context than `llms.txt`.
+This file is the expanded agent-facing context for the public Cue repository.
 
-## Project Summary
+## Project Identity
 
 - Product: Cue
-- Type: image-first desktop app
-- Public release today: source plus a verified macOS DMG
+- Category: image-first desktop design workstation
+- Current public support bar: source release plus verified macOS DMG build
 - Desktop shell: Tauri
-- Native runtime: Rust
-- Public configuration: prefer `CUE_*`; `BROOD_*` remains as a temporary compatibility fallback
+- Native runtime: Rust engine packaged as the legacy internal resource `brood-rs`
+- Public configuration: prefer `CUE_*`; `BROOD_*` remains a documented compatibility alias layer
 
 ## Read First
 
 - [`README.md`](README.md)
-- [`PRD.md`](PRD.md)
 - [`AGENTS.md`](AGENTS.md)
 - [`docs/README.md`](docs/README.md)
+- [`docs/agent_quickstart.md`](docs/agent_quickstart.md)
 - [`docs/legacy-internals.md`](docs/legacy-internals.md)
 
-## Optional Intake
+## Intake And Fallback
 
-- [`agent-intake.json`](agent-intake.json)
-- [`docs/aip-1.schema.json`](docs/aip-1.schema.json)
-- [`docs/agent_intake_status.md`](docs/agent_intake_status.md)
-- [`docs/agent_intake_roundtrip.sample.json`](docs/agent_intake_roundtrip.sample.json)
+- Preferred intake contract: [`agent-intake.json`](agent-intake.json)
+- Schema: [`docs/aip-1.schema.json`](docs/aip-1.schema.json)
+- Intake health rules: [`docs/agent_intake_status.md`](docs/agent_intake_status.md)
+- Roundtrip example: [`docs/agent_intake_roundtrip.sample.json`](docs/agent_intake_roundtrip.sample.json)
+- If intake is unavailable, use [`llms.txt`](llms.txt) and the fallback entrypoints in [`agent-intake.json`](agent-intake.json).
 
-If intake is unavailable, use [`llms.txt`](llms.txt) and the fallback entrypoints in [`agent-intake.json`](agent-intake.json).
+## Public Documentation Surface
 
-## Helpful Docs
-
-- [`docs/desktop.md`](docs/desktop.md)
-- [`docs/agent-runtime.md`](docs/agent-runtime.md)
-- [`docs/local-magic-select-runtime.md`](docs/local-magic-select-runtime.md)
-- [`docs/macos-local-private-image-editing.md`](docs/macos-local-private-image-editing.md)
-- [`docs/benchmark-playbook.md`](docs/benchmark-playbook.md)
-- [`RELEASING.md`](RELEASING.md)
+- [`docs/desktop.md`](docs/desktop.md): desktop behavior, run directories, shell/runtime layout
+- [`docs/agent-runtime.md`](docs/agent-runtime.md): agent-facing runtime model
+- [`docs/local-magic-select-runtime.md`](docs/local-magic-select-runtime.md): prepared local Magic Select contract
+- [`docs/macos-local-private-image-editing.md`](docs/macos-local-private-image-editing.md): macOS local/private workflow notes
+- [`docs/benchmark-playbook.md`](docs/benchmark-playbook.md): reproducible benchmark format
+- [`RELEASING.md`](RELEASING.md): maintainer release workflow
 
 ## High-Signal Source Entrypoints
 
@@ -49,7 +48,7 @@ If intake is unavailable, use [`llms.txt`](llms.txt) and the fallback entrypoint
 - [`rust_engine/crates/brood-engine/src/lib.rs`](rust_engine/crates/brood-engine/src/lib.rs)
 - [`rust_engine/crates/brood-contracts/src/events.rs`](rust_engine/crates/brood-contracts/src/events.rs)
 
-## Validation
+## Validation Commands
 
 - `cd desktop && npm test`
 - `cd desktop && npm run build`
@@ -60,6 +59,14 @@ If intake is unavailable, use [`llms.txt`](llms.txt) and the fallback entrypoint
 
 ## Release Notes
 
-- public verification is strongest on macOS
-- release assets and GitHub Releases should use the Cue name
-- Homebrew is still out of scope for the first public launch
+- The public release flow is macOS-first. Windows and Linux remain roadmap targets and should be described honestly.
+- The release rehearsal should produce `desktop/src-tauri/target/release/bundle/dmg/Cue_<version>_aarch64.dmg`.
+- Public release names and GitHub Releases should say Cue.
+- Homebrew is intentionally out of scope for the first open-source launch.
+
+## Guardrails
+
+- Keep user-facing naming on Cue.
+- Do not reintroduce machine-local absolute paths.
+- Do not commit secrets.
+- Treat [`docs/legacy-internals.md`](docs/legacy-internals.md) as the allowlist for temporary old internal names that still exist for launch-risk reasons.

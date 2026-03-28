@@ -8,9 +8,9 @@
   },
   "intake_endpoint": "https://6yq5plinssvsog2ozyhnfnscya0qwdzp.lambda-url.us-east-1.on.aws/aip/intake",
   "notes": [
-    "This file describes an optional intake endpoint for tooling.",
-    "If intake is unavailable, use llms.txt and the fallback entrypoints listed here.",
-    "For status and example flow, see docs/agent_intake_status.md and docs/agent_intake_roundtrip.sample.json."
+    "This file is repo-side only. AIP requires operating the intake_endpoint on infrastructure you control.",
+    "If you later host schema/intake on a custom domain, update the URLs here (or leave AIP unused and follow llms.txt fallback entrypoints).",
+    "For deterministic intake health/fallback behavior, see docs/agent_intake_status.md and docs/agent_intake_roundtrip.sample.json."
   ],
   "intake_status_cue": {
     "healthy_when": [
@@ -34,7 +34,7 @@
     "roundtrip_example": "docs/agent_intake_roundtrip.sample.json"
   },
   "privacy": {
-    "purpose": "Return curated entrypoints for common task areas and optionally log coarse task tags.",
+    "purpose": "Return curated entrypoints (files/scripts) and optional context pack URLs; optionally log coarse task tags for aggregate usage.",
     "expected_logs": [
       "timestamp",
       "agent.tool",
@@ -44,6 +44,7 @@
       "response.packs[].id (if any)"
     ],
     "do_not_send": [
+      "raw prompts (unless the user explicitly chooses to share them)",
       "API keys or secrets",
       "source images / binary artifacts"
     ],
@@ -54,143 +55,239 @@
     }
   },
   "tags": [
-    "desktop",
-    "runtime",
-    "release",
+    "desktop-dev",
+    "desktop-quick-actions",
+    "desktop-canvas",
+    "desktop-tauri",
+    "engine-rust",
+    "engine-cli",
+    "engine-providers",
+    "engine-recreate",
+    "engine-memory",
+    "engine-events",
+    "tests",
     "docs"
   ],
   "fallback_entrypoints": [
     {
       "path": "README.md",
       "kind": "doc",
-      "why": "Project summary and quick start.",
-      "priority": 1
-    },
-    {
-      "path": "PRD.md",
-      "kind": "doc",
-      "why": "Short product overview and current public scope.",
+      "why": "Quickstart for desktop + engine/CLI, plus troubleshooting and layout overview.",
       "priority": 1
     },
     {
       "path": "AGENTS.md",
       "kind": "doc",
-      "why": "Repository workflow and common checks.",
+      "why": "Repo guidelines: structure, build commands, testing, and coding style.",
       "priority": 1
-    },
-    {
-      "path": "docs/README.md",
-      "kind": "doc",
-      "why": "Docs index.",
-      "priority": 2
     },
     {
       "path": "docs/desktop.md",
       "kind": "doc",
-      "why": "Desktop app behavior and saved files.",
+      "why": "Desktop concepts (Run/Unit/Views), Quick Actions list, HUD behavior, and run artifacts.",
       "priority": 2
     },
     {
-      "path": "RELEASING.md",
+      "path": "docs/agent_intake_status.md",
       "kind": "doc",
-      "why": "Release and packaging guide.",
+      "why": "Deterministic intake health/fallback cue for intake-first routing.",
       "priority": 2
     },
     {
-      "path": "docs/legacy-internals.md",
+      "path": "docs/agent_intake_roundtrip.sample.json",
       "kind": "doc",
-      "why": "Older internal names still present in the codebase.",
+      "why": "Compact request/response/next-action intake example.",
+      "priority": 2
+    },
+    {
+      "path": "docs/README.md",
+      "kind": "doc",
+      "why": "Docs index for the public repo surface and current feature docs.",
+      "priority": 2
+    },
+    {
+      "path": "docs/macos-local-private-image-editing.md",
+      "kind": "doc",
+      "why": "macOS local/private workflow and privacy model page.",
+      "priority": 2
+    },
+    {
+      "path": "docs/benchmark-playbook.md",
+      "kind": "doc",
+      "why": "Reproducible benchmark table template and required artifact links.",
       "priority": 2
     },
     {
       "path": "rust_engine/crates/brood-cli/src/main.rs",
       "kind": "source",
-      "why": "Native CLI entrypoint.",
+      "why": "Primary native CLI entry: chat/run/recreate/export handlers and command plumbing.",
       "priority": 2
     },
     {
       "path": "rust_engine/crates/brood-engine/src/lib.rs",
       "kind": "source",
-      "why": "Native runtime orchestration.",
+      "why": "Native engine orchestration and provider-backed execution loop.",
       "priority": 2
     },
     {
       "path": "desktop/src/canvas_app.js",
       "kind": "source",
-      "why": "Desktop canvas behavior.",
+      "why": "Desktop UI: canvas behaviors and Quick Actions rendering/dispatch.",
       "priority": 2
     },
     {
       "path": "desktop/src-tauri/src/main.rs",
       "kind": "source",
-      "why": "Tauri backend entrypoint.",
+      "why": "Tauri backend glue (commands, app wiring).",
       "priority": 3
     },
     {
       "path": "desktop/src-tauri/tauri.conf.json",
       "kind": "config",
-      "why": "App and file-scope configuration.",
+      "why": "FS scope and app configuration (common cause of import/export issues).",
       "priority": 3
     },
     {
       "path": "scripts/dev_desktop.sh",
       "kind": "script",
-      "why": "Local desktop dev runner.",
+      "why": "Dev runner that starts the Tauri app with native Rust runtime defaults.",
       "priority": 2
     }
   ],
   "tag_catalog": {
-    "desktop": {
-      "description": "Desktop app behavior, canvas changes, and UI fixes.",
+    "desktop-dev": {
+      "description": "Run the desktop app locally; fix build/startup issues.",
       "entrypoints": [
         "README.md",
+        "scripts/dev_desktop.sh",
+        "desktop/package.json",
+        "desktop/src-tauri/Cargo.toml",
+        "desktop/src-tauri/src/main.rs",
+        "rust_engine/crates/brood-cli/src/main.rs",
+        "scripts/stage_rust_engine_binary.sh"
+      ]
+    },
+    "desktop-quick-actions": {
+      "description": "Change Quick Actions UI/behavior (buttons, dispatch, HUD output).",
+      "entrypoints": [
+        "docs/desktop.md",
         "desktop/src/canvas_app.js",
         "desktop/src/index.html",
         "desktop/src/styles.css",
-        "docs/desktop.md",
-        "desktop/src-tauri/src/main.rs",
-        "desktop/src-tauri/tauri.conf.json"
+        "rust_engine/crates/brood-cli/src/main.rs",
+        "rust_engine/crates/brood-engine/src/lib.rs"
       ]
     },
-    "runtime": {
-      "description": "Native runtime, events, and compatibility details.",
+    "desktop-canvas": {
+      "description": "Canvas interactions, selections, tools, layout, filmstrip behavior.",
+      "entrypoints": [
+        "desktop/src/canvas_app.js",
+        "desktop/src/styles.css",
+        "docs/desktop.md"
+      ]
+    },
+    "desktop-tauri": {
+      "description": "Tauri backend, FS scope, command wiring, native build issues.",
+      "entrypoints": [
+        "desktop/src-tauri/src/main.rs",
+        "desktop/src-tauri/tauri.conf.json",
+        "scripts/stage_rust_engine_binary.sh",
+        "README.md"
+      ]
+    },
+    "engine-rust": {
+      "description": "Native Rust engine commands, orchestration, contracts, and compatibility safeguards.",
       "entrypoints": [
         "rust_engine/crates/brood-cli/src/main.rs",
         "rust_engine/crates/brood-engine/src/lib.rs",
         "rust_engine/crates/brood-contracts/src/events.rs",
-        "docs/legacy-internals.md",
+        "desktop/src-tauri/src/main.rs",
+        "README.md"
+      ]
+    },
+    "engine-cli": {
+      "description": "Cue CLI commands and flags (chat/run/recreate/export), native Rust runtime.",
+      "entrypoints": [
+        "rust_engine/crates/brood-cli/src/main.rs",
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "README.md"
+      ]
+    },
+    "engine-providers": {
+      "description": "Provider integrations (OpenAI/Gemini/etc), model routing, and API key handling in native Rust runtime.",
+      "entrypoints": [
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "rust_engine/crates/brood-contracts/src/chat/intent_parser.rs",
+        "README.md",
         ".env.example"
       ]
     },
-    "release": {
-      "description": "Versioning, packaging, and publishing.",
+    "engine-recreate": {
+      "description": "Recreate flow (reference image in, similarities/edits out).",
       "entrypoints": [
-        "RELEASING.md",
-        "scripts/release_check.sh",
-        ".github/workflows/publish.yml",
-        ".github/workflows/desktop-clean-machine-smoke.yml",
-        "desktop/src-tauri/tauri.conf.json"
+        "rust_engine/crates/brood-cli/src/main.rs",
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "docs/desktop.md"
+      ]
+    },
+    "engine-memory": {
+      "description": "Opt-in memory system, storage, and retrieval logic.",
+      "entrypoints": [
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "README.md"
+      ]
+    },
+    "engine-events": {
+      "description": "Run artifacts + events.jsonl format; stability of event stream consumed by desktop.",
+      "entrypoints": [
+        "rust_engine/crates/brood-contracts/src/events.rs",
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "docs/desktop.md"
+      ]
+    },
+    "tests": {
+      "description": "Rust + desktop test coverage and validation commands.",
+      "entrypoints": [
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "rust_engine/crates/brood-contracts/src/events.rs",
+        "desktop/test/"
       ]
     },
     "docs": {
-      "description": "Project and documentation updates.",
+      "description": "Docs updates (desktop usage, specs, reference notes).",
       "entrypoints": [
-        "README.md",
-        "PRD.md",
-        "AGENTS.md",
-        "CONTRIBUTING.md",
         "docs/README.md",
         "docs/desktop.md",
-        "docs/legacy-internals.md",
+        "docs/agent_intake_status.md",
+        "docs/agent_intake_roundtrip.sample.json",
         "docs/agent-runtime.md",
-        "docs/agent_quickstart.md"
+        "docs/local-magic-select-runtime.md",
+        "docs/macos-local-private-image-editing.md",
+        "docs/benchmark-playbook.md",
+        "docs/legacy-internals.md"
       ]
     }
   },
-  "client_hints": {
+  "example_request": {
+    "schema_version": "aip-1",
     "agent": {
       "tool": "codex",
+      "tool_version": "0.0",
       "git_user_agent": "git/2.x"
+    },
+    "repo": {
+      "url": "https://github.com/<org-or-user>/cue",
+      "ref": "main"
+    },
+    "task": {
+      "tags": [
+        "desktop-quick-actions",
+        "engine-events"
+      ],
+      "notes": "Need to add a new Quick Action and ensure events.jsonl stays stable."
+    },
+    "telemetry": {
+      "opt_out": false
     }
   }
 }

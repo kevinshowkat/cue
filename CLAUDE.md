@@ -1,7 +1,8 @@
-# Claude Compatibility Note
+# Claude Code Instructions (Cue)
 
-This file exists for tool auto-discovery.
+Canonical agent instructions live in `AGENTS.md`.
 
-- Repo workflow: `AGENTS.md`
-- Quick repo context: `llms.txt`
-- Expanded repo context: `llms-full.txt`
+This file is intentionally a compatibility shim for Claude auto-discovery.
+- Follow `AGENTS.md` for conventions, commands, and style.
+- Use `llms.txt` for concise entrypoints.
+- Use `llms-full.txt` for expanded, inlined context.

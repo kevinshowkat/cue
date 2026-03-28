@@ -1,25 +1,45 @@
-# Automation Overview
+# Cue Agent Runtime Guide
 
-Cue exposes enough runtime surface for tooling and automation to inspect state, trigger app actions, and export results.
+This document explains how an agent should use Cue as a constrained visual runtime.
 
-## Main Surfaces
+Companion files:
 
-- observe current tab and canvas state
-- run direct actions
-- use communication tools to mark intent
-- request `Design Review`
-- apply a selected proposal
-- create a reusable tool
-- export the current result
+- [agent-workflow-prd.md](agent-workflow-prd.md)
+- [agent-affordances.json](agent-affordances.json)
 
-## Practical Rule Of Thumb
+## Core Model
 
-- inspect state before changing it
-- use direct actions for clear single-step changes
-- use `Design Review` for ambiguous or multi-step edits
-- keep reversible boundaries before expensive work
+Treat Cue as three cooperating surfaces:
 
-## Notes
+- `observe`
+- `mutate`
+- `review`
 
-- the public product name is Cue even if some internals still use older names
-- the app is verified most deeply on macOS in the current public release
+Preferred loop:
+
+1. observe
+2. choose focus
+3. decide direct execution vs review
+4. mutate
+5. observe again
+6. evaluate progress
+
+## Working Rules
+
+- Prefer `observe` before expensive or destructive mutations.
+- Treat focus tools as scoping signals, not final edits.
+- Use direct affordances when the edit class is already obvious.
+- Use `Design Review` when the goal is ambiguous, aesthetic, or multi-step.
+- Preserve reversible boundaries before high-cost actions.
+
+## Current Surfaces
+
+- `Agent Run`: live in-app experimentation surface
+- Direct execution affordances: single-image actions exposed in the left rail
+- Focus and scoping: communication tools exposed in the right rail
+- `Design Review`: proposal generation and apply
+- `Create Tool`: deterministic local manifest generation for reusable tools
+
+## Public Caveat
+
+Some internal schema ids and module names still use legacy `brood` or `juggernaut` naming. Those internals are transitional and do not change the public Cue workflow.
