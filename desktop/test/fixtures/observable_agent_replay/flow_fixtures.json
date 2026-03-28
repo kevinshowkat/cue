@@ -1,0 +1,611 @@
+{
+  "flows": [
+    {
+      "id": "marker-design-review-accept-export-psd",
+      "initialImage": {
+        "id": "img-hero",
+        "label": "Hero"
+      },
+      "steps": [
+        {
+          "kind": "observable_trace_entry",
+          "expectedMethod": "markerStroke",
+          "expectedContextAfter": {
+            "markCount": 1
+          },
+          "entry": {
+            "schema": "juggernaut.agent_observable_trace",
+            "schema_version": 1,
+            "seq": 1,
+            "at": "2026-03-10T09:00:00.000Z",
+            "at_ms": 1773133200000,
+            "source": "fixture_replay",
+            "request_id": "marker-review-1",
+            "ok": true,
+            "error": null,
+            "duration_ms": 18,
+            "action": {
+              "action": "marker_stroke",
+              "method": "markerStroke",
+              "tool": "marker",
+              "request_id": "marker-review-1",
+              "source": "fixture_replay",
+              "coordinate_space": "canvas_css",
+              "image_id": "img-hero",
+              "point": {
+                "x": 30,
+                "y": 42
+              },
+              "points": [
+                {
+                  "x": 30,
+                  "y": 42
+                },
+                {
+                  "x": 68,
+                  "y": 76
+                },
+                {
+                  "x": 98,
+                  "y": 102
+                }
+              ],
+              "step_delay_ms": 0,
+              "meta": {
+                "flowId": "marker-design-review-accept-export-psd"
+              }
+            },
+            "replay": {
+              "kind": "driver_call",
+              "method": "markerStroke",
+              "request": {
+                "action": "marker_stroke",
+                "method": "markerStroke",
+                "tool": "marker",
+                "request_id": "marker-review-1",
+                "source": "fixture_replay",
+                "coordinate_space": "canvas_css",
+                "image_id": "img-hero",
+                "point": {
+                  "x": 30,
+                  "y": 42
+                },
+                "points": [
+                  {
+                    "x": 30,
+                    "y": 42
+                  },
+                  {
+                    "x": 68,
+                    "y": 76
+                  },
+                  {
+                    "x": 98,
+                    "y": 102
+                  }
+                ],
+                "step_delay_ms": 0,
+                "meta": {
+                  "flowId": "marker-design-review-accept-export-psd"
+                }
+              }
+            },
+            "result": {
+              "ok": true,
+              "mark_id": "fixture-mark-1",
+              "image_id": "img-hero",
+              "point_count": 3
+            }
+          }
+        },
+        {
+          "kind": "design_review_accept",
+          "proposals": [
+            {
+              "label": "Clean the marked composition",
+              "imageId": "img-hero",
+              "actionType": "background_replace",
+              "why": "The mark isolates the cleanup target without changing the hero subject.",
+              "previewBrief": "Preview a cleaner composition around the marked area.",
+              "applyBrief": "Edit only the marked region to clean the composition and preserve the hero subject.",
+              "negativeConstraints": [
+                "Do not alter the hero subject silhouette",
+                "Do not crop the image"
+              ]
+            }
+          ],
+          "expected": {
+            "markIds": [
+              "mark-1"
+            ],
+            "proposalActionType": "background_replace"
+          }
+        },
+        {
+          "kind": "export_psd",
+          "expected": {
+            "actionSequenceLength": 1,
+            "sourceImageCount": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "protect-remove-people-export-psd",
+      "initialImage": {
+        "id": "img-hero",
+        "label": "Hero"
+      },
+      "steps": [
+        {
+          "kind": "observable_trace_entry",
+          "expectedMethod": "markerStroke",
+          "expectedContextAfter": {
+            "markCount": 1
+          },
+          "entry": {
+            "schema": "juggernaut.agent_observable_trace",
+            "schema_version": 1,
+            "seq": 1,
+            "at": "2026-03-10T09:01:00.000Z",
+            "at_ms": 1773133260000,
+            "source": "fixture_replay",
+            "request_id": "protect-marker-1",
+            "ok": true,
+            "error": null,
+            "duration_ms": 20,
+            "action": {
+              "action": "marker_stroke",
+              "method": "markerStroke",
+              "tool": "marker",
+              "request_id": "protect-marker-1",
+              "source": "fixture_replay",
+              "coordinate_space": "canvas_css",
+              "image_id": "img-hero",
+              "point": {
+                "x": 34,
+                "y": 58
+              },
+              "points": [
+                {
+                  "x": 34,
+                  "y": 58
+                },
+                {
+                  "x": 62,
+                  "y": 86
+                },
+                {
+                  "x": 86,
+                  "y": 112
+                }
+              ],
+              "step_delay_ms": 0,
+              "meta": {
+                "flowId": "protect-remove-people-export-psd"
+              }
+            },
+            "replay": {
+              "kind": "driver_call",
+              "method": "markerStroke",
+              "request": {
+                "action": "marker_stroke",
+                "method": "markerStroke",
+                "tool": "marker",
+                "request_id": "protect-marker-1",
+                "source": "fixture_replay",
+                "coordinate_space": "canvas_css",
+                "image_id": "img-hero",
+                "point": {
+                  "x": 34,
+                  "y": 58
+                },
+                "points": [
+                  {
+                    "x": 34,
+                    "y": 58
+                  },
+                  {
+                    "x": 62,
+                    "y": 86
+                  },
+                  {
+                    "x": 86,
+                    "y": 112
+                  }
+                ],
+                "step_delay_ms": 0,
+                "meta": {
+                  "flowId": "protect-remove-people-export-psd"
+                }
+              }
+            },
+            "result": {
+              "ok": true,
+              "mark_id": "fixture-mark-protect",
+              "image_id": "img-hero",
+              "point_count": 3
+            }
+          }
+        },
+        {
+          "kind": "observable_trace_entry",
+          "expectedMethod": "magicSelectClick",
+          "expectedContextAfter": {
+            "regionCandidateCount": 1
+          },
+          "entry": {
+            "schema": "juggernaut.agent_observable_trace",
+            "schema_version": 1,
+            "seq": 2,
+            "at": "2026-03-10T09:01:02.000Z",
+            "at_ms": 1773133262000,
+            "source": "fixture_replay",
+            "request_id": "protect-select-1",
+            "ok": true,
+            "error": null,
+            "duration_ms": 14,
+            "action": {
+              "action": "magic_select_click",
+              "method": "magicSelectClick",
+              "tool": "magic_select",
+              "request_id": "protect-select-1",
+              "source": "fixture_replay",
+              "coordinate_space": "canvas_css",
+              "image_id": "img-hero",
+              "point": {
+                "x": 72,
+                "y": 96
+              },
+              "points": [
+                {
+                  "x": 72,
+                  "y": 96
+                }
+              ],
+              "step_delay_ms": 0,
+              "meta": {
+                "flowId": "protect-remove-people-export-psd"
+              }
+            },
+            "replay": {
+              "kind": "driver_call",
+              "method": "magicSelectClick",
+              "request": {
+                "action": "magic_select_click",
+                "method": "magicSelectClick",
+                "tool": "magic_select",
+                "request_id": "protect-select-1",
+                "source": "fixture_replay",
+                "coordinate_space": "canvas_css",
+                "image_id": "img-hero",
+                "point": {
+                  "x": 72,
+                  "y": 96
+                },
+                "points": [
+                  {
+                    "x": 72,
+                    "y": 96
+                  }
+                ],
+                "step_delay_ms": 0,
+                "meta": {
+                  "flowId": "protect-remove-people-export-psd"
+                }
+              }
+            },
+            "result": {
+              "ok": true,
+              "active_candidate_id": "fixture-region-protect",
+              "image_id": "img-hero",
+              "candidate_count": 1
+            }
+          }
+        },
+        {
+          "kind": "focus_contract",
+          "reviewTool": "protect",
+          "expected": {
+            "reviewTool": "protect",
+            "focusKinds": [
+              "protect",
+              "protect"
+            ],
+            "protectedRegionCount": 2,
+            "reservedSpaceAreaCount": 0
+          }
+        },
+        {
+          "kind": "direct_affordance",
+          "jobId": "remove_people",
+          "params": {},
+          "capabilityAvailability": {
+            "people_removal": {
+              "available": true
+            }
+          },
+          "expected": {
+            "toolId": "remove_people",
+            "capability": "people_removal",
+            "executionKind": "model_capability",
+            "executionType": "model_backed",
+            "routeProfile": "remove_people_model",
+            "receiptOperation": "remove_people"
+          }
+        },
+        {
+          "kind": "export_psd",
+          "expected": {
+            "actionSequenceLength": 1,
+            "sourceImageCount": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "make-space-relight-export-psd",
+      "initialImage": {
+        "id": "img-hero",
+        "label": "Hero"
+      },
+      "steps": [
+        {
+          "kind": "observable_trace_entry",
+          "expectedMethod": "markerStroke",
+          "expectedContextAfter": {
+            "markCount": 1
+          },
+          "entry": {
+            "schema": "juggernaut.agent_observable_trace",
+            "schema_version": 1,
+            "seq": 1,
+            "at": "2026-03-10T09:02:00.000Z",
+            "at_ms": 1773133320000,
+            "source": "fixture_replay",
+            "request_id": "make-space-marker-1",
+            "ok": true,
+            "error": null,
+            "duration_ms": 18,
+            "action": {
+              "action": "marker_stroke",
+              "method": "markerStroke",
+              "tool": "marker",
+              "request_id": "make-space-marker-1",
+              "source": "fixture_replay",
+              "coordinate_space": "canvas_css",
+              "image_id": "img-hero",
+              "point": {
+                "x": 162,
+                "y": 38
+              },
+              "points": [
+                {
+                  "x": 162,
+                  "y": 38
+                },
+                {
+                  "x": 204,
+                  "y": 64
+                },
+                {
+                  "x": 236,
+                  "y": 92
+                }
+              ],
+              "step_delay_ms": 0,
+              "meta": {
+                "flowId": "make-space-relight-export-psd"
+              }
+            },
+            "replay": {
+              "kind": "driver_call",
+              "method": "markerStroke",
+              "request": {
+                "action": "marker_stroke",
+                "method": "markerStroke",
+                "tool": "marker",
+                "request_id": "make-space-marker-1",
+                "source": "fixture_replay",
+                "coordinate_space": "canvas_css",
+                "image_id": "img-hero",
+                "point": {
+                  "x": 162,
+                  "y": 38
+                },
+                "points": [
+                  {
+                    "x": 162,
+                    "y": 38
+                  },
+                  {
+                    "x": 204,
+                    "y": 64
+                  },
+                  {
+                    "x": 236,
+                    "y": 92
+                  }
+                ],
+                "step_delay_ms": 0,
+                "meta": {
+                  "flowId": "make-space-relight-export-psd"
+                }
+              }
+            },
+            "result": {
+              "ok": true,
+              "mark_id": "fixture-mark-space",
+              "image_id": "img-hero",
+              "point_count": 3
+            }
+          }
+        },
+        {
+          "kind": "observable_trace_entry",
+          "expectedMethod": "magicSelectClick",
+          "expectedContextAfter": {
+            "regionCandidateCount": 1
+          },
+          "entry": {
+            "schema": "juggernaut.agent_observable_trace",
+            "schema_version": 1,
+            "seq": 2,
+            "at": "2026-03-10T09:02:02.000Z",
+            "at_ms": 1773133322000,
+            "source": "fixture_replay",
+            "request_id": "make-space-select-1",
+            "ok": true,
+            "error": null,
+            "duration_ms": 12,
+            "action": {
+              "action": "magic_select_click",
+              "method": "magicSelectClick",
+              "tool": "magic_select",
+              "request_id": "make-space-select-1",
+              "source": "fixture_replay",
+              "coordinate_space": "canvas_css",
+              "image_id": "img-hero",
+              "point": {
+                "x": 218,
+                "y": 78
+              },
+              "points": [
+                {
+                  "x": 218,
+                  "y": 78
+                }
+              ],
+              "step_delay_ms": 0,
+              "meta": {
+                "flowId": "make-space-relight-export-psd"
+              }
+            },
+            "replay": {
+              "kind": "driver_call",
+              "method": "magicSelectClick",
+              "request": {
+                "action": "magic_select_click",
+                "method": "magicSelectClick",
+                "tool": "magic_select",
+                "request_id": "make-space-select-1",
+                "source": "fixture_replay",
+                "coordinate_space": "canvas_css",
+                "image_id": "img-hero",
+                "point": {
+                  "x": 218,
+                  "y": 78
+                },
+                "points": [
+                  {
+                    "x": 218,
+                    "y": 78
+                  }
+                ],
+                "step_delay_ms": 0,
+                "meta": {
+                  "flowId": "make-space-relight-export-psd"
+                }
+              }
+            },
+            "result": {
+              "ok": true,
+              "active_candidate_id": "fixture-region-space",
+              "image_id": "img-hero",
+              "candidate_count": 1
+            }
+          }
+        },
+        {
+          "kind": "focus_contract",
+          "reviewTool": "make_space",
+          "expected": {
+            "reviewTool": "make_space",
+            "focusKinds": [
+              "make_space",
+              "make_space"
+            ],
+            "protectedRegionCount": 0,
+            "reservedSpaceAreaCount": 2
+          }
+        },
+        {
+          "kind": "direct_affordance",
+          "jobId": "relight",
+          "params": {
+            "lightDirection": "right"
+          },
+          "capabilityAvailability": {
+            "image_relight": {
+              "available": true
+            }
+          },
+          "expected": {
+            "toolId": "relight",
+            "capability": "image_relight",
+            "executionKind": "model_capability",
+            "executionType": "local_first",
+            "routeProfile": "relight_local_first",
+            "receiptOperation": "relight"
+          }
+        },
+        {
+          "kind": "export_psd",
+          "expected": {
+            "actionSequenceLength": 1,
+            "sourceImageCount": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "remove-people-polish-export-psd",
+      "initialImage": {
+        "id": "img-hero",
+        "label": "Hero"
+      },
+      "steps": [
+        {
+          "kind": "direct_affordance",
+          "jobId": "remove_people",
+          "params": {},
+          "capabilityAvailability": {
+            "people_removal": {
+              "available": true
+            }
+          },
+          "expected": {
+            "toolId": "remove_people",
+            "capability": "people_removal",
+            "executionKind": "model_capability",
+            "executionType": "model_backed",
+            "routeProfile": "remove_people_model",
+            "receiptOperation": "remove_people"
+          }
+        },
+        {
+          "kind": "direct_affordance",
+          "jobId": "polish",
+          "params": {
+            "intensity": 0.72
+          },
+          "expected": {
+            "toolId": "polish",
+            "capability": "image_polish",
+            "executionKind": "local_edit",
+            "executionType": "local_first",
+            "routeProfile": "polish_local_first",
+            "receiptOperation": "tool_polish"
+          }
+        },
+        {
+          "kind": "export_psd",
+          "expected": {
+            "actionSequenceLength": 2,
+            "sourceImageCount": 1
+          }
+        }
+      ]
+    }
+  ]
+}

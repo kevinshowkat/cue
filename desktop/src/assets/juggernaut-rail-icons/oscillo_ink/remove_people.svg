@@ -1,0 +1,10 @@
+<svg class="tool-icon tool-icon-remove-people tool-icon-pack-oscillo-ink" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <g transform="rotate(-3 12 12)">
+  <circle fill="currentColor" cx="12" cy="8.2" r="1.7" fill-opacity="0.11" />
+  <path fill="currentColor" d="M8.2 16.75c.59-2.27 1.86-3.4 3.8-3.4 1.97 0 3.25 1.13 3.85 3.4" fill-opacity="0.09" />
+  <path fill="none" stroke="currentColor" stroke-width="2.28" stroke-linecap="round" stroke-linejoin="round" d="M8.5 16.4c.56-2.05 1.73-3.08 3.5-3.08 1.81 0 2.99 1.03 3.55 3.08" />
+  <path fill="none" stroke="currentColor" stroke-width="2.28" stroke-linecap="round" stroke-linejoin="round" d="M6.35 6.35 17.65 17.65" />
+  <path fill="none" stroke="currentColor" stroke-width="2.28" stroke-linecap="round" stroke-linejoin="round" d="M18.2 6.8v2.1" />
+  <path fill="none" stroke="currentColor" stroke-width="2.28" stroke-linecap="round" stroke-linejoin="round" d="M17.15 7.85h2.1" />
+</g>
+</svg>

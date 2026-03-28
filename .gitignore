@@ -1,0 +1,103 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+brood.egg-info/
+
+# Node
+node_modules/
+desktop/node_modules/
+desktop/.vite/
+
+# Tauri build artifacts
+desktop/src-tauri/target/
+desktop/dist/
+desktop/src-tauri/gen/
+desktop/src-tauri/resources/brood-rs
+rust_engine/target/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+
+# Logs
+npm-debug.log*
+
+# Media
+*.mov
+*.mp4
+
+# Built-in Mother panel videos (required UI assets; keep these tracked).
+!desktop/src/assets/mother/mother_idle.mirrored.mp4
+!desktop/src/assets/mother/mother_working.mp4
+!desktop/src/assets/mother/mother_realtime.mp4
+!desktop/src/assets/mother/mother_takeover.mp4
+# Built-in provider portrait videos (required for fresh-clone local dev UX).
+!desktop/src/assets/portraits/videos/*.mp4
+# Built-in onboarding videos (required UI assets for first-run onboarding UX).
+!desktop/src/assets/onboarding/videos/*.mp4
+
+# Generated artifacts
+outputs/
+outputs/first_light/
+outputs/aip_packs/
+outputs/aip_server/
+outputs/sora_portraits/
+outputs/ai_visibility/
+outputs/sora_mother/*.reference.png
+outputs/sora_mother/*.json
+
+# Generated UI icon intermediates
+desktop/src/assets/intent-icons-sc/raw/
+desktop/src/assets/intent-icons-sc/manifest.json
+
+# Local reference images
+bumpers.png
+minimap.jpg
+github.png
+yellow.png
+
+# Keep repository root clean (local scratch artifacts)
+/tmp_test_desc.jpg
+/sc.webp
+/sc_preview.png
+/larvae.png
+/see.png
+/param_forge_llm_review.tar.gz
+/images_gemini_wire_subject_*/
+/outputs/llm_spatial_review_*/
+/outputs/local_root_archive/
+/media/archive/root_legacy/
+/media/brood_demo_intent_build_*.gif
+/media/brood_demo_v*.gif
+/media/features/edit_annotation.gif
+/media/features/intent_build.gif
+/media/features/remove_people.gif
+/media/features/readme/.*
+/media/features/readme/context_intent_share_draft_*.gif
+/media/features/readme/ref_v*.png
+
+# Local visibility probe artifacts
+docs/ai_visibility.md
+docs/ai_visibility.schema.json
+docs/ai_visibility_queries.sample.json
+docs/realtime_intent_pipeline_simulation_prompt_v2.md
+docs/realtime_intent_tuning_handoff_2026-02-21.md
+docs/realtime_canvas_intent_generation_flow.md
+docs/assets/diagrams/mother_realtime_user_journey_timeline/
+scripts/visibility_probe.py
+docs/prds/
+docs/target_user_*
+
+# Editor
+.idea/
+.vscode/
