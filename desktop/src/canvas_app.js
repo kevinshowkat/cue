@@ -282,6 +282,8 @@ const IMAGE_SELECTION_INACTIVE_STROKE = "rgba(118, 211, 255, 0.56)";
 const DEFAULT_UNTITLED_TAB_TITLE = "Untitled Canvas";
 const SESSION_TAB_TITLE_MAX_LENGTH = 40;
 const SESSION_SNAPSHOT_FILENAME = "juggernaut-session.json";
+const CANVAS_IMAGE_PREPARING_LABEL = "Preparing image…";
+const CANVAS_IMAGE_WARMING_MAGIC_SELECT_LABEL = "Warming Magic Select…";
 
 function communicationToolDisplayLabel(toolId = "") {
   const normalized = String(toolId || "").trim().toLowerCase();
@@ -2553,6 +2555,33 @@ function localMagicSelectPreparingTaskForUi(
   return null;
 }
 
+function canvasImageLoadingAffordance(item = null, { tabId = state.activeTabId || null } = {}) {
+  const imageId = String(item?.id || "").trim();
+  const imagePath = readFirstString(item?.path);
+  if (!imageId || !imagePath) return null;
+  const imageReady = Boolean(readSessionRuntimeImageHandle(item));
+  const preparingTask = localMagicSelectPreparingTaskForUi(imageId, {
+    tabId,
+    imagePath,
+    runDir: state.runDir || null,
+  });
+  if (!imageReady) {
+    return {
+      phase: "preparing_image",
+      showPlaceholder: true,
+      statusLabel: CANVAS_IMAGE_PREPARING_LABEL,
+    };
+  }
+  if (preparingTask) {
+    return {
+      phase: "warming_magic_select",
+      showPlaceholder: false,
+      statusLabel: CANVAS_IMAGE_WARMING_MAGIC_SELECT_LABEL,
+    };
+  }
+  return null;
+}
+
 function rememberLocalMagicSelectPreparedImageForUi(preparedImage = null, { tabId = state.activeTabId || null } = {}) {
   if (!preparedImage || typeof preparedImage !== "object") return null;
   const normalizedImageId = String(preparedImage.imageId || "").trim();
@@ -2610,6 +2639,7 @@ async function prepareLocalMagicSelectImageForUi(
         activeRuntime.preparingByImageId.delete(normalizedImageId);
       }
       cleanupLocalMagicSelectUiPrewarmRuntime(tabId);
+      requestRender();
     }
   })();
 
@@ -2618,6 +2648,7 @@ async function prepareLocalMagicSelectImageForUi(
     imagePath: String(item.path),
     runDir: state.runDir || null,
   });
+  requestRender();
   return task;
 }
 
@@ -29139,6 +29170,129 @@ function drawPolygonPath(ctx, points = []) {
   return true;
 }
 
+function polygonCanvasBounds(points = []) {
+  if (!Array.isArray(points) || points.length === 0) return null;
+  let left = Number.POSITIVE_INFINITY;
+  let top = Number.POSITIVE_INFINITY;
+  let right = Number.NEGATIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  for (const point of points) {
+    const x = Number(point?.x);
+    const y = Number(point?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (x < left) left = x;
+    if (y < top) top = y;
+    if (x > right) right = x;
+    if (y > bottom) bottom = y;
+  }
+  if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) return null;
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: Math.max(1, right - left),
+    height: Math.max(1, bottom - top),
+  };
+}
+
+function renderCanvasImagePlaceholder(ctx, polygon = []) {
+  if (!ctx) return false;
+  const bounds = polygonCanvasBounds(polygon);
+  if (!bounds) return false;
+  const dpr = getDpr();
+  const pad = Math.max(10, Math.round(12 * dpr));
+  const bandHeight = Math.max(6, Math.round(8 * dpr));
+  ctx.save();
+  if (drawPolygonPath(ctx, polygon)) ctx.clip();
+  const backdrop = ctx.createLinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom);
+  backdrop.addColorStop(0, "rgba(22, 34, 48, 0.96)");
+  backdrop.addColorStop(1, "rgba(8, 12, 18, 0.98)");
+  ctx.fillStyle = backdrop;
+  ctx.fillRect(bounds.left, bounds.top, bounds.width, bounds.height);
+  const wash = ctx.createLinearGradient(bounds.left, bounds.top, bounds.right, bounds.top);
+  wash.addColorStop(0, "rgba(120, 200, 255, 0.06)");
+  wash.addColorStop(0.52, "rgba(255, 255, 255, 0.14)");
+  wash.addColorStop(1, "rgba(120, 200, 255, 0.04)");
+  ctx.fillStyle = wash;
+  ctx.fillRect(bounds.left, bounds.top, bounds.width, bounds.height);
+  ctx.fillStyle = "rgba(232, 242, 252, 0.14)";
+  ctx.fillRect(
+    Math.round(bounds.left + pad),
+    Math.round(bounds.top + pad),
+    Math.max(1, Math.round(bounds.width * 0.56)),
+    bandHeight
+  );
+  ctx.fillRect(
+    Math.round(bounds.left + pad),
+    Math.round(bounds.top + pad + bandHeight + Math.max(6, Math.round(7 * dpr))),
+    Math.max(1, Math.round(bounds.width * 0.34)),
+    bandHeight
+  );
+  ctx.restore();
+  return true;
+}
+
+function renderCanvasImageStatusPill(ctx, polygon = [], affordance = null) {
+  if (!ctx || !affordance?.statusLabel) return false;
+  const bounds = polygonCanvasBounds(polygon);
+  if (!bounds) return false;
+  const dpr = getDpr();
+  const fontSize = Math.max(10, Math.round(11 * dpr));
+  const padX = Math.max(7, Math.round(8 * dpr));
+  const padY = Math.max(4, Math.round(5 * dpr));
+  const inset = Math.max(8, Math.round(10 * dpr));
+  const maxPillWidth = Math.max(0, Math.round(bounds.width - inset * 2));
+  if (maxPillWidth < Math.round(92 * dpr)) return false;
+  const palette =
+    affordance.phase === "warming_magic_select"
+      ? {
+          fill: "rgba(34, 16, 36, 0.88)",
+          stroke: "rgba(255, 120, 202, 0.38)",
+          text: "rgba(255, 236, 247, 0.98)",
+          shadow: "rgba(255, 120, 202, 0.18)",
+        }
+      : {
+          fill: "rgba(14, 22, 32, 0.86)",
+          stroke: "rgba(164, 214, 255, 0.32)",
+          text: "rgba(236, 246, 255, 0.98)",
+          shadow: "rgba(100, 210, 255, 0.16)",
+        };
+  ctx.save();
+  ctx.font = `600 ${fontSize}px "IBM Plex Sans", "Segoe UI", sans-serif`;
+  ctx.textBaseline = "middle";
+  const label = String(affordance.statusLabel || "").trim();
+  const measured = ctx.measureText(label);
+  const pillH = Math.max(20, Math.round(fontSize + padY * 2));
+  const pillW = Math.min(
+    maxPillWidth,
+    Math.max(Math.round(measured.width + padX * 2), Math.round(108 * dpr))
+  );
+  const x = clamp(
+    Math.round(bounds.left + inset),
+    Math.round(bounds.left),
+    Math.round(bounds.right - pillW)
+  );
+  const y = clamp(
+    Math.round(bounds.top + inset),
+    Math.round(bounds.top),
+    Math.round(bounds.bottom - pillH)
+  );
+  ctx.shadowColor = palette.shadow;
+  ctx.shadowBlur = Math.round(14 * dpr);
+  _drawRoundedRect(ctx, x, y, pillW, pillH, Math.max(6, Math.round(8 * dpr)));
+  ctx.fillStyle = palette.fill;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = Math.max(1, Math.round(1.1 * dpr));
+  ctx.strokeStyle = palette.stroke;
+  ctx.stroke();
+  ctx.fillStyle = palette.text;
+  ctx.fillText(label, x + padX, y + pillH * 0.5);
+  ctx.restore();
+  return true;
+}
+
 function clampFreeformRectCss(rectCss, canvasCssW, canvasCssH, { margin = 14, minSize = 44 } = {}) {
   const w = Math.max(minSize, Math.round(Number(rectCss?.w) || 0));
   const h = Math.max(minSize, Math.round(Number(rectCss?.h) || 0));
@@ -36110,6 +36264,7 @@ async function setActiveImage(id, { preserveSelection = false, source = "system"
   renderSelectionMeta();
   renderQuickActions();
   chooseSpawnNodes();
+  requestRender();
   await setEngineActiveImage(item.path);
   try {
     item.img = await loadImage(item.path);
@@ -36174,6 +36329,7 @@ function addImage(item, { select = false } = {}) {
   }
   motherIdleSyncFromInteraction({ userInteraction: false });
   syncMotherPortrait();
+  requestRender();
 }
 
 async function removeImageFromCanvas(imageId, { recordTimeline = false, action = "Delete Image" } = {}) {
@@ -42665,6 +42821,7 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
   const items = state.images || [];
   const nowMs = performance.now ? performance.now() : Date.now();
   const dragPerfMode = isFreeformTransformPointerDragActive();
+  const imageStatusPills = [];
   for (const item of items) {
     ensureCanvasImageLoaded(item);
   }
@@ -42699,6 +42856,7 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
     const dimOfferSeed = isDimOfferSeedId(imageId);
     const effectToken = imageId ? effectTokenForImageId(imageId) : null;
     const rectTransform = readFreeformRectTransform(state.freeformRects.get(imageId) || null);
+    const imageLoading = canvasImageLoadingAffordance(item);
     const framePoints = transformedRectPolygonPoints({
       x,
       y,
@@ -42727,18 +42885,18 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
       }
       wctx.restore();
     } else {
-      const g = wctx.createLinearGradient(x, y, x, y + h);
-      g.addColorStop(0, "rgba(18, 26, 37, 0.90)");
-      g.addColorStop(1, "rgba(6, 8, 12, 0.96)");
-      wctx.fillStyle = g;
-      if (drawPolygonPath(wctx, framePoints)) wctx.fill();
+      renderCanvasImagePlaceholder(wctx, framePoints);
       if (dimOfferSeed) {
         wctx.fillStyle = "rgba(6, 10, 14, 0.26)";
         if (drawPolygonPath(wctx, framePoints)) wctx.fill();
       }
-      wctx.fillStyle = "rgba(230, 237, 243, 0.65)";
-      wctx.font = `${Math.max(11, Math.round(12 * dpr))}px IBM Plex Mono`;
-      wctx.fillText("LOADING…", x + Math.round(12 * dpr), y + Math.round(22 * dpr));
+    }
+
+    if (!effectToken && imageLoading?.statusLabel) {
+      imageStatusPills.push({
+        polygon: framePoints,
+        affordance: imageLoading,
+      });
     }
 
     if (!effectToken) {
@@ -43070,6 +43228,10 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
       }
     }
     octx.restore();
+  }
+
+  for (const pill of imageStatusPills) {
+    renderCanvasImageStatusPill(octx, pill.polygon, pill.affordance);
   }
 }
 
@@ -45153,14 +45315,16 @@ function render() {
   state.activeImageTransformUiHits = [];
 
   const item = getActiveImage();
+  let singleImageStatusPill = null;
 
   if (state.canvasMode === "multi") {
     renderMultiCanvas(wctx, octx, work.width, work.height);
   } else {
+    const imageLoading = item?.path ? canvasImageLoadingAffordance(item) : null;
+    const singleTransform = readFreeformRectTransform(state.freeformRects.get(String(item?.id || "")) || null);
     if (item?.path) ensureCanvasImageLoaded(item);
     const img = readSessionRuntimeImageHandle(item);
     if (img) {
-      const singleTransform = readFreeformRectTransform(state.freeformRects.get(String(item?.id || "")) || null);
       const singleW = img.naturalWidth || item?.width || 1;
       const singleH = img.naturalHeight || item?.height || 1;
       wctx.save();
@@ -45201,6 +45365,12 @@ function render() {
         rotateDeg: singleTransform.rotateDeg,
         skewXDeg: singleTransform.skewXDeg,
       });
+      if (imageLoading?.statusLabel) {
+        singleImageStatusPill = {
+          polygon: singleBorderPoints,
+          affordance: imageLoading,
+        };
+      }
 
       octx.save();
       octx.lineJoin = "round";
@@ -45230,8 +45400,30 @@ function render() {
 	          targetId: item.id,
 	        });
 	      }
-	    }
-	  }
+	    } else if (item?.path && imageLoading?.showPlaceholder) {
+      const dpr = getDpr();
+      const fallbackCssSize = freeformDefaultTileCss(
+        (Number(work.width) || 0) / Math.max(dpr, 0.0001),
+        (Number(work.height) || 0) / Math.max(dpr, 0.0001),
+        { count: 1 }
+      );
+      const fallbackW = Math.max(1, Math.round(fallbackCssSize * dpr));
+      const fallbackH = Math.max(1, Math.round(fallbackCssSize * dpr));
+      const placeholderPoints = transformedRectPolygonPoints({
+        x: Math.round(((Number(work.width) || 0) - fallbackW) * 0.5),
+        y: Math.round(((Number(work.height) || 0) - fallbackH) * 0.5),
+        w: fallbackW,
+        h: fallbackH,
+        rotateDeg: singleTransform.rotateDeg,
+        skewXDeg: singleTransform.skewXDeg,
+      });
+      renderCanvasImagePlaceholder(wctx, placeholderPoints);
+      singleImageStatusPill = {
+        polygon: placeholderPoints,
+        affordance: imageLoading,
+      };
+    }
+  }
   syncEffectsRuntimeScene();
   updateImageFxRect();
 
@@ -45334,6 +45526,10 @@ function render() {
     if (draft) {
       drawCircle(draft, { isDraft: true });
     }
+  }
+
+  if (singleImageStatusPill?.affordance?.statusLabel) {
+    renderCanvasImageStatusPill(octx, singleImageStatusPill.polygon, singleImageStatusPill.affordance);
   }
 
   renderDesignReviewApplyShimmer(octx);
