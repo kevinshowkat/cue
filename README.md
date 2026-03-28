@@ -2,6 +2,10 @@
 
 Cue is an image-first desktop design workstation built around a text-free-first editing loop.
 
+<p align="left">
+  <img src="media/features/readme/cue_readme_fast.gif" alt="Cue demo" width="640" />
+</p>
+
 The public launch slice is macOS-first and centers on:
 
 - session tabs in one shared window

@@ -7,7 +7,7 @@ This file records which bundled assets were kept for the public repo and which a
 The following content was removed from the publishable tree because redistribution rights were unclear or the assets were not necessary for the public launch:
 
 - `images/**`
-- `media/**`
+- `media/**` except for the documented README demo asset below
 - `docs/handoffs/**`
 - `docs/assets/**`
 
@@ -20,6 +20,7 @@ Current retained categories:
 - app branding assets used by the shipped desktop shell
 - bundled onboarding media used directly by the app
 - generated rail icon packs used by the desktop UI
+- the trimmed product demo GIF shipped at `media/features/readme/cue_readme_fast.gif` for README use
 
 ## Maintainer Rule
 
