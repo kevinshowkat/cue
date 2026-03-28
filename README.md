@@ -1,25 +1,24 @@
 # Cue
 
-Cue is an image-first desktop design workstation built around a text-free-first editing loop.
+Cue is an open source desktop app for image-first design work. The current public release is verified on macOS and includes source plus a macOS DMG.
 
 <p align="left">
   <img src="media/features/readme/cue_readme_fast.gif" alt="Cue demo" width="640" />
 </p>
 
-The public launch slice is macOS-first and centers on:
+## What It Does
 
-- session tabs in one shared window
-- image import and canvas editing
-- design review proposals with in-place apply
-- custom tool creation inside the app
-- reproducible receipts and export
+- open multiple session tabs in one window
+- import images into a shared canvas
+- make direct edits and use design review suggestions
+- save reusable tools
+- export PSD, PNG, JPG, WEBP, or TIFF with a receipt
 
 ## Current Status
 
-- Verified locally: macOS clone, tests, build, and DMG packaging
-- Release target: macOS, Windows, and Linux parity for the same core workflow
-- Public launch scope: source plus a macOS GitHub Release
-- Not yet verified for public release: Windows and Linux packaging parity
+- Verified today: macOS clone, tests, build, and packaging
+- Public release scope: source plus a macOS GitHub Release
+- Roadmap: Windows and Linux parity, richer editable export, and fewer legacy internal names
 
 ## Run From Source
 
@@ -33,24 +32,21 @@ The public launch slice is macOS-first and centers on:
 ./scripts/release_check.sh
 ```
 
-That script runs desktop tests, frontend build, Rust checks, Tauri packaging, and DMG checksum output.
+This runs the desktop tests, frontend build, Rust checks, Tauri packaging, and DMG checksum output.
 
-## Entry Points
+## Start Here
 
-- Product definition: [PRD.md](PRD.md)
-- Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Maintainer release guide: [RELEASING.md](RELEASING.md)
-- Agent rules: [AGENTS.md](AGENTS.md)
-- Docs index: [docs/README.md](docs/README.md)
-- Desktop behavior: [docs/desktop.md](docs/desktop.md)
-- Legacy internals still in the tree: [docs/legacy-internals.md](docs/legacy-internals.md)
-- Asset provenance decisions: [docs/asset-provenance.md](docs/asset-provenance.md)
+- [Product overview](PRD.md)
+- [Repository workflow](AGENTS.md)
+- [Contributing](CONTRIBUTING.md)
+- [Release guide](RELEASING.md)
+- [Docs index](docs/README.md)
 
-## Known Limitations
+## Known Limits
 
-- Current verification is strongest on macOS.
-- PSD, PNG, JPG, WEBP, and TIFF exports are flattened in the current slice.
-- Some internal crate names, resource names, and schema ids still use legacy `brood` or `juggernaut` naming while the public surface is standardized on Cue.
+- Public verification is strongest on macOS.
+- Current exports are flattened rather than fully editable layered files.
+- Some internal crate and resource names still use older `brood` or `juggernaut` identifiers.
 
 ## License
 

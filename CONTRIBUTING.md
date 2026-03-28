@@ -2,13 +2,11 @@
 
 ## Before You Start
 
-- Read [AGENTS.md](AGENTS.md) for repo workflow rules.
-- Read [PRD.md](PRD.md) for current product constraints.
-- Keep changes scoped and shippable.
+- read the [product overview](PRD.md)
+- read the [repository workflow](AGENTS.md)
+- keep changes small enough to review and verify
 
-## Worktree Workflow
-
-Implementation work happens in a dedicated git worktree.
+## Use A Worktree
 
 Create a new worktree:
 
@@ -17,18 +15,16 @@ git fetch origin
 git worktree add ../cue-<feature> -b feature/<feature> origin/main
 ```
 
-If the branch already exists:
+Use an existing branch:
 
 ```bash
 git fetch origin
 git worktree add ../cue-<feature> feature/<feature>
 ```
 
-Do all edits, tests, and commits from that worktree only.
+Do your edits, tests, and commits from that worktree only.
 
-## Validation
-
-Run the checks that match your change. Common commands:
+## Run The Matching Checks
 
 ```bash
 cd desktop && npm test
@@ -37,15 +33,15 @@ cd desktop/src-tauri && cargo check
 ./scripts/release_check.sh
 ```
 
-## Docs Expectations
+## Keep Docs Current
 
-- Update product-facing docs when behavior changes.
-- Update maintainer docs when release or packaging behavior changes.
-- Capture public-facing configuration changes in [`.env.example`](.env.example).
-- Keep archived historical material under [docs/archive/](docs/archive/README.md), not in the active public surface.
+- update user-facing docs when behavior changes
+- update release docs when packaging or publishing changes
+- document public configuration in [`.env.example`](.env.example)
+- move historical notes to [docs/archive/](docs/archive/README.md) instead of leaving them in the main docs
 
 ## Pull Requests
 
-- Keep PRs narrowly scoped.
-- Include verification notes.
-- Call out follow-up work explicitly when you leave legacy internals in place.
+- keep the scope focused
+- include what you tested
+- call out any remaining legacy internal names or follow-up work

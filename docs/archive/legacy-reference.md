@@ -1,12 +1,12 @@
 # Legacy Reference Summary
 
-Cue was bootstrapped from earlier Brood and Juggernaut work. Some implementation names still reflect that lineage.
+Cue was built from earlier private work, so some internal names still reflect that history.
 
-Examples that remain intentionally unchanged for now:
+Examples:
 
 - Rust crate names such as `brood-cli`, `brood-engine`, and `brood-contracts`
 - packaged native engine resource name `brood-rs`
-- some schema ids and local-storage keys
+- some schema ids and storage keys
 - some internal helper modules under `desktop/src/juggernaut_*`
 
-These are tracked in [../legacy-internals.md](../legacy-internals.md) and are transitional internals, not the public product name.
+These are tracked in [../legacy-internals.md](../legacy-internals.md). They are internal compatibility details, not the public product name.

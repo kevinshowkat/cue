@@ -1,36 +1,22 @@
 # Benchmark Playbook
 
-Use this playbook to publish reproducible benchmark artifacts that contributors and maintainers can cite.
+Use this note when you want benchmark results that other contributors can verify.
 
-## Goal
+## Include
 
-Capture evidence for a stable end-to-end workflow:
-
-- image inputs
-- context capture
-- proposal generation
-- artifact output
-- final acceptance or rejection
-
-## Minimum Row Data
-
-- run id
 - scenario name
-- inputs
-- key actions covered
-- model or route profile
+- inputs used
+- main actions covered
 - median latency
-- outcome notes
+- short outcome note
 
-## Required Artifacts
+## Attach
 
 - `events.jsonl`
-- key payloads when relevant
-- output artifact files
-- a short run summary
+- any important payloads
+- output artifacts
+- a short summary of what happened
 
-## Consistency Checks
+## Rule
 
-- event coverage is explicit, not inferred
-- references are reconstructable from logs
-- proposal lifecycle is complete when review is part of the flow
+Someone else should be able to understand the run and compare it to another run without guessing what changed.

@@ -1,13 +1,5 @@
 # Archive
 
-This directory holds sanitized historical reference material only.
+This folder holds older reference material that is no longer the main starting point for the repo.
 
-Nothing in this folder is the active product surface or the preferred contributor workflow.
-
-Use it for:
-
-- maintainer background
-- migration notes
-- high-level summaries of earlier launch waves
-
-Do not use it as the canonical place to start a new public contribution.
+Use the main docs first. Use this folder only when you need background or migration notes.

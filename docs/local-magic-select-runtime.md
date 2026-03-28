@@ -1,6 +1,6 @@
 # Local Magic Select Runtime
 
-This document replaces the removed private runbook with the public contract surface needed to maintain Cue's local Magic Select path.
+This note keeps the local prepared Magic Select path consistent across the app, tests, and benchmark tooling.
 
 Contract: `juggernaut.magic_select.local.prepared.v1`
 
@@ -30,4 +30,4 @@ Prepared runtime responses must preserve:
 - `warnings`
 - `details` when present
 
-The prepared-image flow exists so repeated clicks on the same image can reuse a deterministic local prep step instead of recomputing the runtime state for every interaction.
+The prepared-image flow exists so repeated clicks on the same image can reuse a deterministic local prep step instead of recomputing state every time.

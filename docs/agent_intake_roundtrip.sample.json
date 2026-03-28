@@ -13,10 +13,10 @@
     },
     "task": {
       "tags": [
-        "desktop-quick-actions",
-        "engine-events"
+        "desktop",
+        "runtime"
       ],
-      "notes": "Add one desktop action and keep events.jsonl compatibility."
+      "notes": "Update one desktop behavior and keep runtime event output compatible."
     },
     "telemetry": {
       "opt_out": false
@@ -30,8 +30,8 @@
       "docs/desktop.md"
     ],
     "suggested_tags": [
-      "desktop-quick-actions",
-      "engine-events"
+      "desktop",
+      "runtime"
     ],
     "packs": []
   },
@@ -43,9 +43,9 @@
   "fallback_if_degraded": {
     "status": "degraded",
     "next_actions": [
-      "Use llms.txt Start Here and Task Routing sections.",
-      "Use docs/agent_quickstart.md for canonical task flows.",
-      "Use agent-intake.json fallback_entrypoints as deterministic backup."
+      "Use llms.txt first.",
+      "Use docs/agent_quickstart.md for local fallback guidance.",
+      "Use agent-intake.json fallback_entrypoints as backup."
     ]
   }
 }

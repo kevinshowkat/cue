@@ -1,47 +1,40 @@
 # Releasing Cue
 
-The public release path is macOS-first. The repository ships source plus a GitHub Release with a Cue DMG.
+Cue currently ships as source plus a macOS GitHub Release.
 
-## Pre-Release Check
-
-Run this before tagging:
+## Run The Release Check
 
 ```bash
 ./scripts/release_check.sh
 ```
 
-## Version Files
-
-These versions must match:
+## Make Sure Versions Match
 
 - [desktop/package.json](desktop/package.json)
 - [desktop/src-tauri/tauri.conf.json](desktop/src-tauri/tauri.conf.json)
 - [desktop/src-tauri/Cargo.toml](desktop/src-tauri/Cargo.toml)
 
-## GitHub Release Automation
+## What The Publish Workflow Does
 
-Pushing a tag like `v0.2.5` runs the public publish workflow. It:
+Pushing a tag such as `v0.2.5` runs the publish workflow. It:
 
-- runs the clean-machine macOS smoke flow
+- runs the clean-machine macOS smoke check
 - builds the signed and notarized macOS DMG
 - attaches the DMG to a draft GitHub Release
 
-Relevant files:
+Main files:
 
 - [`.github/workflows/publish.yml`](.github/workflows/publish.yml)
 - [`.github/workflows/desktop-clean-machine-smoke.yml`](.github/workflows/desktop-clean-machine-smoke.yml)
 - [`scripts/macos_clean_machine_smoke.sh`](scripts/macos_clean_machine_smoke.sh)
 - [`scripts/release_check.sh`](scripts/release_check.sh)
 
-## Secrets
+## Required Secrets
 
-Preferred release secret:
+Release token:
 
 - `CUE_RELEASE_TOKEN`
-
-Deprecated compatibility fallback:
-
-- `BROOD_RELEASE_TOKEN`
+- `BROOD_RELEASE_TOKEN` still works as a temporary compatibility fallback
 
 Apple signing and notarization:
 
@@ -53,16 +46,16 @@ Apple signing and notarization:
 
 ## Release Steps
 
-1. Bump the three version files.
+1. Update the three version files.
 2. Update [CHANGELOG.md](CHANGELOG.md).
 3. Run `./scripts/release_check.sh`.
 4. Commit the release change.
 5. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-6. Wait for the `publish` workflow to finish.
-7. Verify the draft release contains the Cue DMG.
+6. Wait for the publish workflow to finish.
+7. Confirm the draft release includes the Cue DMG.
 
-## Current Caveats
+## Current Notes
 
-- The packaged native engine resource is still staged internally as `brood-rs`.
-- Some schemas, local-storage keys, and runtime internals still use legacy naming. Track the remaining items in [docs/legacy-internals.md](docs/legacy-internals.md).
-- Homebrew is intentionally out of scope for the first public launch.
+- the packaged native engine resource still uses the internal name `brood-rs`
+- a few schemas and storage keys still use older internal names listed in [docs/legacy-internals.md](docs/legacy-internals.md)
+- Homebrew is intentionally out of scope for the first public launch

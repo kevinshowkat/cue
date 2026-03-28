@@ -1,37 +1,26 @@
 # macOS Local And Private Image Editing
 
-Cue is currently verified most deeply on macOS through the Tauri desktop shell.
+Cue is verified most deeply on macOS in the current public release.
 
-## Platform Scope
+## What Runs Locally
 
-- Verified today: macOS desktop
-- Release target: macOS, Windows, and Linux parity for the core workflow
-- Not supported: web app
-
-## Local-First Runtime Model
-
-- The app runs locally on your machine.
-- Session artifacts are written under `~/cue_runs/` by default, with legacy fallback support for `~/brood_runs/`.
-- API keys and provider settings stay local to your machine.
-
-## What Stays Local
-
-- canvas state
-- session artifacts
+- the desktop app
+- session files
 - imported local file paths
-- exported files unless you explicitly share them
+- exported results unless you choose to share them
 
-## What Goes To Providers
+## Where Files Go
 
-Only the requests needed for the providers you configure and the actions you explicitly trigger.
+- runs are stored under `~/cue_runs/` by default
+- older setups may still use `~/brood_runs/`
+- API keys and provider settings stay on your machine
 
-## Operational Checks
+## What May Leave Your Machine
 
-- Verify Tauri file scope allows the local paths you need in [`desktop/src-tauri/tauri.conf.json`](../desktop/src-tauri/tauri.conf.json).
-- Confirm provider routing env vars before production-sensitive sessions.
+Only the provider requests needed for the services you configure and the actions you choose to run.
 
-## See Also
+## Related Files
 
-- [../README.md](../README.md)
-- [desktop.md](desktop.md)
-- [benchmark-playbook.md](benchmark-playbook.md)
+- [`../README.md`](../README.md)
+- [`desktop.md`](desktop.md)
+- [`../desktop/src-tauri/tauri.conf.json`](../desktop/src-tauri/tauri.conf.json)

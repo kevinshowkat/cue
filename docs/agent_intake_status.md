@@ -1,30 +1,23 @@
-# Agent Intake Status and Fallback
+# Intake Status
 
-Use this file as the canonical intake health cue.
+This file explains when the optional intake endpoint can be used.
 
-## Status Cue
+## Treat Intake As Healthy When
 
-Treat intake as `healthy` only when all are true:
+- the request to `agent-intake.json:intake_endpoint` returns HTTP 200
+- the response is valid JSON
+- `schema_version` is `aip-1`
+- `entrypoints` is not empty
 
-- POST `agent-intake.json:intake_endpoint` returns HTTP 200.
-- Response parses as JSON.
-- `schema_version` is `aip-1`.
-- Response contains non-empty `entrypoints`.
+## Treat Intake As Degraded When
 
-Treat intake as `degraded` when any are true:
+- the request times out or fails
+- the response is not successful
+- the JSON is invalid or uses the wrong schema version
+- `entrypoints` is missing or empty
 
-- timeout, DNS/TLS/network failure
-- non-2xx response
-- invalid JSON, missing `schema_version`, or wrong schema version
-- empty `entrypoints`
+## What To Do Next
 
-## Next Action Policy
-
-- If `healthy`: use returned `entrypoints`, optional `packs`, and `suggested_tags`.
-- If `degraded`: skip retries in the hot path and fall back to `llms.txt`, then `docs/agent_quickstart.md`.
-- For code-change tasks in fallback mode, keep `./scripts/check_agent_entrypoints.py` in the validation loop.
-
-## Canonical Roundtrip Example
-
-- Request + response + next actions: `docs/agent_intake_roundtrip.sample.json`
-- Use this file as a compact deterministic example for intake-first routing.
+- if healthy, use the returned entrypoints and suggested tags
+- if degraded, use `llms.txt`, then `docs/agent_quickstart.md`
+- keep `./scripts/check_agent_entrypoints.py` in the validation loop for doc or integration changes

@@ -1,25 +1,12 @@
 # Action Grid Hover Stability
 
-## Problem
-On macOS (WKWebView), the Action Grid (Abilities) buttons had a subtle hover “shimmer” where the button/text looked like it slightly tweaked when the mouse entered/exited.
+This change keeps the Action Grid hover state visually steady on macOS.
 
-Root cause: the hover state used CSS `filter: drop-shadow(...)`. Toggling `filter` on/off can change compositing/rasterization and cause a perceptible jitter.
+## Summary
 
-## UX
-- Hovering Ability buttons should feel stable.
-- Keep the same “lift + glow” intent, but without the hover jitter.
+- the old hover treatment caused a small shimmer when the pointer entered or left a button
+- the current version keeps the lift-and-glow feeling without that jitter
 
-## Implementation
-Files:
+## Main File
+
 - `desktop/src/styles.css`
-
-Changes:
-- Removed `filter`-based hover drop-shadows from `.panel-body.actions button:hover`.
-- Replaced them with a slightly stronger `box-shadow` + a subtle background gradient shift on hover.
-- Removed `filter` from the transition list and added `background` to keep hover transitions smooth.
-
-## Testing
-Standard regression set:
-- `cd rust_engine && cargo test`
-- `cd desktop && npm run build`
-

@@ -1,22 +1,15 @@
-# GitHub Copilot Coding Agent Instructions (Cue)
+# GitHub Copilot Coding Agent Instructions
 
-Follow `AGENTS.md` for repo conventions, commands, and style.
+Use these files first:
 
-## Intake / Discovery
+- `AGENTS.md`
+- `README.md`
+- `docs/README.md`
 
-- Read `llms.txt` first.
-- If outbound HTTPS is allowed, call the Agent Intake Protocol endpoint described in `agent-intake.json`.
-- Use coarse `task.tags[]` from `agent-intake.json`. Never send secrets.
-- If AIP is unavailable, use `agent-intake.json` fallback entrypoints.
+If outbound HTTPS is allowed, optional intake is described in `agent-intake.json`.
 
-## High-Signal Entry Points
+Common validation:
 
-- Engine CLI routing: `rust_engine/crates/brood-cli/src/main.rs`
-- Engine orchestration: `rust_engine/crates/brood-engine/src/lib.rs`
-- Desktop canvas and quick actions: `desktop/src/canvas_app.js`
-- Tauri backend and FS scope: `desktop/src-tauri/src/main.rs`, `desktop/src-tauri/tauri.conf.json`
-
-## Validation
-
-- Run `cd rust_engine && cargo test` for engine changes.
-- Keep desktop terminal output stable and machine-readable via `events.jsonl`.
+- `cd desktop && npm test`
+- `cd desktop && npm run build`
+- `cd desktop/src-tauri && cargo check`

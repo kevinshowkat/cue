@@ -1,18 +1,17 @@
 # Legacy Internals
 
-Cue's public name is standardized, but several internals still use older identifiers. These are tracked here so we can keep the public surface clean without forcing a risky deep rename before launch.
+Cue is the public product name. Some older internal names are still in the codebase for compatibility.
 
-## Remaining Internal Names
+## Names Still In Use
 
-- Rust workspace crates: `brood-cli`, `brood-engine`, `brood-contracts`
-- Native packaged engine resource: `brood-rs`
-- Default config and run directories still support legacy paths such as `~/.brood` and `~/brood_runs`
-- Deprecated environment aliases beginning with `BROOD_`
-- Internal schema ids beginning with `brood.`
-- Internal shell/export module names beginning with `juggernaut`
+- Rust crates: `brood-cli`, `brood-engine`, `brood-contracts`
+- packaged native engine resource: `brood-rs`
+- legacy config or run directories such as `~/.brood` and `~/brood_runs`
+- deprecated environment aliases that start with `BROOD_`
+- some schema ids that start with `brood.`
+- some internal module names that start with `juggernaut`
 
-## Migration Policy
+## Rule
 
-- Public docs, workflows, release assets, and user-facing strings should say Cue.
-- Code can keep legacy internal identifiers where renaming would add avoidable launch risk.
-- New public configuration should prefer `CUE_*` names first and fall back to `BROOD_*` compatibility aliases.
+- user-facing docs, releases, and strings should say Cue
+- prefer `CUE_*` configuration first and keep `BROOD_*` only as a compatibility fallback
