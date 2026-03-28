@@ -86,6 +86,9 @@ test("marker pointer down consumes blank-canvas drags and seeds a screen-space d
   });
   const handleCommunicationCanvasPointerDown = instantiateFunction("handleCommunicationCanvasPointerDown", {
     state,
+    els: {},
+    readFirstString: (...values) => values.find((value) => typeof value === "string" && value.trim()) || null,
+    getActiveImage: () => null,
     communicationToolId: () => "marker",
     communicationBehaviorToolId: (tool) => tool,
     eraseCommunicationAtCanvasPoint: () => null,
@@ -160,6 +163,9 @@ test("highlight pointer down preserves a distinct draft kind for downstream comm
   });
   const handleCommunicationCanvasPointerDown = instantiateFunction("handleCommunicationCanvasPointerDown", {
     state,
+    els: {},
+    readFirstString: (...values) => values.find((value) => typeof value === "string" && value.trim()) || null,
+    getActiveImage: () => null,
     communicationToolId: () => "protect",
     communicationBehaviorToolId: (tool) => (tool === "protect" ? "marker" : tool),
     eraseCommunicationAtCanvasPoint: () => null,
@@ -537,6 +543,7 @@ test("communication tool selection refreshes quick actions so left-rail selectio
     COMMUNICATION_STATE_CHANGED_EVENT: "juggernaut:communication-state-changed",
     buildCommunicationBridgeSnapshot: () => ({ tool: state.communication.tool }),
     buildJuggernautShellContext: () => ({ activeId: "img-hero" }),
+    syncLocalMagicSelectUiPrewarmTargets: () => calls.push(["syncLocalMagicSelectUiPrewarmTargets"]),
     requestRender: () => calls.push(["requestRender"]),
   });
 

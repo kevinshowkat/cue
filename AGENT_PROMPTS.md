@@ -4,6 +4,17 @@ Use these prompts in separate Codex sessions. Implementation agents must use ded
 
 Treat these as reusable role templates. Update branch names, worktree paths, and milestone text before reuse.
 
+## Shared Review Contract
+- Prepared-runtime contract: `juggernaut.magic_select.local.prepared.v1`.
+- Stable Magic Select action names for the prepared runtime are `magic_select_prepare`, `magic_select_warm_click`, and `magic_select_release`.
+- JS export names to preserve: `prepareLocalMagicSelectImage`, `runWarmLocalMagicSelectClick`, `releaseLocalMagicSelectImage`, and `evictLocalMagicSelectImage`.
+- Tauri command names to preserve: `prepare_local_magic_select_image`, `run_local_magic_select_warm_click`, and `release_local_magic_select_image`.
+- Treat `Magic Select` as first-class local subject or region targeting, not as a heuristic click diamond.
+- Preserve `maskRef`, `contourPoints`, `bounds`, `confidence`, and `source` through downstream review and apply payloads when present.
+- Accept legacy polygon-only candidates by normalizing them into `contourPoints` instead of dropping the region.
+- Treat the March 26, 2026 Magic Select perf push as a warm-path contract: measure cold helper load, image prepare, and warm clicks separately instead of collapsing them into one number.
+- The current warm-path target on this Mac is sub-500ms median for prepared-session warm clicks; same-anchor re-clicks in the canvas must reuse the existing prepared region group instead of invoking the local runtime again.
+- When touching local Magic Select runtime, helper, or observable-driver code, rerun `desktop/test/magic_select_runtime.test.js`, `desktop/test/magic_select_local_canvas_regression.test.js`, and `scripts/benchmark_magic_select_runtime.py`.
 ## Coordinator
 ```text
 You are the coordinator for Cue.
