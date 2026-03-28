@@ -120,7 +120,15 @@ test("Rail buttons use the same neutral chassis for local-only and model-bearing
   assert.match(visualSystemCss, /Rail button chassis unification: one neutral material; provenance reads from the badge, not the fill\./);
   assert.match(
     visualSystemCss,
-    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\s*\{[\s\S]*background:\s*var\(--jg-shell-button-fill\);[\s\S]*color:\s*var\(--jg-shell-button-ink\);/s
+    /body\.juggernaut-shell \.juggernaut-tool-rail \.tool,[\s\S]*body\.juggernaut-shell \.juggernaut-shell-chrome \.custom-tool-dock \.tool\s*\{[\s\S]*border-radius:\s*10px;/s
+  );
+  assert.match(
+    visualSystemCss,
+    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\s*\{[\s\S]*border-radius:\s*10px;[\s\S]*background:\s*var\(--jg-shell-button-fill\);[\s\S]*color:\s*var\(--jg-shell-button-ink\);/s
+  );
+  assert.match(
+    visualSystemCss,
+    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility:hover:not\(:disabled\):not\(\.selected\):not\(\.is-active-request\):not\(\.is-pressing\):not\(\.depressed\)\s*\{[\s\S]*transform:\s*none;[\s\S]*background:\s*var\(--jg-shell-button-fill-hover\);[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow-hover\);/s
   );
   assert.match(
     visualSystemCss,
@@ -128,7 +136,7 @@ test("Rail buttons use the same neutral chassis for local-only and model-bearing
   );
   assert.match(
     visualSystemCss,
-    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button:disabled,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance:disabled,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility:disabled\s*\{[\s\S]*background:\s*var\(--jg-shell-button-fill-disabled\);[\s\S]*color:\s*var\(--jg-shell-button-ink-muted\);/s
+    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button:disabled,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance:disabled,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility:disabled\s*\{[\s\S]*background:\s*var\(--jg-shell-button-fill-disabled\);[\s\S]*color:\s*var\(--jg-shell-button-ink-muted\);[\s\S]*opacity:\s*0\.72;/s
   );
   assert.match(
     visualSystemCss,

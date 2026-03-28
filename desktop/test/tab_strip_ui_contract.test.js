@@ -145,7 +145,7 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   );
   assert.match(
     css,
-    /body\.juggernaut-shell \.brand-strip \.session-tab-strip-action:hover:not\(:disabled\):not\(\.is-active-request\):not\(\.is-open\):not\(\[aria-pressed="true"\]\):not\(\.depressed\),[\s\S]*transform:\s*translate3d\(0,\s*-0\.5px,\s*0\);[\s\S]*background:\s*var\(--jg-shell-button-fill-hover\);[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow-hover\);/s
+    /body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\[data-provenance="local_only"\]:hover:not\(:disabled\):not\(\.is-active-request\):not\(\.is-open\):not\(\[aria-pressed="true"\]\):not\(\.depressed\),[\s\S]*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.has-action-provenance:focus-visible,[\s\S]*transform:\s*none;[\s\S]*background:\s*var\(--jg-shell-button-fill-hover\);[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow-hover\);/s
   );
   assert.match(
     css,
@@ -153,12 +153,12 @@ test("Session tab strip CSS keeps the strip compact, scrollable, and stateful", 
   );
   assert.match(
     css,
-    /body\.juggernaut-shell \.brand-strip \.session-tab-strip-action:disabled,[\s\S]*background:\s*var\(--jg-shell-button-fill-disabled\);[\s\S]*color:\s*var\(--jg-shell-button-ink-muted\);/s
+    /body\.juggernaut-shell \.brand-strip \.session-tab-strip-action:disabled,[\s\S]*body\.juggernaut-shell \.brand-strip \.session-tab-runtime-action\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*var\(--jg-shell-button-fill-disabled\);[\s\S]*color:\s*var\(--jg-shell-button-ink-muted\);[\s\S]*opacity:\s*0\.72;/s
   );
-  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-strip-icon-action,[\s\S]*width:\s*34px[\s\S]*min-width:\s*34px[\s\S]*padding:\s*0;/s);
-  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-strip-pill-action,[\s\S]*gap:\s*8px[\s\S]*padding:\s*0 14px[\s\S]*border-radius:\s*15px;/s);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-strip-icon-action,[\s\S]*width:\s*34px[\s\S]*min-width:\s*34px[\s\S]*padding:\s*0[\s\S]*border-radius:\s*10px;/s);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-strip-pill-action\.has-action-provenance[\s\S]*gap:\s*7px[\s\S]*padding:\s*0 12px[\s\S]*border-radius:\s*10px;/s);
   assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-strip-pill-action > span:not\(\.sr-only\)\s*\{[\s\S]*font-weight:\s*600;/s);
-  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-action-menu-toggle,[\s\S]*gap:\s*7px[\s\S]*padding:\s*0 13px 0 12px;/s);
+  assert.match(css, /body\.juggernaut-shell \.brand-strip \.session-tab-action-menu-toggle\.has-action-provenance[\s\S]*gap:\s*6px[\s\S]*padding:\s*0 12px;/s);
   assert.match(css, /body\.juggernaut-shell \.session-tab-strip-action \.action-provenance-model-dot\s*\{[\s\S]*top:\s*6px[\s\S]*right:\s*6px[\s\S]*width:\s*6px[\s\S]*height:\s*6px;/s);
   assert.match(css, /body\.juggernaut-shell \.action-provenance-model-dot\s*\{[\s\S]*radial-gradient\(circle at 32% 28%,[\s\S]*var\(--jg-shell-button-badge\);/s);
   assert.doesNotMatch(css, /:root:not\(\[data-rail-icon-pack="default_classic"\]\) body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.is-external-model/);
