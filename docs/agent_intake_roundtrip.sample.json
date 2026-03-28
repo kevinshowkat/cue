@@ -13,10 +13,10 @@
     },
     "task": {
       "tags": [
-        "desktop-quick-actions",
-        "engine-events"
+        "agent-runtime",
+        "single-image-routing"
       ],
-      "notes": "Add one desktop action and keep events.jsonl compatibility."
+      "notes": "Update Agent Run behavior without drifting from the current single-image routing contract."
     },
     "telemetry": {
       "opt_out": false
@@ -25,13 +25,13 @@
   "success_response_example": {
     "schema_version": "aip-1",
     "entrypoints": [
-      "desktop/src/canvas_app.js",
-      "rust_engine/crates/brood-contracts/src/events.rs",
-      "docs/desktop.md"
+      "desktop/src/agent_runner_runtime.js",
+      "desktop/src/single_image_capability_routing.js",
+      "docs/agent-runtime.md"
     ],
     "suggested_tags": [
-      "desktop-quick-actions",
-      "engine-events"
+      "agent-runtime",
+      "single-image-routing"
     ],
     "packs": []
   },

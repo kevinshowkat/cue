@@ -26,6 +26,8 @@ This folder holds the main public documentation for Cue.
 ## Integration Notes
 
 - [agent-runtime.md](agent-runtime.md)
+- [agent-workflow-prd.md](agent-workflow-prd.md)
+- [agent-affordances.json](agent-affordances.json)
 - [agent_quickstart.md](agent_quickstart.md)
 - [agent_intake_status.md](agent_intake_status.md)
 - [agent_intake_roundtrip.sample.json](agent_intake_roundtrip.sample.json)

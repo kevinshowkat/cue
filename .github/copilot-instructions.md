@@ -11,12 +11,18 @@ Follow `AGENTS.md` for repo conventions, commands, and style.
 
 ## High-Signal Entry Points
 
-- Engine CLI routing: `rust_engine/crates/brood-cli/src/main.rs`
-- Engine orchestration: `rust_engine/crates/brood-engine/src/lib.rs`
-- Desktop canvas and quick actions: `desktop/src/canvas_app.js`
+- Agent Run planner and action contract: `desktop/src/agent_runner_runtime.js`
+- Goal contract compiler and stop checks: `desktop/src/agent_runner_goal_contract.js`
+- Observable driver and Magic Select bridge: `desktop/src/agent_observable_driver.js`, `desktop/src/magic_select_runtime.js`
+- Single-image routing and Create Tool runtime: `desktop/src/single_image_capability_routing.js`, `desktop/src/tool_runtime.js`
+- Shell rail wiring: `desktop/src/juggernaut_shell/rail.js`
 - Tauri backend and FS scope: `desktop/src-tauri/src/main.rs`, `desktop/src-tauri/tauri.conf.json`
+- Native engine orchestration: `rust_engine/crates/brood-cli/src/main.rs`, `rust_engine/crates/brood-engine/src/lib.rs`
 
 ## Validation
 
-- Run `cd rust_engine && cargo test` for engine changes.
-- Keep desktop terminal output stable and machine-readable via `events.jsonl`.
+- Run `./scripts/check_agent_entrypoints.py` for doc or intake-surface changes.
+- Run `cd desktop && npm test` for desktop/runtime changes.
+- Run `cd desktop && npm run build` for desktop shell or packaging-surface changes.
+- Run `cd desktop/src-tauri && cargo check` for Tauri/native-bridge changes.
+- Run `cd rust_engine && cargo check` when touching native engine crates.

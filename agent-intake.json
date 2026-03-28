@@ -55,6 +55,11 @@
     }
   },
   "tags": [
+    "agent-runtime",
+    "agent-goal-contract",
+    "agent-observable",
+    "single-image-routing",
+    "tool-runtime",
     "desktop-dev",
     "desktop-quick-actions",
     "desktop-canvas",
@@ -72,19 +77,31 @@
     {
       "path": "README.md",
       "kind": "doc",
-      "why": "Quickstart for desktop + engine/CLI, plus troubleshooting and layout overview.",
+      "why": "Top-level product, setup, and release-status overview.",
       "priority": 1
     },
     {
       "path": "AGENTS.md",
       "kind": "doc",
-      "why": "Repo guidelines: structure, build commands, testing, and coding style.",
+      "why": "Repo workflow, worktree rules, and verified build commands.",
       "priority": 1
     },
     {
-      "path": "docs/desktop.md",
+      "path": "docs/agent_quickstart.md",
       "kind": "doc",
-      "why": "Desktop concepts (Run/Unit/Views), Quick Actions list, HUD behavior, and run artifacts.",
+      "why": "Fastest current task routing for agent/runtime work.",
+      "priority": 1
+    },
+    {
+      "path": "docs/agent-runtime.md",
+      "kind": "doc",
+      "why": "Current shipped Agent Run, observable-driver, and runtime constraints.",
+      "priority": 2
+    },
+    {
+      "path": "docs/agent-affordances.json",
+      "kind": "doc",
+      "why": "Machine-readable summary of current actions, affordances, and route profiles.",
       "priority": 2
     },
     {
@@ -106,39 +123,75 @@
       "priority": 2
     },
     {
-      "path": "docs/macos-local-private-image-editing.md",
+      "path": "docs/local-magic-select-runtime.md",
       "kind": "doc",
-      "why": "macOS local/private workflow and privacy model page.",
+      "why": "Prepared-runtime contract for local Magic Select and warm-click flows.",
       "priority": 2
     },
     {
-      "path": "docs/benchmark-playbook.md",
+      "path": "docs/legacy-internals.md",
       "kind": "doc",
-      "why": "Reproducible benchmark table template and required artifact links.",
+      "why": "Allowlist for remaining brood/juggernaut internal identifiers.",
+      "priority": 2
+    },
+    {
+      "path": ".env.example",
+      "kind": "config",
+      "why": "Current public env surface with CUE-first naming and BROOD compatibility aliases.",
+      "priority": 2
+    },
+    {
+      "path": "desktop/src/agent_runner_runtime.js",
+      "kind": "source",
+      "why": "Planner prompt contract, context summary, action parsing, and export/control actions.",
+      "priority": 2
+    },
+    {
+      "path": "desktop/src/agent_runner_goal_contract.js",
+      "kind": "source",
+      "why": "Goal-contract compile and stop-check schemas, prompts, and parsers.",
+      "priority": 2
+    },
+    {
+      "path": "desktop/src/agent_observable_driver.js",
+      "kind": "source",
+      "why": "Lower-level visible-canvas automation contract for replay and observable actions.",
+      "priority": 2
+    },
+    {
+      "path": "desktop/src/single_image_capability_routing.js",
+      "kind": "source",
+      "why": "Authoritative seeded-tool and direct-affordance routing with current route profile ids.",
+      "priority": 2
+    },
+    {
+      "path": "desktop/src/tool_runtime.js",
+      "kind": "source",
+      "why": "Create Tool manifest builder, tool schemas, and custom-tool runtime.",
+      "priority": 2
+    },
+    {
+      "path": "desktop/src/juggernaut_shell/rail.js",
+      "kind": "source",
+      "why": "Shell rail ordering, visibility, and surfaced affordances.",
       "priority": 2
     },
     {
       "path": "rust_engine/crates/brood-cli/src/main.rs",
       "kind": "source",
-      "why": "Primary native CLI entry: chat/run/recreate/export handlers and command plumbing.",
-      "priority": 2
+      "why": "Primary native CLI entry and realtime/env plumbing for the packaged engine.",
+      "priority": 3
     },
     {
       "path": "rust_engine/crates/brood-engine/src/lib.rs",
       "kind": "source",
-      "why": "Native engine orchestration and provider-backed execution loop.",
-      "priority": 2
-    },
-    {
-      "path": "desktop/src/canvas_app.js",
-      "kind": "source",
-      "why": "Desktop UI: canvas behaviors and Quick Actions rendering/dispatch.",
-      "priority": 2
+      "why": "Native engine orchestration and provider/env behavior.",
+      "priority": 3
     },
     {
       "path": "desktop/src-tauri/src/main.rs",
       "kind": "source",
-      "why": "Tauri backend glue (commands, app wiring).",
+      "why": "Tauri backend glue, filesystem scope, and desktop env handling.",
       "priority": 3
     },
     {
@@ -151,31 +204,73 @@
       "path": "scripts/dev_desktop.sh",
       "kind": "script",
       "why": "Dev runner that starts the Tauri app with native Rust runtime defaults.",
-      "priority": 2
+      "priority": 3
     }
   ],
   "tag_catalog": {
+    "agent-runtime": {
+      "description": "Agent Run planner behavior, action parsing, and planner-visible constraints.",
+      "entrypoints": [
+        "docs/agent-runtime.md",
+        "docs/agent-affordances.json",
+        "desktop/src/agent_runner_runtime.js",
+        "desktop/test/agent_runner_runtime.test.js"
+      ]
+    },
+    "agent-goal-contract": {
+      "description": "Goal compile, hard-requirement extraction, and stop checks for Agent Run.",
+      "entrypoints": [
+        "docs/agent-runtime.md",
+        "desktop/src/agent_runner_goal_contract.js",
+        "desktop/test/agent_runner_goal_contract.test.js"
+      ]
+    },
+    "agent-observable": {
+      "description": "Visible-canvas automation, replay, and Magic Select prepared-runtime behavior.",
+      "entrypoints": [
+        "docs/agent-runtime.md",
+        "docs/local-magic-select-runtime.md",
+        "desktop/src/agent_observable_driver.js",
+        "desktop/src/magic_select_runtime.js",
+        "desktop/src/canvas_app.js"
+      ]
+    },
+    "single-image-routing": {
+      "description": "Seeded tools, direct affordances, and current route profile ids.",
+      "entrypoints": [
+        "docs/agent-affordances.json",
+        "desktop/src/single_image_capability_routing.js",
+        "desktop/src/juggernaut_shell/rail.js",
+        "desktop/src/canvas_app.js"
+      ]
+    },
+    "tool-runtime": {
+      "description": "Create Tool manifest generation, tool schemas, and custom-tool invocation.",
+      "entrypoints": [
+        "docs/agent-affordances.json",
+        "docs/legacy-internals.md",
+        "desktop/src/tool_runtime.js",
+        "desktop/src/juggernaut_shell/rail.js"
+      ]
+    },
     "desktop-dev": {
       "description": "Run the desktop app locally; fix build/startup issues.",
       "entrypoints": [
         "README.md",
         "scripts/dev_desktop.sh",
-        "desktop/package.json",
-        "desktop/src-tauri/Cargo.toml",
         "desktop/src-tauri/src/main.rs",
         "rust_engine/crates/brood-cli/src/main.rs",
+        ".env.example",
         "scripts/stage_rust_engine_binary.sh"
       ]
     },
     "desktop-quick-actions": {
-      "description": "Change Quick Actions UI/behavior (buttons, dispatch, HUD output).",
+      "description": "Change seeded-tool or direct-affordance UI/behavior in the current shell.",
       "entrypoints": [
         "docs/desktop.md",
-        "desktop/src/canvas_app.js",
-        "desktop/src/index.html",
-        "desktop/src/styles.css",
-        "rust_engine/crates/brood-cli/src/main.rs",
-        "rust_engine/crates/brood-engine/src/lib.rs"
+        "desktop/src/single_image_capability_routing.js",
+        "desktop/src/juggernaut_shell/rail.js",
+        "desktop/src/canvas_app.js"
       ]
     },
     "desktop-canvas": {
@@ -192,6 +287,7 @@
         "desktop/src-tauri/src/main.rs",
         "desktop/src-tauri/tauri.conf.json",
         "scripts/stage_rust_engine_binary.sh",
+        ".env.example",
         "README.md"
       ]
     },
@@ -206,7 +302,7 @@
       ]
     },
     "engine-cli": {
-      "description": "Cue CLI commands and flags (chat/run/recreate/export), native Rust runtime.",
+      "description": "Cue CLI commands and flags, native Rust runtime.",
       "entrypoints": [
         "rust_engine/crates/brood-cli/src/main.rs",
         "rust_engine/crates/brood-engine/src/lib.rs",
@@ -214,7 +310,7 @@
       ]
     },
     "engine-providers": {
-      "description": "Provider integrations (OpenAI/Gemini/etc), model routing, and API key handling in native Rust runtime.",
+      "description": "Provider integrations, model routing, and API key handling in the native runtime.",
       "entrypoints": [
         "rust_engine/crates/brood-engine/src/lib.rs",
         "rust_engine/crates/brood-contracts/src/chat/intent_parser.rs",
@@ -254,16 +350,16 @@
       ]
     },
     "docs": {
-      "description": "Docs updates (desktop usage, specs, reference notes).",
+      "description": "Docs updates for the public repo surface and agent/runtime references.",
       "entrypoints": [
         "docs/README.md",
-        "docs/desktop.md",
+        "docs/agent-runtime.md",
+        "docs/agent-workflow-prd.md",
+        "docs/agent-affordances.json",
+        "docs/agent_quickstart.md",
         "docs/agent_intake_status.md",
         "docs/agent_intake_roundtrip.sample.json",
-        "docs/agent-runtime.md",
         "docs/local-magic-select-runtime.md",
-        "docs/macos-local-private-image-editing.md",
-        "docs/benchmark-playbook.md",
         "docs/legacy-internals.md"
       ]
     }
@@ -281,10 +377,10 @@
     },
     "task": {
       "tags": [
-        "desktop-quick-actions",
-        "engine-events"
+        "agent-runtime",
+        "single-image-routing"
       ],
-      "notes": "Need to add a new Quick Action and ensure events.jsonl stays stable."
+      "notes": "Need to adjust Agent Run or a single-image affordance without drifting from the current public runtime contracts."
     },
     "telemetry": {
       "opt_out": false

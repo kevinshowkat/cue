@@ -2,7 +2,18 @@
 
 Use these prompts in separate Codex sessions. Implementation agents must use dedicated git worktrees. If you initiate `/review` for an in-flight task, keep the review and follow-up fixes in that task's existing worktree and branch.
 
-Treat these as reusable role templates. Update branch names, worktree paths, and milestone text before reuse.
+Treat these as reusable coordination templates. They do not define the current runtime contract.
+
+Current runtime contract files:
+
+- `docs/agent-runtime.md`
+- `docs/agent-affordances.json`
+- `desktop/src/agent_runner_runtime.js`
+- `desktop/src/agent_runner_goal_contract.js`
+- `desktop/src/agent_observable_driver.js`
+- `desktop/src/tool_runtime.js`
+
+Update branch names, worktree paths, and milestone text before reuse.
 
 ## Shared Review Contract
 

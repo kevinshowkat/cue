@@ -17,6 +17,8 @@ This file is the expanded agent-facing context for the public Cue repository.
 - [`AGENTS.md`](AGENTS.md)
 - [`docs/README.md`](docs/README.md)
 - [`docs/agent_quickstart.md`](docs/agent_quickstart.md)
+- [`docs/agent-runtime.md`](docs/agent-runtime.md)
+- [`docs/agent-affordances.json`](docs/agent-affordances.json)
 - [`docs/legacy-internals.md`](docs/legacy-internals.md)
 
 ## Intake And Fallback
@@ -30,14 +32,32 @@ This file is the expanded agent-facing context for the public Cue repository.
 ## Public Documentation Surface
 
 - [`docs/desktop.md`](docs/desktop.md): desktop behavior, run directories, shell/runtime layout
-- [`docs/agent-runtime.md`](docs/agent-runtime.md): agent-facing runtime model
+- [`docs/agent-runtime.md`](docs/agent-runtime.md): current shipped Agent Run and observable-driver contract
+- [`docs/agent-workflow-prd.md`](docs/agent-workflow-prd.md): implemented workflow scope vs future direction
+- [`docs/agent-affordances.json`](docs/agent-affordances.json): machine-readable runtime summary
 - [`docs/local-magic-select-runtime.md`](docs/local-magic-select-runtime.md): prepared local Magic Select contract
 - [`docs/macos-local-private-image-editing.md`](docs/macos-local-private-image-editing.md): macOS local/private workflow notes
 - [`docs/benchmark-playbook.md`](docs/benchmark-playbook.md): reproducible benchmark format
 - [`RELEASING.md`](RELEASING.md): maintainer release workflow
 
+## Current Agent Surfaces
+
+- Goal contract compiler: [`desktop/src/agent_runner_goal_contract.js`](desktop/src/agent_runner_goal_contract.js)
+- Agent Run planner: [`desktop/src/agent_runner_runtime.js`](desktop/src/agent_runner_runtime.js)
+- Observable driver: [`desktop/src/agent_observable_driver.js`](desktop/src/agent_observable_driver.js)
+- Single-image routing: [`desktop/src/single_image_capability_routing.js`](desktop/src/single_image_capability_routing.js)
+- Tool runtime: [`desktop/src/tool_runtime.js`](desktop/src/tool_runtime.js)
+- Design Review schemas and planner/apply models: [`desktop/src/design_review_contract.js`](desktop/src/design_review_contract.js)
+
 ## High-Signal Source Entrypoints
 
+- [`desktop/src/agent_runner_runtime.js`](desktop/src/agent_runner_runtime.js)
+- [`desktop/src/agent_runner_goal_contract.js`](desktop/src/agent_runner_goal_contract.js)
+- [`desktop/src/agent_observable_driver.js`](desktop/src/agent_observable_driver.js)
+- [`desktop/src/single_image_capability_routing.js`](desktop/src/single_image_capability_routing.js)
+- [`desktop/src/tool_runtime.js`](desktop/src/tool_runtime.js)
+- [`desktop/src/juggernaut_shell/rail.js`](desktop/src/juggernaut_shell/rail.js)
+- [`desktop/src/design_review_contract.js`](desktop/src/design_review_contract.js)
 - [`desktop/src/canvas_app.js`](desktop/src/canvas_app.js)
 - [`desktop/src/index.html`](desktop/src/index.html)
 - [`desktop/src/styles.css`](desktop/src/styles.css)
@@ -50,12 +70,12 @@ This file is the expanded agent-facing context for the public Cue repository.
 
 ## Validation Commands
 
+- `./scripts/check_agent_entrypoints.py`
 - `cd desktop && npm test`
 - `cd desktop && npm run build`
 - `cd desktop/src-tauri && cargo check`
 - `cd rust_engine && cargo check`
 - `./scripts/release_check.sh`
-- `./scripts/check_agent_entrypoints.py`
 
 ## Release Notes
 
@@ -69,4 +89,5 @@ This file is the expanded agent-facing context for the public Cue repository.
 - Keep user-facing naming on Cue.
 - Do not reintroduce machine-local absolute paths.
 - Do not commit secrets.
+- Do not document aspirational agent APIs as if they are shipped contracts.
 - Treat [`docs/legacy-internals.md`](docs/legacy-internals.md) as the allowlist for temporary old internal names that still exist for launch-risk reasons.

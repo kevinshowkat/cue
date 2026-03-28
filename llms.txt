@@ -8,6 +8,8 @@
 - Canonical repo conventions: [`AGENTS.md`](AGENTS.md)
 - Public docs index: [`docs/README.md`](docs/README.md)
 - Practical task routing: [`docs/agent_quickstart.md`](docs/agent_quickstart.md)
+- Current agent runtime summary: [`docs/agent-runtime.md`](docs/agent-runtime.md)
+- Current machine-readable affordance manifest: [`docs/agent-affordances.json`](docs/agent-affordances.json)
 
 ## Agent Intake (Preferred)
 
@@ -22,12 +24,20 @@
 
 - [`README.md`](README.md): user-facing quickstart, build notes, and release status
 - [`AGENTS.md`](AGENTS.md): repository workflow, worktree rules, build/test status
-- [`docs/desktop.md`](docs/desktop.md): current desktop behavior, run artifacts, and shell/runtime layout
-- [`docs/agent-runtime.md`](docs/agent-runtime.md): agent-facing runtime model
+- [`docs/agent_quickstart.md`](docs/agent_quickstart.md): fastest current task routing
+- [`docs/agent-runtime.md`](docs/agent-runtime.md): current shipped Agent Run and observable-driver surface
+- [`docs/agent-affordances.json`](docs/agent-affordances.json): current machine-readable action and routing summary
 - [`docs/local-magic-select-runtime.md`](docs/local-magic-select-runtime.md): prepared-runtime contract for local Magic Select
 
 ## High-Signal Code Entrypoints
 
+- Agent Run planner and action contract: [`desktop/src/agent_runner_runtime.js`](desktop/src/agent_runner_runtime.js)
+- Goal contract compile and stop checks: [`desktop/src/agent_runner_goal_contract.js`](desktop/src/agent_runner_goal_contract.js)
+- Observable driver bridge: [`desktop/src/agent_observable_driver.js`](desktop/src/agent_observable_driver.js)
+- Single-image capability routing: [`desktop/src/single_image_capability_routing.js`](desktop/src/single_image_capability_routing.js)
+- Custom tool runtime: [`desktop/src/tool_runtime.js`](desktop/src/tool_runtime.js)
+- Shell rail wiring: [`desktop/src/juggernaut_shell/rail.js`](desktop/src/juggernaut_shell/rail.js)
+- Design Review schemas and planner models: [`desktop/src/design_review_contract.js`](desktop/src/design_review_contract.js)
 - Rust engine CLI routing: [`rust_engine/crates/brood-cli/src/main.rs`](rust_engine/crates/brood-cli/src/main.rs)
 - Rust engine orchestration: [`rust_engine/crates/brood-engine/src/lib.rs`](rust_engine/crates/brood-engine/src/lib.rs)
 - Rust contracts/events: [`rust_engine/crates/brood-contracts/src/events.rs`](rust_engine/crates/brood-contracts/src/events.rs)
@@ -38,6 +48,11 @@
 
 ## Task Routing
 
+- Agent Run planner behavior: [`desktop/src/agent_runner_runtime.js`](desktop/src/agent_runner_runtime.js), [`desktop/test/agent_runner_runtime.test.js`](desktop/test/agent_runner_runtime.test.js)
+- Goal compilation and stop checks: [`desktop/src/agent_runner_goal_contract.js`](desktop/src/agent_runner_goal_contract.js), [`desktop/test/agent_runner_goal_contract.test.js`](desktop/test/agent_runner_goal_contract.test.js)
+- Observable canvas automation: [`desktop/src/agent_observable_driver.js`](desktop/src/agent_observable_driver.js), [`desktop/src/magic_select_runtime.js`](desktop/src/magic_select_runtime.js), [`docs/local-magic-select-runtime.md`](docs/local-magic-select-runtime.md)
+- Seeded tools and direct affordances: [`desktop/src/single_image_capability_routing.js`](desktop/src/single_image_capability_routing.js), [`desktop/src/juggernaut_shell/rail.js`](desktop/src/juggernaut_shell/rail.js)
+- Custom tools: [`desktop/src/tool_runtime.js`](desktop/src/tool_runtime.js), [`desktop/src/juggernaut_shell/rail.js`](desktop/src/juggernaut_shell/rail.js)
 - Desktop shell, tabs, and canvas behavior: [`desktop/src/canvas_app.js`](desktop/src/canvas_app.js), [`desktop/src/index.html`](desktop/src/index.html), [`desktop/src/styles.css`](desktop/src/styles.css)
 - Native runtime, providers, and env handling: [`rust_engine/crates/brood-engine/src/lib.rs`](rust_engine/crates/brood-engine/src/lib.rs), [`desktop/src-tauri/src/main.rs`](desktop/src-tauri/src/main.rs), [`.env.example`](.env.example)
 - Run artifacts and `events.jsonl`: [`rust_engine/crates/brood-contracts/src/events.rs`](rust_engine/crates/brood-contracts/src/events.rs), [`docs/desktop.md`](docs/desktop.md)
@@ -46,6 +61,7 @@
 
 ## Safe Commands
 
+- `./scripts/check_agent_entrypoints.py`
 - `./scripts/dev_desktop.sh`
 - `cd desktop && npm test`
 - `cd desktop && npm run build`
@@ -57,5 +73,6 @@
 
 - Public configuration should prefer `CUE_*` variables first; `BROOD_*` aliases remain only as documented compatibility fallbacks.
 - Desktop runtime is native-only and packages the legacy internal engine resource `brood-rs`.
+- Agent Run currently exposes a narrower surface than the lower-level observable driver. Check [`docs/agent-runtime.md`](docs/agent-runtime.md) before assuming an action is planner-available.
 - Multi-agent rule: one feature per git worktree. Do not run concurrent agents in the same worktree or branch.
 - Do not commit secrets; use `.env` (gitignored) based on [`.env.example`](.env.example).
