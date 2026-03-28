@@ -675,6 +675,113 @@ test("magic select does not cycle a stale region group when the image path chang
   assert.deepEqual(calls, [["ensureRun"], ["warm_runtime"]]);
 });
 
+test("canvas image loading affordance keeps imported tiles in preparing state until decode finishes", () => {
+  const readFirstString = instantiateFunction("readFirstString");
+  const readSessionRuntimeImageHandle = instantiateFunction("readSessionRuntimeImageHandle");
+  const state = {
+    activeTabId: "tab-1",
+    runDir: "/tmp/run-hero",
+  };
+  const canvasImageLoadingAffordance = instantiateFunction("canvasImageLoadingAffordance", {
+    state,
+    CANVAS_IMAGE_PREPARING_LABEL: "Preparing image…",
+    CANVAS_IMAGE_WARMING_MAGIC_SELECT_LABEL: "Warming Magic Select…",
+    readFirstString,
+    readSessionRuntimeImageHandle,
+    localMagicSelectPreparingTaskForUi: () => Promise.resolve(null),
+  });
+
+  const result = canvasImageLoadingAffordance({
+    id: "img-hero",
+    path: "/tmp/source.png",
+    img: null,
+    imgLoading: true,
+  });
+
+  assert.deepEqual(result, {
+    phase: "preparing_image",
+    showPlaceholder: true,
+    statusLabel: "Preparing image…",
+  });
+});
+
+test("canvas image loading affordance swaps to warming magic select once the image is visible", () => {
+  const readFirstString = instantiateFunction("readFirstString");
+  const readSessionRuntimeImageHandle = instantiateFunction("readSessionRuntimeImageHandle");
+  const state = {
+    activeTabId: "tab-1",
+    runDir: "/tmp/run-hero",
+  };
+  const canvasImageLoadingAffordance = instantiateFunction("canvasImageLoadingAffordance", {
+    state,
+    CANVAS_IMAGE_PREPARING_LABEL: "Preparing image…",
+    CANVAS_IMAGE_WARMING_MAGIC_SELECT_LABEL: "Warming Magic Select…",
+    readFirstString,
+    readSessionRuntimeImageHandle,
+    localMagicSelectPreparingTaskForUi: () => Promise.resolve(null),
+  });
+
+  const result = canvasImageLoadingAffordance({
+    id: "img-hero",
+    path: "/tmp/source.png",
+    img: {
+      complete: true,
+      naturalWidth: 1920,
+      naturalHeight: 1080,
+    },
+  });
+
+  assert.deepEqual(result, {
+    phase: "warming_magic_select",
+    showPlaceholder: false,
+    statusLabel: "Warming Magic Select…",
+  });
+});
+
+test("add image requests an immediate render so loading placeholders can paint before decode completes", () => {
+  const calls = [];
+  const state = {
+    activeId: "img-existing",
+    imagesById: new Map(),
+    images: [],
+    freeformZOrder: [],
+    imagePaletteSeed: 0,
+  };
+  const addImage = instantiateFunction("addImage", {
+    state,
+    basename: (imagePath = "") => String(imagePath || "").split("/").pop(),
+    invalidateActiveTabPreview: () => {},
+    markActiveTabUiDirty: () => {},
+    ensureTimelineNodeForImageItem: () => {},
+    appendFilmstripThumb: () => {},
+    ensureReceiptMeta: async () => null,
+    showDropHint: () => {},
+    scheduleVisualPromptWrite: () => {},
+    recordUserEvent: () => {},
+    updateEmptyCanvasHint: () => {},
+    intentModeActive: () => false,
+    scheduleIntentStateWrite: () => {},
+    communicationBehaviorToolId: () => null,
+    prepareLocalMagicSelectImageForUi: async () => null,
+    setActiveImage: async () => {
+      calls.push(["set_active_image"]);
+      return null;
+    },
+    motherIdleSyncFromInteraction: () => {},
+    syncMotherPortrait: () => {},
+    requestRender: () => calls.push(["request_render"]),
+  });
+
+  addImage({
+    id: "img-new",
+    path: "/tmp/new.png",
+    label: "new.png",
+  });
+
+  assert.equal(state.imagesById.has("img-new"), true);
+  assert.deepEqual(calls, [["request_render"]]);
+});
+
 test("magic select prewarm target sync primes the active image before the tool is armed and skips identical rerender work", () => {
   const state = {
     activeTabId: "tab-1",
