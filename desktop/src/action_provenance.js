@@ -95,5 +95,5 @@ export function renderActionProvenanceBadge(provenance = "") {
   if (!normalized) return "";
   const costBearing = actionProvenanceHasModelCost(normalized);
   if (!costBearing) return "";
-  return "";
+  return `<span class="action-provenance-affordance" data-provenance="${normalized}" aria-hidden="true"><span class="action-provenance-model-dot"></span></span>`;
 }

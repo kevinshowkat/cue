@@ -97,97 +97,42 @@ test("Juggernaut shell rail selected hover keeps a light-shell pressed treatment
   assert.match(visualSystemCss, /transform:\s*translate3d\(0,\s*1px,\s*0\)/);
 });
 
-test("Local-only buttons use the original neutral fills with black icon and label treatment", () => {
+test("Shell buttons now share one neutral chassis regardless of provenance", () => {
+  assert.match(css, /Shell button chassis unification: one neutral material, provenance via badge, variance only by form factor\./);
+  assert.match(css, /--jg-shell-button-fill:[\s\S]*var\(--jg-pack-surface\);/);
   assert.match(
     css,
-    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(252,\s*253,\s*254,\s*0\.99\),\s*rgba\(241,\s*244,\s*248,\s*0\.98\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.98\);/
+    /body\.juggernaut-shell \.tool\[data-provenance\]:not\(\.juggernaut-tool\),[\s\S]*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.has-action-provenance,[\s\S]*background:\s*var\(--jg-shell-button-fill\);[\s\S]*color:\s*var\(--jg-shell-button-ink\);/s
   );
   assert.match(
     css,
-    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\) \.tool-hint,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\) \.tool-label\s*\{[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);/
-  );
-  assert.match(
-    visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(255,\s*255,\s*255,\s*0\.98\),\s*rgba\(250,\s*251,\s*253,\s*0\.88\)\s*44%\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*1\),[\s\S]*inset 0 -10px 18px rgba\(220,\s*225,\s*232,\s*0\.22\);/
+    /body\.juggernaut-shell \.tool\.has-action-provenance\.selected,[\s\S]*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action\.is-open,[\s\S]*background:\s*var\(--jg-shell-button-fill-active\);[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow-active\);/s
   );
   assert.match(
     css,
-    /\.juggernaut-tool\.juggernaut-rail-anchor,\s*\.juggernaut-tool\.is-local-utility\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(252,\s*253,\s*254,\s*0\.99\),\s*rgba\(241,\s*244,\s*248,\s*0\.98\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);/
+    /body\.juggernaut-shell \.tool\.has-action-provenance:disabled,[\s\S]*body\.juggernaut-shell \.brand-strip \.session-tab-strip-action:disabled,[\s\S]*background:\s*var\(--jg-shell-button-fill-disabled\);[\s\S]*color:\s*var\(--jg-shell-button-ink-muted\);/s
   );
 });
 
-test("Local-only buttons keep a visible inactive neutral state and darker pressed state", () => {
+test("Rail buttons use the same neutral chassis for local-only and model-bearing actions", () => {
+  assert.match(visualSystemCss, /Rail button chassis unification: one neutral material; provenance reads from the badge, not the fill\./);
   assert.match(
-    css,
-    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\):disabled\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(252,\s*253,\s*254,\s*0\.99\),\s*rgba\(244,\s*247,\s*250,\s*0\.98\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/
-  );
-  assert.match(
-    css,
-    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.selected,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.selected:hover,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\):active,\s*\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.is-active-request\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(244,\s*247,\s*250,\s*0\.99\),\s*rgba\(232,\s*237,\s*243,\s*0\.97\)\),[\s\S]*inset 0 3px 10px rgba\(167,\s*176,\s*187,\s*0\.34\)/
-  );
-  assert.match(
-    css,
-    /\.tool\[data-provenance="local_only"\]:not\(\.juggernaut-tool\)\.depressed\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(233,\s*238,\s*244,\s*0\.99\),\s*rgba\(221,\s*227,\s*234,\s*0\.98\)\),[\s\S]*inset 0 4px 12px rgba\(146,\s*156,\s*169,\s*0\.42\)/
+    visualSystemCss,
+    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\s*\{[\s\S]*background:\s*var\(--jg-shell-button-fill\);[\s\S]*color:\s*var\(--jg-shell-button-ink\);/s
   );
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility:disabled\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(249,\s*250,\s*252,\s*0\.98\),\s*rgba\(242,\s*245,\s*248,\s*0\.96\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/
+    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.selected,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-pressing,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-pressing\s*\{[\s\S]*background:\s*var\(--jg-shell-button-fill-active\);[\s\S]*box-shadow:\s*var\(--jg-shell-button-shadow-active\);/s
   );
   assert.match(
     visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.is-pressing\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(247,\s*249,\s*252,\s*0\.98\),\s*rgba\(238,\s*242,\s*247,\s*0\.92\)\s*44%\),[\s\S]*inset 0 2px 6px rgba\(216,\s*223,\s*231,\s*0\.78\)/
-  );
-  assert.match(
-    visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility\.depressed\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(233,\s*238,\s*244,\s*0\.99\),\s*rgba\(221,\s*227,\s*234,\s*0\.98\)\),[\s\S]*inset 0 4px 12px rgba\(146,\s*156,\s*169,\s*0\.42\)/
-  );
-  assert.match(
-    css,
-    /\.juggernaut-tool\.juggernaut-rail-anchor\.is-selection-empty,\s*\.juggernaut-tool\.is-local-utility\.is-selection-empty\s*\{[\s\S]*linear-gradient\(180deg,\s*rgba\(252,\s*253,\s*254,\s*0\.99\),\s*rgba\(244,\s*247,\s*250,\s*0\.98\)\),[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/
+    /body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button:disabled,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance:disabled,[\s\S]*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.is-local-utility:disabled\s*\{[\s\S]*background:\s*var\(--jg-shell-button-fill-disabled\);[\s\S]*color:\s*var\(--jg-shell-button-ink-muted\);/s
   );
 });
 
-test("Model-backed external-call buttons use flat taupe fills without gradients or glow", () => {
-  assert.match(css, /\.tool\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*box-shadow:\s*none;/);
-  assert.match(css, /\.session-tab-strip-action\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);/);
-  assert.match(
-    visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\s*\{[\s\S]*background:\s*rgba\(204,\s*185,\s*180,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*box-shadow:\s*none;/
-  );
-  assert.match(css, /\.tool\.has-action-provenance \.tool-hint,\s*\.tool\.has-action-provenance \.tool-label\s*\{[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);/);
-  assert.match(visualSystemCss, /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance \.tool-icon,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance \.tool-hint,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance \.tool-label\s*\{[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);/);
-});
-
-test("Model-backed external-call buttons keep a visible inactive state when unavailable", () => {
-  assert.match(css, /\.tool\.has-action-provenance:disabled,\s*\.session-tab-strip-action\.has-action-provenance:disabled,\s*\.session-tab-runtime-action\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(224,\s*214,\s*211,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);[\s\S]*opacity:\s*1;/);
-  assert.match(
-    visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance:disabled\s*\{[\s\S]*background:\s*rgba\(224,\s*214,\s*211,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);[\s\S]*opacity:\s*1;/
-  );
-  assert.match(visualSystemCss, /\.juggernaut-tool-rail \.tool\.has-action-provenance\.is-selection-empty,\s*$/m);
-  assert.match(visualSystemCss, /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-selection-empty\s*\{[\s\S]*background:\s*rgba\(224,\s*214,\s*211,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/);
-  assert.match(css, /\.tool\.has-action-provenance:disabled \.tool-icon,\s*\.tool\.has-action-provenance:disabled \.tool-hint,\s*\.tool\.has-action-provenance:disabled \.tool-label,[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.5\);/);
-});
-
-test("Model-backed external-call buttons darken and recess when active", () => {
-  assert.match(
-    css,
-    /\.tool\.has-action-provenance\.selected,\s*\.tool\.has-action-provenance\.selected:hover,\s*\.tool\.has-action-provenance:active\s*\{[\s\S]*background:\s*rgba\(170,\s*149,\s*143,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*inset 0 3px 10px rgba\(81,\s*64,\s*60,\s*0\.46\)/
-  );
-  assert.match(
-    css,
-    /\.tool\.has-action-provenance\.depressed,\s*\.tool\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(154,\s*132,\s*126,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*inset 0 4px 12px rgba\(72,\s*56,\s*52,\s*0\.54\)/
-  );
-  assert.match(
-    css,
-    /\.session-tab-strip-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance:active,\s*\.session-tab-runtime-action\.has-action-provenance\.is-active-request\s*\{[\s\S]*background:\s*rgba\(154,\s*132,\s*126,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*transform:\s*translateY\(1px\);[\s\S]*inset 0 4px 12px rgba\(72,\s*56,\s*52,\s*0\.54\)/
-  );
-  assert.match(
-    visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.selected,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.selected:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-active-request,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-active-request:hover,\s*body\.juggernaut-shell \.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.is-pressing\s*\{[\s\S]*background:\s*rgba\(170,\s*149,\s*143,\s*0\.98\);[\s\S]*color:\s*rgba\(0,\s*0,\s*0,\s*0\.92\);[\s\S]*inset 0 3px 10px rgba\(81,\s*64,\s*60,\s*0\.46\)/
-  );
-  assert.match(
-    visualSystemCss,
-    /\.juggernaut-tool-rail \.juggernaut-rail-button\.has-action-provenance\.depressed\s*\{[\s\S]*background:\s*rgba\(154,\s*132,\s*126,\s*0\.98\);[\s\S]*inset 0 4px 12px rgba\(72,\s*56,\s*52,\s*0\.54\)/
-  );
+test("Provenance is now communicated with a badge instead of a separate model-backed fill", () => {
+  assert.match(css, /--jg-shell-button-badge:\s*var\(--jg-pack-accent-strong\);/);
+  assert.match(css, /body\.juggernaut-shell \.action-provenance-model-dot\s*\{[\s\S]*background:\s*var\(--jg-shell-button-badge\);/s);
+  assert.match(css, /body\.juggernaut-shell \.session-tab-strip-action \.action-provenance-model-dot\s*\{[\s\S]*top:\s*6px[\s\S]*right:\s*6px[\s\S]*width:\s*6px[\s\S]*height:\s*6px;/s);
+  assert.match(visualSystemCss, /body\.juggernaut-shell \.juggernaut-tool-rail \.action-provenance-model-dot\s*\{[\s\S]*top:\s*6px[\s\S]*right:\s*6px[\s\S]*width:\s*6px[\s\S]*height:\s*6px;/s);
 });

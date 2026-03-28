@@ -91,7 +91,7 @@
             </div>
             <button
               id="session-tab-new"
-              class="session-tab-strip-action session-tab-strip-new"
+              class="session-tab-strip-action session-tab-strip-icon-action session-tab-strip-new"
               type="button"
               data-provenance="local_only"
               aria-label="New session"
@@ -102,7 +102,7 @@
             </button>
             <button
               id="session-tab-fork"
-              class="session-tab-strip-action session-tab-strip-fork"
+              class="session-tab-strip-action session-tab-strip-icon-action session-tab-strip-fork"
               type="button"
               data-provenance="local_only"
               aria-label="Fork tab"
@@ -115,8 +115,9 @@
           <div class="session-tab-strip-actions" role="group" aria-label="Session actions">
             <button
               id="juggernaut-agent-runner-open"
-              class="session-tab-strip-action session-tab-runtime-action session-tab-runtime-icon-action"
+              class="session-tab-strip-action session-tab-strip-icon-action session-tab-runtime-action session-tab-runtime-icon-action"
               type="button"
+              data-provenance="external_model"
               aria-label="Agent Run"
               title="Agent Run"
             >
@@ -124,8 +125,9 @@
             </button>
             <button
               id="session-tab-design-review"
-              class="session-tab-strip-action session-tab-strip-review"
+              class="session-tab-strip-action session-tab-strip-pill-action session-tab-strip-review"
               type="button"
+              data-provenance="external_model"
               aria-label="Design Review"
               title="Design Review"
             >
@@ -135,8 +137,9 @@
             <div class="session-tab-action-menu">
               <button
                 id="juggernaut-export-psd"
-                class="session-tab-strip-action session-tab-runtime-action session-tab-action-menu-toggle"
+                class="session-tab-strip-action session-tab-strip-pill-action session-tab-runtime-action session-tab-action-menu-toggle"
                 type="button"
+                data-provenance="local_only"
                 aria-label="Export"
                 title="Export"
                 aria-haspopup="menu"
@@ -144,6 +147,7 @@
                 aria-controls="juggernaut-export-menu"
               >
                 <span class="session-tab-action-icon" data-juggernaut-icon-slot="export" aria-hidden="true"></span>
+                <span>Export</span>
                 <svg class="session-tab-action-menu-caret" viewBox="0 0 12 12" aria-hidden="true">
                   <path
                     d="M3 4.5 6 7.5 9 4.5"

@@ -1214,3 +1214,130 @@ body.juggernaut-shell .drop-hint-sub {
     max-width: 280px;
   }
 }
+
+/* Rail button chassis unification: one neutral material; provenance reads from the badge, not the fill. */
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility {
+  border-color: var(--jg-shell-button-border);
+  border-top-color: rgba(255, 255, 255, 0.72);
+  border-left-color: rgba(255, 255, 255, 0.58);
+  background: var(--jg-shell-button-fill);
+  color: var(--jg-shell-button-ink);
+  box-shadow: var(--jg-shell-button-shadow);
+  filter: none;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:hover:not(:disabled):not(.selected):not(.is-active-request):not(.is-pressing):not(.depressed),
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance:hover:not(:disabled):not(.selected):not(.is-active-request):not(.is-pressing):not(.depressed),
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility:hover:not(:disabled):not(.selected):not(.is-active-request):not(.is-pressing):not(.depressed) {
+  transform: translate3d(0, -0.5px, 0);
+  border-color: var(--jg-shell-button-border-strong);
+  background: var(--jg-shell-button-fill-hover);
+  color: var(--jg-shell-button-ink);
+  box-shadow: var(--jg-shell-button-shadow-hover);
+  filter: none;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.selected,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.selected:hover,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-active-request,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-active-request:hover,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-pressing,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance.selected,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance.selected:hover,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance.is-active-request,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance.is-active-request:hover,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance.is-pressing,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.selected,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.selected:hover,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-active-request,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-active-request:hover,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-pressing {
+  transform: translate3d(0, 1px, 0);
+  border-color: var(--jg-shell-button-border-active);
+  border-top-color: rgba(255, 255, 255, 0.5);
+  border-left-color: rgba(255, 255, 255, 0.38);
+  background: var(--jg-shell-button-fill-active);
+  color: var(--jg-shell-button-ink);
+  box-shadow: var(--jg-shell-button-shadow-active);
+  filter: none;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.depressed,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance.depressed,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.depressed {
+  transform: translate3d(0, 1px, 0);
+  border-color: var(--jg-shell-button-border-active);
+  border-top-color: rgba(255, 255, 255, 0.44);
+  border-left-color: rgba(255, 255, 255, 0.34);
+  background: var(--jg-shell-button-fill-active);
+  color: var(--jg-shell-button-ink);
+  box-shadow: var(--jg-shell-button-shadow-active);
+  filter: none;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:disabled,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance:disabled,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility:disabled {
+  border-color: var(--jg-shell-button-border);
+  border-top-color: rgba(255, 255, 255, 0.42);
+  border-left-color: rgba(255, 255, 255, 0.32);
+  background: var(--jg-shell-button-fill-disabled);
+  color: var(--jg-shell-button-ink-muted);
+  box-shadow: var(--jg-shell-button-shadow-disabled);
+  opacity: 1;
+  filter: none;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-selection-empty,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility.is-selection-empty,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance.is-selection-empty {
+  border-color: var(--jg-shell-button-border);
+  border-top-color: rgba(255, 255, 255, 0.42);
+  border-left-color: rgba(255, 255, 255, 0.32);
+  background: var(--jg-shell-button-fill-disabled);
+  color: var(--jg-shell-button-ink-muted);
+  box-shadow: var(--jg-shell-button-shadow-disabled);
+  opacity: 1;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button .tool-icon,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button .tool-hint,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button .tool-label,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance .tool-icon,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance .tool-hint,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.has-action-provenance .tool-label,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility .tool-icon,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility .tool-hint,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-local-utility .tool-label {
+  color: var(--jg-shell-button-ink);
+  text-shadow: none;
+  filter: none;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:disabled .tool-icon,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:disabled .tool-hint,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:disabled .tool-label,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-selection-empty .tool-icon,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-selection-empty .tool-hint,
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button.is-selection-empty .tool-label {
+  color: var(--jg-shell-button-ink-muted);
+  opacity: 1;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .juggernaut-rail-button:focus-visible {
+  outline: 2px solid var(--jg-shell-button-focus);
+  outline-offset: 2px;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .action-provenance-affordance {
+  inset: 0;
+}
+
+body.juggernaut-shell .juggernaut-tool-rail .action-provenance-model-dot {
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+}

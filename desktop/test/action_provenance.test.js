@@ -34,7 +34,7 @@ test("action provenance normalizes and resolves local, hybrid, and external exec
   );
 });
 
-test("action provenance descriptions stay compact and model-backed actions no longer emit inline dot markup", () => {
+test("action provenance descriptions stay compact and model-bearing actions emit a compact provenance badge", () => {
   assert.equal(describeActionProvenance(ACTION_PROVENANCE.LOCAL_ONLY), "Runs locally only.");
   assert.equal(
     appendActionProvenanceDescription("Design Review", ACTION_PROVENANCE.EXTERNAL_MODEL),
@@ -43,6 +43,12 @@ test("action provenance descriptions stay compact and model-backed actions no lo
   assert.equal(actionProvenanceHasModelCost(ACTION_PROVENANCE.LOCAL_ONLY), false);
   assert.equal(actionProvenanceHasModelCost(ACTION_PROVENANCE.LOCAL_FIRST), true);
   assert.equal(renderActionProvenanceBadge(ACTION_PROVENANCE.LOCAL_ONLY), "");
-  assert.equal(renderActionProvenanceBadge(ACTION_PROVENANCE.LOCAL_FIRST), "");
-  assert.equal(renderActionProvenanceBadge(ACTION_PROVENANCE.EXTERNAL_MODEL), "");
+  assert.match(
+    renderActionProvenanceBadge(ACTION_PROVENANCE.LOCAL_FIRST),
+    /class="action-provenance-affordance" data-provenance="local_first"[\s\S]*class="action-provenance-model-dot"/
+  );
+  assert.match(
+    renderActionProvenanceBadge(ACTION_PROVENANCE.EXTERNAL_MODEL),
+    /class="action-provenance-affordance" data-provenance="external_model"[\s\S]*class="action-provenance-model-dot"/
+  );
 });
