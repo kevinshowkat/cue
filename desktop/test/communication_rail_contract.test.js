@@ -110,7 +110,12 @@ test("communication rail css anchors a partially submerged pouch rail at the bot
 test("communication rail css and app wiring keep the selected tool svg as a rotated on-canvas cursor", () => {
   assert.match(css, /\.communication-canvas-cursor\s*\{/);
   assert.match(css, /\.communication-canvas-cursor\.is-visible\s*\{/);
-  assert.match(css, /\.communication-canvas-cursor-art\s*\{[\s\S]*--communication-canvas-cursor-angle:\s*-140deg/);
+  assert.match(css, /\.communication-canvas-cursor-art\s*\{[\s\S]*--communication-canvas-cursor-angle:\s*225deg/);
+  assert.doesNotMatch(css, /--communication-canvas-cursor-local-tilt:\s*-8deg/);
+  assert.doesNotMatch(css, /--communication-canvas-cursor-local-tilt:\s*-10deg/);
+  assert.doesNotMatch(css, /--communication-canvas-cursor-local-tilt:\s*-5deg/);
+  assert.doesNotMatch(css, /--communication-canvas-cursor-local-tilt:\s*-2deg/);
+  assert.doesNotMatch(css, /--communication-canvas-cursor-local-tilt:\s*10deg/);
   assert.match(css, /\.communication-canvas-cursor-art\s*\{[\s\S]*width:\s*30\.375px[\s\S]*height:\s*60\.75px/);
   assert.match(css, /\.communication-canvas-cursor-art\s*\{[\s\S]*translate\(var\(--communication-canvas-cursor-forward-x\), var\(--communication-canvas-cursor-forward-y\)\)/);
   assert.match(css, /\.communication-canvas-cursor\[data-tool="marker"\] \.communication-canvas-cursor-art/);

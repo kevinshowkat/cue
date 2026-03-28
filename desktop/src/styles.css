@@ -1176,7 +1176,7 @@ button.ghost:hover {
 }
 
 .communication-canvas-cursor-art {
-  --communication-canvas-cursor-angle: -140deg;
+  --communication-canvas-cursor-angle: 225deg;
   --communication-canvas-cursor-local-tilt: 0deg;
   --communication-canvas-cursor-scale: 0.96;
   --communication-canvas-cursor-saturation: 1;
@@ -1214,14 +1214,12 @@ button.ghost:hover {
 }
 
 .communication-canvas-cursor[data-tool="marker"] .communication-canvas-cursor-art {
-  --communication-canvas-cursor-local-tilt: -8deg;
   --communication-canvas-cursor-scale: 1.03;
   --communication-canvas-cursor-saturation: 0.98;
   --communication-canvas-cursor-accent: rgba(226, 82, 82, 0.26);
 }
 
 .communication-canvas-cursor[data-tool="protect"] .communication-canvas-cursor-art {
-  --communication-canvas-cursor-local-tilt: -10deg;
   --communication-canvas-cursor-scale: 1.02;
   --communication-canvas-cursor-saturation: 1.08;
   --communication-canvas-cursor-accent: rgba(255, 223, 74, 0.34);
@@ -1229,21 +1227,18 @@ button.ghost:hover {
 
 .communication-canvas-cursor[data-tool="magic_select"] .communication-canvas-cursor-art,
 .communication-canvas-cursor[data-tool="make_space"] .communication-canvas-cursor-art {
-  --communication-canvas-cursor-local-tilt: -2deg;
   --communication-canvas-cursor-scale: 0.97;
   --communication-canvas-cursor-saturation: 1.03;
   --communication-canvas-cursor-accent: rgba(255, 120, 202, 0.28);
 }
 
 .communication-canvas-cursor[data-tool="stamp"] .communication-canvas-cursor-art {
-  --communication-canvas-cursor-local-tilt: -5deg;
   --communication-canvas-cursor-scale: 0.96;
   --communication-canvas-cursor-saturation: 0.98;
   --communication-canvas-cursor-accent: rgba(82, 113, 166, 0.28);
 }
 
 .communication-canvas-cursor[data-tool="eraser"] .communication-canvas-cursor-art {
-  --communication-canvas-cursor-local-tilt: 10deg;
   --communication-canvas-cursor-scale: 1.08;
   --communication-canvas-cursor-saturation: 1;
   --communication-canvas-cursor-accent: rgba(255, 150, 182, 0.26);
