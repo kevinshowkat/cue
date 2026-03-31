@@ -103,17 +103,28 @@ Each receipt still records model id and revision, image hash and stable source r
 
 ## Helper Setup
 
-The Tauri seam expects these environment variables:
+The Tauri seam reads these env keys if you want to override the defaults explicitly. Prefer the `CUE_*` names; the `JUGGERNAUT_*` names remain readable for compatibility:
 
 ```bash
-export JUGGERNAUT_MAGIC_SELECT_MODEL_PATH="/absolute/path/to/mobile_sam.pt"
-export JUGGERNAUT_MAGIC_SELECT_MODEL_ID="mobile_sam_vit_t"
+export CUE_MAGIC_SELECT_MODEL_PATH="/absolute/path/to/mobile_sam.pt"
+export CUE_MAGIC_SELECT_MODEL_ID="mobile_sam_vit_t"
 # Optional; if omitted the runtime records a short sha256-based revision from the weights file.
-export JUGGERNAUT_MAGIC_SELECT_MODEL_REVISION="mobile_sam_official"
+export CUE_MAGIC_SELECT_MODEL_REVISION="mobile_sam_official"
 # Optional overrides:
-export JUGGERNAUT_MAGIC_SELECT_PYTHON="python3"
-export JUGGERNAUT_MAGIC_SELECT_HELPER="/absolute/path/to/scripts/magic_select_mobile_sam.py"
+export CUE_MAGIC_SELECT_PYTHON="python3"
+export CUE_MAGIC_SELECT_HELPER="/absolute/path/to/scripts/magic_select_mobile_sam.py"
 ```
+
+If you do not export anything, the desktop app now auto-discovers these standard local locations when they exist:
+
+```text
+~/.venvs/cue-magic-select/bin/python
+~/.venvs/juggernaut-magic-select/bin/python
+~/Models/Cue/mobile_sam.pt
+~/Models/Juggernaut/mobile_sam.pt
+```
+
+It also reads persisted keys from `~/.cue/.env`, legacy `~/.brood/.env`, and repo-local `.env`, so a one-time config there also removes the need for per-shell exports.
 
 Verified local-only setup on this machine uses:
 
@@ -126,7 +137,7 @@ export JUGGERNAUT_MAGIC_SELECT_MODEL_REVISION="sha256:6dbb90523a35"
 export JUGGERNAUT_MAGIC_SELECT_THREADS="1"
 ```
 
-If `JUGGERNAUT_MAGIC_SELECT_HELPER` is not set, the desktop app falls back to this repo copy:
+If neither `CUE_MAGIC_SELECT_HELPER` nor `JUGGERNAUT_MAGIC_SELECT_HELPER` is set, the desktop app falls back to this repo copy:
 
 ```text
 scripts/magic_select_mobile_sam.py
