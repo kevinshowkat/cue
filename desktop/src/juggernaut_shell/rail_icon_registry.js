@@ -191,5 +191,9 @@ export function getJuggernautRailIconMarkup(toolId = "", packId = DEFAULT_JUGGER
   if (normalizedPackId === DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID) {
     return LEGACY_DEFAULT_INLINE_MARKUP[normalizedToolId] || "";
   }
-  return getGeneratedJuggernautRailIconMarkup(normalizedToolId, normalizedPackId);
+  return (
+    getGeneratedJuggernautRailIconMarkup(normalizedToolId, normalizedPackId) ||
+    LEGACY_DEFAULT_INLINE_MARKUP[normalizedToolId] ||
+    ""
+  );
 }
