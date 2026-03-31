@@ -1,4 +1,5 @@
 import { DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID } from "./rail_icon_packs.js";
+import { JUGGERNAUT_RAIL_ICON_BLUEPRINTS, renderJuggernautRailIconSvg } from "./rail_icon_blueprint.js";
 import {
   DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID as GENERATED_DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID,
   JUGGERNAUT_RAIL_ICON_ASSET_URLS as GENERATED_JUGGERNAUT_RAIL_ICON_ASSET_URLS,
@@ -6,6 +7,10 @@ import {
   getJuggernautRailIconAssetUrl as getGeneratedJuggernautRailIconAssetUrl,
   getJuggernautRailIconMarkup as getGeneratedJuggernautRailIconMarkup,
 } from "./generated/rail_icon_registry.js";
+
+const BLUEPRINT_BY_TOOL_ID = new Map(
+  JUGGERNAUT_RAIL_ICON_BLUEPRINTS.map((blueprint) => [String(blueprint?.toolId || "").trim(), blueprint])
+);
 
 function legacyInlineIconMarkup(toolId = "", body = "") {
   const className = `tool-icon tool-icon-${String(toolId || "")
@@ -190,6 +195,10 @@ export function getJuggernautRailIconMarkup(toolId = "", packId = DEFAULT_JUGGER
   const normalizedPackId = String(packId || "").trim() || DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID;
   if (normalizedPackId === DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID) {
     return LEGACY_DEFAULT_INLINE_MARKUP[normalizedToolId] || "";
+  }
+  const blueprint = BLUEPRINT_BY_TOOL_ID.get(normalizedToolId);
+  if (blueprint) {
+    return renderJuggernautRailIconSvg(blueprint, normalizedPackId);
   }
   return (
     getGeneratedJuggernautRailIconMarkup(normalizedToolId, normalizedPackId) ||

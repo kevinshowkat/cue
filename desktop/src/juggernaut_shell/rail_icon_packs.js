@@ -9,6 +9,13 @@ export const JUGGERNAUT_RAIL_ICON_PACKS = Object.freeze([
     description:
       "The original Juggernaut neutral glass chrome and inline utility iconography from before the themed generated packs.",
     generated: false,
+    render: Object.freeze({
+      strokeWidth: 1.85,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      fillOpacityMultiplier: 1,
+      svgTransform: "",
+    }),
   }),
   Object.freeze({
     id: "oscillo_ink",
@@ -25,6 +32,13 @@ export const JUGGERNAUT_RAIL_ICON_PACKS = Object.freeze([
       "Use as few confident ink strokes as possible while keeping the symbol unmistakable.",
       "Favor broad exterior contour over interior detail or hatching.",
     ]),
+    render: Object.freeze({
+      strokeWidth: 2.08,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      fillOpacityMultiplier: 1.08,
+      svgTransform: "translate(0.15 0.1) scale(1.01)",
+    }),
   }),
   Object.freeze({
     id: "industrial_mono",
@@ -36,6 +50,13 @@ export const JUGGERNAUT_RAIL_ICON_PACKS = Object.freeze([
     generated: true,
     promptStyle:
       "Ultra-reductive product icon as if Jony Ive drew it. Calm geometry, humane proportion, precise edges, sparse detail, considered negative space, and a softened industrial finish.",
+    render: Object.freeze({
+      strokeWidth: 1.58,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      fillOpacityMultiplier: 0.72,
+      svgTransform: "translate(0.35 0.3) scale(0.95)",
+    }),
   }),
   Object.freeze({
     id: "painterly_folk",
@@ -52,6 +73,13 @@ export const JUGGERNAUT_RAIL_ICON_PACKS = Object.freeze([
       "Use as few confident brush-or-pen contours as possible while keeping the icon unmistakable.",
       "Favor bold exterior contour over small decorative interior detail.",
     ]),
+    render: Object.freeze({
+      strokeWidth: 2.24,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      fillOpacityMultiplier: 1.28,
+      svgTransform: "translate(0.2 0.15) rotate(-2 12 12) scale(1.01)",
+    }),
   }),
   Object.freeze({
     id: "kinetic_marker",
@@ -63,6 +91,13 @@ export const JUGGERNAUT_RAIL_ICON_PACKS = Object.freeze([
     generated: true,
     promptStyle:
       "Athletic marker icon as if Michael Jordan drew it. Confident motion, crisp attack angle, bold simplified contour, fast visual energy, and unmistakable pose economy.",
+    render: Object.freeze({
+      strokeWidth: 2.34,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      fillOpacityMultiplier: 1.14,
+      svgTransform: "translate(0.25 -0.05) rotate(-6 12 12) scale(1.02 0.98)",
+    }),
   }),
 ]);
 
