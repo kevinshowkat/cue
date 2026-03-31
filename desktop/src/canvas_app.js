@@ -1484,6 +1484,12 @@ function syncJuggernautShellIconography(packId = settings.railIconPack) {
   return resolvedPackId;
 }
 
+function forceRenderQuickActions() {
+  state.lastRenderedQuickActionsKey = "";
+  state.lastRenderedCustomToolDockKey = "";
+  renderQuickActions();
+}
+
 function iconPackLabel(packId = "") {
   return getJuggernautRailIconPack(packId).label;
 }
@@ -37167,7 +37173,7 @@ async function boot() {
   ensureIntentUiIconsLoaded().catch(() => {});
   refreshKeyStatus().catch(() => {});
   updateAlwaysOnVisionReadout();
-  renderQuickActions();
+  forceRenderQuickActions();
   applyRuntimeChromeVisibility({ source: "boot" });
   if (typeof window !== "undefined") {
     installToolApplyBridge({
@@ -37408,6 +37414,9 @@ async function boot() {
   await ensureRun();
   installJuggernautShellBridge();
   installBuiltInSingleImageRailIntegration();
+  syncJuggernautShellIconography(settings.railIconPack);
+  forceRenderQuickActions();
+  renderJuggernautShellChrome();
   applyRuntimeChromeVisibility({ source: "bridge_ready" });
   setTimeout(() => {
     maybeAutoOpenOpenRouterOnboarding();
