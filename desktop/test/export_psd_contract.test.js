@@ -266,6 +266,3 @@ test("Export requests carry screenshot-polish lineage across timeline and source
     delete globalThis.exportRasterFormatLimitations;
   }
 });
-
-  }
-});

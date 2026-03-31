@@ -1207,6 +1207,8 @@ test("replace image in place clears stale magic select prewarm state and re-sync
     requestRender: () => calls.push(["request_render"]),
     scheduleVisualPromptWrite: () => calls.push(["schedule_visual_prompt_write"]),
     motherIdleSyncFromInteraction: (detail) => calls.push(["mother_idle_sync", detail]),
+    syncActiveScreenshotPolishMetadataFromImage: (item) =>
+      calls.push(["sync_screenshot_metadata", item?.id || null]),
     dropLocalMagicSelectPreparedImageForUi: async (imageId, detail) => {
       calls.push(["drop_magic_prewarm", imageId, detail]);
       return null;

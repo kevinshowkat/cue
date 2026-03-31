@@ -87,8 +87,16 @@ test("communication tray snapshot preserves selected proposal compare ui state",
       readFirstString,
     }
   );
+  const createFreshCommunicationStampPickerState = instantiateFunction(
+    "createFreshCommunicationStampPickerState"
+  );
+  const createFreshScreenshotPolishState = instantiateFunction(
+    "createFreshScreenshotPolishState"
+  );
   const createFreshCommunicationState = instantiateFunction("createFreshCommunicationState", {
     COMMUNICATION_PROPOSAL_SLOT_COUNT: 3,
+    createFreshCommunicationStampPickerState,
+    createFreshScreenshotPolishState,
     createCommunicationProposalSlot,
     normalizeCommunicationProposalTrayUiState,
     Map,
