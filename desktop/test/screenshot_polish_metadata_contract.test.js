@@ -29,7 +29,9 @@ test("screenshot metadata persists through session capture, fork, and timeline r
 
 test("screenshot metadata editor is wired into the shell and tab subtitle summary", () => {
   assert.match(app, /function ensureScreenshotPolishMetadataUi\(\) \{/);
-  assert.match(app, /button\.textContent = "Metadata";/);
+  assert.match(app, /button\.className = "session-tab-strip-action session-tab-strip-pill-action session-tab-runtime-action";/);
+  assert.match(app, /buttonLabel\.textContent = "Metadata";/);
+  assert.match(app, /syncActionProvenanceBadge\(button,\s*ACTION_PROVENANCE\.LOCAL_ONLY\);/);
   assert.match(app, /title\.textContent = "Screenshot Metadata";/);
   assert.match(app, /platformLabel\.textContent = "Platform";/);
   assert.match(app, /screenLabel\.textContent = "Screen";/);

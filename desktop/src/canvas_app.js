@@ -11143,6 +11143,8 @@ function closeScreenshotPolishMetadataPanel({ focusButton = false } = {}) {
   const panel = screenshotPolishMetadataUi.panel;
   if (!panel) return false;
   panel.classList.add("hidden");
+  screenshotPolishMetadataUi.button?.classList.remove("is-open");
+  screenshotPolishMetadataUi.button?.setAttribute("aria-expanded", "false");
   if (focusButton) {
     requestAnimationFrame(() => screenshotPolishMetadataUi.button?.focus());
   }
@@ -11159,10 +11161,15 @@ function ensureScreenshotPolishMetadataUi() {
 
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "session-tab-strip-action session-tab-runtime-action";
-  button.textContent = "Metadata";
+  button.className = "session-tab-strip-action session-tab-strip-pill-action session-tab-runtime-action";
+  const buttonLabel = document.createElement("span");
+  buttonLabel.textContent = "Metadata";
+  button.append(buttonLabel);
   button.setAttribute("aria-label", "Screenshot metadata");
   button.title = "Screenshot metadata";
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-expanded", "false");
+  syncActionProvenanceBadge(button, ACTION_PROVENANCE.LOCAL_ONLY);
 
   const panel = document.createElement("div");
   panel.className = "annotate-panel hidden";
@@ -11337,6 +11344,8 @@ function openScreenshotPolishMetadataPanel() {
   if (!ui.panel) return false;
   renderScreenshotPolishMetadataPanel();
   ui.panel.classList.remove("hidden");
+  ui.button?.classList.add("is-open");
+  ui.button?.setAttribute("aria-expanded", "true");
   requestAnimationFrame(() => ui.screen?.focus());
   return true;
 }
