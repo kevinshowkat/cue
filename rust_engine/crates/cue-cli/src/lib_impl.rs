@@ -19,9 +19,7 @@ use clap::{Parser, Subcommand};
 use cue_contracts::chat::{parse_intent, CHAT_HELP_COMMANDS};
 use cue_contracts::events::EventWriter;
 use cue_engine::NativeEngine;
-use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
-use image::{DynamicImage, Rgba, RgbaImage};
 use reqwest::blocking::Client as HttpClient;
 use reqwest::header::CONTENT_TYPE;
 use serde_json::{json, Map, Value};
@@ -91,11 +89,6 @@ struct ExportArgs {
     #[arg(long)]
     out: PathBuf,
 }
-
-const REALTIME_DESCRIPTION_MAX_CHARS: usize = 40;
-const OPENAI_VISION_FALLBACK_MODEL: &str = "gpt-5.2";
-const OPENAI_VISION_SECONDARY_MODEL: &str = "gpt-5-nano";
-const OPENROUTER_OPENAI_VISION_FALLBACK_MODEL: &str = "openai/gpt-5.2";
 
 pub fn main_entry() -> i32 {
     match run() {
@@ -221,9 +214,8 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                     continue;
                 }
 
-                let max_chars = REALTIME_DESCRIPTION_MAX_CHARS;
-                if let Some(inference) =
-                    observe::describe::vision_infer_description(&path, max_chars)
+                let max_chars = observe::vision::REALTIME_DESCRIPTION_MAX_CHARS;
+                if let Some(inference) = observe::vision::vision_infer_description(&path, max_chars)
                 {
                     engine.emit_event(
                         "image_description",
@@ -290,9 +282,7 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                     println!("Canvas context failed: file not found ({})", path.display());
                     continue;
                 }
-                if let Some(inference) =
-                    observe::canvas_context::vision_infer_canvas_context(&path, None)
-                {
+                if let Some(inference) = observe::vision::vision_infer_canvas_context(&path, None) {
                     engine.emit_event(
                         "canvas_context",
                         json_object(json!({
@@ -941,7 +931,7 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                     println!("Diagnose failed: file not found ({})", path.display());
                     continue;
                 }
-                if let Some(inference) = vision_infer_diagnosis(&path) {
+                if let Some(inference) = observe::vision::vision_infer_diagnosis(&path) {
                     engine.emit_event(
                         "image_diagnosis",
                         json_object(json!({
@@ -1095,7 +1085,7 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                     println!("Argue failed: file not found ({})", path_b.display());
                     continue;
                 }
-                if let Some(inference) = vision_infer_argument(&path_a, &path_b) {
+                if let Some(inference) = observe::vision::vision_infer_argument(&path_a, &path_b) {
                     engine.emit_event(
                         "image_argument",
                         json_object(json!({
@@ -1340,7 +1330,7 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                         println!("{msg}");
                         continue;
                     }
-                    let inference = vision_infer_dna_signature(&path);
+                    let inference = observe::vision::vision_infer_dna_signature(&path);
                     let dna = inference
                         .as_ref()
                         .map(|value| DnaSignature {
@@ -1411,7 +1401,7 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                         println!("{msg}");
                         continue;
                     }
-                    let inference = vision_infer_soul_signature(&path);
+                    let inference = observe::vision::vision_infer_soul_signature(&path);
                     let soul = inference
                         .as_ref()
                         .map(|value| SoulSignature {
@@ -1488,7 +1478,8 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                     );
                     continue;
                 }
-                let inference = vision_infer_triplet_rule(&path_a, &path_b, &path_c);
+                let inference =
+                    observe::vision::vision_infer_triplet_rule(&path_a, &path_b, &path_c);
                 let rule = inference
                     .as_ref()
                     .map(|value| TripletRuleOutput {
@@ -1573,7 +1564,8 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                     println!("Odd One Out failed: file not found ({})", path_c.display());
                     continue;
                 }
-                let inference = vision_infer_triplet_odd_one_out(&path_a, &path_b, &path_c);
+                let inference =
+                    observe::vision::vision_infer_triplet_odd_one_out(&path_a, &path_b, &path_c);
                 let odd = inference
                     .as_ref()
                     .map(|value| TripletOddOneOutOutput {
@@ -2737,12 +2729,8 @@ fn humanize_file_name(file: &str) -> String {
     }
 }
 
-fn normalize_realtime_model_name(raw: &str, default: &str) -> String {
-    realtime::normalize_realtime_model_name(raw, default)
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RealtimeProvider {
+pub(crate) enum RealtimeProvider {
     OpenAiRealtime,
     GeminiFlash,
 }
@@ -2765,34 +2753,7 @@ impl RealtimeProvider {
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-fn infer_default_realtime_provider() -> RealtimeProvider {
-    match realtime::CredentialAvailability::from_env(&realtime::RealtimeEnv::from_current())
-        .infer_default_provider()
-    {
-        realtime::RealtimeProvider::OpenAiRealtime => RealtimeProvider::OpenAiRealtime,
-        realtime::RealtimeProvider::GeminiFlash => RealtimeProvider::GeminiFlash,
-    }
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-fn realtime_provider_from_env(keys: &[&str]) -> Option<RealtimeProvider> {
-    let env = realtime::RealtimeEnv::from_current();
-    keys.iter().find_map(|key| {
-        env.get_compat(key)
-            .and_then(|value| match realtime::RealtimeProvider::parse(value) {
-                Some(realtime::RealtimeProvider::OpenAiRealtime) => {
-                    Some(RealtimeProvider::OpenAiRealtime)
-                }
-                Some(realtime::RealtimeProvider::GeminiFlash) => {
-                    Some(RealtimeProvider::GeminiFlash)
-                }
-                None => None,
-            })
-    })
-}
-
-fn canvas_context_realtime_provider() -> RealtimeProvider {
+pub(crate) fn canvas_context_realtime_provider() -> RealtimeProvider {
     match realtime::RealtimeSessionConfig::from_current_env(
         realtime::RealtimeSessionKind::CanvasContext,
     )
@@ -2866,12 +2827,6 @@ const REALTIME_BETA_HEADER_VALUE: &str = "realtime=v1";
 const REALTIME_TIMEOUT_SECONDS: f64 = 42.0;
 const REALTIME_MAX_PARTIAL_HZ_MS: u64 = 250;
 #[cfg_attr(not(test), allow(dead_code))]
-const REALTIME_TRANSPORT_RETRY_MAX_DEFAULT: usize = 2;
-#[cfg_attr(not(test), allow(dead_code))]
-const REALTIME_TRANSPORT_RETRY_BACKOFF_MS_DEFAULT: u64 = 350;
-#[cfg_attr(not(test), allow(dead_code))]
-const REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_DEFAULT: usize = 4;
-#[cfg_attr(not(test), allow(dead_code))]
 const REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_MAX: usize = 8;
 
 fn unix_epoch_millis() -> i64 {
@@ -2920,7 +2875,7 @@ impl RealtimeSessionKind {
     fn instruction(self) -> String {
         match self {
             Self::CanvasContext => canvas_context_realtime_instruction().to_string(),
-            Self::IntentIcons { mother } => observe::intent_icons::intent_icons_instruction(mother),
+            Self::IntentIcons { mother } => observe::vision::intent_icons_instruction(mother),
         }
     }
 
@@ -3260,7 +3215,7 @@ fn sanitize_openrouter_gemini_model(raw: &str, default_model: &str) -> String {
     }
 }
 
-fn sanitize_openrouter_model(raw: &str, default_model: &str) -> String {
+pub(crate) fn sanitize_openrouter_model(raw: &str, default_model: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return default_model.to_string();
@@ -3577,7 +3532,9 @@ impl RealtimeWorker {
             RealtimeSessionKind::CanvasContext => 2,
         };
         for image_ref in context_refs.iter().take(reference_limit) {
-            if let Some(reference_data_url) = prepare_vision_image_data_url(&image_ref.path, 1024) {
+            if let Some(reference_data_url) =
+                observe::vision::prepare_vision_image_data_url(&image_ref.path, 1024)
+            {
                 content.push(json!({
                     "type": "input_text",
                     "text": format!("SOURCE_IMAGE_REFERENCE {} (high-res):", image_ref.id),
@@ -3818,7 +3775,9 @@ impl RealtimeWorker {
             RealtimeSessionKind::CanvasContext => 2,
         };
         for image_ref in context_refs.iter().take(reference_limit) {
-            if let Some((bytes, mime)) = prepare_vision_image(&image_ref.path, 1024) {
+            if let Some((bytes, mime)) =
+                observe::vision::prepare_vision_image(&image_ref.path, 1024)
+            {
                 parts.push(json!({
                     "text": format!("SOURCE_IMAGE_REFERENCE {} (high-res):", image_ref.id),
                 }));
@@ -3954,7 +3913,9 @@ impl RealtimeWorker {
             RealtimeSessionKind::CanvasContext => 2,
         };
         for image_ref in context_refs.iter().take(reference_limit) {
-            if let Some(reference_data_url) = prepare_vision_image_data_url(&image_ref.path, 1024) {
+            if let Some(reference_data_url) =
+                observe::vision::prepare_vision_image_data_url(&image_ref.path, 1024)
+            {
                 chat_content.push(json!({
                     "type": "text",
                     "text": format!("SOURCE_IMAGE_REFERENCE {} (high-res):", image_ref.id),
@@ -4000,7 +3961,8 @@ impl RealtimeWorker {
         chat_content: &[Value],
     ) -> std::result::Result<Option<(Value, String, Map<String, Value>)>, RealtimeJobError> {
         let endpoint = format!("{}/responses", openrouter_api_base());
-        let input_content = openrouter_chat_content_to_responses_input(chat_content);
+        let input_content =
+            observe::vision::openrouter_chat_content_to_responses_input(chat_content);
         let request_model = sanitize_openrouter_model(&self.model, "google/gemini-3-flash-preview");
         let payload = json!({
             "model": request_model,
@@ -4041,7 +4003,7 @@ impl RealtimeWorker {
         if !response.status().is_success() {
             let code = response.status().as_u16();
             let body = response.text().unwrap_or_default();
-            if should_fallback_openrouter_responses(code, &body) {
+            if observe::vision::should_fallback_openrouter_responses(code, &body) {
                 return Ok(None);
             }
             return Err(RealtimeJobError::terminal(format!(
@@ -4130,7 +4092,7 @@ impl RealtimeWorker {
         let parsed: Value = response.json().map_err(|err| {
             RealtimeJobError::terminal(format!("OpenRouter chat realtime decode failed: {err}"))
         })?;
-        let cleaned = extract_openrouter_chat_output_text(&parsed)
+        let cleaned = observe::vision::extract_openrouter_chat_output_text(&parsed)
             .trim()
             .to_string();
         if cleaned.trim().is_empty() {
@@ -4140,7 +4102,7 @@ impl RealtimeWorker {
         }
 
         let mut response_meta = Map::new();
-        let (input_tokens, output_tokens) = extract_token_usage_pair(&parsed);
+        let (input_tokens, output_tokens) = observe::vision::extract_token_usage_pair(&parsed);
         if let Some(value) = input_tokens {
             response_meta.insert("input_tokens".to_string(), Value::Number(value.into()));
         }
@@ -4159,7 +4121,7 @@ impl RealtimeWorker {
             "response_status".to_string(),
             Value::String("completed".to_string()),
         );
-        if let Some(reason) = extract_openrouter_chat_finish_reason(&parsed) {
+        if let Some(reason) = observe::vision::extract_openrouter_chat_finish_reason(&parsed) {
             response_meta.insert("response_status_reason".to_string(), Value::String(reason));
         }
         response_meta.insert(
@@ -4300,11 +4262,6 @@ fn is_tungstenite_transport_error(err: &tungstenite::Error) -> bool {
     realtime::is_tungstenite_transport_error(err)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-fn is_transport_io_error_kind(kind: io::ErrorKind) -> bool {
-    realtime::is_transport_io_error_kind(kind)
-}
-
 fn error_chain_message(err: &anyhow::Error) -> String {
     realtime::error_chain_message(err)
 }
@@ -4334,11 +4291,6 @@ fn set_realtime_socket_read_timeout(
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-fn openai_realtime_ws_url(model: &str) -> String {
-    realtime::openai_realtime_ws_url(&openai_api_base(), model)
-}
-
 fn gemini_generate_content_endpoint(model: &str) -> String {
     let base = gemini_api_base();
     let trimmed = model.trim();
@@ -4353,8 +4305,8 @@ fn gemini_generate_content_endpoint(model: &str) -> String {
 fn read_image_as_gemini_inline_part(path: &Path) -> Option<Value> {
     let bytes = fs::read(path).ok()?;
     Some(json!({
-        "inlineData": {
-            "mimeType": guess_image_mime(path),
+            "inlineData": {
+            "mimeType": observe::vision::guess_image_mime(path),
             "data": BASE64.encode(bytes),
         }
     }))
@@ -4429,7 +4381,7 @@ fn read_image_as_data_url(path: &Path) -> Option<String> {
     let encoded = BASE64.encode(bytes);
     Some(format!(
         "data:{};base64,{}",
-        guess_image_mime(path),
+        observe::vision::guess_image_mime(path),
         encoded
     ))
 }
@@ -4727,7 +4679,7 @@ fn resolve_streamed_response_text(buffer: &str, response: &Value) -> (String, Ma
 
     let mut meta = Map::new();
     if let Some(object) = response.as_object() {
-        let (input_tokens, output_tokens) = extract_token_usage_pair(response);
+        let (input_tokens, output_tokens) = observe::vision::extract_token_usage_pair(response);
         if let Some(value) = input_tokens {
             meta.insert("input_tokens".to_string(), Value::Number(value.into()));
         }
@@ -4842,7 +4794,7 @@ fn extract_realtime_output_text(response: &Value) -> String {
     if !joined.is_empty() {
         joined
     } else {
-        extract_openai_output_text(response)
+        observe::vision::extract_openai_output_text(response)
     }
 }
 
@@ -4887,7 +4839,7 @@ fn summarize_realtime_response(response: &Value) -> String {
     }
 }
 
-fn canvas_context_realtime_instruction() -> &'static str {
+pub(crate) fn canvas_context_realtime_instruction() -> &'static str {
     "You are Cue's always-on background vision.\nAnalyze the attached CANVAS SNAPSHOT (it may contain multiple photos arranged in a grid).\nYou may also receive a CONTEXT ENVELOPE (JSON) describing the current UI state, available actions,\nand recent timeline. Use it to ground NEXT ACTIONS and avoid recommending unavailable abilities.\nOutput compact, machine-readable notes we can use for future action recommendations.\n\nFormat (keep under ~210 words):\nCANVAS:\n<one sentence summary>\n\nUSE CASE (guess):\n<one short line: what the user is likely trying to do (e.g., product listing, ad creative, editorial still, UI screenshot, moodboard)>\n\nSUBJECTS:\n- <2-6 bullets>\n\nSTYLE:\n- <3-7 short tags>\n\nNEXT ACTIONS:\n- <Action>: <why>  (max 5)\n\nActions must be chosen from CONTEXT_ENVELOPE_JSON.abilities[].label (prefer enabled=true).\nIf CONTEXT_ENVELOPE_JSON is missing, choose from: Multi view, Single view, Combine, Bridge, Swap DNA, Argue, Extract the Rule, Odd One Out, Triforce, Diagnose, Recast, Variations, Background: White, Background: Sweep, Crop: Square, Annotate.\nRules: infer the use case from both the image and CONTEXT_ENVELOPE_JSON.timeline_recent (edits). No fluff, no marketing language. Be specific about composition, lighting, color, materials. NEXT ACTIONS should serve the hypothesized use case."
 }
 
@@ -5041,11 +4993,14 @@ fn build_intent_icons_payload(snapshot_path: &Path, mother: bool) -> Value {
                 .to_ascii_lowercase()
         };
         let label = if !hint.vision_desc.trim().is_empty() {
-            clamp_text(hint.vision_desc.trim(), REALTIME_DESCRIPTION_MAX_CHARS)
+            clamp_text(
+                hint.vision_desc.trim(),
+                observe::vision::REALTIME_DESCRIPTION_MAX_CHARS,
+            )
         } else {
             clamp_text(
                 &humanize_file_name(&hint.file),
-                REALTIME_DESCRIPTION_MAX_CHARS,
+                observe::vision::REALTIME_DESCRIPTION_MAX_CHARS,
             )
         };
         if image_id.is_empty() || label.is_empty() {
@@ -5300,37 +5255,51 @@ fn normalize_intent_roles(
     out
 }
 
-fn openai_json_object_inference(
+fn provider_json_object_inference<F>(
+    payload: &Map<String, Value>,
     model_hint: Option<&str>,
-    instruction: String,
     max_output_tokens: u64,
     timeout: Duration,
-) -> Option<(Map<String, Value>, String)> {
-    let requested = sanitize_openai_responses_model(
-        model_hint.unwrap_or(OPENAI_VISION_FALLBACK_MODEL),
-        OPENAI_VISION_FALLBACK_MODEL,
-    );
-    let mut models = vec![requested.clone()];
-    if requested != OPENAI_VISION_FALLBACK_MODEL {
-        models.push(OPENAI_VISION_FALLBACK_MODEL.to_string());
-    }
+    build_instruction: F,
+) -> Option<(Map<String, Value>, String)>
+where
+    F: FnOnce(&str) -> String,
+{
+    let payload_json = serde_json::to_string(payload).ok()?;
+    observe::vision::openai_json_object_inference(
+        model_hint,
+        build_instruction(&payload_json),
+        max_output_tokens,
+        timeout,
+    )
+}
 
-    for model in models {
-        let content = vec![json!({
-            "type": "input_text",
-            "text": instruction,
-        })];
-        let Some((text, _, _, model_name)) =
-            openai_vision_request(&model, content, max_output_tokens, timeout)
-        else {
-            continue;
-        };
-        let Some(object) = extract_json_object_from_text(&text) else {
-            continue;
-        };
-        return Some((object, model_name));
+fn provider_first_json_payload<Fallback, Provider, Normalize>(
+    payload: &Map<String, Value>,
+    model_hint: Option<&str>,
+    source_label: &str,
+    fallback: Fallback,
+    provider: Provider,
+    normalize: Normalize,
+) -> (Value, String, String)
+where
+    Fallback: FnOnce(&Map<String, Value>) -> Value,
+    Provider: FnOnce(&Map<String, Value>, Option<&str>) -> Option<(Map<String, Value>, String)>,
+    Normalize: FnOnce(&Map<String, Value>, &Value, &Map<String, Value>) -> Value,
+{
+    let fallback = fallback(payload);
+    if let Some((candidate, model_name)) = provider(payload, model_hint) {
+        return (
+            normalize(&candidate, &fallback, payload),
+            source_label.to_string(),
+            model_name,
+        );
     }
-    None
+    (
+        fallback,
+        source_label.to_string(),
+        "heuristic-v1".to_string(),
+    )
 }
 
 fn infer_structured_intent_payload_via_provider(
@@ -5338,19 +5307,25 @@ fn infer_structured_intent_payload_via_provider(
     model_hint: Option<&str>,
 ) -> Option<(Map<String, Value>, String)> {
     let image_ids = mother_payload_image_ids(payload);
-    let payload_json = serde_json::to_string(payload).ok()?;
-    let instruction = format!(
-        "You are Cue's Mother intent inference engine.\nReturn JSON only (no markdown).\n\
+    provider_json_object_inference(
+        payload,
+        model_hint,
+        1000,
+        Duration::from_secs_f64(32.0),
+        |payload_json| {
+            format!(
+                "You are Cue's Mother intent inference engine.\nReturn JSON only (no markdown).\n\
 Given PAYLOAD_JSON, infer one intent object with this exact schema:\n\
 {{\n  \"intent_id\": \"string\",\n  \"summary\": \"string\",\n  \"creative_directive\": \"stunningly awe-inspiring and tearfully joyous\",\n  \"transformation_mode\": \"amplify|transcend|destabilize|purify|hybridize|mythologize|monumentalize|fracture|romanticize|alienate\",\n  \"target_ids\": [\"id\"],\n  \"reference_ids\": [\"id\"],\n  \"placement_policy\": \"adjacent|grid|replace\",\n  \"confidence\": 0.0,\n  \"roles\": {{ \"subject\": [\"id\"], \"model\": [\"id\"], \"mediator\": [\"id\"], \"object\": [\"id\"] }},\n  \"alternatives\": [{{\"placement_policy\":\"adjacent\"}}, {{\"placement_policy\":\"grid\"}}]\n}}\n\
 Rules:\n- Use only image IDs from this allowlist: [{}].\n\
 - Keep confidence between 0.2 and 0.99.\n\
 - Prefer concise summary language.\n\
 PAYLOAD_JSON:\n{}",
-        image_ids.join(", "),
-        payload_json
-    );
-    openai_json_object_inference(model_hint, instruction, 1000, Duration::from_secs_f64(32.0))
+                image_ids.join(", "),
+                payload_json
+            )
+        },
+    )
 }
 
 fn normalize_provider_intent_payload(
@@ -5465,17 +5440,13 @@ fn infer_structured_intent_payload_provider_first(
     model_hint: Option<&str>,
     source_label: &str,
 ) -> (Value, String, String) {
-    let fallback = infer_structured_intent_payload(payload);
-    if let Some((candidate, model_name)) =
-        infer_structured_intent_payload_via_provider(payload, model_hint)
-    {
-        let normalized = normalize_provider_intent_payload(&candidate, &fallback, payload);
-        return (normalized, source_label.to_string(), model_name);
-    }
-    (
-        fallback,
-        source_label.to_string(),
-        "heuristic-v1".to_string(),
+    provider_first_json_payload(
+        payload,
+        model_hint,
+        source_label,
+        infer_structured_intent_payload,
+        infer_structured_intent_payload_via_provider,
+        normalize_provider_intent_payload,
     )
 }
 
@@ -5830,22 +5801,28 @@ fn compile_mother_prompt_payload_via_provider(
     payload: &Map<String, Value>,
     model_hint: Option<&str>,
 ) -> Option<(Map<String, Value>, String)> {
-    let payload_json = serde_json::to_string(payload).ok()?;
-    let instruction = format!(
-        "You are Cue's Mother prompt compiler.\nReturn JSON only (no markdown).\n\
+    provider_json_object_inference(
+        payload,
+        model_hint,
+        1300,
+        Duration::from_secs_f64(38.0),
+        |payload_json| {
+            format!(
+                "You are Cue's Mother prompt compiler.\nReturn JSON only (no markdown).\n\
 Given PAYLOAD_JSON, produce one object with this exact schema:\n\
 {{\n  \"action_version\": 0,\n  \"creative_directive\": \"string\",\n  \"transformation_mode\": \"amplify|transcend|destabilize|purify|hybridize|mythologize|monumentalize|fracture|romanticize|alienate\",\n  \"positive_prompt\": \"string\",\n  \"negative_prompt\": \"string\",\n  \"compile_constraints\": [\"string\"],\n  \"generation_params\": {{\n    \"guidance_scale\": 7.0,\n    \"layout_hint\": \"adjacent|grid|replace\",\n    \"seed_strategy\": \"random\",\n    \"transformation_mode\": \"same as top-level\"\n  }}\n}}\n\
 Rules:\n- Prompts must be production-ready for image generation.\n\
 - Keep anti-artifact constraints explicit.\n\
 - Keep generation_params.transformation_mode aligned with top-level transformation_mode.\n\
 PAYLOAD_JSON:\n{}",
-        payload_json
-    );
-    openai_json_object_inference(model_hint, instruction, 1300, Duration::from_secs_f64(38.0))
+                payload_json
+            )
+        },
+    )
 }
 
 fn normalize_compile_constraints(value: Option<&Value>) -> Vec<String> {
-    coerce_text_list(value, 14, 220)
+    observe::vision::coerce_text_list(value, 14, 220)
 }
 
 fn normalize_generation_params(
@@ -5963,17 +5940,13 @@ fn compile_mother_prompt_payload_provider_first(
     model_hint: Option<&str>,
     source_label: &str,
 ) -> (Value, String, String) {
-    let fallback = compile_mother_prompt_payload(payload);
-    if let Some((candidate, model_name)) =
-        compile_mother_prompt_payload_via_provider(payload, model_hint)
-    {
-        let normalized = normalize_provider_compiled_payload(&candidate, &fallback, payload);
-        return (normalized, source_label.to_string(), model_name);
-    }
-    (
-        fallback,
-        source_label.to_string(),
-        "heuristic-v1".to_string(),
+    provider_first_json_payload(
+        payload,
+        model_hint,
+        source_label,
+        compile_mother_prompt_payload,
+        compile_mother_prompt_payload_via_provider,
+        normalize_provider_compiled_payload,
     )
 }
 
@@ -6629,81 +6602,7 @@ fn rgb_distance(a: (f64, f64, f64), b: (f64, f64, f64)) -> f64 {
     (dr * dr + dg * dg + db * db).sqrt()
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct TextVisionInference {
-    text: String,
-    source: String,
-    model: Option<String>,
-    input_tokens: Option<i64>,
-    output_tokens: Option<i64>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct DescriptionVisionInference {
-    description: String,
-    source: String,
-    model: Option<String>,
-    input_tokens: Option<i64>,
-    output_tokens: Option<i64>,
-}
-
-#[derive(Debug, Clone)]
-struct DnaVisionInference {
-    palette: Vec<String>,
-    colors: Vec<String>,
-    materials: Vec<String>,
-    summary: String,
-    source: String,
-    model: Option<String>,
-    input_tokens: Option<i64>,
-    output_tokens: Option<i64>,
-}
-
-#[derive(Debug, Clone)]
-struct SoulVisionInference {
-    emotion: String,
-    summary: String,
-    source: String,
-    model: Option<String>,
-    input_tokens: Option<i64>,
-    output_tokens: Option<i64>,
-}
-
-#[derive(Debug, Clone)]
-struct TripletRuleVisionInference {
-    principle: String,
-    evidence: Vec<Value>,
-    annotations: Vec<Value>,
-    confidence: f64,
-    source: String,
-    model: Option<String>,
-    input_tokens: Option<i64>,
-    output_tokens: Option<i64>,
-}
-
-#[derive(Debug, Clone)]
-struct TripletOddOneOutVisionInference {
-    odd_image: String,
-    odd_index: i64,
-    pattern: String,
-    explanation: String,
-    confidence: f64,
-    source: String,
-    model: Option<String>,
-    input_tokens: Option<i64>,
-    output_tokens: Option<i64>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub(crate) struct IntentIconsVisionInference {
-    payload: Map<String, Value>,
-    model: String,
-    input_tokens: Option<i64>,
-    output_tokens: Option<i64>,
-}
-
-fn first_non_empty_env(keys: &[&str]) -> Option<String> {
+pub(crate) fn first_non_empty_env(keys: &[&str]) -> Option<String> {
     for key in keys {
         if let Some(value) = compat_env_var(key) {
             let trimmed = value.trim();
@@ -6731,11 +6630,11 @@ fn compat_env_var(key: &str) -> Option<String> {
     None
 }
 
-fn openai_api_key() -> Option<String> {
+pub(crate) fn openai_api_key() -> Option<String> {
     first_non_empty_env(&["OPENAI_API_KEY", "OPENAI_API_KEY_BACKUP"])
 }
 
-fn openrouter_api_key() -> Option<String> {
+pub(crate) fn openrouter_api_key() -> Option<String> {
     first_non_empty_env(&["OPENROUTER_API_KEY"])
 }
 
@@ -6743,7 +6642,7 @@ fn gemini_api_key() -> Option<String> {
     first_non_empty_env(&["GEMINI_API_KEY", "GOOGLE_API_KEY"])
 }
 
-fn openai_api_base() -> String {
+pub(crate) fn openai_api_base() -> String {
     let raw = first_non_empty_env(&["OPENAI_API_BASE", "OPENAI_BASE_URL"])
         .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
     let mut base = raw.trim().trim_end_matches('/').to_string();
@@ -6763,7 +6662,7 @@ fn gemini_api_base() -> String {
         .to_string()
 }
 
-fn openrouter_api_base() -> String {
+pub(crate) fn openrouter_api_base() -> String {
     let raw = first_non_empty_env(&["OPENROUTER_API_BASE", "OPENROUTER_BASE_URL"])
         .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string());
     let mut base = raw.trim().trim_end_matches('/').to_string();
@@ -6775,7 +6674,7 @@ fn openrouter_api_base() -> String {
     base.trim_end_matches('/').to_string()
 }
 
-fn apply_openrouter_request_headers(
+pub(crate) fn apply_openrouter_request_headers(
     mut request: reqwest::blocking::RequestBuilder,
 ) -> reqwest::blocking::RequestBuilder {
     if let Some(referer) =
@@ -6789,1266 +6688,12 @@ fn apply_openrouter_request_headers(
     request
 }
 
-fn sanitize_openai_responses_model(raw: &str, default_model: &str) -> String {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return default_model.to_string();
-    }
-    if trimmed.to_ascii_lowercase().contains("realtime") {
-        return default_model.to_string();
-    }
-    trimmed.to_string()
-}
-
-fn openai_vision_request(
-    model: &str,
-    content: Vec<Value>,
-    max_output_tokens: u64,
-    timeout: Duration,
-) -> Option<(String, Option<i64>, Option<i64>, String)> {
-    let request_model = sanitize_openai_responses_model(model, OPENAI_VISION_FALLBACK_MODEL);
-    let client = HttpClient::builder().timeout(timeout).build().ok()?;
-    if let Some(api_key) = openai_api_key() {
-        let endpoint = format!("{}/responses", openai_api_base());
-        let payload = json!({
-            "model": request_model,
-            "input": [{
-                "role": "user",
-                "content": content.clone(),
-            }],
-            "max_output_tokens": max_output_tokens,
-        });
-        let response = client
-            .post(endpoint)
-            .bearer_auth(api_key)
-            .header(CONTENT_TYPE, "application/json")
-            .json(&payload)
-            .send();
-        if let Ok(response) = response {
-            if response.status().is_success() {
-                if let Ok(parsed) = response.json::<Value>() {
-                    let text = extract_openai_output_text(&parsed);
-                    if !text.trim().is_empty() {
-                        let (input_tokens, output_tokens) = extract_token_usage_pair(&parsed);
-                        return Some((text, input_tokens, output_tokens, request_model.clone()));
-                    }
-                }
-            }
-        }
-    }
-
-    let openrouter_key = openrouter_api_key()?;
-    let openrouter_base = openrouter_api_base();
-    let openrouter_model =
-        sanitize_openrouter_model(&request_model, OPENROUTER_OPENAI_VISION_FALLBACK_MODEL);
-    let responses_endpoint = format!("{openrouter_base}/responses");
-    let responses_payload = json!({
-        "model": openrouter_model,
-        "input": [{
-            "role": "user",
-            "content": content,
-        }],
-        "modalities": ["text"],
-        "max_output_tokens": max_output_tokens,
-        "stream": false,
-    });
-    let responses_request = client
-        .post(&responses_endpoint)
-        .bearer_auth(&openrouter_key)
-        .header(CONTENT_TYPE, "application/json");
-    let responses_response = apply_openrouter_request_headers(responses_request)
-        .json(&responses_payload)
-        .send()
-        .ok()?;
-    if responses_response.status().is_success() {
-        let parsed: Value = responses_response.json().ok()?;
-        let text = extract_openai_output_text(&parsed);
-        if !text.trim().is_empty() {
-            let (input_tokens, output_tokens) = extract_token_usage_pair(&parsed);
-            return Some((text, input_tokens, output_tokens, openrouter_model));
-        }
-    } else {
-        let code = responses_response.status().as_u16();
-        let body = responses_response.text().ok()?;
-        if !should_fallback_openrouter_responses(code, &body) {
-            return None;
-        }
-    }
-
-    let chat_endpoint = format!("{openrouter_base}/chat/completions");
-    let chat_payload = json!({
-        "model": openrouter_model,
-        "messages": [{
-            "role": "user",
-            "content": openrouter_responses_content_to_chat_content(&content),
-        }],
-        "modalities": ["text"],
-        "max_tokens": max_output_tokens,
-        "stream": false,
-    });
-    let chat_request = client
-        .post(&chat_endpoint)
-        .bearer_auth(openrouter_key)
-        .header(CONTENT_TYPE, "application/json");
-    let chat_response = apply_openrouter_request_headers(chat_request)
-        .json(&chat_payload)
-        .send()
-        .ok()?;
-    if !chat_response.status().is_success() {
-        return None;
-    }
-    let parsed: Value = chat_response.json().ok()?;
-    let text = extract_openrouter_chat_output_text(&parsed);
-    if text.trim().is_empty() {
-        return None;
-    }
-    let (input_tokens, output_tokens) = extract_token_usage_pair(&parsed);
-    Some((text, input_tokens, output_tokens, openrouter_model))
-}
-
-pub(crate) fn prepare_vision_image_data_url(path: &Path, max_dim: u32) -> Option<String> {
-    let (bytes, mime) = prepare_vision_image(path, max_dim)?;
-    let encoded = BASE64.encode(bytes);
-    Some(format!("data:{mime};base64,{encoded}"))
-}
-
-pub(crate) fn prepare_vision_image(path: &Path, max_dim: u32) -> Option<(Vec<u8>, String)> {
-    let dim = max_dim.max(128);
-    if let Ok(image) = image::open(path) {
-        let rgba = image.to_rgba8();
-        let mut flattened = RgbaImage::new(rgba.width(), rgba.height());
-        for (x, y, pixel) in rgba.enumerate_pixels() {
-            let alpha = u16::from(pixel[3]);
-            let blend = |channel: u8| -> u8 {
-                (((u16::from(channel) * alpha) + (255 * (255 - alpha))) / 255) as u8
-            };
-            flattened.put_pixel(
-                x,
-                y,
-                Rgba([blend(pixel[0]), blend(pixel[1]), blend(pixel[2]), 255]),
-            );
-        }
-        let resized = DynamicImage::ImageRgba8(flattened)
-            .resize(dim, dim, FilterType::Triangle)
-            .to_rgb8();
-        let mut bytes = Vec::new();
-        let mut encoder = JpegEncoder::new_with_quality(&mut bytes, 90);
-        if encoder
-            .encode_image(&DynamicImage::ImageRgb8(resized))
-            .is_ok()
-        {
-            return Some((bytes, "image/jpeg".to_string()));
-        }
-    }
-
-    let bytes = fs::read(path).ok()?;
-    let mime = guess_image_mime(path).to_string();
-    Some((bytes, mime))
-}
-
-fn guess_image_mime(path: &Path) -> &'static str {
-    let ext = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.to_ascii_lowercase())
-        .unwrap_or_default();
-    match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "webp" => "image/webp",
-        "heic" | "heif" => "image/heic",
-        _ => "image/png",
-    }
-}
-
-fn extract_openai_output_text(response: &Value) -> String {
-    if let Some(text) = response.get("output_text").and_then(Value::as_str) {
-        if !text.trim().is_empty() {
-            return text.trim().to_string();
-        }
-    }
-
-    let mut parts: Vec<String> = Vec::new();
-    let rows = response
-        .get("output")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    for row in rows {
-        let Some(obj) = row.as_object() else {
-            continue;
-        };
-        if let Some(kind) = obj.get("type").and_then(Value::as_str) {
-            if matches!(kind, "output_text" | "text") {
-                if let Some(text) = obj.get("text").and_then(Value::as_str) {
-                    if !text.trim().is_empty() {
-                        parts.push(text.trim().to_string());
-                    }
-                }
-                continue;
-            }
-            if kind != "message" {
-                continue;
-            }
-        }
-        let content = obj
-            .get("content")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        for chunk in content {
-            let Some(chunk_obj) = chunk.as_object() else {
-                continue;
-            };
-            let kind = chunk_obj
-                .get("type")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            if !matches!(kind, "output_text" | "text") {
-                continue;
-            }
-            if let Some(text) = chunk_obj.get("text").and_then(Value::as_str) {
-                if !text.trim().is_empty() {
-                    parts.push(text.trim().to_string());
-                }
-            }
-        }
-    }
-
-    parts.join("\n").trim().to_string()
-}
-
-fn openrouter_chat_content_to_responses_input(chat_content: &[Value]) -> Vec<Value> {
-    let mut out: Vec<Value> = Vec::new();
-    for item in chat_content {
-        let Some(obj) = item.as_object() else {
-            continue;
-        };
-        let kind = obj
-            .get("type")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        if kind == "text" {
-            if let Some(text) = obj
-                .get("text")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            {
-                out.push(json!({
-                    "type": "input_text",
-                    "text": text,
-                }));
-            }
-            continue;
-        }
-        if kind == "image_url" {
-            let image_url = obj
-                .get("image_url")
-                .and_then(|value| {
-                    value
-                        .as_object()
-                        .and_then(|row| row.get("url"))
-                        .and_then(Value::as_str)
-                        .or_else(|| value.as_str())
-                })
-                .map(str::trim)
-                .filter(|value| !value.is_empty());
-            if let Some(url) = image_url {
-                out.push(json!({
-                    "type": "input_image",
-                    "image_url": url,
-                }));
-            }
-        }
-    }
-    out
-}
-
-fn openrouter_responses_content_to_chat_content(content: &[Value]) -> Vec<Value> {
-    let mut out: Vec<Value> = Vec::new();
-    for item in content {
-        let Some(obj) = item.as_object() else {
-            continue;
-        };
-        let kind = obj
-            .get("type")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        if kind == "input_text" {
-            if let Some(text) = obj
-                .get("text")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            {
-                out.push(json!({
-                    "type": "text",
-                    "text": text,
-                }));
-            }
-            continue;
-        }
-        if kind == "input_image" {
-            let image_url = obj
-                .get("image_url")
-                .and_then(Value::as_str)
-                .or_else(|| {
-                    obj.get("image_url")
-                        .and_then(Value::as_object)
-                        .and_then(|row| row.get("url"))
-                        .and_then(Value::as_str)
-                })
-                .map(str::trim)
-                .filter(|value| !value.is_empty());
-            if let Some(url) = image_url {
-                out.push(json!({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": url,
-                    }
-                }));
-            }
-        }
-    }
-    out
-}
-
-fn extract_openrouter_chat_output_text(response: &Value) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    for choice in response
-        .get("choices")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-    {
-        let Some(message) = choice.get("message").and_then(Value::as_object) else {
-            continue;
-        };
-        if let Some(content) = message.get("content") {
-            match content {
-                Value::String(text) => {
-                    let trimmed = text.trim();
-                    if !trimmed.is_empty() {
-                        parts.push(trimmed.to_string());
-                    }
-                }
-                Value::Array(rows) => {
-                    for row in rows {
-                        let Some(obj) = row.as_object() else {
-                            continue;
-                        };
-                        let kind = obj
-                            .get("type")
-                            .and_then(Value::as_str)
-                            .map(str::trim)
-                            .unwrap_or_default()
-                            .to_ascii_lowercase();
-                        if !matches!(kind.as_str(), "text" | "output_text") {
-                            continue;
-                        }
-                        if let Some(text) = obj
-                            .get("text")
-                            .and_then(Value::as_str)
-                            .map(str::trim)
-                            .filter(|value| !value.is_empty())
-                        {
-                            parts.push(text.to_string());
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        if let Some(refusal) = message
-            .get("refusal")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            parts.push(refusal.to_string());
-        }
-    }
-    let joined = parts.join("\n").trim().to_string();
-    if !joined.is_empty() {
-        joined
-    } else {
-        extract_openai_output_text(response)
-    }
-}
-
-fn extract_openrouter_chat_finish_reason(response: &Value) -> Option<String> {
-    response
-        .get("choices")
-        .and_then(Value::as_array)
-        .and_then(|rows| rows.first())
-        .and_then(Value::as_object)
-        .and_then(|row| row.get("finish_reason").and_then(Value::as_str))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
-fn should_fallback_openrouter_responses(status_code: u16, body: &str) -> bool {
-    if matches!(status_code, 404 | 405 | 415 | 501) {
-        return true;
-    }
-    if matches!(status_code, 400 | 422) {
-        return body_indicates_openrouter_responses_unavailable(body);
-    }
-    false
-}
-
-fn body_indicates_openrouter_responses_unavailable(body: &str) -> bool {
-    let lowered = body.to_ascii_lowercase();
-    if !lowered.contains("response") {
-        return false;
-    }
-    lowered.contains("unsupported")
-        || lowered.contains("not supported")
-        || lowered.contains("not found")
-        || lowered.contains("unknown")
-        || lowered.contains("unavailable")
-        || lowered.contains("does not exist")
-}
-
-fn value_to_nonnegative_i64(value: &Value) -> Option<i64> {
-    match value {
-        Value::Number(number) => {
-            if let Some(raw) = number.as_i64() {
-                return (raw >= 0).then_some(raw);
-            }
-            if let Some(raw) = number.as_u64() {
-                return i64::try_from(raw).ok();
-            }
-            None
-        }
-        Value::String(text) => {
-            let trimmed = text.trim();
-            if trimmed.is_empty() {
-                return None;
-            }
-            trimmed.parse::<i64>().ok().filter(|value| *value >= 0)
-        }
-        _ => None,
-    }
-}
-
-fn read_usage_value(object: &Map<String, Value>, keys: &[&str]) -> Option<i64> {
-    for key in keys {
-        if let Some(value) = object.get(*key) {
-            if let Some(parsed) = value_to_nonnegative_i64(value) {
-                return Some(parsed);
-            }
-        }
-    }
-    None
-}
-
-fn extract_token_usage_pair(payload: &Value) -> (Option<i64>, Option<i64>) {
-    fn walk(
-        value: &Value,
-        input_tokens: &mut Option<i64>,
-        output_tokens: &mut Option<i64>,
-        depth: usize,
-    ) {
-        if depth > 16 || (input_tokens.is_some() && output_tokens.is_some()) {
-            return;
-        }
-        match value {
-            Value::Object(object) => {
-                let maybe_input = read_usage_value(
-                    object,
-                    &[
-                        "input_tokens",
-                        "prompt_tokens",
-                        "prompt_token_count",
-                        "promptTokenCount",
-                        "tokens_in",
-                        "tokensIn",
-                        "inputTokenCount",
-                        "input_text_tokens",
-                        "text_count_tokens",
-                    ],
-                );
-                if input_tokens.is_none() && maybe_input.is_some() {
-                    *input_tokens = maybe_input;
-                }
-                let maybe_output = read_usage_value(
-                    object,
-                    &[
-                        "output_tokens",
-                        "completion_tokens",
-                        "completion_token_count",
-                        "completionTokenCount",
-                        "tokens_out",
-                        "tokensOut",
-                        "outputTokenCount",
-                        "output_text_tokens",
-                        "candidates_token_count",
-                        "candidatesTokenCount",
-                    ],
-                );
-                if output_tokens.is_none() && maybe_output.is_some() {
-                    *output_tokens = maybe_output;
-                }
-
-                if output_tokens.is_none() {
-                    let total_tokens = read_usage_value(
-                        object,
-                        &[
-                            "total_token_count",
-                            "totalTokenCount",
-                            "total_tokens",
-                            "totalTokens",
-                            "token_count",
-                            "tokenCount",
-                        ],
-                    );
-                    if let (Some(total), Some(input)) = (total_tokens, *input_tokens) {
-                        if total >= input {
-                            *output_tokens = Some(total - input);
-                        }
-                    }
-                }
-
-                for nested_key in ["usage", "usage_metadata"] {
-                    if let Some(nested) = object.get(nested_key) {
-                        walk(nested, input_tokens, output_tokens, depth + 1);
-                    }
-                }
-                for nested in object.values() {
-                    walk(nested, input_tokens, output_tokens, depth + 1);
-                }
-            }
-            Value::Array(items) => {
-                for item in items {
-                    walk(item, input_tokens, output_tokens, depth + 1);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    let mut input_tokens = None;
-    let mut output_tokens = None;
-    walk(payload, &mut input_tokens, &mut output_tokens, 0);
-    (input_tokens, output_tokens)
-}
-
-fn clean_text_inference(text: &str, max_chars: Option<usize>) -> String {
-    let mut cleaned = text.trim().to_string();
-    if cleaned.is_empty() {
-        return String::new();
-    }
-    if let Some(limit) = max_chars {
-        if limit > 0 && cleaned.chars().count() > limit {
-            cleaned = cleaned
-                .chars()
-                .take(limit)
-                .collect::<String>()
-                .trim()
-                .to_string();
-        }
-    }
-    cleaned
-}
-
-fn is_aux_verb_token(token: &str) -> bool {
-    matches!(token, "is" | "are" | "was" | "were")
-}
-
-fn is_article_token(token: &str) -> bool {
-    matches!(token, "a" | "an" | "the")
-}
-
-fn token_starts_uppercase(token: &str) -> bool {
-    token
-        .chars()
-        .next()
-        .map(|ch| ch.is_uppercase())
-        .unwrap_or(false)
-}
-
-fn compact_caption_phrase(text: &str) -> String {
-    let mut tokens: Vec<String> = text
-        .split_whitespace()
-        .map(|token| token.trim().to_string())
-        .filter(|token| !token.is_empty())
-        .collect();
-    if tokens.is_empty() {
-        return String::new();
-    }
-
-    while tokens
-        .first()
-        .map(|token| is_article_token(token.to_ascii_lowercase().as_str()))
-        .unwrap_or(false)
-        && tokens.len() > 1
-    {
-        tokens.remove(0);
-    }
-
-    // Prefer fragment-style labels over full sentences (e.g. "X is holding Y" -> "X holding Y").
-    if tokens.len() >= 3 {
-        let second = tokens[1].to_ascii_lowercase();
-        if is_aux_verb_token(second.as_str()) {
-            tokens.remove(1);
-        } else if tokens.len() >= 4 {
-            let third = tokens[2].to_ascii_lowercase();
-            if is_aux_verb_token(third.as_str())
-                && token_starts_uppercase(tokens[0].as_str())
-                && token_starts_uppercase(tokens[1].as_str())
-            {
-                tokens.remove(2);
-            }
-        }
-    }
-
-    if tokens.len() >= 3 {
-        let mut aux_idx: Option<usize> = None;
-        for idx in 1..(tokens.len() - 1) {
-            let current = tokens[idx].to_ascii_lowercase();
-            if !is_aux_verb_token(current.as_str()) {
-                continue;
-            }
-            let next = tokens[idx + 1].to_ascii_lowercase();
-            if next.ends_with("ing")
-                || matches!(
-                    next.as_str(),
-                    "holding"
-                        | "dribbling"
-                        | "wearing"
-                        | "standing"
-                        | "sitting"
-                        | "running"
-                        | "jumping"
-                        | "walking"
-                        | "looking"
-                        | "smiling"
-                )
-            {
-                aux_idx = Some(idx);
-                break;
-            }
-        }
-        if let Some(idx) = aux_idx {
-            tokens.remove(idx);
-        }
-    }
-
-    if tokens.len() > 2 {
-        let last_idx = tokens.len().saturating_sub(1);
-        tokens = tokens
-            .into_iter()
-            .enumerate()
-            .filter_map(|(idx, token)| {
-                let lower = token.to_ascii_lowercase();
-                if idx > 0 && idx < last_idx && is_aux_verb_token(lower.as_str()) {
-                    None
-                } else if idx > 0 && is_article_token(lower.as_str()) {
-                    None
-                } else {
-                    Some(token)
-                }
-            })
-            .collect();
-    }
-
-    if let Some(last) = tokens.last() {
-        let lower = last.to_ascii_lowercase();
-        if matches!(lower.as_str(), "looks" | "look" | "appears" | "seems") {
-            let _ = tokens.pop();
-        }
-    }
-
-    tokens.join(" ").trim().to_string()
-}
-
-fn clean_description(text: &str, max_chars: usize) -> String {
-    let mut cleaned = text.trim().to_string();
-    if cleaned.is_empty() {
-        return String::new();
-    }
-
-    let lower = cleaned.to_ascii_lowercase();
-    for prefix in ["description:", "label:", "caption:"] {
-        if lower.starts_with(prefix) {
-            cleaned = cleaned[prefix.len()..].trim().to_string();
-            break;
-        }
-    }
-
-    cleaned = cleaned
-        .trim_matches('"')
-        .trim_matches('\'')
-        .replace(['\r', '\n', '\t'], " ");
-    cleaned = cleaned.split_whitespace().collect::<Vec<&str>>().join(" ");
-    cleaned = cleaned
-        .trim()
-        .trim_matches(|ch: char| matches!(ch, '"' | '\''))
-        .trim_end_matches(|ch: char| matches!(ch, '.' | ',' | ':' | ';'))
-        .trim()
-        .to_string();
-    if cleaned.is_empty() {
-        return String::new();
-    }
-
-    let lowered = cleaned.to_ascii_lowercase();
-    for prefix in [
-        "a photo of ",
-        "photo of ",
-        "an image of ",
-        "image of ",
-        "a picture of ",
-        "picture of ",
-    ] {
-        if let Some(rest) = lowered.strip_prefix(prefix) {
-            let split_at = cleaned.len().saturating_sub(rest.len());
-            cleaned = cleaned[split_at..].trim().to_string();
-            break;
-        }
-    }
-
-    cleaned = compact_caption_phrase(&cleaned);
-    if cleaned.is_empty() {
-        return String::new();
-    }
-
-    cleaned = cleaned.split_whitespace().collect::<Vec<&str>>().join(" ");
-    if cleaned.chars().count() > max_chars {
-        cleaned = cleaned.chars().take(max_chars + 1).collect::<String>();
-        if let Some((head, _)) = cleaned.rsplit_once(' ') {
-            cleaned = head.trim().to_string();
-        }
-        if cleaned.chars().count() > max_chars {
-            cleaned = cleaned.chars().take(max_chars).collect();
-        }
-    }
-    cleaned.trim().to_string()
-}
-
-fn strip_code_fence(text: &str) -> String {
-    let raw = text.trim();
-    if !(raw.starts_with("```") && raw.ends_with("```")) {
-        return raw.to_string();
-    }
-    let lines: Vec<&str> = raw.lines().collect();
-    if lines.len() < 2 {
-        return raw.to_string();
-    }
-    let mut body = lines[1..lines.len() - 1].join("\n").trim().to_string();
-    if body.to_ascii_lowercase().starts_with("json") {
-        body = body[4..].trim().to_string();
-    }
-    body
-}
-
-fn extract_json_object_from_text(text: &str) -> Option<Map<String, Value>> {
-    let raw = strip_code_fence(text);
-    if raw.trim().is_empty() {
-        return None;
-    }
-    let mut candidates = vec![raw.clone()];
-    if let (Some(start), Some(end)) = (raw.find('{'), raw.rfind('}')) {
-        if end > start {
-            candidates.push(raw[start..=end].to_string());
-        }
-    }
-    for candidate in candidates {
-        if let Ok(parsed) = serde_json::from_str::<Value>(&candidate) {
-            if let Some(object) = parsed.as_object() {
-                return Some(object.clone());
-            }
-        }
-    }
-    None
-}
-
-fn coerce_text_list(value: Option<&Value>, max_items: usize, max_chars: usize) -> Vec<String> {
-    let Some(value) = value else {
-        return Vec::new();
-    };
-    let mut raw_items: Vec<String> = Vec::new();
-    match value {
-        Value::Array(rows) => {
-            for row in rows {
-                if let Some(text) = row.as_str() {
-                    raw_items.push(text.to_string());
-                }
-            }
-        }
-        Value::String(text) => {
-            raw_items.extend(text.split(',').map(str::to_string));
-        }
-        _ => {}
-    }
-
-    let mut cleaned = Vec::new();
-    let mut seen = Vec::new();
-    for row in raw_items {
-        let mut text = row.split_whitespace().collect::<Vec<&str>>().join(" ");
-        text = text.trim().to_string();
-        if text.is_empty() {
-            continue;
-        }
-        if text.chars().count() > max_chars {
-            text = text
-                .chars()
-                .take(max_chars)
-                .collect::<String>()
-                .trim()
-                .to_string();
-        }
-        let key = text.to_ascii_lowercase();
-        if seen.iter().any(|existing| existing == &key) {
-            continue;
-        }
-        seen.push(key);
-        cleaned.push(text);
-        if cleaned.len() >= max_items {
-            break;
-        }
-    }
-    cleaned
-}
-
-fn normalize_hex_color(value: &str) -> Option<String> {
-    let raw = value.trim();
-    if !raw.starts_with('#') {
-        return None;
-    }
-    let mut body = raw.trim_start_matches('#').to_string();
-    if body.len() == 3 && body.chars().all(|ch| ch.is_ascii_hexdigit()) {
-        body = body
-            .chars()
-            .flat_map(|ch| [ch, ch])
-            .collect::<String>()
-            .to_ascii_uppercase();
-    }
-    if body.len() != 6 || !body.chars().all(|ch| ch.is_ascii_hexdigit()) {
-        return None;
-    }
-    Some(format!("#{}", body.to_ascii_uppercase()))
-}
-
-fn parse_dna_payload(
-    payload: &Map<String, Value>,
-) -> Option<(Vec<String>, Vec<String>, Vec<String>, String)> {
-    let palette_raw = coerce_text_list(payload.get("palette"), 8, 12);
-    let mut palette = Vec::new();
-    for row in palette_raw {
-        if let Some(code) = normalize_hex_color(&row) {
-            if !palette.contains(&code) {
-                palette.push(code);
-            }
-        }
-    }
-    let colors = coerce_text_list(payload.get("colors"), 8, 42);
-    let materials = coerce_text_list(payload.get("materials"), 8, 42);
-    let summary = payload
-        .get("summary")
-        .and_then(Value::as_str)
-        .map(|value| clean_text_inference(value, Some(180)))
-        .unwrap_or_default();
-    let summary = if summary.is_empty() {
-        let color_part = if colors.is_empty() {
-            "the extracted palette".to_string()
-        } else {
-            colors
-                .iter()
-                .take(3)
-                .cloned()
-                .collect::<Vec<String>>()
-                .join(", ")
-        };
-        let material_part = if materials.is_empty() {
-            "the extracted materials".to_string()
-        } else {
-            materials
-                .iter()
-                .take(3)
-                .cloned()
-                .collect::<Vec<String>>()
-                .join(", ")
-        };
-        format!("Rebuild with {color_part} and {material_part}.")
-    } else {
-        summary
-    };
-    if palette.is_empty() && colors.is_empty() && materials.is_empty() {
-        return None;
-    }
-    Some((palette, colors, materials, summary))
-}
-
-fn parse_soul_payload(payload: &Map<String, Value>) -> Option<(String, String)> {
-    let raw_emotion = payload
-        .get("emotion")
-        .and_then(Value::as_str)
-        .or_else(|| payload.get("primary_emotion").and_then(Value::as_str))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?
-        .to_string();
-    let emotion = clean_text_inference(&raw_emotion, Some(64));
-    if emotion.is_empty() {
-        return None;
-    }
-    let summary = payload
-        .get("summary")
-        .and_then(Value::as_str)
-        .map(|value| clean_text_inference(value, Some(180)))
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| format!("Make the scene emotionally {emotion}."));
-    Some((emotion, summary))
-}
-
-fn build_labeled_image_content(
-    labels_and_paths: &[(&str, &Path)],
-    instruction: &str,
-    max_dim: u32,
-) -> Option<Vec<Value>> {
-    let mut content = Vec::new();
-    for (label, path) in labels_and_paths {
-        if !label.trim().is_empty() {
-            content.push(json!({
-                "type": "input_text",
-                "text": *label,
-            }));
-        }
-        let data_url = prepare_vision_image_data_url(path, max_dim)?;
-        content.push(json!({
-            "type": "input_image",
-            "image_url": data_url,
-        }));
-    }
-    content.push(json!({
-        "type": "input_text",
-        "text": instruction,
-    }));
-    Some(content)
-}
-
-pub(crate) fn description_realtime_instruction() -> &'static str {
-    "Describe the image as one short caption fragment (<=40 chars), not a full sentence. Use noun-phrase style like 'Runner holding umbrella'. Do not use auxiliary verbs like is/are/was/were. Return only the caption."
-}
-
-fn description_instruction(max_chars: usize) -> String {
-    format!(
-        "Write one concise computer-vision caption fragment for the attached image (<= {max_chars} characters). Use noun-phrase style, not a full sentence. Avoid auxiliary verbs (is/are/was/were) and avoid leading articles when possible. If a person or character is confidently recognizable, use the proper name (example: 'Alex Rivera holding basketball'). Otherwise use a concrete visual subject plus one discriminator (action, garment, color, material, viewpoint, or composition cue). Do not infer sports team/franchise from jersey colors alone; only mention a team when text/logo is clearly readable. No hedging. No questions. No extra commentary. Output ONLY the caption."
-    )
-}
-
-fn diagnose_instruction() -> &'static str {
-    "Diagnose this image like an honest creative director.\nDo NOT describe the image. Diagnose what's working and what isn't, using specific visual evidence.\nWrite in plain, easy English. Short lines. Lots of whitespace. No jargon.\nThink like a tiny council first:\n1) Art director (taste, composition)\n2) Commercial lens (clarity, conversion)\nThen write ONE merged answer.\n\nIf it looks like a product photo meant to sell something, judge it as a product shot (lighting, background, crop, color accuracy, reflections/shadows, edge cutout quality, legibility).\nOtherwise, judge it by the most likely use case (ad, poster, UI, editorial, etc).\n\nFormat (keep under ~180 words):\nUSE CASE (guess): <product shot | ad | poster | UI | editorial | other>\n\nTOP ISSUE:\n<one sentence>\n\nWHAT'S WORKING:\n- <2-4 bullets>\n\nWHAT TO FIX NEXT:\n- <3-5 bullets>\n\nNEXT TEST:\n- <2 bullets>\n\nRules: keep bullets to one line each. Be concrete about composition/hierarchy, focal point, color, lighting, depth, typography/legibility (if present), and realism/materials. No generic praise."
-}
-
-pub(crate) fn canvas_context_instruction() -> &'static str {
-    canvas_context_realtime_instruction()
-}
-
-fn argue_instruction() -> &'static str {
-    "Argue between two creative directions based on Image A and Image B.\nYou are not neutral: make the strongest case for each, using specific visual evidence.\nWrite in plain, easy English. Short lines. Lots of whitespace. No jargon.\nIf these are product shots, judge them as product shots; otherwise use the most likely use case.\n\nFormat (keep under ~220 words):\nIMAGE A WINS IF:\n- <3-5 bullets>\n\nIMAGE B WINS IF:\n- <3-5 bullets>\n\nMY PICK:\n<A or B> — <one sentence>\n\nWHY:\n<2-3 short sentences>\n\nNEXT TEST:\n- <2 bullets>\n"
-}
-
-fn dna_extract_instruction() -> &'static str {
-    "Extract this image's visual DNA for transfer.\nFocus only on COLORS and MATERIALS that are visually dominant.\nRespond with JSON only (no markdown):\n{\n  \"palette\": [\"#RRGGBB\", \"...\"],\n  \"colors\": [\"short color phrases\"],\n  \"materials\": [\"short material phrases\"],\n  \"summary\": \"one short sentence for edit transfer\"\n}\nRules: 3-8 palette entries. 2-8 colors. 2-8 materials. Summary must be <= 16 words and directly usable in an edit instruction."
-}
-
-fn soul_extract_instruction() -> &'static str {
-    "Extract this image's dominant emotional soul.\nRespond with JSON only (no markdown):\n{\n  \"emotion\": \"single dominant emotion phrase\",\n  \"summary\": \"one short sentence for edit transfer\"\n}\nRules: emotion should be concise and concrete (e.g., serene tension, triumphant warmth). Summary must be <= 14 words and directly usable in an edit instruction."
-}
-
-fn triplet_rule_instruction() -> &'static str {
-    "You are an elite creative director. You will be shown three images: Image A, Image B, Image C.\nYour job: identify the ONE consistent design rule the user is applying across all three.\n\nReturn JSON ONLY with this schema:\n{\n  \"principle\": \"<one sentence rule>\",\n  \"evidence\": [\n    {\"image\": \"A\", \"note\": \"<short concrete visual evidence>\"},\n    {\"image\": \"B\", \"note\": \"<short concrete visual evidence>\"},\n    {\"image\": \"C\", \"note\": \"<short concrete visual evidence>\"}\n  ],\n  \"annotations\": [\n    {\"image\": \"A\", \"x\": 0.0, \"y\": 0.0, \"label\": \"<what to look at>\"},\n    {\"image\": \"B\", \"x\": 0.0, \"y\": 0.0, \"label\": \"<what to look at>\"},\n    {\"image\": \"C\", \"x\": 0.0, \"y\": 0.0, \"label\": \"<what to look at>\"}\n  ],\n  \"confidence\": 0.0\n}\n\nRules:\n- x and y are fractions in [0,1] relative to the image (0,0 top-left).\n- Keep annotations to 0-6 total points; omit the field or use [] if unsure.\n- No markdown, no prose outside JSON, no trailing commas."
-}
-
-fn odd_one_out_instruction() -> &'static str {
-    "You are curating a mood board. You will be shown three images: Image A, Image B, Image C.\nTwo images share a pattern. One breaks it.\n\nReturn JSON ONLY with this schema:\n{\n  \"odd_image\": \"A\",\n  \"pattern\": \"<one short paragraph describing what A/B share>\",\n  \"explanation\": \"<why the odd one breaks it, concrete visual reasons>\",\n  \"confidence\": 0.0\n}\n\nRules:\n- odd_image MUST be exactly \"A\", \"B\", or \"C\".\n- No markdown, no prose outside JSON, no trailing commas."
-}
-
-pub(crate) fn intent_icons_instruction(mother: bool) -> String {
-    let base = r#"You are a realtime Canvas-to-Intent Icon Engine.
-
-ROLE
-Observe a live visual canvas where users place images.
-Your job is NOT to explain intent, guess motivation, or ask questions.
-Your job is to surface the user's intent as a set of clear, human-legible ICONS for image generation.
-
-HARD CONSTRAINTS
-- Output JSON only. No prose. No user-facing text.
-- The JSON must be syntactically valid (single top-level object).
-- Communicate intent exclusively through icons, spatial grouping, highlights, and branching lanes.
-- Never infer or expose "why".
-- If uncertain, present multiple icon paths rather than choosing one.
-
-INPUT SIGNALS
-You receive:
-- A CANVAS SNAPSHOT image (may contain multiple user images placed spatially).
-- An optional CONTEXT_ENVELOPE_JSON (input text) that is authoritative for:
-  - canvas size
-  - per-image positions/sizes/order
-  - per-image vision_desc labels (optional): short, noisy phrases derived from the images (not user text)
-  - intent round index and remaining time (timer_enabled/rounds_enabled may be false)
-  - prior user selections (YES/NO/MAYBE) by branch
-- Optional SOURCE_IMAGE_REFERENCE inputs (high-res) for one or more canvas images.
-
-INTERPRETATION RULES
-- Treat images as signals of intent, not meaning.
-- If vision_desc labels are present in CONTEXT_ENVELOPE_JSON.images[], treat them as weak hints only.
-- If SOURCE_IMAGE_REFERENCE inputs are present, prioritize them for identity/detail disambiguation.
-- Placement implies structure:
-  - Left-to-right = flow
-  - Top-to-bottom = hierarchy
-  - Clusters = coupling
-  - Isolation = emphasis
-  - Relative size = emphasis/importance
-
-OUTPUT GOAL
-Continuously emit a minimal, evolving set of INTENT ICONS that describe:
-1) WHAT kind of system/action the user is assembling
-2) HOW they are choosing to act on that system
-
-ICON TAXONOMY (STRICT)
-Use only these icon_id values:
-
-Core
-- IMAGE_GENERATION
-- OUTPUTS
-- ITERATION
-- PIPELINE
-
-Use Cases (branch lanes)
-- GAME_DEV_ASSETS
-- STREAMING_CONTENT
-- UI_UX_PROTOTYPING
-- ECOMMERCE_POD
-- CONTENT_ENGINE
-
-Asset Types
-- CONCEPT_ART
-- SPRITES
-- TEXTURES
-- CHARACTER_SHEETS
-- THUMBNAILS
-- OVERLAYS
-- EMOTES
-- SOCIAL_GRAPHICS
-- SCREENS
-- WIREFRAMES
-- MOCKUPS
-- USER_FLOWS
-- MERCH_DESIGN
-- PRODUCT_PHOTOS
-- MARKETPLACE_LISTINGS
-- BRAND_SYSTEM
-- MULTI_CHANNEL
-
-Signatures
-- MIXED_FIDELITY
-- VOLUME
-- OUTCOMES
-- STRUCTURED
-- SINGULAR
-- PHYSICAL_OUTPUT
-- PROCESS
-- AUTOMATION
-
-Relations
-- FLOW
-- DEPENDENCY
-- FEEDBACK
-
-Checkpoints
-- YES_TOKEN
-- NO_TOKEN
-- MAYBE_TOKEN
-
-BRANCH IDS (PREFERRED)
-- game_dev_assets
-- streaming_content
-- uiux_prototyping
-- ecommerce_pod
-- content_engine
-
-TRANSFORMATION MODES (FOR MOTHER PROPOSALS)
-Choose exactly one primary mode from this enum:
-- amplify: Push the current composition into a cinematic crescendo.
-- transcend: Lift the scene into a more transcendent visual world.
-- destabilize: Shift the composition toward controlled visual instability.
-- purify: Simplify geometry and light into a calm sculptural image.
-- hybridize: Fuse the current references into one coherent composition.
-- mythologize: Recast the scene as mythic visual storytelling.
-- monumentalize: Turn the scene into a monumental hero composition.
-- fracture: Introduce intentional fracture and expressive disruption.
-- romanticize: Infuse the composition with intimate emotional warmth.
-- alienate: Reframe the scene with uncanny, otherworldly distance.
-Also provide ranked alternatives with awe_joy_score and confidence.
-
-OUTPUT FORMAT (STRICT JSON)
-{
-  "frame_id": "<input frame id>",
-  "schema": "cue.intent_icons",
-  "schema_version": 1,
-  "transformation_mode": "<one mode from enum>",
-  "transformation_mode_candidates": [
-    {
-      "mode": "<one mode from enum>",
-      "awe_joy_score": 0.0,
-      "confidence": 0.0
-    }
-  ],
-  "image_descriptions": [
-    {
-      "image_id": "<from CONTEXT_ENVELOPE_JSON.images[].id>",
-      "label": "<CV caption fragment, <=40 chars, concrete and specific>",
-      "confidence": 0.0
-    }
-  ],
-  "intent_icons": [
-    {
-      "icon_id": "<from taxonomy>",
-      "confidence": 0.0,
-      "position_hint": "primary"
-    }
-  ],
-  "relations": [
-    {
-      "from_icon": "<icon_id>",
-      "to_icon": "<icon_id>",
-      "relation_type": "FLOW"
-    }
-  ],
-  "branches": [
-    {
-      "branch_id": "<id>",
-      "confidence": 0.0,
-      "icons": ["GAME_DEV_ASSETS", "SPRITES", "ITERATION"],
-      "lane_position": "left",
-      "evidence_image_ids": ["<image_id>"]
-    }
-  ],
-  "checkpoint": {
-    "icons": ["YES_TOKEN", "NO_TOKEN", "MAYBE_TOKEN"],
-    "applies_to": "<branch_id or icon cluster>"
-  }
-}
-
-BEHAVIOR RULES
-- Always maintain one primary intent cluster and 1-3 alternative clusters.
-- Always try to fill image_descriptions for each image in CONTEXT_ENVELOPE_JSON.images[].
-- Emit exactly one image_descriptions row per CONTEXT_ENVELOPE_JSON.images[].id when available.
-- Preserve CONTEXT_ENVELOPE_JSON.images[] id order in image_descriptions.
-- Never swap labels across image_id values.
-- transformation_mode must be one of the 10 enum values above.
-- transformation_mode_candidates should include the primary mode.
-- In Mother mode, transformation_mode_candidates must include all 10 enum modes exactly once.
-- transformation_mode_candidates[].awe_joy_score must be in [0.0, 100.0] and represent predicted intensity of "stunningly awe-inspiring and tearfully joyous".
-- transformation_mode_candidates[].confidence must be in [0.0, 1.0] and represent certainty in that awe_joy_score.
-- Sort transformation_mode_candidates by awe_joy_score DESC (tie-break confidence DESC).
-- Include branches[].confidence in [0.0, 1.0] and sort branches by confidence DESC.
-- checkpoint.applies_to should match the highest-confidence branch_id.
-- evidence_image_ids should reference CONTEXT_ENVELOPE_JSON.images[].id (0-3 ids).
-- image_descriptions labels must use neutral computer-vision caption style.
-- Keep labels short and concrete. `A photo of ...` is acceptable but not required.
-- If a person or character is confidently recognizable, use the proper name (for example: "Alex Rivera holding a basketball").
-- Prefer identifiable names over generic role nouns; avoid labels like "basketball player holding ball" when a confident identity is available.
-- Do not infer team/franchise identity from jersey color alone; only mention a team when text/logo evidence is clearly visible.
-- If not identifiable by name, use a concrete visual subject + one discriminator (action, garment, color, material, viewpoint, or composition cue).
-- Avoid generic placeholders like "portrait photo", "object image", "person picture".
-- Do not hedge ("appears to", "looks like"), ask questions, or add commentary.
-- Keep labels concise and distinctive; omit minor details if needed to stay within the char budget.
-- Do not copy visible text; avoid brand names.
-- Do not collapse ambiguity too early.
-- Start broad with use-case lanes; add Asset Types and Signatures as evidence accumulates.
-- Increase specificity only after YES_TOKEN is applied.
-- After NO_TOKEN, deprioritize that branch and propose another alternative.
-- The icons must be understandable without explanation, language, or onboarding.
-
-SAFETY
-- Do not emit intent icons for illegal or deceptive systems.
-- Do not produce impersonation or identity abuse flows.
-- Keep all intent representations general-purpose and constructive.
-
-Return JSON only."#;
-    if mother {
-        return format!(
-            "You are ranking image proposals for Cue.\nPrimary target: outputs most likely to feel \"stunningly awe-inspiring and tearfully joyous.\"\nMaximize visual wow and emotional impact.\n\nRULES\n- CONTEXT_ENVELOPE_JSON.mother_context is authoritative when present.\n- Treat mother_context.creative_directive and mother_context.optimization_target as hard steering.\n- branches[].confidence must estimate likelihood that a generated image will feel \"stunningly awe-inspiring and tearfully joyous.\"\n- transformation_mode_candidates must include all 10 transformation enum modes exactly once.\n- transformation_mode_candidates[].awe_joy_score (0-100) must estimate intensity of \"stunningly awe-inspiring and tearfully joyous.\"\n- transformation_mode_candidates[].confidence (0-1) must estimate certainty in that awe_joy_score.\n- Sort branches by confidence DESC.\n- Sort transformation_mode_candidates by awe_joy_score DESC (tie-break confidence DESC).\n- Prefer transformation modes that are novel relative to mother_context.recent_rejected_modes_for_context.\n- Avoid repeating mother_context.last_accepted_mode unless confidence improvement is substantial.\n- Use mother_context.selected_ids and mother_context.active_id to prioritize evidence_image_ids.\n- Use mother_context.preferred_shot_type, mother_context.preferred_lighting_profile, and mother_context.preferred_lens_guidance as ranking cues for image-impacting proposal quality.\n- When mother_context.shot_type_hints or candidate shot/lighting/lens fields are present, use them to validate and adjust ranking strength per mode.\n- Use images[].origin to balance uploaded references with mother-generated continuity.\n- For 2+ images, prefer bold fusion over collage and allow stylized camera/lighting choices when impact improves.\n- Keep anti-artifact behavior conservative: avoid ghosting, duplication, and interface residue.\n\nReturn the same strict JSON schema contract as the default intent engine.\n\n{}",
-            base
-        );
-    }
-    base.to_string()
-}
-
-fn vision_description_realtime_model() -> String {
-    let value = first_non_empty_env(&[
-        "CUE_DESCRIBE_REALTIME_MODEL",
-        "OPENAI_DESCRIBE_REALTIME_MODEL",
-    ])
-    .unwrap_or_else(|| "gpt-realtime-mini".to_string());
-    normalize_realtime_model_name(&value, "gpt-realtime-mini")
-}
-
-fn vision_description_model_candidates_for(
-    provider: RealtimeProvider,
-    explicit_model: Option<&str>,
-) -> Vec<String> {
-    let explicit = explicit_model
-        .map(str::trim)
-        .map(str::to_string)
-        .filter(|value| !value.is_empty());
-    let mut models: Vec<String> = Vec::new();
-    if let Some(requested) = explicit {
-        models.push(requested.clone());
-        if requested != OPENAI_VISION_SECONDARY_MODEL {
-            models.push(OPENAI_VISION_SECONDARY_MODEL.to_string());
-        }
-    } else if provider == RealtimeProvider::GeminiFlash {
-        models.push("gemini-3.0-flash".to_string());
-        models.push("gemini-3-flash-preview".to_string());
-        models.push("google/gemini-3-flash-preview".to_string());
-    } else {
-        models.push(OPENAI_VISION_FALLBACK_MODEL.to_string());
-        models.push(OPENAI_VISION_SECONDARY_MODEL.to_string());
-    }
-    fn model_dedupe_key(provider: RealtimeProvider, model: &str) -> String {
-        if provider == RealtimeProvider::GeminiFlash {
-            sanitize_openrouter_model(model, OPENROUTER_OPENAI_VISION_FALLBACK_MODEL)
-                .trim()
-                .to_ascii_lowercase()
-        } else {
-            sanitize_openai_responses_model(model, OPENAI_VISION_FALLBACK_MODEL)
-                .trim()
-                .to_ascii_lowercase()
-        }
-    }
-
-    let mut deduped = Vec::new();
-    let mut seen = HashSet::new();
-    for model in models {
-        let normalized = model_dedupe_key(provider, &model);
-        if normalized.is_empty() || !seen.insert(normalized) {
-            continue;
-        }
-        deduped.push(model);
-    }
-    deduped
-}
-
-fn vision_description_model_candidates() -> Vec<String> {
-    let explicit = first_non_empty_env(&["CUE_DESCRIBE_MODEL", "OPENAI_DESCRIBE_MODEL"]);
-    vision_description_model_candidates_for(canvas_context_realtime_provider(), explicit.as_deref())
-}
-
-fn vision_infer_description_realtime(
+pub(crate) fn vision_infer_description_realtime(
     path: &Path,
     max_chars: usize,
-) -> Option<DescriptionVisionInference> {
+) -> Option<observe::vision::DescriptionVisionInference> {
     let api_key = openai_api_key()?;
-    let model = vision_description_realtime_model();
+    let model = observe::vision::vision_description_realtime_model();
     if model.trim().is_empty() {
         return None;
     }
@@ -8072,7 +6717,10 @@ fn vision_infer_description_realtime(
                 "type": "message",
                 "role": "user",
                 "content": [
-                    {"type": "input_text", "text": description_realtime_instruction()},
+                    {
+                        "type": "input_text",
+                        "text": observe::vision::description_realtime_instruction()
+                    },
                     {"type": "input_image", "image_url": data_url},
                 ],
             }],
@@ -8170,12 +6818,13 @@ fn vision_infer_description_realtime(
                 }
             }
             let (text, _) = resolve_streamed_response_text(&buffer, &response);
-            let cleaned = clean_description(&text, max_chars);
+            let cleaned = observe::vision::clean_description(&text, max_chars);
             if cleaned.trim().is_empty() {
                 let _ = ws.close(None);
                 return None;
             }
-            let (input_tokens, output_tokens) = extract_token_usage_pair(&response);
+            let (input_tokens, output_tokens) =
+                observe::vision::extract_token_usage_pair(&response);
             let model_name = response
                 .as_object()
                 .and_then(|row| row.get("model"))
@@ -8185,7 +6834,7 @@ fn vision_infer_description_realtime(
                 .map(str::to_string)
                 .or_else(|| Some(model.clone()));
             let _ = ws.close(None);
-            return Some(DescriptionVisionInference {
+            return Some(observe::vision::DescriptionVisionInference {
                 description: cleaned,
                 source: "openai_realtime_describe".to_string(),
                 model: model_name,
@@ -8196,448 +6845,6 @@ fn vision_infer_description_realtime(
     }
     let _ = ws.close(None);
     None
-}
-
-pub(crate) fn vision_infer_description(
-    path: &Path,
-    max_chars: usize,
-) -> Option<DescriptionVisionInference> {
-    if let Some(inference) = vision_infer_description_realtime(path, max_chars) {
-        return Some(inference);
-    }
-    let models = vision_description_model_candidates();
-    let data_url = prepare_vision_image_data_url(path, 1024)?;
-    for model in models {
-        let content = vec![
-            json!({"type": "input_text", "text": description_instruction(max_chars)}),
-            json!({"type": "input_image", "image_url": data_url.clone()}),
-        ];
-        let result = openai_vision_request(&model, content, 120, Duration::from_secs_f64(22.0));
-        let Some((text, input_tokens, output_tokens, model_name)) = result else {
-            continue;
-        };
-        let cleaned = clean_description(&text, max_chars);
-        if cleaned.is_empty() {
-            continue;
-        }
-        return Some(DescriptionVisionInference {
-            description: cleaned,
-            source: "openai_vision".to_string(),
-            model: Some(model_name),
-            input_tokens,
-            output_tokens,
-        });
-    }
-    None
-}
-
-fn vision_infer_diagnosis(path: &Path) -> Option<TextVisionInference> {
-    let model = first_non_empty_env(&["CUE_DIAGNOSE_MODEL", "OPENAI_DIAGNOSE_MODEL"])
-        .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
-    let data_url = prepare_vision_image_data_url(path, 1024)?;
-    let content = vec![
-        json!({"type": "input_text", "text": diagnose_instruction()}),
-        json!({"type": "input_image", "image_url": data_url}),
-    ];
-    let (text, input_tokens, output_tokens, model_name) =
-        openai_vision_request(&model, content, 900, Duration::from_secs_f64(45.0))?;
-    let cleaned = clean_text_inference(&text, Some(8000));
-    if cleaned.is_empty() {
-        return None;
-    }
-    Some(TextVisionInference {
-        text: cleaned,
-        source: "openai_vision".to_string(),
-        model: Some(model_name),
-        input_tokens,
-        output_tokens,
-    })
-}
-
-pub(crate) fn vision_infer_canvas_context(
-    path: &Path,
-    requested_model: Option<String>,
-) -> Option<TextVisionInference> {
-    let model_raw = requested_model
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| {
-            first_non_empty_env(&["CUE_CANVAS_CONTEXT_MODEL", "OPENAI_CANVAS_CONTEXT_MODEL"])
-        })
-        .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
-    let requested = sanitize_openai_responses_model(&model_raw, OPENAI_VISION_FALLBACK_MODEL);
-    let mut models = vec![requested.clone()];
-    if requested != OPENAI_VISION_FALLBACK_MODEL {
-        models.push(OPENAI_VISION_FALLBACK_MODEL.to_string());
-    }
-    let data_url = prepare_vision_image_data_url(path, 768)?;
-    for model in models {
-        let content = vec![
-            json!({"type": "input_text", "text": canvas_context_instruction()}),
-            json!({"type": "input_image", "image_url": data_url.clone()}),
-        ];
-        let result = openai_vision_request(&model, content, 520, Duration::from_secs_f64(28.0));
-        let Some((text, input_tokens, output_tokens, model_name)) = result else {
-            continue;
-        };
-        let cleaned = clean_text_inference(&text, Some(12000));
-        if cleaned.is_empty() {
-            continue;
-        }
-        return Some(TextVisionInference {
-            text: cleaned,
-            source: "openai_vision".to_string(),
-            model: Some(model_name),
-            input_tokens,
-            output_tokens,
-        });
-    }
-    None
-}
-
-fn vision_infer_argument(path_a: &Path, path_b: &Path) -> Option<TextVisionInference> {
-    let model = first_non_empty_env(&["CUE_ARGUE_MODEL", "OPENAI_ARGUE_MODEL"])
-        .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
-    let content = build_labeled_image_content(
-        &[("Image A:", path_a), ("Image B:", path_b)],
-        argue_instruction(),
-        1024,
-    )?;
-    let (text, input_tokens, output_tokens, model_name) =
-        openai_vision_request(&model, content, 1100, Duration::from_secs_f64(55.0))?;
-    let cleaned = clean_text_inference(&text, Some(10000));
-    if cleaned.is_empty() {
-        return None;
-    }
-    Some(TextVisionInference {
-        text: cleaned,
-        source: "openai_vision".to_string(),
-        model: Some(model_name),
-        input_tokens,
-        output_tokens,
-    })
-}
-
-fn vision_infer_dna_signature(path: &Path) -> Option<DnaVisionInference> {
-    let model = first_non_empty_env(&["CUE_DNA_VISION_MODEL", "OPENAI_DNA_MODEL"])
-        .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
-    let data_url = prepare_vision_image_data_url(path, 1024)?;
-    let content = vec![
-        json!({"type": "input_text", "text": dna_extract_instruction()}),
-        json!({"type": "input_image", "image_url": data_url}),
-    ];
-    let (text, input_tokens, output_tokens, model_name) =
-        openai_vision_request(&model, content, 380, Duration::from_secs_f64(35.0))?;
-    let payload = extract_json_object_from_text(&text)?;
-    let (palette, colors, materials, summary) = parse_dna_payload(&payload)?;
-    Some(DnaVisionInference {
-        palette,
-        colors,
-        materials,
-        summary,
-        source: "openai_vision".to_string(),
-        model: Some(model_name),
-        input_tokens,
-        output_tokens,
-    })
-}
-
-fn vision_infer_soul_signature(path: &Path) -> Option<SoulVisionInference> {
-    let model = first_non_empty_env(&["CUE_SOUL_VISION_MODEL", "OPENAI_SOUL_MODEL"])
-        .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
-    let data_url = prepare_vision_image_data_url(path, 1024)?;
-    let content = vec![
-        json!({"type": "input_text", "text": soul_extract_instruction()}),
-        json!({"type": "input_image", "image_url": data_url}),
-    ];
-    let (text, input_tokens, output_tokens, model_name) =
-        openai_vision_request(&model, content, 240, Duration::from_secs_f64(35.0))?;
-    let payload = extract_json_object_from_text(&text)?;
-    let (emotion, summary) = parse_soul_payload(&payload)?;
-    Some(SoulVisionInference {
-        emotion,
-        summary,
-        source: "openai_vision".to_string(),
-        model: Some(model_name),
-        input_tokens,
-        output_tokens,
-    })
-}
-
-fn parse_triplet_rule_payload(
-    payload: &Map<String, Value>,
-) -> Option<(String, Vec<Value>, Vec<Value>, f64)> {
-    let principle = payload
-        .get("principle")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?
-        .to_string();
-    let mut evidence: Vec<Value> = Vec::new();
-    for row in payload
-        .get("evidence")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-    {
-        let Some(obj) = row.as_object() else {
-            continue;
-        };
-        let image = obj
-            .get("image")
-            .and_then(Value::as_str)
-            .map(|value| value.trim().to_ascii_uppercase())
-            .filter(|value| matches!(value.as_str(), "A" | "B" | "C"));
-        let note = obj
-            .get("note")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        if let (Some(image), Some(note)) = (image, note) {
-            evidence.push(json!({
-                "image": image,
-                "note": note,
-            }));
-        }
-    }
-    let mut annotations: Vec<Value> = Vec::new();
-    for row in payload
-        .get("annotations")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-    {
-        let Some(obj) = row.as_object() else {
-            continue;
-        };
-        let image = obj
-            .get("image")
-            .and_then(Value::as_str)
-            .map(|value| value.trim().to_ascii_uppercase())
-            .filter(|value| matches!(value.as_str(), "A" | "B" | "C"));
-        let x = obj.get("x").and_then(Value::as_f64);
-        let y = obj.get("y").and_then(Value::as_f64);
-        if let (Some(image), Some(x), Some(y)) = (image, x, y) {
-            if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) {
-                continue;
-            }
-            let label = obj
-                .get("label")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .trim()
-                .to_string();
-            annotations.push(json!({
-                "image": image,
-                "x": x,
-                "y": y,
-                "label": label,
-            }));
-        }
-    }
-    let confidence = payload
-        .get("confidence")
-        .and_then(Value::as_f64)
-        .filter(|value| (0.0..=1.0).contains(value))
-        .unwrap_or(0.72);
-    Some((principle, evidence, annotations, confidence))
-}
-
-fn vision_infer_triplet_rule(
-    path_a: &Path,
-    path_b: &Path,
-    path_c: &Path,
-) -> Option<TripletRuleVisionInference> {
-    let model = first_non_empty_env(&[
-        "CUE_EXTRACT_RULE_MODEL",
-        "OPENAI_EXTRACT_RULE_MODEL",
-        "CUE_DIAGNOSE_MODEL",
-        "OPENAI_DIAGNOSE_MODEL",
-    ])
-    .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
-    let content = build_labeled_image_content(
-        &[
-            ("Image A:", path_a),
-            ("Image B:", path_b),
-            ("Image C:", path_c),
-        ],
-        triplet_rule_instruction(),
-        1024,
-    )?;
-    let (text, input_tokens, output_tokens, model_name) =
-        openai_vision_request(&model, content, 850, Duration::from_secs_f64(60.0))?;
-    let payload = extract_json_object_from_text(&text)?;
-    let (principle, evidence, annotations, confidence) = parse_triplet_rule_payload(&payload)?;
-    Some(TripletRuleVisionInference {
-        principle,
-        evidence,
-        annotations,
-        confidence,
-        source: "openai_vision".to_string(),
-        model: Some(model_name),
-        input_tokens,
-        output_tokens,
-    })
-}
-
-fn parse_triplet_odd_payload(
-    payload: &Map<String, Value>,
-) -> Option<(String, i64, String, String, f64)> {
-    let odd_image = payload
-        .get("odd_image")
-        .and_then(Value::as_str)
-        .map(|value| value.trim().to_ascii_uppercase())
-        .filter(|value| matches!(value.as_str(), "A" | "B" | "C"))?;
-    let odd_index = if odd_image == "A" {
-        0
-    } else if odd_image == "B" {
-        1
-    } else {
-        2
-    };
-    let pattern = payload
-        .get("pattern")
-        .and_then(Value::as_str)
-        .map(|value| clean_text_inference(value, Some(4000)))
-        .unwrap_or_default();
-    let explanation = payload
-        .get("explanation")
-        .and_then(Value::as_str)
-        .map(|value| clean_text_inference(value, Some(4000)))
-        .unwrap_or_default();
-    if pattern.is_empty() && explanation.is_empty() {
-        return None;
-    }
-    let confidence = payload
-        .get("confidence")
-        .and_then(Value::as_f64)
-        .filter(|value| (0.0..=1.0).contains(value))
-        .unwrap_or(0.72);
-    Some((odd_image, odd_index, pattern, explanation, confidence))
-}
-
-fn vision_infer_triplet_odd_one_out(
-    path_a: &Path,
-    path_b: &Path,
-    path_c: &Path,
-) -> Option<TripletOddOneOutVisionInference> {
-    let model = first_non_empty_env(&[
-        "CUE_ODD_ONE_OUT_MODEL",
-        "OPENAI_ODD_ONE_OUT_MODEL",
-        "CUE_ARGUE_MODEL",
-        "OPENAI_ARGUE_MODEL",
-    ])
-    .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
-    let content = build_labeled_image_content(
-        &[
-            ("Image A:", path_a),
-            ("Image B:", path_b),
-            ("Image C:", path_c),
-        ],
-        odd_one_out_instruction(),
-        1024,
-    )?;
-    let (text, input_tokens, output_tokens, model_name) =
-        openai_vision_request(&model, content, 850, Duration::from_secs_f64(60.0))?;
-    let payload = extract_json_object_from_text(&text)?;
-    let (odd_image, odd_index, pattern, explanation, confidence) =
-        parse_triplet_odd_payload(&payload)?;
-    Some(TripletOddOneOutVisionInference {
-        odd_image,
-        odd_index,
-        pattern,
-        explanation,
-        confidence,
-        source: "openai_vision".to_string(),
-        model: Some(model_name),
-        input_tokens,
-        output_tokens,
-    })
-}
-
-#[allow(dead_code)]
-pub(crate) fn normalize_intent_icons_payload(
-    mut payload: Map<String, Value>,
-    frame_id: &str,
-) -> Map<String, Value> {
-    payload
-        .entry("schema".to_string())
-        .or_insert_with(|| Value::String("cue.intent_icons".to_string()));
-    payload
-        .entry("schema_version".to_string())
-        .or_insert_with(|| Value::Number(1.into()));
-    payload
-        .entry("frame_id".to_string())
-        .or_insert_with(|| Value::String(frame_id.to_string()));
-    if !payload
-        .get("intent_icons")
-        .map(Value::is_array)
-        .unwrap_or(false)
-    {
-        payload.insert("intent_icons".to_string(), Value::Array(Vec::new()));
-    }
-    if !payload
-        .get("relations")
-        .map(Value::is_array)
-        .unwrap_or(false)
-    {
-        payload.insert("relations".to_string(), Value::Array(Vec::new()));
-    }
-    if !payload
-        .get("branches")
-        .map(Value::is_array)
-        .unwrap_or(false)
-    {
-        payload.insert("branches".to_string(), Value::Array(Vec::new()));
-    }
-    if !payload
-        .get("checkpoint")
-        .map(Value::is_object)
-        .unwrap_or(false)
-    {
-        let applies_to = payload
-            .get("branches")
-            .and_then(Value::as_array)
-            .and_then(|rows| rows.first())
-            .and_then(Value::as_object)
-            .and_then(|row| row.get("branch_id"))
-            .cloned()
-            .unwrap_or(Value::Null);
-        payload.insert(
-            "checkpoint".to_string(),
-            json!({
-                "icons": ["YES_TOKEN", "NO_TOKEN", "MAYBE_TOKEN"],
-                "applies_to": applies_to,
-            }),
-        );
-    }
-    payload
-}
-
-#[allow(dead_code)]
-pub(crate) fn vision_infer_intent_icons_payload(
-    path: &Path,
-    mother: bool,
-    model_hint: &str,
-) -> Option<IntentIconsVisionInference> {
-    let data_url = prepare_vision_image_data_url(path, 1024)?;
-    let content = vec![
-        json!({"type": "input_text", "text": observe::intent_icons::intent_icons_instruction(mother)}),
-        json!({"type": "input_image", "image_url": data_url}),
-    ];
-    let (text, input_tokens, output_tokens, model_name) =
-        openai_vision_request(model_hint, content, 1200, Duration::from_secs_f64(40.0))?;
-    let payload = extract_json_object_from_text(&text)?;
-    let frame_id = path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or("frame");
-    let payload = observe::intent_icons::normalize_intent_icons_payload(payload, frame_id);
-    Some(IntentIconsVisionInference {
-        payload,
-        model: model_name,
-        input_tokens,
-        output_tokens,
-    })
 }
 
 pub(crate) fn run_native_recreate_loop(
@@ -9084,18 +7291,19 @@ fn json_object(value: Value) -> Map<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::{
-        active_image_for_edit_prompt, build_realtime_websocket_request, clean_description,
-        default_realtime_model, description_realtime_instruction, extract_gemini_finish_reason,
-        extract_gemini_output_text, extract_gemini_token_usage_pair,
-        extract_openrouter_chat_output_text, intent_realtime_reference_image_limit,
-        is_anyhow_realtime_transport_error, is_edit_style_prompt,
-        openrouter_chat_content_to_responses_input, openrouter_responses_content_to_chat_content,
-        pseudo_random_seed, resolve_realtime_gemini_model_for_transport,
+        active_image_for_edit_prompt, build_realtime_websocket_request, default_realtime_model,
+        extract_gemini_finish_reason, extract_gemini_output_text, extract_gemini_token_usage_pair,
+        intent_realtime_reference_image_limit, is_anyhow_realtime_transport_error,
+        is_edit_style_prompt, pseudo_random_seed, resolve_realtime_gemini_model_for_transport,
         resolve_streamed_response_text, sanitize_gemini_generate_content_model,
-        sanitize_openrouter_gemini_model, sanitize_openrouter_model,
+        sanitize_openrouter_gemini_model, sanitize_openrouter_model, RealtimeJobError,
+        RealtimeJobErrorKind, RealtimeProvider, RealtimeSessionKind, REALTIME_BETA_HEADER_VALUE,
+        REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_MAX,
+    };
+    use crate::observe::vision::{
+        clean_description, description_realtime_instruction, extract_openrouter_chat_output_text,
+        openrouter_chat_content_to_responses_input, openrouter_responses_content_to_chat_content,
         should_fallback_openrouter_responses, vision_description_model_candidates_for,
-        RealtimeJobError, RealtimeJobErrorKind, RealtimeProvider, RealtimeSessionKind,
-        REALTIME_BETA_HEADER_VALUE, REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_MAX,
     };
     use serde_json::json;
     use std::io;
@@ -9156,7 +7364,7 @@ mod tests {
 
     #[test]
     fn intent_icons_instruction_enforces_cv_caption_style_labels() {
-        let instruction = crate::observe::intent_icons::intent_icons_instruction(false);
+        let instruction = crate::observe::vision::intent_icons_instruction(false);
         assert!(instruction.contains("computer-vision caption style"));
         assert!(instruction.contains("<=40 chars"));
         assert!(instruction.contains("A photo of ...` is acceptable but not required"));
