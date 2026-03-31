@@ -5,7 +5,6 @@ import {
   JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS as GENERATED_JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS,
   getJuggernautRailIconAssetUrl as getGeneratedJuggernautRailIconAssetUrl,
   getJuggernautRailIconMarkup as getGeneratedJuggernautRailIconMarkup,
-  getJuggernautRailIconSvgMarkup as getGeneratedJuggernautRailIconSvgMarkup,
 } from "./generated/rail_icon_registry.js";
 
 function legacyInlineIconMarkup(toolId = "", body = "") {
@@ -193,9 +192,8 @@ export function getJuggernautRailIconMarkup(toolId = "", packId = DEFAULT_JUGGER
     return LEGACY_DEFAULT_INLINE_MARKUP[normalizedToolId] || "";
   }
   return (
-    getGeneratedJuggernautRailIconSvgMarkup(normalizedToolId, normalizedPackId) ||
-    LEGACY_DEFAULT_INLINE_MARKUP[normalizedToolId] ||
     getGeneratedJuggernautRailIconMarkup(normalizedToolId, normalizedPackId) ||
+    LEGACY_DEFAULT_INLINE_MARKUP[normalizedToolId] ||
     ""
   );
 }
