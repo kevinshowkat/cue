@@ -6,6 +6,27 @@ function normalizePackId(value = "") {
   return String(value || "").trim() || DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID;
 }
 
+const RAW_JUGGERNAUT_RAIL_ICON_SVG_MODULES = import.meta.glob("../../assets/juggernaut-rail-icons/*/*.svg", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
+
+const JUGGERNAUT_RAIL_ICON_PACK_SVG_MARKUP = (() => {
+  const packs = {};
+  for (const [path, rawMarkup] of Object.entries(RAW_JUGGERNAUT_RAIL_ICON_SVG_MODULES)) {
+    const match = String(path).match(/juggernaut-rail-icons\/([^/]+)\/([^/]+)\.svg$/);
+    if (!match) continue;
+    const [, packId, toolId] = match;
+    if (!packs[packId]) packs[packId] = {};
+    packs[packId][toolId] = String(rawMarkup || "").trim();
+  }
+  for (const [packId, markupByTool] of Object.entries(packs)) {
+    packs[packId] = Object.freeze(markupByTool);
+  }
+  return Object.freeze(packs);
+})();
+
 function escapeHtmlAttribute(value = "") {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -100,9 +121,21 @@ export function getJuggernautRailIconAssetUrl(toolId = "", packId = DEFAULT_JUGG
   return pack[normalizedToolId] || JUGGERNAUT_RAIL_ICON_ASSET_URLS[normalizedToolId] || "";
 }
 
+export function getJuggernautRailIconSvgMarkup(toolId = "", packId = DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID) {
+  const normalizedToolId = String(toolId || "").trim();
+  const normalizedPackId = normalizePackId(packId);
+  const pack =
+    JUGGERNAUT_RAIL_ICON_PACK_SVG_MARKUP[normalizedPackId] ||
+    JUGGERNAUT_RAIL_ICON_PACK_SVG_MARKUP[DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID] ||
+    {};
+  return pack[normalizedToolId] || "";
+}
+
 export function getJuggernautRailIconMarkup(toolId = "", packId = DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID) {
   const normalizedToolId = String(toolId || "").trim();
   const normalizedPackId = normalizePackId(packId);
+  const svgMarkup = getJuggernautRailIconSvgMarkup(normalizedToolId, normalizedPackId);
+  if (svgMarkup) return svgMarkup;
   const assetUrl = getJuggernautRailIconAssetUrl(normalizedToolId, normalizedPackId);
   if (!assetUrl) return "";
   const toolClass = `tool-icon-${normalizedToolId.replace(/_/g, "-")}`;
