@@ -53,6 +53,13 @@ import {
   recoverEffectTokenApply,
   updateEffectTokenDrag,
 } from "./effect_interactions.js";
+import {
+  MOTHER_IDLE_EVENTS,
+  MOTHER_IDLE_STATES,
+  motherIdleInitialState,
+  motherIdleTransition,
+  motherIdleUsesRealtimeVisual,
+} from "./mother_idle_flow.js";
 import { DESKTOP_EVENT_TYPES, PTY_COMMANDS, quoteForPtyArg as quoteForPtyArgUtil } from "./canvas_protocol.js";
 import { appendJsonlWithFallback, appendTextWithFallback } from "./jsonl_io.js";
 import {
@@ -100,12 +107,15 @@ import {
   generateToolManifest,
 } from "./tool_runtime.js";
 import { rankSingleImageIntentJobs } from "./single_image_intent_ranking.js";
+import {
+  nextMotherRealtimeIntentFailureAction,
+} from "./realtime_intent_recovery.js";
 import { createDesktopEventHandlerMap } from "./event_handlers/index.js";
 import { installCanvasGestureHandlers } from "./canvas_handlers/gesture_handlers.js";
 import { installCanvasKeyboardHandlers } from "./canvas_handlers/keyboard_handlers.js";
 import { installCanvasPointerHandlers } from "./canvas_handlers/pointer_handlers.js";
 import { installCanvasWheelHandlers } from "./canvas_handlers/wheel_handlers.js";
-import { POINTER_KINDS, isEffectTokenPath } from "./canvas_handlers/pointer_paths.js";
+import { POINTER_KINDS, isEffectTokenPath, isMotherRolePath } from "./canvas_handlers/pointer_paths.js";
 import { applyToolRuntimeRequest, installToolApplyBridge } from "./tool_apply_runtime.js";
 import { invokeDesignReviewProviderRequest } from "./design_review_backend.js";
 import { createDesignReviewProviderRouter } from "./design_review_provider_router.js";
@@ -471,6 +481,10 @@ if (key === "prompt_generate") {
 
 const THUMB_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
+const MOTHER_VIDEO_IDLE_SRC = new URL("./assets/mother/mother_idle.mirrored.mp4", import.meta.url).href;
+const MOTHER_VIDEO_WORKING_SRC = new URL("./assets/mother/mother_working.mp4", import.meta.url).href;
+const MOTHER_VIDEO_TAKEOVER_SRC = new URL("./assets/mother/mother_takeover.mp4", import.meta.url).href;
+const MOTHER_VIDEO_REALTIME_SRC = new URL("./assets/mother/mother_realtime.mp4", import.meta.url).href;
 const OPENROUTER_ONBOARDING_SORA_VIDEO_SRC = new URL(
   "./assets/onboarding/videos/openrouter_onboarding.mp4",
   import.meta.url
@@ -479,6 +493,14 @@ const OPENROUTER_ONBOARDING_LOGO_WHITE_SRC = new URL(
   "./assets/onboarding/openrouter_logo_mark_white.svg",
   import.meta.url
 ).href;
+// Avoid brief watch-phase spikes from flashing realtime chrome/video.
+const MOTHER_RT_VISUAL_ON_DELAY_MS = 820;
+const MOTHER_RT_VISUAL_MIN_ON_MS = 2200;
+const MOTHER_IDLE_TAKEOVER_IDLE_MS = 10_000;
+// Mother drafts can exceed 14s on real providers; keep timeout generous to avoid false failures.
+const MOTHER_GENERATION_TIMEOUT_MS = 90_000;
+const MOTHER_GENERATION_TIMEOUT_EXTENSION_MS = 90_000;
+const MOTHER_GENERATION_POST_VERSION_TIMEOUT_MS = 240_000;
 const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview";
 const LEGACY_DEFAULT_IMAGE_MODEL = "gemini-2.5-flash-image";
 const IMAGE_MODEL_DEFAULT_MIGRATION_KEY = "cue.imageModel.default.v2";
@@ -487,6 +509,8 @@ const PROMPT_STRATEGY_MODE_KEY = "cue.promptStrategyMode.v1";
 const PROMPT_REPEAT_FULL_KEY = "cue.promptRepeatFull.v1";
 const PROMPT_BENCHMARK_LS_KEY = "cue.promptBenchmark.v1";
 const PROMPT_BENCHMARK_MAX_TRIALS = 600;
+const MOTHER_GENERATION_MODEL = DEFAULT_IMAGE_MODEL;
+const MOTHER_GENERATED_SOURCE = "mother_generated";
 const AESTHETIC_ONBOARDING_COMPLETED_KEY = "cue.aestheticOnboarding.completed.v1";
 const AESTHETIC_ONBOARDING_PROFILE_KEY = "cue.aestheticOnboarding.profile.v1";
 const OPENROUTER_ONBOARDING_COMPLETED_KEY = "cue.openrouterOnboarding.completed.v1";
@@ -572,22 +596,259 @@ const AESTHETIC_DIRECTION_OPTIONS = Object.freeze([
     description: "I want fast ideation and quick mutation loops.",
   },
 ]);
-const CANVAS_SEMANTIC_DRAG_PX = 10;
-const FALLBACK_INTENT_BRANCH_LIMIT = 5;
+const MOTHER_SUGGESTION_LOG_FILENAME = "mother_suggestions.jsonl";
+const MOTHER_TRACE_FILENAME = "mother_trace.jsonl";
+const MOTHER_V2_WATCH_IDLE_MS = 100;
+const MOTHER_V2_INTENT_IDLE_MS = 0;
+const MOTHER_V2_MULTI_UPLOAD_WATCH_IDLE_MS = 100;
+const MOTHER_V2_MULTI_UPLOAD_INTENT_IDLE_MS = 0;
+const MOTHER_V2_MULTI_UPLOAD_IDLE_BOOST_WINDOW_MS = 20_000;
+const MOTHER_V2_UPLOAD_SETTLE_MS = 120;
+const MOTHER_V2_UPLOAD_PREFETCH_WINDOW_MS = 120_000;
+const MOTHER_V2_SPECULATIVE_PREFETCH_DELAY_MS = 40;
+const MOTHER_V2_ENABLE_SPECULATIVE_PREFETCH = false;
+const MOTHER_V2_LIVE_PROPOSAL_REFRESH_DEBOUNCE_MS = 170;
+const MOTHER_V2_LIVE_PROPOSAL_REFRESH_MIN_INTERVAL_MS = 550;
+const MOTHER_V2_INTENT_REQUEST_COALESCE_MS = 900;
+const MOTHER_V2_INTENT_REPLAY_ARM_MIN_DELAY_MS = 60;
+const MOTHER_V2_SINGLE_RESULT_GUARD_WINDOW_MS = 20_000;
+const MOTHER_V2_PROMPT_COMPILE_FALLBACK_MS = 520;
+const MOTHER_V2_INTENT_TARGET_IMAGE_LIMIT = 2;
+const MOTHER_V2_INTENT_REFERENCE_IMAGE_LIMIT = 1;
+const MOTHER_SELECTION_SEMANTIC_DRAG_PX = 10;
+const MOTHER_V2_COOLDOWN_AFTER_COMMIT_MS = 2000;
+const MOTHER_V2_COOLDOWN_AFTER_REJECT_MS = 1200;
+const MOTHER_V2_VISION_RETRY_MS = 220;
+const MOTHER_V2_INTENT_RT_TIMEOUT_MS = 30_000;
+const MOTHER_V2_INTENT_RT_WORKER_TIMEOUT_MS = 42_000;
+const MOTHER_V2_INTENT_RT_TIMEOUT_DEFER_GRACE_MS = 250;
+const MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_MAX = 2;
+const MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_DELAY_MS = 220;
+const MOTHER_V2_INTENT_RT_BUSY_TTL_MS = 44_000;
+const MOTHER_V2_INTENT_LATE_REALTIME_UPGRADE_MS = 12000;
+const MOTHER_V2_INTENT_CONTEXT_REF_RETRY_MAX = 0;
+const MOTHER_V2_INTENT_CONTEXT_REF_RETRY_DELAY_MS = 220;
+const MOTHER_V2_MIN_IMAGES_FOR_PROPOSAL = 2;
+const MOTHER_V2_UPLOAD_FAST_INTENT_SNAPSHOT_WAIT_MS = 50;
+const MOTHER_V2_UPLOAD_FAST_INTENT_SNAPSHOT_MAX_DIM_PX = 560;
+const MOTHER_V2_UPLOAD_VISION_DEFER_MS = 1800;
+const MOTHER_V2_DISPATCH_TRANSFORM_EXPORT_LIMIT = 4;
+const MOTHER_V2_DISPATCH_TRANSFORM_EXPORT_MAX_DIM_PX = 1500;
+const MOTHER_V2_DISPATCH_TRANSFORM_EXPORT_MIN_DIM_PX = 420;
+const MOTHER_V2_MAX_RANKED_PROPOSALS = 3;
+const MOTHER_V2_ROLE_KEYS = Object.freeze(["subject", "model", "mediator", "object"]);
+const MOTHER_V2_ROLE_LABEL = Object.freeze({
+  subject: "SUBJECT",
+  model: "MODEL",
+  mediator: "MEDIATOR",
+  object: "OBJECT",
+});
 const GOOGLE_BRAND_RECT_PALETTE_RGB = Object.freeze([
   [66, 133, 244], // blue
   [234, 67, 53], // red
   [251, 188, 5], // yellow
   [52, 168, 83], // green
 ]);
-function normalizeIntentTransformationMode(rawMode) {
-  return String(rawMode || "").trim().toLowerCase();
+const MOTHER_V2_ROLE_GLYPH = Object.freeze({
+  subject: "●",
+  model: "◆",
+  mediator: "△",
+  object: "■",
+});
+const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator?.platform || "");
+// Use a more intuitive hold key for Mother option/hints reveal on macOS.
+const MOTHER_OPTION_REVEAL_HOLD_KEY = IS_MAC ? "h" : "i";
+const MOTHER_MOOD_PROFILE_KEY = "cue.motherMood.v1";
+const MOTHER_MOOD_PLACEHOLDER_EMOJI = "☺";
+const MOTHER_CREATIVE_DIRECTIVE_BASE = "stunningly awe-inspiring";
+const MOTHER_CREATIVE_DIRECTIVE_MOOD_PREFIX = "";
+const MOTHER_MOOD_OPTIONS = Object.freeze({
+  joyous: Object.freeze({ emoji: "😄", label: "Joyous", directive: "joyous" }),
+  nefarious: Object.freeze({ emoji: "😈", label: "Nefarious", directive: "nefarious" }),
+  somber: Object.freeze({ emoji: "😔", label: "Somber", directive: "somber" }),
+  angry: Object.freeze({ emoji: "😡", label: "Angry", directive: "angry" }),
+});
+function motherNormalizeMood(raw = "") {
+  const key = String(raw || "")
+    .trim()
+    .toLowerCase();
+  return Object.prototype.hasOwnProperty.call(MOTHER_MOOD_OPTIONS, key) ? key : "";
 }
 
-function maybeIntentTransformationMode(rawMode) {
-  const mode = normalizeIntentTransformationMode(rawMode);
-  return mode || null;
+function motherMoodConfig(raw = null) {
+  const key = motherNormalizeMood(raw);
+  return key ? MOTHER_MOOD_OPTIONS[key] || null : null;
 }
+
+function loadMotherMoodPreference() {
+  try {
+    // Session-scoped behavior: always start with an unset vibe.
+    localStorage.removeItem(MOTHER_MOOD_PROFILE_KEY);
+  } catch {
+    // ignore localStorage failures
+  }
+  return null;
+}
+
+function saveMotherMoodPreference(mood = null) {
+  void mood;
+  // Session-scoped behavior: do not persist vibe across app restarts.
+}
+
+function motherCurrentCreativeDirective() {
+  const mood = motherMoodConfig(state?.motherMood)?.directive || "";
+  if (!mood) return MOTHER_CREATIVE_DIRECTIVE_BASE;
+  const prefix = String(MOTHER_CREATIVE_DIRECTIVE_MOOD_PREFIX || "").trim();
+  if (!prefix) return `${MOTHER_CREATIVE_DIRECTIVE_BASE} and ${mood}`;
+  return `${MOTHER_CREATIVE_DIRECTIVE_BASE} and ${prefix} ${mood}`;
+}
+
+function motherCurrentOptimizationTarget() {
+  return motherCurrentCreativeDirective();
+}
+
+function motherCurrentCreativeDirectiveSentence() {
+  return `Create outputs that are ${motherCurrentCreativeDirective()}.`;
+}
+const MOTHER_V2_TRANSFORMATION_MODES = Object.freeze([
+  "amplify",
+  "transcend",
+  "destabilize",
+  "purify",
+  "hybridize",
+  "mythologize",
+  "monumentalize",
+  "fracture",
+  "romanticize",
+  "alienate",
+]);
+const MOTHER_V2_DEFAULT_TRANSFORMATION_MODE = "hybridize";
+const MOTHER_V2_PROPOSAL_BY_MODE = Object.freeze({
+  amplify: "Fuse motion and comfort into something cinematic.",
+  transcend: "Turn momentum into a sculptural interior moment.",
+  destabilize: "Bend familiar structure into a charged visual tension.",
+  purify: "Dissolve room geometry into fluid light and calm.",
+  hybridize: "Fuse both references into one coherent visual world.",
+  mythologize: "Recast the scene as mythic visual storytelling.",
+  monumentalize: "Elevate the composition into a monumental hero frame.",
+  fracture: "Split form and light into a deliberate expressive fracture.",
+  romanticize: "Soften the scene into intimate emotional warmth.",
+  alienate: "Shift the familiar into a precise uncanny atmosphere.",
+});
+const MOTHER_V2_SHOT_HINTS_BY_MODE = Object.freeze({
+  amplify: Object.freeze({
+    primary: "close-up detail shot",
+    alternate: "dynamic medium tracking shot",
+    rationale: "amplify tactile detail and motion energy",
+    lighting_profile: "high-contrast practical key with crisp specular highlights",
+    alternate_lighting_profile: "kinetic mixed-source edge lighting",
+    lens_guidance: "50-85mm detail-forward close perspective",
+    alternate_lens_guidance: "35mm dynamic medium tracking perspective",
+  }),
+  transcend: Object.freeze({
+    primary: "elevated wide atmospheric shot",
+    alternate: "overhead drift shot",
+    rationale: "lift the scene into a sculptural, airy frame",
+    lighting_profile: "volumetric skylight diffusion with soft glow rolloff",
+    alternate_lighting_profile: "cool dawn haze with gentle top-light wrap",
+    lens_guidance: "24-35mm elevated wide perspective",
+    alternate_lens_guidance: "35mm overhead float perspective",
+  }),
+  destabilize: Object.freeze({
+    primary: "dutch-angle medium shot",
+    alternate: "off-axis close-up shot",
+    rationale: "heighten controlled visual tension",
+    lighting_profile: "hard cross-lighting with unstable shadow breaks",
+    alternate_lighting_profile: "staccato practical contrast with uneven falloff",
+    lens_guidance: "28-40mm skewed medium perspective",
+    alternate_lens_guidance: "50mm off-axis close perspective",
+  }),
+  purify: Object.freeze({
+    primary: "centered minimal medium shot",
+    alternate: "soft overhead shot",
+    rationale: "reduce clutter and preserve calm geometry",
+    lighting_profile: "high-key soft diffusion with restrained contrast",
+    alternate_lighting_profile: "clean top-light wash with minimal shadow noise",
+    lens_guidance: "40-50mm neutral medium perspective",
+    alternate_lens_guidance: "35mm soft overhead perspective",
+  }),
+  hybridize: Object.freeze({
+    primary: "balanced medium fusion shot",
+    alternate: "wide integrated scene shot",
+    rationale: "merge references into one coherent world",
+    lighting_profile: "balanced cinematic key/fill with coherent directionality",
+    alternate_lighting_profile: "soft directional fill with shared ambient bounce",
+    lens_guidance: "35-50mm balanced fusion perspective",
+    alternate_lens_guidance: "24-35mm integrated wide perspective",
+  }),
+  mythologize: Object.freeze({
+    primary: "low-angle hero shot",
+    alternate: "epic wide establishing shot",
+    rationale: "create mythic scale and reverence",
+    lighting_profile: "high-contrast directional key with rim backlight and atmospheric haze",
+    alternate_lighting_profile: "golden-hour edge light with deep sculpted shadows",
+    lens_guidance: "24-35mm low-angle heroic perspective",
+    alternate_lens_guidance: "24mm epic establishing perspective",
+  }),
+  monumentalize: Object.freeze({
+    primary: "low-angle wide hero shot",
+    alternate: "symmetrical frontal hero shot",
+    rationale: "emphasize monumentality and presence",
+    lighting_profile: "architectural hard key with stately shadow geometry",
+    alternate_lighting_profile: "broad frontal key with monumental silhouette separation",
+    lens_guidance: "24-32mm low-angle monumental perspective",
+    alternate_lens_guidance: "35-50mm symmetrical frontal perspective",
+  }),
+  fracture: Object.freeze({
+    primary: "oblique fragmented close-up shot",
+    alternate: "split-perspective medium shot",
+    rationale: "intentionally break form while preserving intent",
+    lighting_profile: "broken directional light with deliberate contrast discontinuities",
+    alternate_lighting_profile: "multi-source edge lighting with fractured shadow planes",
+    lens_guidance: "50-85mm oblique detail perspective",
+    alternate_lens_guidance: "35-50mm split-perspective framing",
+  }),
+  romanticize: Object.freeze({
+    primary: "intimate medium close-up shot",
+    alternate: "soft backlit wide shot",
+    rationale: "push emotional warmth and tenderness",
+    lighting_profile: "warm soft key with gentle halation and lifted shadows",
+    alternate_lighting_profile: "backlit golden diffusion with subtle bloom",
+    lens_guidance: "50-85mm intimate portrait perspective",
+    alternate_lens_guidance: "35mm soft backlit wide perspective",
+  }),
+  alienate: Object.freeze({
+    primary: "detached wide observational shot",
+    alternate: "telephoto compressed shot",
+    rationale: "introduce precise emotional distance",
+    lighting_profile: "cool controlled contrast with sparse practical pools",
+    alternate_lighting_profile: "flat ambient light with isolated hard accents",
+    lens_guidance: "24-35mm detached observational perspective",
+    alternate_lens_guidance: "85-135mm compressed observational perspective",
+  }),
+});
+const MOTHER_V2_OPERATION_TYPE_BY_MODE = Object.freeze({
+  amplify: "dna_apply",
+  hybridize: "hybridize",
+});
+const MOTHER_V2_PROPOSAL_ICON_ACCENT_BY_MODE = Object.freeze({
+  amplify: "rgba(99, 224, 255, 0.96)",
+  transcend: "rgba(132, 189, 255, 0.96)",
+  destabilize: "rgba(255, 145, 114, 0.96)",
+  purify: "rgba(126, 255, 209, 0.96)",
+  hybridize: "rgba(255, 224, 120, 0.96)",
+  mythologize: "rgba(189, 162, 255, 0.96)",
+  monumentalize: "rgba(255, 196, 136, 0.96)",
+  fracture: "rgba(255, 127, 164, 0.96)",
+  romanticize: "rgba(255, 160, 203, 0.96)",
+  alienate: "rgba(152, 255, 174, 0.96)",
+});
+const MOTHER_V2_ROLE_PREVIEW_PANEL_FILL_RATIO = 0.95;
+const MOTHER_V2_ROLE_PREVIEW_PANEL_ZOOM_MAX = 4.2;
+const MOTHER_V2_ROLE_PREVIEW_PANEL_PAD_PX = 0;
+const MOTHER_OFFER_PREVIEW_SCALE = 1.62;
+const MOTHER_OFFER_PREVIEW_MIN_VIEWPORT_COVER = 0.46;
+const MOTHER_OFFER_PREVIEW_MAX_VIEWPORT_COVER = 0.92;
 // World-projection overscan: keep viewport boxes from filling panel projections immediately when zooming out.
 const WORLD_PROJECTION_OVERSCAN_RATIO = 0.75;
 const ENABLE_FILE_BROWSER_DOCK = true;
@@ -710,6 +971,7 @@ const els = {
   portraitsDirPick: document.getElementById("portraits-dir-pick"),
   portraitsDirClear: document.getElementById("portraits-dir-clear"),
   keyStatus: document.getElementById("key-status"),
+  motherIntentSourceIndicator: document.getElementById("mother-intent-source-indicator"),
   canvasWrap: document.getElementById("canvas-wrap"),
   dropHint: document.getElementById("drop-hint"),
   workCanvas: document.getElementById("work-canvas"),
@@ -791,6 +1053,27 @@ const els = {
   portraitAvatar2: document.getElementById("portrait-avatar-2"),
   portraitVideo2: document.getElementById("portrait-video-2"),
   selectionMeta: document.getElementById("selection-meta"),
+  motherState: document.getElementById("mother-state"),
+  motherRolePreview: document.getElementById("mother-role-preview"),
+  tipsText: document.getElementById("tips-text"),
+  motherOverlay: document.getElementById("mother-overlay"),
+  motherPanelStack: document.getElementById("mother-panel-stack"),
+  motherPanel: document.getElementById("mother-panel"),
+  motherRefineToggle: document.getElementById("mother-refine-toggle"),
+  motherAdvanced: document.getElementById("mother-advanced"),
+  motherTransformationMode: document.getElementById("mother-transformation-mode"),
+  motherRoleSubject: document.getElementById("mother-role-subject"),
+  motherRoleModel: document.getElementById("mother-role-model"),
+  motherRoleMediator: document.getElementById("mother-role-mediator"),
+  motherRoleObject: document.getElementById("mother-role-object"),
+  motherAvatar: document.getElementById("mother-avatar"),
+  motherVideo: document.getElementById("mother-video"),
+  motherAbilityIcon: document.getElementById("mother-ability-icon"),
+  motherConfirm: document.getElementById("mother-confirm"),
+  motherStop: document.getElementById("mother-stop"),
+  canvasMoodStatus: document.getElementById("canvas-mood-status"),
+  motherMoodToggle: document.getElementById("mother-mood-toggle"),
+  motherMoodMenu: document.getElementById("mother-mood-menu"),
   customToolDock: document.getElementById("custom-tool-dock"),
   actionGrid: document.getElementById("action-grid"),
   createToolPanel: document.getElementById("create-tool-panel"),
@@ -825,6 +1108,7 @@ const els = {
   agentRunnerBannerShow: document.getElementById("agent-runner-banner-show"),
   agentRunnerBannerStop: document.getElementById("agent-runner-banner-stop"),
   imageMenu: document.getElementById("image-menu"),
+  motherWheelMenu: document.getElementById("mother-wheel-menu"),
   quickActions: document.getElementById("quick-actions"),
   timelineDock: document.getElementById("timeline-dock"),
   timelineShell: document.getElementById("timeline-shell"),
@@ -1322,7 +1606,7 @@ function promptBenchmarkFinalizeTrial(trialId, { status = "success", error = nul
 }
 
 function promptBenchmarkMarkSuccessFromArtifactEvent(event = {}) {
-  const versionId = desktopEventVersionId(event);
+  const versionId = motherEventVersionId(event);
   if (!versionId) return false;
   const trialId = Number(state.promptBenchmark?.versionToTrialId?.get(versionId)) || 0;
   if (!trialId) return false;
@@ -1337,7 +1621,7 @@ function promptBenchmarkMarkSuccessFromArtifactEvent(event = {}) {
 }
 
 function promptBenchmarkMarkFailureFromGenerationFailedEvent(event = {}) {
-  const versionId = desktopEventVersionId(event);
+  const versionId = motherEventVersionId(event);
   const trialId = promptBenchmarkResolveTrialIdForFailure(versionId);
   if (!trialId) return false;
   return promptBenchmarkFinalizeTrial(trialId, {
@@ -2793,12 +3077,14 @@ const state = {
   pendingTriforce: null, // { sourceIds: [string, string, string], startedAt: number }
   pendingCreateLayers: null, // { sourceId, sourcePath, layerSpecs, nextIndex, createdIds, startedAt }
   pendingPromptGenerate: null, // { prompt: string, model: string, startedAt: number, anchorCss?: {x,y}, anchorWorldCss?: {x,y} }
+  pendingMotherDraft: null, // { sourceIds: string[], startedAt: number, previewPolicy?: string, previewTargetId?: string|null, previewRectCss?: {x,y,w,h}|null, timeoutCeilingMs?: number, keypointSeed?: number, keypointCache?: Map<string, {signature: string, keypoints: Array}> }
   pendingRecast: null, // { sourceId: string, startedAt: number }
   pendingGeneration: null, // { remaining: number, provider: string|null, model: string|null }
   pendingRecreate: null, // { startedAt: number } | null
   actionQueue: [],
   actionQueueActive: null, // { id, label, key, priority, enqueuedAt, source } | null
   actionQueueRunning: false,
+  motherMood: loadMotherMoodPreference(),
   actionQueueStats: {
     replacedByKey: 0,
     droppedOverflow: 0,
@@ -2886,7 +3172,10 @@ const state = {
   },
   effectTokenDrag: null, // { tokenId, sourceImageId, targetImageId, moved, x, y }
   effectTokenApplyLocks: new Map(), // tokenId -> { dispatchId, targetImageId, queued, startedAt }
+  motherOverlayUiHits: [], // [{ kind, targetId?, rect: {x,y,w,h} }]
+  motherRolePreviewHoverImageId: null, // imageId currently hovered in the mother role preview panel
   activeImageTransformUiHits: [], // [{ kind, edge?, cursor?, targetId, rect: {x,y,w,h} }]
+  motherResultDetailsOpenId: null, // imageId currently showing provenance popover
   wheelMenu: {
     open: false,
     hideTimer: null,
@@ -2917,9 +3206,118 @@ const state = {
   engineImageModelRestore: null, // string|null
   needsRender: false,
   lastInteractionAt: Date.now(),
+  lastMotherHotAt: Date.now(),
   userEvents: [], // scoring ring consumed by intent/proposal weighting
   userTelemetryEvents: [], // high-volume event log (not used for scoring)
   userEventSeq: 0,
+  mother: {
+    running: false,
+    startedAt: 0,
+    runId: 0,
+    action: null, // string|null
+    status: null, // string|null
+    stopRequested: false,
+    timer: null,
+    rtHoldUntil: 0,
+    rtHoldTimer: null,
+    rtVisualActive: false,
+    rtVisualRawSince: 0,
+    rtVisualMinUntil: 0,
+    hotSyncAt: 0,
+  },
+  motherIdle: {
+    phase: motherIdleInitialState(),
+    firstIdleTimer: null,
+    intentIdleTimer: null,
+    takeoverTimer: null,
+    cooldownTimer: null,
+    hasGeneratedSinceInteraction: false,
+    generatedImageId: null,
+    generatedVersionId: null,
+    pendingDispatchToken: 0,
+    dispatchTimeoutTimer: null,
+    dispatchTimeoutExtensions: 0,
+    pendingPromptLine: null,
+    promptMotionProfile: null,
+    pendingVersionId: null,
+    ignoredVersionIds: new Set(),
+    waitingSince: 0,
+    pendingSuggestionLog: null, // { request_id, what, why, prompt, source_images, dispatched_at_iso } | null
+    lastSuggestionAt: 0,
+    suppressFailureUntil: 0,
+    retryAttempted: false,
+    lastDispatchModel: null,
+    blockedUntilUserInteraction: false,
+    actionVersion: 0,
+    pendingActionVersion: 0,
+    cooldownUntil: 0,
+    multiUploadIdleBoostUntil: 0,
+    lastUploadCompletedAt: 0,
+    lastSpeculativePrefetchUploadAt: 0,
+    speculativePrefetchTimer: null,
+    speculativePrefetchInFlight: false,
+    speculativePrefetchReadyMode: null,
+    pendingIntent: false,
+    pendingIntentRequestId: null,
+    pendingIntentTransportRetryCount: 0,
+    pendingIntentStartedAt: 0,
+    pendingIntentUpgradeUntil: 0,
+    pendingIntentRealtimePath: null,
+    intentRealtimeBusyPath: null,
+    intentRealtimeBusyRequestId: null,
+    intentRealtimeBusyUntil: 0,
+    intentReplayQueued: false,
+    intentReplayReason: null,
+    intentReplayTimer: null,
+    lastIntentRequestAt: 0,
+    pendingIntentPath: null,
+    pendingIntentPayload: null,
+    pendingIntentTimeout: null,
+    pendingPromptCompile: false,
+    pendingPromptCompileSpeculative: false,
+    pendingPromptCompilePath: null,
+    pendingPromptCompileTimeout: null,
+    pendingVisionImageIds: [],
+    pendingVisionRetryTimer: null,
+    pendingGeneration: false,
+    pendingDispatchSpeculative: false,
+    pendingDispatchProposalMode: null,
+    liveProposalRefreshTimer: null,
+    liveProposalUpdating: false,
+    lastLiveProposalRefreshAt: 0,
+    pendingFollowupAfterCooldown: false,
+    pendingFollowupReason: null,
+    lastRejectedProposal: null, // { contextSig, imageSetSig, mode, summary, at_ms } | null
+    rejectedModeHistoryByContext: {}, // contextSig -> recently rejected transformation modes
+    cancelArtifactUntil: 0,
+    cancelArtifactReason: null,
+    intent: null, // structured intent payload from intent realtime (with fallback inference)
+    currentOperationSpec: null, // { op_id, op_type, target_id, reference_ids, mode, trigger_source } | null
+    roles: { subject: [], model: [], mediator: [], object: [] },
+    drafts: [], // [{ id, path, receiptPath, versionId, actionVersion, createdAt, img }]
+    selectedDraftId: null,
+    hoverDraftId: null,
+    draftCommitRectCss: null, // { x, y, w, h } | null (user-adjusted pending draft placement)
+    commitMutationInFlight: false,
+    roleGlyphHits: [], // [{ role, imageId, rect }]
+    offerDetailsOpen: false,
+    roleGlyphDrag: null, // { role, imageId, startX, startY, moved }
+    advancedOpen: false,
+    optionReveal: false,
+    hintLevel: 0, // 0 hidden, 1 subtle, 2 engaged
+    hintVisibleUntil: 0,
+    hintFadeTimer: null,
+    intensity: 62, // optional UI steering dial
+    commitUndo: null, // { expiresAt, mode, insertedId, targetId, before, removedSeeds }
+    telemetry: {
+      traceId: `mother-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`,
+      stateTransitions: [],
+      accepted: 0,
+      rejected: 0,
+      deployed: 0,
+      stale: 0,
+    },
+  },
   fileBrowser: {
     enabled: ENABLE_FILE_BROWSER_DOCK,
     rootDir: String(localStorage.getItem(FILE_BROWSER_ROOT_DIR_LS_KEY) || "").trim() || null,
@@ -3065,6 +3463,7 @@ const state = {
     indexPromise: null, // Promise<object>|null
     activeKey1: null,
     activeKey2: null,
+    activeKeyMother: null,
     missingToastShown: false,
     loadErrorToastShown: false,
     lastResolveError: null, // string|null (debug aid shown in Settings readout)
@@ -3085,6 +3484,120 @@ function createTabTopMetricsState() {
     queueDepthByMinute: new Map(),
     sessionEstimatedCostUsd: 0,
     renderDurationsS: [],
+  };
+}
+
+function createTabMotherState() {
+  return {
+    running: false,
+    startedAt: 0,
+    runId: 0,
+    action: null,
+    status: null,
+    stopRequested: false,
+    timer: null,
+    rtHoldUntil: 0,
+    rtHoldTimer: null,
+    rtVisualActive: false,
+    rtVisualRawSince: 0,
+    rtVisualMinUntil: 0,
+    hotSyncAt: 0,
+  };
+}
+
+function createTabMotherIdleState() {
+  return {
+    phase: motherIdleInitialState(),
+    firstIdleTimer: null,
+    intentIdleTimer: null,
+    takeoverTimer: null,
+    cooldownTimer: null,
+    hasGeneratedSinceInteraction: false,
+    generatedImageId: null,
+    generatedVersionId: null,
+    pendingDispatchToken: 0,
+    dispatchTimeoutTimer: null,
+    dispatchTimeoutExtensions: 0,
+    pendingPromptLine: null,
+    promptMotionProfile: null,
+    pendingVersionId: null,
+    ignoredVersionIds: new Set(),
+    waitingSince: 0,
+    pendingSuggestionLog: null,
+    lastSuggestionAt: 0,
+    suppressFailureUntil: 0,
+    retryAttempted: false,
+    lastDispatchModel: null,
+    blockedUntilUserInteraction: false,
+    actionVersion: 0,
+    pendingActionVersion: 0,
+    cooldownUntil: 0,
+    multiUploadIdleBoostUntil: 0,
+    lastUploadCompletedAt: 0,
+    lastSpeculativePrefetchUploadAt: 0,
+    speculativePrefetchTimer: null,
+    speculativePrefetchInFlight: false,
+    speculativePrefetchReadyMode: null,
+    pendingIntent: false,
+    pendingIntentRequestId: null,
+    pendingIntentTransportRetryCount: 0,
+    pendingIntentStartedAt: 0,
+    pendingIntentUpgradeUntil: 0,
+    pendingIntentRealtimePath: null,
+    intentRealtimeBusyPath: null,
+    intentRealtimeBusyRequestId: null,
+    intentRealtimeBusyUntil: 0,
+    intentReplayQueued: false,
+    intentReplayReason: null,
+    intentReplayTimer: null,
+    lastIntentRequestAt: 0,
+    pendingIntentPath: null,
+    pendingIntentPayload: null,
+    pendingIntentTimeout: null,
+    pendingPromptCompile: false,
+    pendingPromptCompileSpeculative: false,
+    pendingPromptCompilePath: null,
+    pendingPromptCompileTimeout: null,
+    pendingVisionImageIds: [],
+    pendingVisionRetryTimer: null,
+    pendingGeneration: false,
+    pendingDispatchSpeculative: false,
+    pendingDispatchProposalMode: null,
+    liveProposalRefreshTimer: null,
+    liveProposalUpdating: false,
+    lastLiveProposalRefreshAt: 0,
+    pendingFollowupAfterCooldown: false,
+    pendingFollowupReason: null,
+    lastRejectedProposal: null,
+    rejectedModeHistoryByContext: {},
+    cancelArtifactUntil: 0,
+    cancelArtifactReason: null,
+    intent: null,
+    currentOperationSpec: null,
+    roles: { subject: [], model: [], mediator: [], object: [] },
+    drafts: [],
+    selectedDraftId: null,
+    hoverDraftId: null,
+    draftCommitRectCss: null,
+    commitMutationInFlight: false,
+    roleGlyphHits: [],
+    offerDetailsOpen: false,
+    roleGlyphDrag: null,
+    advancedOpen: false,
+    optionReveal: false,
+    hintLevel: 0,
+    hintVisibleUntil: 0,
+    hintFadeTimer: null,
+    intensity: 62,
+    commitUndo: null,
+    telemetry: {
+      traceId: `mother-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`,
+      stateTransitions: [],
+      accepted: 0,
+      rejected: 0,
+      deployed: 0,
+      stale: 0,
+    },
   };
 }
 
@@ -3326,6 +3839,7 @@ function createFreshTabSession({ runDir = null, eventsPath = null } = {}) {
     activeCircle: null,
     tripletRuleAnnotations: new Map(),
     tripletOddOneOutId: null,
+    motherResultDetailsOpenId: null,
     wheelMenu: {
       open: false,
       hideTimer: null,
@@ -3335,6 +3849,8 @@ function createFreshTabSession({ runDir = null, eventsPath = null } = {}) {
     userEvents: [],
     userTelemetryEvents: [],
     userEventSeq: 0,
+    mother: createTabMotherState(),
+    motherIdle: createTabMotherIdleState(),
     intent: createTabIntentState(),
     intentAmbient: createTabIntentAmbientState(),
     alwaysOnVision: createTabAlwaysOnVisionState(),
@@ -3444,6 +3960,9 @@ const REEL_TOUCH_MOVE_VISIBLE_MS = 120;
 const REEL_TOUCH_TAP_VISIBLE_MS = 280;
 const REEL_TOUCH_RELEASE_VISIBLE_MS = 150;
 const PROMPT_GENERATE_SHIMMER_LOOP_MS = 1700;
+const MOTHER_DRAFTING_SHIMMER_LOOP_MS = 1900;
+const MOTHER_DRAFTING_KEYPOINT_SAMPLE_MAX_DIM = 56;
+const MOTHER_DRAFTING_KEYPOINT_MAX_POINTS = 24;
 
 // Intent onboarding overlay icon assets.
 // Keep a procedural fallback so the app still renders if assets fail to load.
@@ -3765,7 +4284,7 @@ function ribbonStatusLabel(raw) {
   const text = String(raw || "").trim();
   if (!text) return "idle";
   return text
-    .replace(/^(engine|director|app)\s*:\s*/i, "")
+    .replace(/^(engine|director|mother|app)\s*:\s*/i, "")
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
@@ -3814,9 +4333,9 @@ function intentSourceDotTooltip(kind = "", model = "") {
   const source = normalized === "realtime" ? "realtime" : "idle";
   const modelLabel = source === "realtime" ? realtimeIntentModelLabel(model) : "";
   if (modelLabel) {
-    return `Intent source dot\nShows where intent came from.\nSource: ${source}\nModel: ${modelLabel}`;
+    return `Intent source dot\nShows where Mother intent came from.\nSource: ${source}\nModel: ${modelLabel}`;
   }
-  return `Intent source dot\nShows where intent came from.\nSource: ${source}`;
+  return `Intent source dot\nShows where Mother intent came from.\nSource: ${source}`;
 }
 
 function topMetricQueueCounts() {
@@ -4496,6 +5015,18 @@ function renderHudReadout() {
   renderJuggernautShellChrome();
 }
 
+const motherDispatchTransformExportCache = new Map(); // signature -> exported image path
+const motherDispatchTransformExportInFlight = new Map(); // signature -> Promise<string|null>
+let motherDispatchPayloadWarmState = {
+  signature: "",
+  payload: null,
+  promise: null,
+  startedAt: 0,
+  reason: "",
+};
+let motherDispatchPayloadWarmTimer = null;
+let motherDispatchPayloadWarmToken = 0;
+
 let ptyStatusPromise = null;
 function ptyStatusMatchesActiveRun(status) {
   if (!status || typeof status !== "object" || !status.running) return false;
@@ -4608,6 +5139,8 @@ function updateAlwaysOnVisionReadout() {
     els.alwaysOnVisionReadout.title = "";
     els.alwaysOnVisionReadout.textContent = "Disabled";
   }
+
+  renderMotherReadout();
 }
 
 function normalizeRealtimeProviderName(raw) {
@@ -4623,6 +5156,8 @@ function realtimeProviderForScope(scope = "intent") {
   const key =
     scope === "canvas_context"
       ? "realtime_provider_canvas_context"
+      : scope === "mother_intent"
+      ? "realtime_provider_mother_intent"
       : "realtime_provider_intent";
   const scoped = normalizeRealtimeProviderName(status[key]);
   if (scoped) return scoped;
@@ -4639,6 +5174,8 @@ function realtimeScopeReady(scope = "intent") {
   const key =
     scope === "canvas_context"
       ? "realtime_ready_canvas_context"
+      : scope === "mother_intent"
+      ? "realtime_ready_mother_intent"
       : "realtime_ready_intent";
   if (typeof status[key] === "boolean") return status[key];
   const provider = realtimeProviderForScope(scope);
@@ -5639,14 +6176,166 @@ async function writeIntentSnapshot(outPath, { maxDimPx = INTENT_SNAPSHOT_MAX_DIM
   return outPath;
 }
 
-function buildIntentContextEnvelope(frameId) {
+function buildMotherRealtimeContextEnvelope({ motherContextPayload = null, imageOriginById = null } = {}) {
+  const idle = state.motherIdle || null;
+  const payload = motherContextPayload && typeof motherContextPayload === "object"
+    ? motherContextPayload
+    : motherV2IntentPayload();
+  const selectedIds = motherV2NormalizeImageIdList(payload?.selected_ids || []).slice(0, 3);
+  const activeIdRaw = String(payload?.active_id || "").trim();
+  const activeId = activeIdRaw && isVisibleCanvasImageId(activeIdRaw) ? activeIdRaw : null;
+  const imageSetSig = motherV2IntentImageSetSignature(idle?.intent || null);
+  const contextSig = motherV2IntentContextSignature(idle?.intent || null);
+  const rejectedModes = [];
+  for (const sig of [contextSig, imageSetSig]) {
+    for (const mode of motherV2RejectedModesForContext(sig)) {
+      if (!mode || rejectedModes.includes(mode)) continue;
+      rejectedModes.push(mode);
+    }
+  }
+  const ambient = payload?.ambient_intent && typeof payload.ambient_intent === "object" ? payload.ambient_intent : null;
+  const ambientBranches = Array.isArray(ambient?.branches)
+    ? ambient.branches
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return null;
+          const branchId = String(entry.branch_id || "").trim();
+          if (!branchId) return null;
+          return {
+            branch_id: branchId,
+            confidence:
+              typeof entry.confidence === "number" && Number.isFinite(entry.confidence)
+                ? clamp(Number(entry.confidence) || 0, 0, 1)
+                : null,
+            evidence_image_ids: Array.isArray(entry.evidence_image_ids)
+              ? entry.evidence_image_ids.map((v) => String(v || "").trim()).filter(Boolean).slice(0, 3)
+              : [],
+          };
+        })
+        .filter(Boolean)
+        .slice(0, 3)
+    : [];
+  const ambientModes = Array.isArray(ambient?.transformation_mode_candidates)
+    ? ambient.transformation_mode_candidates
+        .map((entry, idx) => motherV2NormalizeModeCandidate(entry, { idx }))
+        .filter(Boolean)
+        .sort(motherV2CompareModeCandidates)
+        .map((entry) => {
+          const preset = motherV2ShotTypeHintForMode(entry.mode);
+          return {
+            mode: entry.mode,
+            awe_joy_score: typeof entry.awe_joy_score === "number" ? entry.awe_joy_score : null,
+            confidence: typeof entry.confidence === "number" ? entry.confidence : null,
+            shot_type: String(preset?.primary || "").trim() || null,
+            lighting_profile: String(preset?.lighting_profile || "").trim() || null,
+            lens_guidance: String(preset?.lens_guidance || "").trim() || null,
+          };
+        })
+        .slice(0, MOTHER_V2_MAX_RANKED_PROPOSALS)
+    : [];
+  const proposalContext = payload?.proposal_context && typeof payload.proposal_context === "object"
+    ? payload.proposal_context
+    : null;
+  const preferredModeForHints =
+    motherV2MaybeTransformationMode(payload?.preferred_transformation_mode) ||
+    motherV2MaybeTransformationMode(ambient?.preferred_transformation_mode) ||
+    ambientModes[0]?.mode ||
+    MOTHER_V2_DEFAULT_TRANSFORMATION_MODE;
+  const fallbackShotTypeHints = motherV2ShotTypeHints({
+    preferredMode: preferredModeForHints,
+    candidateModes: ambientModes,
+  });
+  const rawShotTypeHints = proposalContext?.shot_type_hints && typeof proposalContext.shot_type_hints === "object"
+    ? proposalContext.shot_type_hints
+    : fallbackShotTypeHints;
+  const shotTypeHints = {
+    primary_shot_type:
+      clampText(String(rawShotTypeHints?.primary_shot_type || fallbackShotTypeHints.primary_shot_type || "").trim(), 96) || null,
+    alternate_shot_type:
+      clampText(String(rawShotTypeHints?.alternate_shot_type || fallbackShotTypeHints.alternate_shot_type || "").trim(), 96) || null,
+    primary_lighting_profile:
+      clampText(String(rawShotTypeHints?.primary_lighting_profile || fallbackShotTypeHints.primary_lighting_profile || "").trim(), 140) || null,
+    alternate_lighting_profile:
+      clampText(String(rawShotTypeHints?.alternate_lighting_profile || fallbackShotTypeHints.alternate_lighting_profile || "").trim(), 140) || null,
+    primary_lens_guidance:
+      clampText(String(rawShotTypeHints?.primary_lens_guidance || fallbackShotTypeHints.primary_lens_guidance || "").trim(), 140) || null,
+    alternate_lens_guidance:
+      clampText(String(rawShotTypeHints?.alternate_lens_guidance || fallbackShotTypeHints.alternate_lens_guidance || "").trim(), 140) || null,
+  };
+  const compactImages = (Array.isArray(payload?.images) ? payload.images : [])
+    .map((image) => {
+      if (!image || typeof image !== "object") return null;
+      const imageId = String(image.id || "").trim();
+      if (!imageId) return null;
+      const item = state.imagesById.get(imageId) || null;
+      const pathText = String(image.path || item?.path || "").trim();
+      const inferredOrigin = item && isMotherGeneratedImageItem(item) ? "mother_generated" : "uploaded";
+      const originFromMap = imageOriginById?.get?.(imageId) || null;
+      const origin = originFromMap || inferredOrigin;
+      const rectNorm = image.rect_norm && typeof image.rect_norm === "object"
+        ? {
+            x: Number(image.rect_norm.x) || 0,
+            y: Number(image.rect_norm.y) || 0,
+            w: Math.max(0, Number(image.rect_norm.w) || 0),
+            h: Math.max(0, Number(image.rect_norm.h) || 0),
+          }
+        : null;
+      return {
+        id: imageId,
+        file: image.file ? String(image.file) : pathText ? basename(pathText) : null,
+        vision_desc: normalizeVisionHintForIntent(image.vision_desc, { maxChars: REALTIME_VISION_LABEL_MAX_CHARS }),
+        origin,
+        rect_norm: rectNorm,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 10);
+  return {
+    schema: "cue.mother.realtime_context.v1",
+    optimization_target: motherCurrentOptimizationTarget(),
+    optimization_hint: `Optimize proposals for ${motherCurrentOptimizationTarget()} with bold, surprising recombinations.`,
+    action_version: Number(payload?.action_version) || Number(idle?.actionVersion) || 0,
+    creative_directive: String(payload?.creative_directive || motherCurrentCreativeDirective() || "").trim(),
+    preferred_transformation_mode: motherV2MaybeTransformationMode(payload?.preferred_transformation_mode) || null,
+    intensity: clamp(Number(payload?.intensity) || Number(idle?.intensity) || 62, 0, 100),
+    preferred_shot_type:
+      clampText(String(proposalContext?.preferred_shot_type || shotTypeHints.primary_shot_type || "").trim(), 96) || null,
+    alternate_shot_type:
+      clampText(String(proposalContext?.alternate_shot_type || shotTypeHints.alternate_shot_type || "").trim(), 96) || null,
+    preferred_lighting_profile:
+      clampText(String(proposalContext?.preferred_lighting_profile || shotTypeHints.primary_lighting_profile || "").trim(), 140) || null,
+    alternate_lighting_profile:
+      clampText(String(proposalContext?.alternate_lighting_profile || shotTypeHints.alternate_lighting_profile || "").trim(), 140) || null,
+    preferred_lens_guidance:
+      clampText(String(proposalContext?.preferred_lens_guidance || shotTypeHints.primary_lens_guidance || "").trim(), 140) || null,
+    alternate_lens_guidance:
+      clampText(String(proposalContext?.alternate_lens_guidance || shotTypeHints.alternate_lens_guidance || "").trim(), 140) || null,
+    shot_type_hints: shotTypeHints,
+    active_id: activeId,
+    selected_ids: selectedIds,
+    canvas_context_summary: payload?.canvas_context_summary ? clampText(String(payload.canvas_context_summary || ""), 240) : null,
+    recent_rejected_modes_for_context: rejectedModes,
+    last_accepted_mode: motherV2MaybeTransformationMode(idle?.lastProposalMode || idle?.intent?.transformation_mode),
+    ambient_intent: ambientBranches.length || ambientModes.length
+      ? {
+          preferred_transformation_mode: motherV2MaybeTransformationMode(ambient?.preferred_transformation_mode) || null,
+          branches: ambientBranches,
+          transformation_mode_candidates: ambientModes,
+        }
+      : null,
+    images: compactImages,
+  };
+}
+
+function buildIntentContextEnvelope(frameId, { motherContextPayload = null } = {}) {
   const wrap = els.canvasWrap;
   const intent = state.intent || {};
   const dpr = getDpr();
   const canvasCssW = wrap?.clientWidth || 0;
   const canvasCssH = wrap?.clientHeight || 0;
+  const isMotherFrame = String(frameId || "").trim().toLowerCase().startsWith("mother-intent-");
 
   const images = [];
+  const imageOriginById = new Map();
   const z = Array.isArray(state.freeformZOrder) ? state.freeformZOrder : [];
   for (let idx = 0; idx < z.length; idx += 1) {
     const imageId = String(z[idx] || "").trim();
@@ -5662,11 +6351,13 @@ function buildIntentContextEnvelope(frameId) {
     const h = Math.max(1, Number(rect.h) || 1);
     const cx = x + w / 2;
     const cy = y + h / 2;
+    const origin = isMotherGeneratedImageItem(item) ? "mother_generated" : "uploaded";
+    imageOriginById.set(String(imageId), origin);
     images.push({
       id: String(imageId),
       path: String(item.path),
       file: basename(item.path),
-      origin: "uploaded",
+      origin,
       import_index: (state.images || []).findIndex((im) => im?.id === imageId),
       z: idx,
       // Short vision-derived label for this image (best-effort). This is an internal
@@ -5725,16 +6416,106 @@ function buildIntentContextEnvelope(frameId) {
     },
     images,
   };
+  if (isMotherFrame) {
+    envelope.mother_context = buildMotherRealtimeContextEnvelope({
+      motherContextPayload,
+      imageOriginById,
+    });
+  }
   return envelope;
 }
 
-async function writeIntentContextEnvelope(snapshotPath, frameId) {
+async function writeIntentContextEnvelope(snapshotPath, frameId, { motherContextPayload = null } = {}) {
   if (!state.runDir) return null;
   const ctxPath = _canvasContextSidecarPath(snapshotPath);
   if (!ctxPath) return null;
-  const envelope = buildIntentContextEnvelope(frameId);
+  const envelope = buildIntentContextEnvelope(frameId, { motherContextPayload });
   await writeTextFile(ctxPath, JSON.stringify(envelope));
   return ctxPath;
+}
+
+function motherV2RequiredIntentReferenceCount(payload = null) {
+  const images = Array.isArray(payload?.images) ? payload.images : [];
+  const uniquePaths = Array.from(
+    new Set(
+      images
+        .map((image) => String(image?.path || "").trim())
+        .filter(Boolean)
+    )
+  );
+  if (!uniquePaths.length) return 0;
+  if (uniquePaths.length === 1) return 1;
+  return Math.min(MOTHER_V2_MIN_IMAGES_FOR_PROPOSAL, uniquePaths.length);
+}
+
+async function motherV2CountValidIntentContextReferences(snapshotPath = "") {
+  const ctxPath = _canvasContextSidecarPath(snapshotPath);
+  if (!ctxPath) return { count: 0, ctxPath: null };
+  const raw = await readTextFile(ctxPath).catch(() => "");
+  if (!raw) return { count: 0, ctxPath };
+  let parsed = null;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { count: 0, ctxPath };
+  }
+  const rows = Array.isArray(parsed?.images) ? parsed.images : [];
+  const snapshotPathNorm = String(snapshotPath || "").trim();
+  const seen = new Set();
+  let count = 0;
+  for (const row of rows) {
+    const pathText = String(row?.path || "").trim();
+    if (!pathText || pathText === snapshotPathNorm || seen.has(pathText)) continue;
+    seen.add(pathText);
+    const ok = await exists(pathText).catch(() => false);
+    if (!ok) continue;
+    count += 1;
+  }
+  return { count, ctxPath };
+}
+
+async function motherV2WriteIntentContextEnvelopeWithRefRetry(
+  snapshotPath,
+  frameId,
+  payload,
+  { requestId = null, actionVersion = 0 } = {}
+) {
+  const requiredRefs = motherV2RequiredIntentReferenceCount(payload);
+  let ctxPath = null;
+  let availableRefs = 0;
+  for (let attempt = 0; attempt <= MOTHER_V2_INTENT_CONTEXT_REF_RETRY_MAX; attempt += 1) {
+    ctxPath = await writeIntentContextEnvelope(snapshotPath, frameId, { motherContextPayload: payload }).catch(() => null);
+    const inspected = await motherV2CountValidIntentContextReferences(snapshotPath).catch(() => ({ count: 0, ctxPath: null }));
+    availableRefs = Math.max(0, Number(inspected?.count) || 0);
+    if (ctxPath && availableRefs >= requiredRefs) {
+      return {
+        ok: true,
+        ctxPath,
+        requiredRefs,
+        availableRefs,
+        attempts: attempt + 1,
+      };
+    }
+    if (attempt < MOTHER_V2_INTENT_CONTEXT_REF_RETRY_MAX) {
+      await new Promise((resolve) => setTimeout(resolve, MOTHER_V2_INTENT_CONTEXT_REF_RETRY_DELAY_MS));
+    }
+  }
+  appendMotherTraceLog({
+    kind: "intent_context_refs_unavailable",
+    actionVersion: Number(actionVersion) || 0,
+    request_id: requestId ? String(requestId) : null,
+    snapshot_path: snapshotPath ? String(snapshotPath) : null,
+    required_refs: requiredRefs,
+    available_refs: availableRefs,
+    retry_max: MOTHER_V2_INTENT_CONTEXT_REF_RETRY_MAX,
+  }).catch(() => {});
+  return {
+    ok: false,
+    ctxPath: null,
+    requiredRefs,
+    availableRefs,
+    attempts: MOTHER_V2_INTENT_CONTEXT_REF_RETRY_MAX + 1,
+  };
 }
 
 function buildFallbackIntentIconState(frameId, { reason = null } = {}) {
@@ -5743,7 +6524,7 @@ function buildFallbackIntentIconState(frameId, { reason = null } = {}) {
   const outputs = { icon_id: "OUTPUTS", confidence: 0.34, position_hint: "secondary" };
   const pipeline = { icon_id: "PIPELINE", confidence: 0.30, position_hint: "emerging" };
   const fallbackModes = ["hybridize", "amplify", "transcend", "destabilize", "purify"]
-    .slice(0, FALLBACK_INTENT_BRANCH_LIMIT);
+    .slice(0, MOTHER_V2_MAX_RANKED_PROPOSALS);
   const branches = fallbackModes.map((mode, idx) => ({
     branch_id: mode,
     icons: [String(mode).toUpperCase(), "IMAGE_GENERATION", "ITERATION"],
@@ -5801,13 +6582,13 @@ function intentIconsPayloadSafeSnippet(raw, options = {}) {
 
 function parseIntentIconsJsonDetailed(raw) {
   return parseIntentIconsJsonDetailedUtil(raw, {
-    normalizeTransformationMode: maybeIntentTransformationMode,
+    normalizeTransformationMode: motherV2MaybeTransformationMode,
   });
 }
 
 function parseIntentIconsJson(raw) {
   return parseIntentIconsJsonUtil(raw, {
-    normalizeTransformationMode: maybeIntentTransformationMode,
+    normalizeTransformationMode: motherV2MaybeTransformationMode,
   });
 }
 
@@ -9597,6 +10378,52 @@ function updatePortraitIdle({ fromSettings = false } = {}) {
   renderHudReadout();
 }
 
+function motherMoodMenuIsOpen() {
+  if (!els.motherMoodMenu) return false;
+  return !els.motherMoodMenu.classList.contains("hidden");
+}
+
+function setMotherMoodMenuOpen(open) {
+  if (!els.motherMoodMenu) return;
+  const next = Boolean(open);
+  els.motherMoodMenu.classList.toggle("hidden", !next);
+  if (els.canvasMoodStatus) els.canvasMoodStatus.classList.toggle("is-open", next);
+  if (els.motherMoodToggle) {
+    els.motherMoodToggle.setAttribute("aria-expanded", next ? "true" : "false");
+  }
+}
+
+function renderMotherMoodStatus() {
+  const selectedMood = motherNormalizeMood(state.motherMood || "");
+  const config = selectedMood ? motherMoodConfig(selectedMood) : null;
+  if (els.motherMoodToggle) {
+    els.motherMoodToggle.textContent = config?.emoji || MOTHER_MOOD_PLACEHOLDER_EMOJI;
+    const title = config ? `Mood: ${config.label}` : "Mood status (unset)";
+    els.motherMoodToggle.title = title;
+    els.motherMoodToggle.setAttribute("aria-label", config ? `Mood: ${config.label}` : "Set mood");
+    els.motherMoodToggle.dataset.empty = config ? "false" : "true";
+  }
+  if (els.motherMoodMenu) {
+    const options = els.motherMoodMenu.querySelectorAll("button[data-mood]");
+    for (const option of options) {
+      const mood = motherNormalizeMood(option?.dataset?.mood || "");
+      const active = Boolean(selectedMood && mood && mood === selectedMood);
+      option.classList.toggle("is-active", active);
+      option.setAttribute("aria-checked", active ? "true" : "false");
+    }
+  }
+}
+
+function setMotherMood(moodRaw = "") {
+  const mood = motherNormalizeMood(moodRaw);
+  state.motherMood = mood || null;
+  saveMotherMoodPreference(state.motherMood);
+  if (state.motherIdle?.intent && typeof state.motherIdle.intent === "object") {
+    state.motherIdle.intent.creative_directive = motherCurrentCreativeDirective();
+  }
+  renderMotherMoodStatus();
+}
+
 function portraitWorking(_actionLabel, { providerOverride = null, forceProvider = false, clearDirector = true } = {}) {
   if (clearDirector && (state.lastDirectorText || state.lastDirectorMeta)) {
     state.lastDirectorText = null;
@@ -9657,6 +10484,13 @@ function renderKeyStatus(status) {
   if (status.realtime_provider_intent) {
     lines.push(
       `Realtime(intent): ${status.realtime_provider_intent} ${status.realtime_ready_intent ? "ready" : "missing keys"}`
+    );
+  }
+  if (status.realtime_provider_mother_intent) {
+    lines.push(
+      `Realtime(mother): ${status.realtime_provider_mother_intent} ${
+        status.realtime_ready_mother_intent ? "ready" : "missing keys"
+      }`
     );
   }
   els.keyStatus.textContent = lines.join("\n");
@@ -10089,7 +10923,7 @@ function singleImageRailRegionSelectionActive(imageId = "") {
 }
 
 function singleImageRailBusy() {
-  return Boolean(state.designReviewApply?.status === "running" || currentRunningActionKey());
+  return Boolean(state.mother?.running || state.designReviewApply?.status === "running" || currentRunningActionKey());
 }
 
 function singleImageRailManipulationActive() {
@@ -10940,9 +11774,20 @@ function installJuggernautShellBridge() {
   });
 }
 
+let lastMotherRenderedText = null;
+let motherTypeoutTimer = null;
+let motherTypeoutTarget = "";
+let motherTypeoutIndex = 0;
+let motherGlitchTimer = null;
+let motherReadoutFadeTimer = null;
+let motherPhaseCardExitTimer = null;
+let motherPhaseCardExitInFlight = false;
+let motherRolePreviewSankeyRaf = 0;
+let motherRolePreviewSankeyBendEpochMs = 0;
 let wheelForcePanHeld = false;
 const REEL_PRESET_MARGIN_PX = 24;
 let reelPresetWindowResizeAttached = false;
+const MOTHER_V2_SANKEY_BEND_CYCLE_MS = 2200;
 
 function getReelScaleForViewport() {
   const appWidth = Math.max(1, window.innerWidth - REEL_PRESET_MARGIN_PX);
@@ -10962,22 +11807,10338 @@ function shouldSuppressToastInReelMode(message, kind = "info") {
   if (String(kind || "").toLowerCase() === "error") return false;
   const text = String(message || "").trim();
   if (!text) return false;
-  return /[^/\s]+\.(png|jpe?g|webp|heic|gif|bmp|tiff?|mp4|mov|webm)/i.test(text);
+  // In reel mode, suppress informational toasts that reveal generated/input filenames.
+  return /\b[^\\/\s]+\.(png|jpe?g|webp|heic|gif|bmp|tiff?|mp4|mov|webm)\b/i.test(text);
 }
 
 function suppressReelDnaToasts() {
   return isReelSizeLocked();
 }
 
-function desktopEventVersionId(event) {
+function updateReelSizeButton() {
+  const locked = isReelSizeLocked();
+  if (els.reelAdminToggle) {
+    els.reelAdminToggle.textContent = locked ? "Exit Reel 9:16" : "Enable Reel 9:16";
+    els.reelAdminToggle.classList.toggle("is-active", locked);
+    els.reelAdminToggle.setAttribute("aria-pressed", locked ? "true" : "false");
+    els.reelAdminToggle.title = locked
+      ? "Restore normal layout"
+      : `Resize app to ${REEL_PRESET.width} × ${REEL_PRESET.height} area`;
+  }
+}
+
+function setReelSizeLock(enabled) {
+  const appEl = document.getElementById("app");
+  if (!appEl) return;
+  if (!enabled) {
+    document.documentElement.removeAttribute("data-reel-size-preset");
+    document.documentElement.style.removeProperty("--reel-view-scale");
+    appEl.style.removeProperty("width");
+    appEl.style.removeProperty("height");
+    updateReelSizeButton();
+    return;
+  }
+
+  const scale = getReelScaleForViewport();
+  const width = Math.round(REEL_PRESET.width * scale);
+  const height = Math.round(REEL_PRESET.height * scale);
+
+  appEl.style.width = `${width}px`;
+  appEl.style.height = `${height}px`;
+  document.documentElement.setAttribute("data-reel-size-preset", "active");
+  document.documentElement.style.setProperty("--reel-view-scale", "1");
+  updateReelSizeButton();
+}
+
+function toggleReelSizeLock() {
+  const wasLocked = isReelSizeLocked();
+  setReelSizeLock(!wasLocked);
+  const nowLocked = isReelSizeLocked();
+  if (els.overlayCanvas) {
+    els.overlayCanvas.style.cursor = nowLocked ? "none" : INTENT_IMPORT_CURSOR;
+  }
+  if (!nowLocked && state.reelTouch) {
+    state.reelTouch.visibleUntil = 0;
+    state.reelTouch.downUntil = 0;
+    state.reelTouch.down = false;
+  }
+  // Reel mode changes visible control affordances (2x3 grid, mother readout/actions),
+  // so force an immediate UI refresh instead of waiting for later state updates.
+  renderQuickActions();
+  renderMotherReadout();
+  if (nowLocked) {
+    setStatus(`App resize preset: ${REEL_PRESET.width} × ${REEL_PRESET.height}`);
+  }
+}
+
+function stopMotherGlitchLoop() {
+  clearTimeout(motherGlitchTimer);
+  motherGlitchTimer = null;
+  if (els.tipsText) els.tipsText.classList.remove("mother-glitch");
+}
+
+function _triggerMotherGlitchBurst() {
+  if (!els.tipsText) return;
+  if (els.tipsText.classList.contains("mother-proposal-active")) return;
+  if (els.tipsText.querySelector(".mother-proposal-icon, .mother-phase-icon")) return;
+  // Keep it subtle and infrequent: brief "cosmic storm" interference.
+  const durationMs = 140 + Math.floor(Math.random() * 240);
+  els.tipsText.classList.add("mother-glitch");
+  setTimeout(() => {
+    if (!els.tipsText) return;
+    els.tipsText.classList.remove("mother-glitch");
+  }, durationMs);
+}
+
+function _scheduleNextMotherGlitch() {
+  clearTimeout(motherGlitchTimer);
+  // Infrequent by design.
+  const delayMs = 22000 + Math.floor(Math.random() * 52000); // 22s - 74s
+  motherGlitchTimer = setTimeout(() => {
+    _triggerMotherGlitchBurst();
+    // Occasionally double-tap the glitch for a more "stormy" feel.
+    if (Math.random() < 0.22) {
+      setTimeout(() => _triggerMotherGlitchBurst(), 140 + Math.floor(Math.random() * 260));
+    }
+    _scheduleNextMotherGlitch();
+  }, delayMs);
+}
+
+function startMotherGlitchLoop() {
+  if (motherGlitchTimer) return;
+  _scheduleNextMotherGlitch();
+}
+
+function stopMotherTypeout() {
+  clearTimeout(motherTypeoutTimer);
+  motherTypeoutTimer = null;
+  motherTypeoutTarget = "";
+  motherTypeoutIndex = 0;
+  if (els.tipsText) els.tipsText.classList.remove("mother-typing");
+}
+
+function motherV2TriggerReadoutFade() {
+  if (!els.tipsText) return;
+  clearTimeout(motherReadoutFadeTimer);
+  els.tipsText.classList.remove("mother-readout-fade");
+  // Force reflow so the fade restarts on each readout change.
+  void els.tipsText.offsetWidth; // eslint-disable-line no-unused-expressions
+  els.tipsText.classList.add("mother-readout-fade");
+  motherReadoutFadeTimer = setTimeout(() => {
+    if (!els.tipsText) return;
+    els.tipsText.classList.remove("mother-readout-fade");
+  }, 280);
+}
+
+function motherTypeoutTick() {
+  if (!els.tipsText) return;
+  const remaining = motherTypeoutTarget.length - motherTypeoutIndex;
+  if (remaining <= 0) {
+    els.tipsText.classList.remove("mother-typing");
+    motherTypeoutTimer = null;
+    return;
+  }
+  let step = 1;
+  if (remaining > 900) step = 6;
+  else if (remaining > 600) step = 4;
+  else if (remaining > 300) step = 3;
+  else if (remaining > 140) step = 2;
+
+  motherTypeoutIndex = Math.min(motherTypeoutTarget.length, motherTypeoutIndex + step);
+  els.tipsText.textContent = motherTypeoutTarget.slice(0, motherTypeoutIndex);
+  motherTypeoutTimer = setTimeout(motherTypeoutTick, 90);
+}
+
+function startMotherTypeout(text) {
+  if (!els.tipsText) return;
+  stopMotherTypeout();
+  motherTypeoutTarget = String(text || "");
+  motherTypeoutIndex = 0;
+  els.tipsText.textContent = "";
+  els.tipsText.classList.add("mother-typing");
+  motherTypeoutTick();
+}
+
+function syncMotherTakeoverClass() {
+  if (!els.canvasWrap) return;
+  els.canvasWrap.classList.toggle("mother-takeover", Boolean(state.mother?.running));
+}
+
+function motherV2CommitUndoAvailable() {
+  const idle = state.motherIdle;
+  if (!idle?.commitUndo) return false;
+  if (Date.now() <= (Number(idle.commitUndo.expiresAt) || 0)) return true;
+  // Expired undo should not keep blocking reject follow-up behavior.
+  idle.commitUndo = null;
+  return false;
+}
+
+function renderMotherControls() {
+  syncMotherTakeoverClass();
+
+  const idle = state.motherIdle || null;
+  const reelLocked = isReelSizeLocked();
+  const phase = idle?.phase || motherIdleInitialState();
+  const hasProposalImageSet = motherV2HasProposalImageSet();
+  const proposalModes = motherV2ProposalModes(idle?.intent || null);
+  const undoAvailable = motherV2CommitUndoAvailable();
+  const canNextProposal =
+    hasProposalImageSet &&
+    phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING &&
+    proposalModes.length > 1;
+  const canConfirm =
+    phase === MOTHER_IDLE_STATES.OFFERING ||
+    (hasProposalImageSet && phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING);
+  const canReject =
+    undoAvailable ||
+    phase === MOTHER_IDLE_STATES.OFFERING ||
+    phase === MOTHER_IDLE_STATES.DRAFTING ||
+    (hasProposalImageSet && phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING);
+  const nextLabel = "Next proposal";
+  const nextTitle = canNextProposal ? "Cycle to next proposal option" : "No alternate proposal available";
+  const confirmTitle =
+    phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING
+      ? "Accept proposal and start draft"
+      : phase === MOTHER_IDLE_STATES.OFFERING
+        ? "Accept and apply selected draft"
+        : "Mother confirm";
+  const rejectTitle = undoAvailable
+    ? "Undo last Mother commit"
+    : phase === MOTHER_IDLE_STATES.DRAFTING
+      ? "Cancel drafting"
+      : "Reject proposal";
+
+  if (els.motherConfirm) {
+    els.motherConfirm.disabled = !canConfirm;
+    els.motherConfirm.title = confirmTitle;
+    els.motherConfirm.textContent = "V";
+    els.motherConfirm.setAttribute("aria-label", confirmTitle);
+    els.motherConfirm.classList.toggle("hidden", false);
+  }
+  if (els.motherStop) {
+    const stopAction = els.motherStop.closest(".mother-action");
+    if (stopAction) stopAction.classList.toggle("hidden", reelLocked);
+    els.motherStop.disabled = !canReject;
+    els.motherStop.title = rejectTitle;
+    els.motherStop.textContent = undoAvailable ? "↶" : "X";
+    els.motherStop.setAttribute("aria-label", rejectTitle);
+    els.motherStop.classList.toggle("hidden", reelLocked);
+  }
+  if (els.motherAbilityIcon) {
+    els.motherAbilityIcon.disabled = !canNextProposal;
+    els.motherAbilityIcon.title = nextTitle;
+    els.motherAbilityIcon.textContent = "→";
+    els.motherAbilityIcon.setAttribute("aria-label", canNextProposal ? nextLabel : `${nextLabel} unavailable`);
+  }
+
+  syncMotherPortrait();
+}
+
+function motherV2ImageLabelById(imageId) {
+  const item = state.imagesById.get(String(imageId || "").trim()) || null;
+  if (!item) return String(imageId || "").trim();
+  const label = String(item.label || "").trim();
+  if (label) return label;
+  const pathLabel = basename(item.path || "");
+  if (pathLabel) return pathLabel;
+  return String(item.id || "").trim();
+}
+
+function motherV2PaletteKeyByImageId(imageId) {
+  const id = String(imageId || "").trim();
+  if (!id) return "";
+  const item = state.imagesById.get(id) || null;
+  if (!item) return id;
+  const path = String(item.path || "").trim();
+  if (path) return `${id}|${path}`;
+  const label = String(item.label || "").trim();
+  if (label) return `${id}|${label}`;
+  return id;
+}
+
+function motherV2PaletteIndexByImageId(imageId) {
+  const id = String(imageId || "").trim();
+  if (!id) return 0;
+  const paletteLen = Math.max(1, Number(GOOGLE_BRAND_RECT_PALETTE_RGB?.length) || 0);
+  const item = state.imagesById.get(id) || null;
+  const assigned = Number(item?.uiPaletteIndex);
+  if (Number.isFinite(assigned) && assigned >= 0) {
+    return Math.floor(assigned) % paletteLen;
+  }
+  const fallbackOrder = Array.isArray(state.images)
+    ? state.images.findIndex((entry) => String(entry?.id || "").trim() === id)
+    : -1;
+  if (fallbackOrder >= 0) return fallbackOrder % paletteLen;
+  return Math.abs(Number(hash32(id)) || 0) % paletteLen;
+}
+
+function motherV2SyncSelectOptions(selectEl, currentId = "") {
+  if (!selectEl) return;
+  const normalizedCurrent = String(currentId || "").trim();
+  const options = [{ value: "", label: "Unassigned" }];
+  for (const item of motherIdleBaseImageItems()) {
+    if (!item?.id) continue;
+    options.push({
+      value: String(item.id),
+      label: motherV2ImageLabelById(item.id),
+    });
+  }
+  const prior = Array.from(selectEl.options || []).map((opt) => `${opt.value}::${opt.text}`).join("|");
+  const next = options.map((opt) => `${opt.value}::${opt.label}`).join("|");
+  if (prior !== next) {
+    selectEl.innerHTML = options
+      .map((opt) => `<option value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</option>`)
+      .join("");
+  }
+  selectEl.value = normalizedCurrent;
+}
+
+function motherV2SyncLayeredPanel() {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const phase = idle.phase || motherIdleInitialState();
+  const interactive =
+    phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING ||
+    phase === MOTHER_IDLE_STATES.OFFERING ||
+    phase === MOTHER_IDLE_STATES.DRAFTING;
+  const advancedVisible = motherV2IsAdvancedVisible() && interactive;
+  const hintsVisible = motherV2HintsVisible() && interactive;
+  const hasIntent = Boolean(idle.intent && typeof idle.intent === "object");
+
+  if (els.motherPanel) {
+    els.motherPanel.classList.toggle("mother-panel-layered", interactive || phase === MOTHER_IDLE_STATES.WATCHING);
+    els.motherPanel.classList.toggle("mother-hints-visible", hintsVisible);
+    els.motherPanel.classList.toggle("mother-advanced-visible", advancedVisible);
+  }
+  if (els.motherPanelStack) {
+    els.motherPanelStack.classList.toggle("mother-panel-interactive", interactive);
+    els.motherPanelStack.classList.toggle("mother-panel-advanced", advancedVisible);
+  }
+  if (els.motherRefineToggle) {
+    els.motherRefineToggle.classList.add("hidden");
+    els.motherRefineToggle.setAttribute("aria-expanded", advancedVisible ? "true" : "false");
+    els.motherRefineToggle.textContent = advancedVisible ? "Hide structure" : "Refine structure";
+  }
+  if (els.motherAdvanced) {
+    els.motherAdvanced.classList.toggle("hidden", !advancedVisible || !hasIntent);
+  }
+  if (!advancedVisible || !hasIntent) return;
+
+  if (els.motherTransformationMode) {
+    if (!els.motherTransformationMode.options.length) {
+      els.motherTransformationMode.innerHTML = MOTHER_V2_TRANSFORMATION_MODES.map(
+        (mode) => `<option value="${mode}">${mode.toUpperCase()}</option>`
+      ).join("");
+    }
+    const mode = motherV2CurrentTransformationMode();
+    els.motherTransformationMode.value = mode;
+  }
+
+  motherV2SyncSelectOptions(els.motherRoleSubject, motherV2RoleIds("subject")[0] || "");
+  motherV2SyncSelectOptions(els.motherRoleModel, motherV2RoleIds("model")[0] || "");
+  motherV2SyncSelectOptions(els.motherRoleMediator, motherV2RoleIds("mediator")[0] || "");
+  motherV2SyncSelectOptions(els.motherRoleObject, motherV2RoleIds("object")[0] || "");
+}
+
+function syncMotherIntentSourceIndicator() {
+  const indicator = els.motherIntentSourceIndicator;
+  if (!indicator) return;
+  const sourceKind = String(state.motherIdle?.intent?._intent_source_kind || "").trim().toLowerCase();
+  const sourceModel = String(state.motherIdle?.intent?._intent_source_model || "").trim();
+  const normalized = sourceKind === "realtime" ? "realtime" : "";
+  const tone = normalized === "realtime" ? realtimeIntentModelTone(sourceModel) : "";
+  indicator.classList.remove(
+    "hidden",
+    "is-realtime",
+    "is-fallback",
+    "is-realtime-openai-mini",
+    "is-realtime-gemini-flash"
+  );
+  if (!normalized) {
+    indicator.title = intentSourceDotTooltip("", "");
+    return;
+  }
+  indicator.classList.add(`is-${normalized}`);
+  if (tone === "openai-mini") indicator.classList.add("is-realtime-openai-mini");
+  if (tone === "gemini-flash") indicator.classList.add("is-realtime-gemini-flash");
+  indicator.title = intentSourceDotTooltip(normalized, sourceModel);
+}
+
+function motherV2RolePreviewEntries() {
+  const roleByImageId = new Map();
+  for (const roleKey of MOTHER_V2_ROLE_KEYS) {
+    for (const imageIdRaw of motherV2RoleIds(roleKey)) {
+      const imageId = String(imageIdRaw || "").trim();
+      if (!imageId) continue;
+      if (!roleByImageId.has(imageId)) roleByImageId.set(imageId, roleKey);
+    }
+  }
+  const visibleIds = new Set(
+    getVisibleCanvasImages()
+      .map((item) => String(item?.id || "").trim())
+      .filter(Boolean)
+  );
+  const orderedIds = [];
+  const pushOrderedId = (rawId) => {
+    const imageId = String(rawId || "").trim();
+    if (!imageId) return;
+    if (!visibleIds.has(imageId)) return;
+    if (orderedIds.includes(imageId)) return;
+    orderedIds.push(imageId);
+  };
+  for (const imageIdRaw of Array.isArray(state.freeformZOrder) ? state.freeformZOrder : []) {
+    pushOrderedId(imageIdRaw);
+  }
+  for (const item of getVisibleCanvasImages()) {
+    pushOrderedId(item?.id);
+  }
+  const activeId = String(getVisibleActiveId() || "").trim();
+
+  const entries = [];
+  for (const imageId of orderedIds) {
+    const rect = state.freeformRects.get(imageId) || null;
+    if (!rect) continue;
+    const rectTransform = readFreeformRectTransform(rect);
+    const roleCandidate = String(roleByImageId.get(imageId) || "")
+      .trim()
+      .toLowerCase();
+    const roleKey = MOTHER_V2_ROLE_KEYS.includes(roleCandidate) ? roleCandidate : "";
+    const roleLabel = roleKey ? String(MOTHER_V2_ROLE_LABEL[roleKey] || roleKey.toUpperCase()) : "";
+    const paletteIndex = motherV2PaletteIndexByImageId(imageId);
+    const accentKey = `palette:${paletteIndex}:${motherV2PaletteKeyByImageId(imageId) || imageId}`;
+    const accent = googleBrandRectColorForIndex(paletteIndex, 0.94);
+    entries.push({
+      imageId,
+      roleKey,
+      roleLabel,
+      accentKey,
+      accent,
+      isActive: Boolean(activeId && imageId === activeId),
+      imageLabel: clampText(motherV2ImageLabelById(imageId), 28),
+      rect: {
+        x: Math.round(Number(rect.x) || 0),
+        y: Math.round(Number(rect.y) || 0),
+        w: Math.max(1, Math.round(Number(rect.w) || 1)),
+        h: Math.max(1, Math.round(Number(rect.h) || 1)),
+      },
+      transform: {
+        rotateDeg: rectTransform.rotateDeg,
+        skewXDeg: rectTransform.skewXDeg,
+      },
+    });
+  }
+  return entries;
+}
+
+function motherRolePreviewImageIdFromEvent(event) {
+  const target = event?.target;
+  if (!(target instanceof Element)) return "";
+  const rectEl = target.closest(".mother-role-preview-rect[data-image-id]");
+  if (!rectEl) return "";
+  return String(rectEl?.dataset?.imageId || "").trim();
+}
+
+function syncMotherRolePreviewHoverState() {
+  const root = els.motherRolePreview;
+  if (!root) return;
+  const hoveredId = String(state.motherRolePreviewHoverImageId || "").trim();
+  const rectEls = root.querySelectorAll(".mother-role-preview-rect[data-image-id]");
+  let hasHoveredRect = false;
+  for (const rectEl of rectEls) {
+    const imageId = String(rectEl?.dataset?.imageId || "").trim();
+    const isHovered = Boolean(hoveredId && imageId && imageId === hoveredId);
+    rectEl.classList.toggle("is-live-tether-hover", isHovered);
+    if (isHovered) hasHoveredRect = true;
+  }
+  if (hoveredId && !hasHoveredRect) {
+    state.motherRolePreviewHoverImageId = null;
+  }
+}
+
+function setMotherRolePreviewHoverImageId(rawImageId, { requestFrame = true } = {}) {
+  const next = String(rawImageId || "").trim() || null;
+  const prev = String(state.motherRolePreviewHoverImageId || "").trim() || null;
+  if (next === prev) return false;
+  state.motherRolePreviewHoverImageId = next;
+  syncMotherRolePreviewHoverState();
+  if (requestFrame) requestRender();
+  return true;
+}
+
+function motherV2RolePreviewSignature(
+  entries,
+  { canvasCssW, canvasCssH, surfaceW, surfaceH, animationMode = "", promptMotionKey = "" } = {}
+) {
+  const parts = [
+    `canvas=${Math.round(Number(canvasCssW) || 0)}x${Math.round(Number(canvasCssH) || 0)}`,
+    `surface=${Math.round(Number(surfaceW) || 0)}x${Math.round(Number(surfaceH) || 0)}`,
+    `mode=${state.canvasMode || ""}`,
+    `proposal_mode=${String(animationMode || "")}`,
+    `prompt_motion=${String(promptMotionKey || "")}`,
+  ];
+  parts.push(`active=${getVisibleActiveId() || ""}`);
+  parts.push(`sel=${getVisibleSelectedIds().join(",")}`);
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!entry) continue;
+    const rect = entry.rect || {};
+    const transform = entry.transform || {};
+    const rotateDeg = Number(transform.rotateDeg);
+    const skewXDeg = Number(transform.skewXDeg);
+    parts.push(
+      `${entry.imageId}:${entry.roleKey}:${entry.accentKey || ""}:${Math.round(Number(rect.x) || 0)},${Math.round(
+        Number(rect.y) || 0
+      )},${Math.round(
+        Number(rect.w) || 0
+      )},${Math.round(Number(rect.h) || 0)}:${Number.isFinite(rotateDeg) ? rotateDeg.toFixed(2) : "0.00"},${
+        Number.isFinite(skewXDeg) ? skewXDeg.toFixed(2) : "0.00"
+      }`
+    );
+  }
+  return parts.join("|");
+}
+
+function motherV2RolePreviewMode() {
+  const explicit = motherV2MaybeTransformationMode(state.motherIdle?.intent?.transformation_mode);
+  if (explicit) return explicit;
+  const remembered = motherV2MaybeTransformationMode(state.motherIdle?.lastProposalMode);
+  return remembered || "";
+}
+
+function motherV2RolePreviewAnimationMode() {
+  const phase = String(state.motherIdle?.phase || "").trim();
+  const activePhases = new Set([
+    MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING,
+    MOTHER_IDLE_STATES.DRAFTING,
+    MOTHER_IDLE_STATES.OFFERING,
+  ]);
+  if (!activePhases.has(phase)) return "";
+  const mode = motherV2RolePreviewMode();
+  if (!mode) return "";
+  if (phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+    const intent = state.motherIdle?.intent || null;
+    if (!intent || typeof intent !== "object") return "";
+  }
+  return mode;
+}
+
+function motherV2RolePreviewMotionState() {
+  const dragging =
+    Boolean(state.pointer?.active) ||
+    Boolean(state.motherIdle?.roleGlyphDrag) ||
+    Boolean(state.effectTokenDrag);
+  return dragging ? "paused" : "running";
+}
+
+function motherV2VectorToTarget(fromX, fromY, toX, toY, magnitude = 1) {
+  const dx = Number(toX) - Number(fromX);
+  const dy = Number(toY) - Number(fromY);
+  const len = Math.hypot(dx, dy);
+  if (!(len > 0.0001)) return { x: 0, y: 0 };
+  return {
+    x: (dx / len) * Number(magnitude || 0),
+    y: (dy / len) * Number(magnitude || 0),
+  };
+}
+
+function motherV2BlendNumber(base, target, t = 0) {
+  const from = Number(base) || 0;
+  const to = Number(target) || 0;
+  const amount = clamp(Number(t) || 0, 0, 1);
+  return from + (to - from) * amount;
+}
+
+const MOTHER_V2_PROMPT_MOTION_KEYWORDS = Object.freeze({
+  cinematic: Object.freeze([
+    "cinematic",
+    "dramatic",
+    "hero",
+    "high-contrast",
+    "moody",
+    "rim light",
+    "production-grade lighting",
+  ]),
+  soft: Object.freeze([
+    "soft",
+    "warm",
+    "gentle",
+    "dreamy",
+    "ethereal",
+    "serene",
+    "intimate",
+    "romantic",
+  ]),
+  chaos: Object.freeze([
+    "chaotic",
+    "chaos",
+    "fracture",
+    "destabilize",
+    "glitch",
+    "shatter",
+    "fragment",
+    "volatile",
+  ]),
+  precise: Object.freeze([
+    "clean",
+    "minimal",
+    "crisp",
+    "coherent",
+    "structured",
+    "grid",
+    "focal hierarchy",
+    "perspective",
+  ]),
+  fusion: Object.freeze([
+    "integrate all references",
+    "single coherent scene",
+    "fusion",
+    "fuse",
+    "blend",
+    "hybrid",
+    "midpoint",
+  ]),
+  lighting: Object.freeze([
+    "lighting",
+    "shadow",
+    "contrast",
+    "exposure",
+    "color",
+    "tonal",
+    "highlight",
+  ]),
+});
+
+function motherV2PromptKeywordScore(text = "", keywords = []) {
+  const hay = String(text || "").toLowerCase();
+  if (!hay || !Array.isArray(keywords) || !keywords.length) return 0;
+  let hits = 0;
+  for (const rawKeyword of keywords) {
+    const keyword = String(rawKeyword || "").trim().toLowerCase();
+    if (!keyword) continue;
+    if (hay.includes(keyword)) hits += 1;
+  }
+  return clamp(hits / Math.max(1, keywords.length), 0, 1);
+}
+
+function motherV2PromptMotionProfileFromCompiled(compiled = {}) {
+  const payload = compiled && typeof compiled === "object" ? compiled : {};
+  const positive = String(payload.positive_prompt || payload.prompt || "").trim();
+  const negative = String(payload.negative_prompt || "").trim();
+  const summary = String(payload.summary || payload.intent_summary || "").trim();
+  const directive = String(payload.creative_directive || "").trim();
+  const transformationMode = motherV2MaybeTransformationMode(payload.transformation_mode) || "";
+  const raw = [positive, negative, summary, directive, transformationMode].filter(Boolean).join("\n").trim().toLowerCase();
+  if (!raw) return null;
+
+  const cinematic = motherV2PromptKeywordScore(raw, MOTHER_V2_PROMPT_MOTION_KEYWORDS.cinematic);
+  const softness = motherV2PromptKeywordScore(raw, MOTHER_V2_PROMPT_MOTION_KEYWORDS.soft);
+  const chaos = motherV2PromptKeywordScore(raw, MOTHER_V2_PROMPT_MOTION_KEYWORDS.chaos);
+  const precision = motherV2PromptKeywordScore(raw, MOTHER_V2_PROMPT_MOTION_KEYWORDS.precise);
+  const fusion = motherV2PromptKeywordScore(raw, MOTHER_V2_PROMPT_MOTION_KEYWORDS.fusion);
+  const lighting = motherV2PromptKeywordScore(raw, MOTHER_V2_PROMPT_MOTION_KEYWORDS.lighting);
+
+  const promptHash = hash32(raw);
+  const seedA = rand01(promptHash + 0.17);
+  const seedB = rand01(promptHash + 1.93);
+  const seedC = rand01(promptHash + 3.71);
+  const seedD = rand01(promptHash + 5.29);
+
+  const tempo = clamp(1 + cinematic * 0.2 + chaos * 0.22 - softness * 0.1 + (seedA - 0.5) * 0.08, 0.72, 1.42);
+  const spread = clamp(1 + chaos * 0.2 - fusion * 0.17 - precision * 0.12 + (seedB - 0.5) * 0.12, 0.72, 1.35);
+  const pulse = clamp(0.22 + cinematic * 0.45 + fusion * 0.24 + seedC * 0.12, 0.08, 0.96);
+  const verticalLift = clamp(cinematic * 0.65 + softness * 0.28 - chaos * 0.18 + (seedD - 0.5) * 0.08, -0.24, 1);
+  const focusPull = clamp(precision * 0.62 + fusion * 0.42 - chaos * 0.26, 0, 1);
+  const chaosGain = clamp(0.62 + chaos * 0.94 - precision * 0.14 + (seedA - 0.5) * 0.12, 0.45, 1.75);
+  const key = [
+    promptHash.toString(16),
+    Math.round(cinematic * 100),
+    Math.round(softness * 100),
+    Math.round(chaos * 100),
+    Math.round(precision * 100),
+    Math.round(fusion * 100),
+    Math.round(lighting * 100),
+  ].join(":");
+
+  return {
+    key,
+    tempo,
+    spread,
+    pulse,
+    verticalLift,
+    focusPull,
+    chaosGain,
+    cinematic,
+    softness,
+    chaos,
+    precision,
+    fusion,
+    lighting,
+  };
+}
+
+function motherV2CurrentPromptMotionProfile() {
+  const idle = state.motherIdle;
+  if (!idle) return null;
+  const phase = String(idle.phase || "").trim();
+  const canUseStored = phase === MOTHER_IDLE_STATES.DRAFTING || phase === MOTHER_IDLE_STATES.OFFERING || phase === MOTHER_IDLE_STATES.COMMITTING || phase === MOTHER_IDLE_STATES.COOLDOWN;
+  if (canUseStored && idle.promptMotionProfile && typeof idle.promptMotionProfile === "object") {
+    return idle.promptMotionProfile;
+  }
+  const fallbackCompiled = {
+    positive_prompt: String(idle.pendingPromptLine || idle.intent?.summary || "").trim(),
+    creative_directive: String(idle.intent?.creative_directive || "").trim(),
+    transformation_mode: String(idle.intent?.transformation_mode || "").trim(),
+  };
+  return motherV2PromptMotionProfileFromCompiled(fallbackCompiled);
+}
+
+function motherV2RolePreviewMergeBlend(mode = "") {
+  const modeKey = String(mode || "").trim().toLowerCase();
+  switch (modeKey) {
+    case "amplify":
+      return 0.24;
+    case "transcend":
+      return 0.4;
+    case "destabilize":
+      return 0.08;
+    case "purify":
+      return 0.66;
+    case "hybridize":
+      return 0.98;
+    case "mythologize":
+      return 0.2;
+    case "monumentalize":
+      return 0.56;
+    case "fracture":
+      return 0.03;
+    case "romanticize":
+      return 0.92;
+    case "alienate":
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+function motherV2RolePreviewMotionProfile({
+  mode = "",
+  roleKey = "",
+  centerX = 0,
+  centerY = 0,
+  rectW = 0,
+  rectH = 0,
+  surfaceW = 0,
+  surfaceH = 0,
+  subjectCenter = null,
+  modelCenter = null,
+  focusCenter = null,
+  mergeRect = null,
+  promptMotion = null,
+} = {}) {
+  const panelCenterX = (Number(surfaceW) || 0) / 2;
+  const panelCenterY = (Number(surfaceH) || 0) / 2;
+  const dx = Number(centerX) - panelCenterX;
+  const dy = Number(centerY) - panelCenterY;
+  const len = Math.max(0.0001, Math.hypot(dx, dy));
+  const ux = dx / len;
+  const uy = dy / len;
+  const tx = -uy;
+  const ty = ux;
+  const towardCenterX = -ux;
+  const towardCenterY = -uy;
+  const signX = dx >= 0 ? 1 : -1;
+
+  const out = {
+    preMx: 0,
+    preMy: 0,
+    preScale: 1,
+    preResizeX: 1,
+    preResizeY: 1,
+    preRot: 0,
+    preSat: 1,
+    preBright: 1,
+    preAlpha: 0.92,
+    mx: 0,
+    my: 0,
+    scale: 1,
+    resizeX: 1,
+    resizeY: 1,
+    rot: 0,
+    sat: 1,
+    bright: 1,
+    alpha: 0.84,
+    speedMs: 3000,
+    animKind: "flow",
+    jitterAx: 2.2,
+    jitterAy: 1.6,
+    mergeStrength: 0,
+  };
+
+  const modeKey = String(mode || "").trim().toLowerCase();
+  if (!modeKey) return out;
+
+  switch (modeKey) {
+    case "amplify":
+      out.animKind = "amplify";
+      out.speedMs = 1100;
+      out.mx = ux * 5.6;
+      out.my = uy * 5.2;
+      out.scale = 1.2;
+      out.resizeX = 1.16;
+      out.resizeY = 1.16;
+      out.rot = signX * 2.4;
+      out.sat = 1.42;
+      out.bright = 1.22;
+      out.mergeStrength = 0.16;
+      break;
+    case "transcend":
+      out.animKind = "transcend";
+      out.speedMs = 5200;
+      out.mx = tx * 1.6 + towardCenterX * 0.8;
+      out.my = -7.2 + towardCenterY * 1.1;
+      out.scale = 1.02;
+      out.resizeX = 0.9;
+      out.resizeY = 1.24;
+      out.sat = 0.98;
+      out.bright = 1.24;
+      out.rot = tx * 3.2;
+      out.jitterAx = 1.1;
+      out.jitterAy = 0.9;
+      out.mergeStrength = 0.44;
+      break;
+    case "destabilize":
+      out.animKind = "destabilize";
+      out.speedMs = 620;
+      out.mx = ux * 2.8 + tx * 1.8;
+      out.my = uy * 2.6 + ty * 1.2;
+      out.scale = 1;
+      out.resizeX = 1.24;
+      out.resizeY = 0.78;
+      out.rot = signX * 5.2;
+      out.sat = 1.26;
+      out.bright = 0.98;
+      out.jitterAx = 5.8;
+      out.jitterAy = 4.2;
+      out.alpha = 0.78;
+      out.mergeStrength = 0.06;
+      break;
+    case "purify":
+      out.animKind = "purify";
+      out.speedMs = 4400;
+      out.mx = towardCenterX * 4.2;
+      out.my = towardCenterY * 3.4 - 1.4;
+      out.scale = 0.96;
+      out.resizeX = 0.84;
+      out.resizeY = 1.2;
+      out.sat = 0.72;
+      out.bright = 1.32;
+      out.alpha = 0.8;
+      out.mergeStrength = 0.8;
+      break;
+    case "hybridize":
+      out.animKind = "hybridize";
+      out.speedMs = 1800;
+      out.mx = towardCenterX * 5 + tx * 0.8;
+      out.my = towardCenterY * 4.2 + ty * 0.8;
+      out.scale = 1.08;
+      out.resizeX = 1.12;
+      out.resizeY = 0.88;
+      out.sat = 1.24;
+      out.bright = 1.16;
+      out.rot = signX * 1.6;
+      out.jitterAx = 1.8;
+      out.jitterAy = 1.4;
+      out.alpha = 0.86;
+      out.mergeStrength = 1;
+      break;
+    case "mythologize":
+      out.animKind = "mythologize";
+      out.speedMs = 5600;
+      out.mx = tx * 6.8;
+      out.my = ty * 6.8;
+      out.scale = 1.14;
+      out.resizeX = 1.22;
+      out.resizeY = 0.8;
+      out.rot = signX * 7.5;
+      out.sat = 1.3;
+      out.bright = 1.16;
+      out.jitterAx = 3.8;
+      out.jitterAy = 2.8;
+      out.mergeStrength = 0.24;
+      break;
+    case "monumentalize":
+      out.animKind = "monumentalize";
+      out.speedMs = 6200;
+      out.mx = towardCenterX * 1.6;
+      out.my = -8.8 + towardCenterY * 0.8;
+      out.scale = 1.2;
+      out.resizeX = 1.1;
+      out.resizeY = 1.3;
+      out.rot = signX * 0.5;
+      out.sat = 1.06;
+      out.bright = 1.16;
+      out.alpha = 0.88;
+      out.mergeStrength = 0.62;
+      break;
+    case "fracture":
+      out.animKind = "fracture";
+      out.speedMs = 540;
+      out.mx = signX * 8.2 + tx * 2.4;
+      out.my = signX * 2.2 - ty * 1.8;
+      out.scale = 0.98;
+      out.resizeX = 1.36;
+      out.resizeY = 0.66;
+      out.rot = signX * 8.5;
+      out.sat = 1.18;
+      out.bright = 0.92;
+      out.jitterAx = 7.8;
+      out.jitterAy = 5.4;
+      out.alpha = 0.72;
+      out.mergeStrength = 0.01;
+      break;
+    case "romanticize": {
+      out.animKind = "romanticize";
+      out.speedMs = 2600;
+      out.mx = towardCenterX * 2.4;
+      out.my = towardCenterY * 2.0 - 1.8;
+      out.scale = 1.08;
+      out.resizeX = 1.2;
+      out.resizeY = 0.86;
+      out.sat = 1.24;
+      out.bright = 1.18;
+      out.rot = signX * 1.2;
+      out.alpha = 0.86;
+      out.mergeStrength = 0.9;
+
+      const hasPair = subjectCenter && modelCenter;
+      if (hasPair) {
+        const subjectToModel = motherV2VectorToTarget(centerX, centerY, modelCenter.x, modelCenter.y, 4.4);
+        const modelToSubject = motherV2VectorToTarget(centerX, centerY, subjectCenter.x, subjectCenter.y, 4.4);
+        const pairMidX = (subjectCenter.x + modelCenter.x) / 2;
+        const pairMidY = (subjectCenter.y + modelCenter.y) / 2;
+        const toPairMid = motherV2VectorToTarget(centerX, centerY, pairMidX, pairMidY, 2.3);
+        if (roleKey === "subject") {
+          out.mx += subjectToModel.x;
+          out.my += subjectToModel.y;
+          out.resizeX = 1.28;
+          out.resizeY = 0.8;
+        } else if (roleKey === "model") {
+          out.mx += modelToSubject.x;
+          out.my += modelToSubject.y;
+          out.resizeX = 1.28;
+          out.resizeY = 0.8;
+        } else {
+          out.mx += toPairMid.x;
+          out.my += toPairMid.y;
+        }
+      }
+      break;
+    }
+    case "alienate":
+      out.animKind = "alienate";
+      out.speedMs = 3600;
+      out.mx = ux * 7.4 + tx * 1.2;
+      out.my = uy * 6.8 + ty * 1.2;
+      out.scale = 0.86;
+      out.resizeX = 0.72;
+      out.resizeY = 1.34;
+      out.sat = 0.62;
+      out.bright = 0.8;
+      out.rot = signX * 3.2;
+      out.alpha = 0.64;
+      out.mergeStrength = 0;
+      if (roleKey === "subject" || roleKey === "model") {
+        out.resizeX = 0.64;
+        out.resizeY = 1.42;
+        out.alpha = 0.6;
+      }
+      break;
+    default:
+      break;
+  }
+
+  const focus = focusCenter && Number.isFinite(Number(focusCenter.x)) && Number.isFinite(Number(focusCenter.y))
+    ? { x: Number(focusCenter.x), y: Number(focusCenter.y) }
+    : null;
+  const mergeStrength = clamp(Number(out.mergeStrength) || 0, 0, 1);
+  if (focus && mergeStrength > 0.001) {
+    const dist = Math.hypot(focus.x - Number(centerX), focus.y - Number(centerY));
+    const mergeMag = clamp(dist * 0.1, 0.6, 6.0) * mergeStrength;
+    const mergeVec = motherV2VectorToTarget(centerX, centerY, focus.x, focus.y, mergeMag);
+    out.mx += mergeVec.x;
+    out.my += mergeVec.y;
+    const shapeBlend = clamp(mergeStrength * 0.78, 0, 0.88);
+    out.resizeX = motherV2BlendNumber(out.resizeX, 1.02, shapeBlend);
+    out.resizeY = motherV2BlendNumber(out.resizeY, 1.02, shapeBlend);
+    out.scale = motherV2BlendNumber(out.scale, 1.04, clamp(mergeStrength * 0.5, 0, 0.65));
+    out.alpha = motherV2BlendNumber(out.alpha, 0.93, clamp(mergeStrength * 0.6, 0, 0.45));
+  }
+
+  const preMerge = {
+    mx: out.mx,
+    my: out.my,
+    scale: out.scale,
+    resizeX: out.resizeX,
+    resizeY: out.resizeY,
+    rot: out.rot,
+    sat: out.sat,
+    bright: out.bright,
+    alpha: out.alpha,
+  };
+
+  if (mergeRect && Number(rectW) > 0.0001 && Number(rectH) > 0.0001) {
+    const mergeBlend = motherV2RolePreviewMergeBlend(modeKey);
+    if (mergeBlend > 0.001) {
+      const targetCx = Number(mergeRect.x) + Number(mergeRect.w) / 2;
+      const targetCy = Number(mergeRect.y) + Number(mergeRect.h) / 2;
+      const centerBlend = clamp(0.14 + mergeBlend * 0.74, 0, 0.92);
+      out.mx = motherV2BlendNumber(out.mx, targetCx - Number(centerX), centerBlend);
+      out.my = motherV2BlendNumber(out.my, targetCy - Number(centerY), centerBlend);
+      const targetScaleX = clamp((Number(mergeRect.w) || 1) / Math.max(1, Number(rectW) || 1), 0.68, 1.55);
+      const targetScaleY = clamp((Number(mergeRect.h) || 1) / Math.max(1, Number(rectH) || 1), 0.68, 1.55);
+      const shapeBlend = clamp(0.04 + mergeBlend * 0.38, 0, 0.46);
+      out.resizeX = motherV2BlendNumber(out.resizeX, targetScaleX, shapeBlend);
+      out.resizeY = motherV2BlendNumber(out.resizeY, targetScaleY, shapeBlend);
+      out.rot = motherV2BlendNumber(out.rot, 0, clamp(mergeBlend * 0.72, 0, 0.72));
+      out.alpha = motherV2BlendNumber(out.alpha, modeKey === "hybridize" ? 0.86 : 0.78, clamp(mergeBlend * 0.84, 0, 0.84));
+      out.sat = motherV2BlendNumber(out.sat, modeKey === "hybridize" ? 1.2 : 1.03, clamp(mergeBlend * 0.72, 0, 0.72));
+      out.bright = motherV2BlendNumber(out.bright, modeKey === "hybridize" ? 1.12 : 1.04, clamp(mergeBlend * 0.66, 0, 0.66));
+      out.scale = motherV2BlendNumber(out.scale, 1.03, clamp(mergeBlend * 0.1, 0, 0.1));
+    }
+  }
+
+  const promptProfile = promptMotion && typeof promptMotion === "object" ? promptMotion : null;
+  if (promptProfile) {
+    const tempo = clamp(Number(promptProfile.tempo) || 1, 0.72, 1.42);
+    out.speedMs = Math.max(420, Math.round((Number(out.speedMs) || 3000) / tempo));
+
+    const spread = clamp(Number(promptProfile.spread) || 1, 0.72, 1.35);
+    out.mx *= spread;
+    out.my *= spread;
+
+    const focusPull = clamp(Number(promptProfile.focusPull) || 0, 0, 1);
+    const focusBlendX = clamp(focusPull * 0.45, 0, 0.45);
+    const focusBlendY = clamp(focusPull * 0.34, 0, 0.34);
+    out.mx = motherV2BlendNumber(out.mx, out.mx * 0.82, focusBlendX);
+    out.my = motherV2BlendNumber(out.my, out.my * 0.84, focusBlendY);
+
+    const lift = clamp(Number(promptProfile.verticalLift) || 0, -0.24, 1);
+    out.my -= lift * 2.4;
+
+    const pulse = clamp(Number(promptProfile.pulse) || 0, 0, 1);
+    out.scale = clamp((Number(out.scale) || 1) + pulse * 0.08 - focusPull * 0.02, 0.84, 1.4);
+
+    const chaos = clamp(Number(promptProfile.chaos) || 0, 0, 1);
+    const chaosGain = clamp(Number(promptProfile.chaosGain) || 1, 0.45, 1.75);
+    out.jitterAx = clamp((Number(out.jitterAx) || 2.2) * chaosGain, 0.7, 12);
+    out.jitterAy = clamp((Number(out.jitterAy) || 1.6) * (0.85 + Math.max(0, chaosGain - 1) * 0.8), 0.55, 9);
+
+    const cinematic = clamp(Number(promptProfile.cinematic) || 0, 0, 1);
+    const softness = clamp(Number(promptProfile.softness) || 0, 0, 1);
+    const lighting = clamp(Number(promptProfile.lighting) || 0, 0, 1);
+    out.sat = clamp((Number(out.sat) || 1) + cinematic * 0.12 - softness * 0.08, 0.74, 1.5);
+    out.bright = clamp((Number(out.bright) || 1) + lighting * 0.1 - chaos * 0.04 + softness * 0.03, 0.78, 1.38);
+    out.alpha = clamp((Number(out.alpha) || 1) + pulse * 0.05 - chaos * 0.05, 0.6, 1);
+  }
+
+  // Keep proposal rects visibly filled but semi-transparent across all modes.
+  preMerge.alpha = clamp(Number(preMerge.alpha) || 0.7, 0.34, 0.74);
+  out.alpha = clamp(Number(out.alpha) || 0.7, 0.34, 0.74);
+
+  const round = (n) => Math.round(Number(n || 0) * 100) / 100;
+  return {
+    ...out,
+    preMx: round(preMerge.mx),
+    preMy: round(preMerge.my),
+    preScale: round(preMerge.scale),
+    preResizeX: round(preMerge.resizeX),
+    preResizeY: round(preMerge.resizeY),
+    preRot: round(preMerge.rot),
+    preSat: round(preMerge.sat),
+    preBright: round(preMerge.bright),
+    preAlpha: round(preMerge.alpha),
+    mx: round(out.mx),
+    my: round(out.my),
+    scale: round(out.scale),
+    resizeX: round(out.resizeX),
+    resizeY: round(out.resizeY),
+    rot: round(out.rot),
+    sat: round(out.sat),
+    bright: round(out.bright),
+    alpha: round(out.alpha),
+    jitterAx: round(out.jitterAx),
+    jitterAy: round(out.jitterAy),
+    mergeStrength: round(out.mergeStrength),
+  };
+}
+
+function motherV2SyncRolePreviewViewport(root, projection, { canvasCssW = 0, canvasCssH = 0 } = {}) {
+  if (!root) return;
+  const existing = root.querySelector(".mother-role-preview-viewport");
+  // Keep the panel preview clean: do not render a viewport overlay box here.
+  if (existing) existing.remove();
+}
+
+function motherV2RolePreviewViewportHtml(projection, { canvasCssW = 0, canvasCssH = 0 } = {}) {
+  // Keep the panel preview clean: do not include a viewport overlay box.
+  return "";
+}
+
+function motherV2SankeyBendAmountForMode(mode = "", nowMs = performance.now()) {
+  if (motherV2NormalizeTransformationMode(mode) !== "hybridize") return 0;
+  const now = Number(nowMs);
+  if (!Number.isFinite(now)) return 0;
+  if (!(motherRolePreviewSankeyBendEpochMs > 0)) {
+    motherRolePreviewSankeyBendEpochMs = now;
+  }
+  const cycleMs = Math.max(400, Number(MOTHER_V2_SANKEY_BEND_CYCLE_MS) || 2200);
+  const t = ((now - motherRolePreviewSankeyBendEpochMs) % cycleMs + cycleMs) % cycleMs / cycleMs;
+  const wave = Math.sin(Math.PI * t);
+  return clamp(wave * wave, 0, 1);
+}
+
+function motherV2BuildSankeyPrismFromEdgePair({
+  sourceTop = null,
+  sourceBottom = null,
+  targetTop = null,
+  targetBottom = null,
+  surfaceW = 0,
+  surfaceH = 0,
+  laneOffset = 0,
+  bendAmount = 0,
+} = {}) {
+  const toPt = (p) => ({
+    x: Number(p?.x),
+    y: Number(p?.y),
+  });
+  const st = toPt(sourceTop);
+  const sb = toPt(sourceBottom);
+  const tt = toPt(targetTop);
+  const tb = toPt(targetBottom);
+  if (![st.x, st.y, sb.x, sb.y, tt.x, tt.y, tb.x, tb.y].every(Number.isFinite)) return null;
+  const scx = (st.x + sb.x) * 0.5;
+  const scy = (st.y + sb.y) * 0.5;
+  const tcx = (tt.x + tb.x) * 0.5;
+  const tcy = (tt.y + tb.y) * 0.5;
+  const laneDx = tcx - scx;
+  const laneDy = tcy - scy;
+  const laneLen = Math.hypot(laneDx, laneDy);
+  const minCurveLen = clamp(Math.min(Math.max(1, Number(surfaceW) || 1), Math.max(1, Number(surfaceH) || 1)) * 0.2, 26, 68);
+  const dirX = laneLen > 0.001 ? laneDx : 10;
+  const dirY = laneLen > 0.001 ? laneDy : 0;
+  const dirLen = Math.hypot(dirX, dirY);
+  const ux = dirX / Math.max(0.0001, dirLen);
+  const uy = dirY / Math.max(0.0001, dirLen);
+  const nx = -uy;
+  const ny = ux;
+  const effectiveLen = Math.max(laneLen, minCurveLen);
+  const bendNorm = clamp(Number(bendAmount) || 0, 0, 1);
+  const bendBase = clamp(effectiveLen * 0.14, 7, 34);
+  const laneBend = (Number(laneOffset) || 0) * 0.72;
+  const bend1 = (bendBase + laneBend) * bendNorm;
+  const bend2 = -(bendBase - laneBend) * bendNorm;
+
+  const spine0 = { x: scx, y: scy };
+  const spine1 = {
+    x: scx + ux * (effectiveLen * 0.34) + nx * bend1,
+    y: scy + uy * (effectiveLen * 0.34) + ny * bend1,
+  };
+  const spine2 = {
+    x: tcx - ux * (effectiveLen * 0.30) + nx * bend2,
+    y: tcy - uy * (effectiveLen * 0.30) + ny * bend2,
+  };
+  const spine3 = { x: tcx, y: tcy };
+
+  const normalizeVec = (x, y, fallbackX = 1, fallbackY = 0) => {
+    const len = Math.hypot(x, y);
+    if (len > 0.0001) return { x: x / len, y: y / len };
+    const fallbackLen = Math.hypot(fallbackX, fallbackY);
+    if (fallbackLen > 0.0001) return { x: fallbackX / fallbackLen, y: fallbackY / fallbackLen };
+    return { x: 1, y: 0 };
+  };
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const cubicPoint = (p0, p1, p2, p3, t) => {
+    const u = 1 - t;
+    const uu = u * u;
+    const tt2 = t * t;
+    return {
+      x: p0.x * uu * u + 3 * p1.x * uu * t + 3 * p2.x * u * tt2 + p3.x * tt2 * t,
+      y: p0.y * uu * u + 3 * p1.y * uu * t + 3 * p2.y * u * tt2 + p3.y * tt2 * t,
+    };
+  };
+  const cubicTangent = (p0, p1, p2, p3, t) => {
+    const u = 1 - t;
+    return {
+      x: 3 * u * u * (p1.x - p0.x) + 6 * u * t * (p2.x - p1.x) + 3 * t * t * (p3.x - p2.x),
+      y: 3 * u * u * (p1.y - p0.y) + 6 * u * t * (p2.y - p1.y) + 3 * t * t * (p3.y - p2.y),
+    };
+  };
+  const lit = (p) => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
+
+  const widthStartVec = { x: sb.x - st.x, y: sb.y - st.y };
+  const widthEndVec = { x: tb.x - tt.x, y: tb.y - tt.y };
+  const widthStart = Math.max(1, Math.hypot(widthStartVec.x, widthStartVec.y));
+  const widthEnd = Math.max(1, Math.hypot(widthEndVec.x, widthEndVec.y));
+  const widthStartDir = normalizeVec(widthStartVec.x, widthStartVec.y, nx, ny);
+  const widthEndDir = normalizeVec(widthEndVec.x, widthEndVec.y, widthStartDir.x, widthStartDir.y);
+
+  const sampleCount = Math.max(6, Math.round(clamp(effectiveLen / 24, 6, 18)));
+  const frontTop = [];
+  const frontBottom = [];
+  const backTop = [];
+  const backBottom = [];
+
+  for (let i = 0; i <= sampleCount; i += 1) {
+    const t = i / sampleCount;
+    const center = cubicPoint(spine0, spine1, spine2, spine3, t);
+    const tangent = cubicTangent(spine0, spine1, spine2, spine3, t);
+    const tangentDir = normalizeVec(tangent.x, tangent.y, ux, uy);
+    const localNormal = { x: -tangentDir.y, y: tangentDir.x };
+    const widthBlend = normalizeVec(
+      lerp(widthStartDir.x, widthEndDir.x, t),
+      lerp(widthStartDir.y, widthEndDir.y, t),
+      localNormal.x,
+      localNormal.y
+    );
+    const width = lerp(widthStart, widthEnd, t);
+    const halfWidth = width * 0.5;
+
+    const top = {
+      x: center.x - widthBlend.x * halfWidth,
+      y: center.y - widthBlend.y * halfWidth,
+    };
+    const bottom = {
+      x: center.x + widthBlend.x * halfWidth,
+      y: center.y + widthBlend.y * halfWidth,
+    };
+
+    const depth = clamp(width * 0.18, 1.2, 8);
+    const depthSeed = {
+      x: tangentDir.x * 0.42 + localNormal.x * 0.58,
+      y: tangentDir.y * 0.42 + localNormal.y * 0.58,
+    };
+    const depthOrtho = {
+      x: depthSeed.x - widthBlend.x * (depthSeed.x * widthBlend.x + depthSeed.y * widthBlend.y),
+      y: depthSeed.y - widthBlend.y * (depthSeed.x * widthBlend.x + depthSeed.y * widthBlend.y),
+    };
+    const depthDir = normalizeVec(depthOrtho.x, depthOrtho.y, tangentDir.x, tangentDir.y);
+
+    const topBack = {
+      x: top.x - depthDir.x * depth,
+      y: top.y - depthDir.y * depth,
+    };
+    const bottomBack = {
+      x: bottom.x - depthDir.x * depth,
+      y: bottom.y - depthDir.y * depth,
+    };
+
+    frontTop.push(top);
+    frontBottom.push(bottom);
+    backTop.push(topBack);
+    backBottom.push(bottomBack);
+  }
+
+  const buildRibbonLoop = (a, b) => {
+    if (!Array.isArray(a) || !Array.isArray(b) || !a.length || !b.length) return "";
+    const path = [`M ${lit(a[0])}`];
+    for (let i = 1; i < a.length; i += 1) path.push(`L ${lit(a[i])}`);
+    for (let i = b.length - 1; i >= 0; i -= 1) path.push(`L ${lit(b[i])}`);
+    path.push("Z");
+    return path.join(" ");
+  };
+
+  const endIdx = frontTop.length - 1;
+  const frontD = buildRibbonLoop(frontTop, frontBottom);
+  const topFaceD = buildRibbonLoop(backTop, frontTop);
+  const sideFaceD =
+    endIdx > 0
+      ? `M ${lit(frontTop[endIdx])} L ${lit(backTop[endIdx])} L ${lit(backBottom[endIdx])} L ${lit(frontBottom[endIdx])} Z`
+      : "";
+  return {
+    frontD,
+    topFaceD,
+    sideFaceD,
+  };
+}
+
+function motherV2RolePreviewHtml(
+  entries,
+  projection,
+  { mode = "", surfaceW = 0, surfaceH = 0, canvasCssW = 0, canvasCssH = 0, promptMotion = null } = {}
+) {
+  if (!projection) return "";
+  const maxSurfaceW = Math.max(1, Number(surfaceW) || 1);
+  const maxSurfaceH = Math.max(1, Number(surfaceH) || 1);
+  const projectedEntries = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!entry) continue;
+    const projectedRaw = projectWorldRectToSurface(entry.rect, projection);
+    if (!projectedRaw) continue;
+    // Preserve world-relative size/position in the role preview projection.
+    const projected = {
+      x: Math.round(clamp(Number(projectedRaw.x) || 0, 0, Math.max(0, maxSurfaceW - 1))),
+      y: Math.round(clamp(Number(projectedRaw.y) || 0, 0, Math.max(0, maxSurfaceH - 1))),
+      w: Math.max(1, Math.round(Number(projectedRaw.w) || 1)),
+      h: Math.max(1, Math.round(Number(projectedRaw.h) || 1)),
+    };
+    projectedEntries.push({
+      entry,
+      projected,
+      cx: projected.x + projected.w / 2,
+      cy: projected.y + projected.h / 2,
+    });
+  }
+  if (!projectedEntries.length) {
+    return `<div class="mother-role-preview-surface"></div>`;
+  }
+
+  // Use exact projection geometry first, then apply one uniform panel-level zoom so
+  // the preview stays readable without changing relative spacing between rectangles.
+  {
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const rec of projectedEntries) {
+      const p = rec?.projected;
+      if (!p) continue;
+      const x = Number(p.x) || 0;
+      const y = Number(p.y) || 0;
+      const w = Math.max(1, Number(p.w) || 1);
+      const h = Math.max(1, Number(p.h) || 1);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + w);
+      maxY = Math.max(maxY, y + h);
+    }
+    const boxW = Math.max(1, maxX - minX);
+    const boxH = Math.max(1, maxY - minY);
+    const targetW = Math.max(1, maxSurfaceW * clamp(Number(MOTHER_V2_ROLE_PREVIEW_PANEL_FILL_RATIO) || 0.68, 0.4, 0.9));
+    const targetH = Math.max(1, maxSurfaceH * clamp(Number(MOTHER_V2_ROLE_PREVIEW_PANEL_FILL_RATIO) || 0.68, 0.4, 0.9));
+    const zoom = clamp(
+      Math.min(targetW / boxW, targetH / boxH),
+      1,
+      Math.max(1, Number(MOTHER_V2_ROLE_PREVIEW_PANEL_ZOOM_MAX) || 2.2)
+    );
+    if (zoom > 1.001) {
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      for (const rec of projectedEntries) {
+        const p = rec?.projected;
+        if (!p) continue;
+        const x = Number(p.x) || 0;
+        const y = Number(p.y) || 0;
+        const w = Math.max(1, Number(p.w) || 1);
+        const h = Math.max(1, Number(p.h) || 1);
+        const nextW = w * zoom;
+        const nextH = h * zoom;
+        const nextX = cx + (x - cx) * zoom;
+        const nextY = cy + (y - cy) * zoom;
+        rec.projected = {
+          x: nextX,
+          y: nextY,
+          w: nextW,
+          h: nextH,
+        };
+        rec.cx = nextX + nextW / 2;
+        rec.cy = nextY + nextH / 2;
+      }
+      let scaledMinX = Number.POSITIVE_INFINITY;
+      let scaledMinY = Number.POSITIVE_INFINITY;
+      let scaledMaxX = Number.NEGATIVE_INFINITY;
+      let scaledMaxY = Number.NEGATIVE_INFINITY;
+      for (const rec of projectedEntries) {
+        const p = rec?.projected;
+        if (!p) continue;
+        scaledMinX = Math.min(scaledMinX, Number(p.x) || 0);
+        scaledMinY = Math.min(scaledMinY, Number(p.y) || 0);
+        scaledMaxX = Math.max(scaledMaxX, (Number(p.x) || 0) + Math.max(1, Number(p.w) || 1));
+        scaledMaxY = Math.max(scaledMaxY, (Number(p.y) || 0) + Math.max(1, Number(p.h) || 1));
+      }
+      const pad = Math.max(0, Math.round(Number(MOTHER_V2_ROLE_PREVIEW_PANEL_PAD_PX) || 0));
+      const scaledW = Math.max(1, scaledMaxX - scaledMinX);
+      const scaledH = Math.max(1, scaledMaxY - scaledMinY);
+      const availW = Math.max(1, maxSurfaceW - pad * 2);
+      const availH = Math.max(1, maxSurfaceH - pad * 2);
+      const targetMinX = scaledW <= availW ? clamp(scaledMinX, pad, maxSurfaceW - pad - scaledW) : (maxSurfaceW - scaledW) / 2;
+      const targetMinY = scaledH <= availH ? clamp(scaledMinY, pad, maxSurfaceH - pad - scaledH) : (maxSurfaceH - scaledH) / 2;
+      const dx = targetMinX - scaledMinX;
+      const dy = targetMinY - scaledMinY;
+      for (const rec of projectedEntries) {
+        const p = rec?.projected;
+        if (!p) continue;
+        const x = Number(p.x) + dx;
+        const y = Number(p.y) + dy;
+        const w = Math.max(1, Number(p.w) || 1);
+        const h = Math.max(1, Number(p.h) || 1);
+        const clampedX = clamp(x, -w + 1, maxSurfaceW - 1);
+        const clampedY = clamp(y, -h + 1, maxSurfaceH - 1);
+        rec.projected = {
+          x: clampedX,
+          y: clampedY,
+          w,
+          h,
+        };
+        rec.cx = clampedX + w / 2;
+        rec.cy = clampedY + h / 2;
+      }
+    }
+  }
+
+  const subjectRec = projectedEntries.find((it) => String(it?.entry?.roleKey || "") === "subject") || null;
+  const modelRec = projectedEntries.find((it) => String(it?.entry?.roleKey || "") === "model") || null;
+  const subjectCenter = subjectRec ? { x: subjectRec.cx, y: subjectRec.cy } : null;
+  const modelCenter = modelRec ? { x: modelRec.cx, y: modelRec.cy } : null;
+  const modeKey = String(mode || "").trim().toLowerCase();
+  const modeAccent = String(
+    MOTHER_V2_PROPOSAL_ICON_ACCENT_BY_MODE[modeKey] || "rgba(230, 237, 243, 0.94)"
+  );
+  let focusCenter = null;
+  if (subjectCenter && modelCenter) {
+    focusCenter = {
+      x: (subjectCenter.x + modelCenter.x) / 2,
+      y: (subjectCenter.y + modelCenter.y) / 2,
+    };
+  } else if (subjectCenter) {
+    focusCenter = { ...subjectCenter };
+  } else if (modelCenter) {
+    focusCenter = { ...modelCenter };
+  } else {
+    const sum = projectedEntries.reduce(
+      (acc, rec) => {
+        acc.x += Number(rec.cx) || 0;
+        acc.y += Number(rec.cy) || 0;
+        return acc;
+      },
+      { x: 0, y: 0 }
+    );
+    focusCenter = {
+      x: sum.x / Math.max(1, projectedEntries.length),
+      y: sum.y / Math.max(1, projectedEntries.length),
+    };
+  }
+
+  let mergeRect = null;
+  if (modeKey && projectedEntries.length > 1 && focusCenter) {
+    const mergeBlend = motherV2RolePreviewMergeBlend(modeKey);
+    const compactness = clamp(0.66 + mergeBlend * 0.24, 0.66, 0.93);
+    const squareBias = clamp(0.26 + mergeBlend * 0.48, 0.26, 0.86);
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    let sumW = 0;
+    let sumH = 0;
+    let sumArea = 0;
+    for (const rec of projectedEntries) {
+      const w = Math.max(1, Number(rec?.projected?.w) || 1);
+      const h = Math.max(1, Number(rec?.projected?.h) || 1);
+      const x = Number(rec?.projected?.x) || 0;
+      const y = Number(rec?.projected?.y) || 0;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + w);
+      maxY = Math.max(maxY, y + h);
+      sumW += w;
+      sumH += h;
+      sumArea += w * h;
+    }
+    const n = Math.max(1, projectedEntries.length);
+    const unionW = Math.max(1, maxX - minX);
+    const unionH = Math.max(1, maxY - minY);
+    const avgW = sumW / n;
+    const avgH = sumH / n;
+    const areaSide = Math.max(1, Math.sqrt(sumArea / n));
+    const maxTargetW = Math.max(10, (Number(surfaceW) || unionW) * 0.78);
+    const maxTargetH = Math.max(10, (Number(surfaceH) || unionH) * 0.78);
+    let targetW = clamp(avgW * compactness + areaSide * 0.52 + unionW * 0.06, 10, maxTargetW);
+    let targetH = clamp(avgH * compactness + areaSide * 0.52 + unionH * 0.06, 10, maxTargetH);
+    const blendedDim = (targetW + targetH) / 2;
+    targetW = motherV2BlendNumber(targetW, blendedDim, squareBias);
+    targetH = motherV2BlendNumber(targetH, blendedDim, squareBias);
+    const cx = Number(focusCenter.x) || 0;
+    const cy = Number(focusCenter.y) || 0;
+    const x = clamp(cx - targetW / 2, 0, Math.max(0, (Number(surfaceW) || targetW) - targetW));
+    const y = clamp(cy - targetH / 2, 0, Math.max(0, (Number(surfaceH) || targetH) - targetH));
+    mergeRect = { x, y, w: targetW, h: targetH };
+  }
+
+  const flowHtml = "";
+
+  const rects = [];
+  for (let i = 0; i < projectedEntries.length; i += 1) {
+    const rec = projectedEntries[i];
+    const entry = rec.entry;
+    const projected = rec.projected;
+    const title = entry.roleLabel ? `${entry.roleLabel}: ${entry.imageLabel}` : entry.imageLabel;
+    const roleClass = entry.roleKey ? ` is-${escapeHtml(entry.roleKey)}` : "";
+    const activeClass = entry.isActive ? " is-active" : "";
+    const profile = motherV2RolePreviewMotionProfile({
+      mode,
+      roleKey: entry.roleKey,
+      centerX: rec.cx,
+      centerY: rec.cy,
+      rectW: projected.w,
+      rectH: projected.h,
+      surfaceW,
+      surfaceH,
+      subjectCenter,
+      modelCenter,
+      focusCenter,
+      mergeRect,
+      promptMotion,
+    });
+    const animKindRaw = String(profile.animKind || "").trim().toLowerCase();
+    const animKind = [
+      "flow",
+      "amplify",
+      "transcend",
+      "destabilize",
+      "purify",
+      "hybridize",
+      "mythologize",
+      "monumentalize",
+      "fracture",
+      "romanticize",
+      "alienate",
+    ].includes(animKindRaw)
+      ? animKindRaw
+      : "flow";
+    const accentKey = String(
+      entry.accentKey || motherV2PaletteKeyByImageId(entry.imageId) || entry.imageId || entry.imagePath || entry.imageLabel || ""
+    );
+    const accent = String(entry.accent || googleBrandRectColorForKey(accentKey, 0.94));
+    const entryTransform = readFreeformRectTransform(entry.transform || null);
+    const outerStyle = `left:${projected.x}px;top:${projected.y}px;width:${projected.w}px;height:${projected.h}px;z-index:${
+      20 + i
+    };--mother-role-accent:${escapeHtml(accent)};--mother-role-base-rot:${escapeHtml(
+      `${entryTransform.rotateDeg}deg`
+    )};--mother-role-base-skew:${escapeHtml(`${entryTransform.skewXDeg}deg`)}`;
+    const coreStyle = `--mother-role-stagger:${(i % 8) * 90}ms;--mother-role-mode-ms:${escapeHtml(
+      `${Math.max(420, Number(profile.speedMs) || 3000)}ms`
+    )};--mother-role-pre-mx:${escapeHtml(`${profile.preMx}px`)};--mother-role-pre-my:${escapeHtml(
+      `${profile.preMy}px`
+    )};--mother-role-pre-scale:${escapeHtml(String(profile.preScale))};--mother-role-pre-resize-x:${escapeHtml(
+      String(profile.preResizeX)
+    )};--mother-role-pre-resize-y:${escapeHtml(String(profile.preResizeY))};--mother-role-pre-rot:${escapeHtml(
+      `${profile.preRot}deg`
+    )};--mother-role-pre-sat:${escapeHtml(String(profile.preSat))};--mother-role-pre-bright:${escapeHtml(
+      String(profile.preBright)
+    )};--mother-role-pre-alpha:${escapeHtml(String(profile.preAlpha))};--mother-role-mx:${escapeHtml(
+      `${profile.mx}px`
+    )};--mother-role-my:${escapeHtml(`${profile.my}px`)};--mother-role-scale:${escapeHtml(
+      String(profile.scale)
+    )};--mother-role-resize-x:${escapeHtml(String(profile.resizeX))};--mother-role-resize-y:${escapeHtml(
+      String(profile.resizeY)
+    )};--mother-role-rot:${escapeHtml(`${profile.rot}deg`)};--mother-role-sat:${escapeHtml(
+      String(profile.sat)
+    )};--mother-role-bright:${escapeHtml(String(profile.bright))};--mother-role-alpha:${escapeHtml(
+      String(profile.alpha)
+    )};--mother-role-jitter-ax:${escapeHtml(`${profile.jitterAx}px`)};--mother-role-jitter-ay:${escapeHtml(
+      `${profile.jitterAy}px`
+    )}`;
+    rects.push(`
+      <div
+        class="mother-role-preview-rect${roleClass}${activeClass}"
+        data-image-id="${escapeHtml(String(entry.imageId || entry.imagePath || entry.imageLabel || ""))}"
+        data-anim="${escapeHtml(animKind)}"
+        style="${outerStyle}"
+        title="${escapeHtml(title)}"
+        aria-label="${escapeHtml(title)}"
+      >
+        <div class="mother-role-preview-rect-core" aria-hidden="true" style="${coreStyle}">
+          <span class="mother-role-preview-corner" data-corner="0" aria-hidden="true"></span>
+          <span class="mother-role-preview-corner" data-corner="1" aria-hidden="true"></span>
+          <span class="mother-role-preview-corner" data-corner="2" aria-hidden="true"></span>
+          <span class="mother-role-preview-corner" data-corner="3" aria-hidden="true"></span>
+        </div>
+      </div>
+    `);
+  }
+  const mergeCore = mergeRect
+    ? `<div class="mother-role-preview-merge-core" style="left:${Math.round(mergeRect.x)}px;top:${Math.round(mergeRect.y)}px;width:${Math.max(1, Math.round(mergeRect.w))}px;height:${Math.max(1, Math.round(mergeRect.h))}px;--mother-role-accent:${escapeHtml(modeAccent)};"></div>`
+    : "";
+  const viewport = motherV2RolePreviewViewportHtml(projection, { canvasCssW, canvasCssH });
+  return `<div class="mother-role-preview-surface">${flowHtml}${rects.join("")}${mergeCore}${viewport}</div>`;
+}
+
+function motherV2RolePreviewCornerPoint(marker, surfaceRect) {
+  if (!marker || !surfaceRect) return null;
+  const rect = marker.getBoundingClientRect();
+  return {
+    x: rect.left + rect.width * 0.5 - surfaceRect.left,
+    y: rect.top + rect.height * 0.5 - surfaceRect.top,
+  };
+}
+
+function motherV2RolePreviewBuildCornerMap(root) {
+  if (!root) return null;
+  const surface = root.querySelector(".mother-role-preview-surface");
+  if (!surface) return null;
+  const surfaceRect = surface.getBoundingClientRect();
+  const surfaceW = Math.max(1, surfaceRect.width);
+  const surfaceH = Math.max(1, surfaceRect.height);
+  const rectEls = root.querySelectorAll(".mother-role-preview-rect[data-image-id]");
+  const byId = new Map();
+  for (const rectEl of rectEls) {
+    const imageId = String(rectEl?.dataset?.imageId || "").trim();
+    if (!imageId) continue;
+    const points = [];
+    for (let i = 0; i < 4; i += 1) {
+      const marker = rectEl.querySelector(`.mother-role-preview-corner[data-corner="${i}"]`);
+      const pt = motherV2RolePreviewCornerPoint(marker, surfaceRect);
+      if (!pt) break;
+      points.push(pt);
+    }
+    if (points.length !== 4) {
+      const rr = rectEl.getBoundingClientRect();
+      const x = rr.left - surfaceRect.left;
+      const y = rr.top - surfaceRect.top;
+      const w = Math.max(1, rr.width);
+      const h = Math.max(1, rr.height);
+      points.length = 0;
+      points.push(
+        { x, y },
+        { x: x + w, y },
+        { x: x + w, y: y + h },
+        { x, y: y + h }
+      );
+    }
+    const center = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+    byId.set(imageId, {
+      corners: points,
+      cx: center.x / 4,
+      cy: center.y / 4,
+    });
+  }
+  return {
+    byId,
+    surfaceW,
+    surfaceH,
+  };
+}
+
+function motherV2SyncRolePreviewSankeyStreams(root) {
+  if (!root) return;
+  const streams = root.querySelectorAll(".mother-role-preview-sankey-stream");
+  if (!streams.length) return;
+  const cornerMap = motherV2RolePreviewBuildCornerMap(root);
+  if (!cornerMap) return;
+  const { byId, surfaceW, surfaceH } = cornerMap;
+  const modeKey = String(root.getAttribute("data-mode") || "").trim().toLowerCase();
+  const bendAmount = motherV2SankeyBendAmountForMode(modeKey, performance.now());
+  const midpoint = (a, b) => ({
+    x: ((Number(a?.x) || 0) + (Number(b?.x) || 0)) * 0.5,
+    y: ((Number(a?.y) || 0) + (Number(b?.y) || 0)) * 0.5,
+  });
+  for (const stream of streams) {
+    const sourceId = String(stream?.dataset?.sourceId || "").trim();
+    const targetId = String(stream?.dataset?.targetId || "").trim();
+    const source = sourceId ? byId.get(sourceId) : null;
+    const target = targetId ? byId.get(targetId) : null;
+    if (!source || !target) continue;
+    if (!Array.isArray(source?.corners) || source.corners.length !== 4) continue;
+    if (!Array.isArray(target?.corners) || target.corners.length !== 4) continue;
+    const sourceTop = midpoint(source.corners[0], source.corners[1]);
+    const sourceBottom = midpoint(source.corners[3], source.corners[2]);
+    const targetTop = midpoint(target.corners[0], target.corners[1]);
+    const targetBottom = midpoint(target.corners[3], target.corners[2]);
+    const laneOffset = Number(stream?.dataset?.laneOffset) || 0;
+    const prismGeom = motherV2BuildSankeyPrismFromEdgePair({
+      sourceTop,
+      sourceBottom,
+      targetTop,
+      targetBottom,
+      surfaceW,
+      surfaceH,
+      laneOffset,
+      bendAmount,
+    });
+    if (!prismGeom) continue;
+    const setPathD = (role, d) => {
+      const path = stream.querySelector(`path[data-stream-role="${role}"]`);
+      if (!path || typeof d !== "string" || !d) return;
+      path.setAttribute("d", d);
+    };
+    setPathD("core", prismGeom.frontD);
+    setPathD("top", prismGeom.topFaceD);
+    setPathD("side", prismGeom.sideFaceD);
+  }
+}
+
+function motherV2StopRolePreviewSankeyTicker() {
+  if (motherRolePreviewSankeyRaf) cancelAnimationFrame(motherRolePreviewSankeyRaf);
+  motherRolePreviewSankeyRaf = 0;
+  motherRolePreviewSankeyBendEpochMs = 0;
+}
+
+function motherV2RolePreviewSankeyTick() {
+  motherRolePreviewSankeyRaf = 0;
+  const root = els.motherRolePreview;
+  if (!root || root.classList.contains("hidden")) return;
+  motherV2SyncRolePreviewSankeyStreams(root);
+  if (root.getAttribute("data-motion") === "paused") return;
+  motherRolePreviewSankeyRaf = requestAnimationFrame(motherV2RolePreviewSankeyTick);
+}
+
+function motherV2StartRolePreviewSankeyTicker() {
+  // Sankey visualization is disabled; keep rectangle-only role preview rendering.
+  motherV2StopRolePreviewSankeyTicker();
+}
+
+function renderMotherRolePreview() {
+  const root = els.motherRolePreview;
+  if (!root) return;
+  const phase = state.motherIdle?.phase || motherIdleInitialState();
+  if (phase === MOTHER_IDLE_STATES.DRAFTING || phase === MOTHER_IDLE_STATES.COOLDOWN) {
+    motherV2StopRolePreviewSankeyTicker();
+    root.innerHTML = "";
+    root.dataset.previewSig = "";
+    root.classList.add("hidden");
+    setMotherRolePreviewHoverImageId("", { requestFrame: false });
+    return;
+  }
+  const hasProposalImageSet = motherV2HasProposalImageSet();
+  if (!hasProposalImageSet) {
+    motherV2StopRolePreviewSankeyTicker();
+    root.innerHTML = "";
+    root.dataset.previewSig = "";
+    root.classList.add("hidden");
+    setMotherRolePreviewHoverImageId("", { requestFrame: false });
+    return;
+  }
+  const animationMode = motherV2RolePreviewAnimationMode();
+  if (animationMode) {
+    root.setAttribute("data-mode", animationMode);
+  } else {
+    root.removeAttribute("data-mode");
+  }
+  root.setAttribute("data-motion", motherV2RolePreviewMotionState());
+
+  const wrap = els.canvasWrap;
+  const canvasCssW = Math.max(1, Math.round(Number(wrap?.clientWidth) || 0));
+  const canvasCssH = Math.max(1, Math.round(Number(wrap?.clientHeight) || 0));
+  if (canvasCssW > 1 && canvasCssH > 1) {
+    ensureFreeformLayoutRectsCss(state.images || [], canvasCssW, canvasCssH);
+  }
+
+  const entries = motherV2RolePreviewEntries();
+  root.classList.remove("hidden");
+  const rootW = Math.round(Number(root.clientWidth) || 0);
+  const rootH = Math.round(Number(root.clientHeight) || 0);
+  if (!rootW || !rootH) return;
+
+  const rootStyle = window.getComputedStyle(root);
+  const surfaceInset = Math.max(0, Math.round(parseFloat(rootStyle.getPropertyValue("--mother-role-preview-inset")) || 6));
+  const surfaceW = Math.max(1, rootW - surfaceInset * 2);
+  const surfaceH = Math.max(1, rootH - surfaceInset * 2);
+  const projection = computeWorldProjection({
+    canvasCssW,
+    canvasCssH,
+    surfaceW,
+    surfaceH,
+    padPx: 6,
+  });
+  if (!projection) return;
+  const promptMotion = motherV2CurrentPromptMotionProfile();
+  const promptMotionKey = String(promptMotion?.key || "").trim();
+
+  const sig = motherV2RolePreviewSignature(entries, {
+    canvasCssW,
+    canvasCssH,
+    surfaceW,
+    surfaceH,
+    animationMode,
+    promptMotionKey,
+  });
+  if (!sig) return;
+  if (root.dataset.previewSig === sig) {
+    motherV2SyncRolePreviewViewport(root, projection, { canvasCssW, canvasCssH });
+    motherV2StopRolePreviewSankeyTicker();
+    syncMotherRolePreviewHoverState();
+    return;
+  }
+
+  const html = motherV2RolePreviewHtml(entries, projection, {
+    mode: animationMode,
+    surfaceW,
+    surfaceH,
+    canvasCssW,
+    canvasCssH,
+    promptMotion,
+  });
+  if (!html) {
+    motherV2StopRolePreviewSankeyTicker();
+    root.innerHTML = "";
+    root.dataset.previewSig = "";
+    setMotherRolePreviewHoverImageId("", { requestFrame: false });
+    return;
+  }
+  root.innerHTML = html;
+  root.dataset.previewSig = sig;
+  motherV2SyncRolePreviewViewport(root, projection, { canvasCssW, canvasCssH });
+  motherV2StopRolePreviewSankeyTicker();
+  syncMotherRolePreviewHoverState();
+}
+
+function buildMotherText() {
+  const idle = state.motherIdle || null;
+  const phase = idle?.phase || motherIdleInitialState();
+  const cooldownMs = Math.max(0, (Number(idle?.cooldownUntil) || 0) - Date.now());
+  const undoAvailable = motherV2CommitUndoAvailable();
+  const canPropose = motherIdleHasArmedCanvas();
+
+  if (phase === MOTHER_IDLE_STATES.WATCHING) {
+    return "";
+  }
+  if (phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+    if (Array.isArray(idle?.pendingVisionImageIds) && idle.pendingVisionImageIds.length) return "";
+    if (idle?.pendingIntent) return "";
+    return "";
+  }
+  if (phase === MOTHER_IDLE_STATES.DRAFTING) {
+    return "";
+  }
+  if (phase === MOTHER_IDLE_STATES.OFFERING) {
+    if (isReelSizeLocked()) {
+      return "Proposal ready. ✓ deploy, R reroll.";
+    }
+    return "Proposal ready. ✓ deploy, M dismiss, R reroll.";
+  }
+  if (phase === MOTHER_IDLE_STATES.COMMITTING) {
+    return "Committing draft to canvas…";
+  }
+  if (phase === MOTHER_IDLE_STATES.COOLDOWN) {
+    const sec = (cooldownMs / 1000).toFixed(1);
+    const undo = undoAvailable ? "\nUNDO READY" : "";
+    return `Cooling down ${sec}s${undo}`;
+  }
+
+  if (!state.images.length) {
+    return "";
+  }
+  if (!canPropose) {
+    return "";
+  }
+  if (motherV2InCooldown()) {
+    const sec = (cooldownMs / 1000).toFixed(1);
+    return `Cooling down ${sec}s`;
+  }
+
+  const fallback = typeof state.lastTipText === "string" ? state.lastTipText.trim() : "";
+  return fallback || "Pause for intent hypothesis.";
+}
+
+function motherV2StatusText() {
+  const idle = state.motherIdle || null;
+  const phase = idle?.phase || motherIdleInitialState();
+  const canPropose = motherIdleHasArmedCanvas();
+  if (
+    (phase === MOTHER_IDLE_STATES.OBSERVING || phase === MOTHER_IDLE_STATES.WATCHING) &&
+    idle?.liveProposalUpdating &&
+    motherV2CanUseLiveProposalRefresh(idle)
+  ) {
+    return "Updating proposal";
+  }
+  if (!canPropose && (phase === MOTHER_IDLE_STATES.WATCHING || phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING)) {
+    return "Observing";
+  }
+  if (phase === MOTHER_IDLE_STATES.OBSERVING) return "Observing";
+  if (phase === MOTHER_IDLE_STATES.WATCHING) return "Watching";
+  if (phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+    if (idle?.liveProposalUpdating) return "Updating proposal";
+    if (Array.isArray(idle?.pendingVisionImageIds) && idle.pendingVisionImageIds.length) return "Proposing";
+    if (idle?.pendingIntent) return "Proposing";
+    if (idle?.intent && typeof idle.intent === "object") return "Proposed";
+    return "Proposing";
+  }
+  if (phase === MOTHER_IDLE_STATES.DRAFTING) return "Drafting";
+  if (phase === MOTHER_IDLE_STATES.OFFERING) return "Proposal ready";
+  if (phase === MOTHER_IDLE_STATES.COMMITTING) return "Deploying";
+  if (phase === MOTHER_IDLE_STATES.COOLDOWN) {
+    const cooldownMs = Math.max(0, (Number(idle?.cooldownUntil) || 0) - Date.now());
+    return `Cooldown ${(cooldownMs / 1000).toFixed(1)}s`;
+  }
+  return "";
+}
+
+function motherV2LabelsFromIds(ids = [], { limit = 2 } = {}) {
+  const out = [];
+  const maxCount = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.floor(Number(limit)) : 2;
+  for (const rawId of Array.isArray(ids) ? ids : []) {
+    const imageId = String(rawId || "").trim();
+    if (!imageId) continue;
+    if (!isVisibleCanvasImageId(imageId)) continue;
+    const label = motherV2ImageLabelById(imageId);
+    if (!label || out.includes(label)) continue;
+    out.push(label);
+    if (out.length >= maxCount) break;
+  }
+  return out;
+}
+
+function motherV2HasRealProposalPayload(intentPayload = null) {
+  const intent = intentPayload && typeof intentPayload === "object" ? intentPayload : null;
+  if (!intent) return false;
+  if (!motherV2HasProposalImageSet()) return false;
+  const mode = motherV2MaybeTransformationMode(intent.transformation_mode);
+  const candidateModes = Array.isArray(intent.transformation_mode_candidates)
+    ? intent.transformation_mode_candidates
+        .map((entry) => motherV2MaybeTransformationMode(entry?.mode || entry?.transformation_mode))
+        .filter(Boolean)
+    : [];
+  const hasModeSignal = Boolean(mode || candidateModes.length);
+  if (!hasModeSignal) return false;
+  const targetIds = motherV2NormalizeImageIdList(
+    (Array.isArray(intent.target_ids) && intent.target_ids.length ? intent.target_ids : motherV2RoleIds("subject")) || []
+  );
+  const refIds = motherV2NormalizeImageIdList(
+    (Array.isArray(intent.reference_ids) ? intent.reference_ids : motherV2RoleContextIds({ limit: 6 })) || []
+  );
+  const hasScopeSignal = targetIds.length > 0 || refIds.length > 0;
+  const sentence = motherV2ProposalSentence(intent);
+  const hasSummarySignal = typeof sentence === "string" && sentence.trim().length > 0;
+  if (hasScopeSignal || hasSummarySignal) return true;
+  const phase = String(state.motherIdle?.phase || "").trim();
+  const phaseImpliesProposal = phase === MOTHER_IDLE_STATES.DRAFTING || phase === MOTHER_IDLE_STATES.OFFERING;
+  return Boolean(phaseImpliesProposal || motherV2CurrentDraft());
+}
+
+function motherV2ProposalBadgeIconSvg(kind = "target") {
+  const iconKind = String(kind || "target").trim();
+  if (iconKind === "reference") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.1 12a3.3 3.3 0 0 1 3.3-3.3h3.2"/><path d="M15.9 12a3.3 3.3 0 0 1-3.3 3.3H9.4"/><path d="M13.5 8.7h2.1a3.2 3.2 0 1 1 0 6.4h-2.1"/><path d="M10.5 15.3H8.4a3.2 3.2 0 0 1 0-6.4h2.1"/></svg>';
+  }
+  if (iconKind === "output") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8 14.2 9.2 20 12l-5.8 2.8L12 20.2l-2.2-5.4L4 12l5.8-2.8z"/></svg>';
+  }
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2"/></svg>';
+}
+
+function motherV2IntentSourceKind(source = "") {
+  const raw = String(source || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw === "realtime") return "realtime";
+  if (realtimeSourceSupported(raw)) return "realtime";
+  if (raw.startsWith("openai_realtime") || raw.startsWith("gemini_flash")) return "realtime";
+  if (raw.includes("intent_rt") || raw.includes("realtime")) return "realtime";
+  return "";
+}
+
+function motherV2ProposalCardHtml({ phase, statusText, next, readoutHtml }) {
+  const normalizedPhase = String(phase || "").trim();
+  const isDraftingPhase = normalizedPhase === MOTHER_IDLE_STATES.DRAFTING;
+  const isOfferingPhase = normalizedPhase === MOTHER_IDLE_STATES.OFFERING;
+  const isCooldownPhase = normalizedPhase === MOTHER_IDLE_STATES.COOLDOWN;
+  const visibleImageCount = motherIdleBaseImageItems().length;
+  if (visibleImageCount < MOTHER_V2_MIN_IMAGES_FOR_PROPOSAL) return "";
+  const cardVisiblePhases = new Set([
+    MOTHER_IDLE_STATES.WATCHING,
+    MOTHER_IDLE_STATES.OBSERVING,
+    MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING,
+    MOTHER_IDLE_STATES.DRAFTING,
+    MOTHER_IDLE_STATES.OFFERING,
+    MOTHER_IDLE_STATES.COMMITTING,
+    MOTHER_IDLE_STATES.COOLDOWN,
+  ]);
+  if (!cardVisiblePhases.has(normalizedPhase)) {
+    return "";
+  }
+  const intent = state.motherIdle?.intent && typeof state.motherIdle.intent === "object" ? state.motherIdle.intent : null;
+  const hasPendingProposalWork = Boolean(
+    normalizedPhase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING &&
+      (state.motherIdle?.pendingIntent || state.motherIdle?.pendingPromptCompile)
+  );
+  const hasProposalContext = Boolean(
+    motherV2HasRealProposalPayload(intent) ||
+      motherV2CurrentDraft() ||
+      hasPendingProposalWork ||
+      normalizedPhase === MOTHER_IDLE_STATES.WATCHING ||
+      normalizedPhase === MOTHER_IDLE_STATES.OBSERVING ||
+      normalizedPhase === MOTHER_IDLE_STATES.DRAFTING ||
+      normalizedPhase === MOTHER_IDLE_STATES.COMMITTING ||
+      normalizedPhase === MOTHER_IDLE_STATES.COOLDOWN
+  );
+  if (!hasProposalContext) return "";
+  const explicitMode = motherV2MaybeTransformationMode(intent?.transformation_mode);
+  const rememberedMode = motherV2MaybeTransformationMode(state.motherIdle?.lastProposalMode);
+  const modeForDisplay = explicitMode || rememberedMode || MOTHER_V2_DEFAULT_TRANSFORMATION_MODE;
+  const hasConfirmedIntentSource = Boolean(motherV2IntentSourceKind(intent?._intent_source_kind));
+  const modeLabel = hasConfirmedIntentSource ? motherV2ProposalModeLabel(modeForDisplay) : "";
+  const modeAccent = hasConfirmedIntentSource ? motherV2ProposalIconAccent(modeForDisplay) : "";
+  const modeAria = hasConfirmedIntentSource ? `Proposal mode ${modeLabel}` : "";
+  const proposalVisualHtml = motherV2ProposalIconsHtml(intent, { phase: normalizedPhase });
+  const visualHtml = readoutHtml || proposalVisualHtml;
+  const visualLine = visualHtml ? `<div class="mother-proposal-visual">${visualHtml}</div>` : "";
+  const flowLine = `<div class="mother-proposal-flow">${visualLine}</div>`;
+  const modeLine = !isDraftingPhase && !isOfferingPhase && !isCooldownPhase && modeLabel
+    ? `<div class="mother-proposal-mode" style="--proposal-mode-accent:${escapeHtml(modeAccent)}" aria-label="${escapeHtml(modeAria)}">${escapeHtml(modeLabel)}</div>`
+    : "";
+  return `
+    <div class="mother-proposal-card" aria-label="Mother proposal" data-compact="1">
+      ${flowLine}
+      ${modeLine}
+    </div>
+  `;
+}
+
+function motherV2PhaseCardKind(phase = null) {
+  const statePhase = phase || state.motherIdle?.phase || motherIdleInitialState();
+  if (statePhase === MOTHER_IDLE_STATES.COOLDOWN) return "cooldown";
+  if (statePhase === MOTHER_IDLE_STATES.OFFERING) return "ready";
+  if (statePhase !== MOTHER_IDLE_STATES.DRAFTING) return "";
+  return "drafting";
+}
+
+function renderMotherReadout() {
+  applyRuntimeChromeVisibility({ source: "mother" });
+  renderMotherControls();
+  syncMotherIntentSourceIndicator();
+  const phase = state.motherIdle?.phase || motherIdleInitialState();
+  const isPhaseCardState =
+    phase === MOTHER_IDLE_STATES.DRAFTING ||
+    phase === MOTHER_IDLE_STATES.OFFERING ||
+    phase === MOTHER_IDLE_STATES.COOLDOWN;
+  if (els.motherPanel) {
+    els.motherPanel.classList.toggle(
+      "mother-drafting-view",
+      isPhaseCardState || motherPhaseCardExitInFlight
+    );
+  }
+  renderMotherRolePreview();
+  if (!els.tipsText) return;
+  if (isPhaseCardState && !motherPhaseCardExitInFlight) {
+    clearTimeout(motherPhaseCardExitTimer);
+    els.tipsText.classList.remove("mother-phase-card-exit");
+  }
+  motherV2SyncLayeredPanel();
+  const next = buildMotherText();
+  const proposalIconsHtml = motherV2ProposalIconsHtml(state.motherIdle?.intent || null, { phase });
+  const draftStatusHtml = motherV2DraftStatusHtml({ phase });
+  const statusText = motherV2StatusText();
+  const readoutHtml = phase === MOTHER_IDLE_STATES.DRAFTING || phase === MOTHER_IDLE_STATES.OFFERING || phase === MOTHER_IDLE_STATES.COOLDOWN
+    ? draftStatusHtml
+    : proposalIconsHtml || draftStatusHtml;
+  const proposalCardHtml = motherV2ProposalCardHtml({ phase, statusText, next, readoutHtml });
+  const renderKey = proposalCardHtml || readoutHtml || next;
+  const nextPhaseCardKind = motherV2PhaseCardKind(phase);
+  const currentPhaseCardKind = String(els.tipsText.dataset.phaseCardKind || "").trim();
+  const phaseCardMissing = isPhaseCardState && !els.tipsText.querySelector(".mother-phase-icons.is-draft-card");
+  const changed = phaseCardMissing || renderKey !== lastMotherRenderedText;
+  const shouldTypeout = false;
+
+  if (els.motherState) {
+    const normalizedPhase = String(phase || "").trim();
+    const phaseLabel = normalizedPhase
+      ? normalizedPhase.replace(/_/g, " ").replace(/\b([a-z])/g, (m) => m.toUpperCase())
+      : "";
+    const normalizedStatus = String(statusText || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    els.motherState.textContent = statusText;
+    els.motherState.setAttribute("data-phase", String(phase || ""));
+    if (normalizedStatus) {
+      els.motherState.setAttribute("data-status", normalizedStatus);
+    } else {
+      els.motherState.removeAttribute("data-status");
+    }
+    const accessibilityLabel = statusText || phaseLabel;
+    if (accessibilityLabel) {
+      els.motherState.setAttribute("aria-label", accessibilityLabel);
+    } else {
+      els.motherState.removeAttribute("aria-label");
+    }
+    const stateRow = els.motherState.closest(".mother-state-row");
+    if (stateRow) {
+      stateRow.classList.toggle("hidden", !accessibilityLabel);
+    }
+  }
+  els.tipsText.classList.toggle("mother-proposal-active", Boolean(proposalCardHtml));
+  if (els.motherPanel) {
+    els.motherPanel.classList.toggle("mother-proposal-overlay", Boolean(proposalCardHtml));
+  }
+  els.tipsText.classList.remove("mother-cursor");
+  const showingPhaseCard = Boolean(els.tipsText.querySelector(".mother-phase-icons.is-draft-card"));
+  const isPhaseToPhaseSwap = Boolean(
+    isPhaseCardState && nextPhaseCardKind && currentPhaseCardKind && nextPhaseCardKind !== currentPhaseCardKind
+  );
+  const shouldFadeOutExistingPhaseCard = Boolean(
+    showingPhaseCard &&
+      !motherPhaseCardExitInFlight &&
+      (
+        !isPhaseCardState ||
+        isPhaseToPhaseSwap
+      )
+  );
+  if (shouldFadeOutExistingPhaseCard) {
+    clearTimeout(motherPhaseCardExitTimer);
+    motherPhaseCardExitInFlight = true;
+    els.tipsText.classList.add("mother-phase-card-exit");
+    motherPhaseCardExitTimer = setTimeout(() => {
+      if (!els.tipsText) return;
+      els.tipsText.classList.remove("mother-phase-card-exit");
+      delete els.tipsText.dataset.phaseCardKind;
+      if (!isPhaseToPhaseSwap) {
+        els.tipsText.innerHTML = "";
+      }
+      motherPhaseCardExitInFlight = false;
+      lastMotherRenderedText = null;
+      renderMotherReadout();
+    }, 170);
+    return;
+  }
+  if (motherPhaseCardExitInFlight) return;
+
+  if (!changed) {
+    return;
+  }
+
+  lastMotherRenderedText = renderKey;
+  if (shouldTypeout && !proposalCardHtml) {
+    motherV2TriggerReadoutFade();
+    startMotherTypeout(next);
+    return;
+  }
+
+  stopMotherTypeout();
+  if (proposalCardHtml) {
+    els.tipsText.innerHTML = proposalCardHtml;
+    if (nextPhaseCardKind) {
+      els.tipsText.dataset.phaseCardKind = nextPhaseCardKind;
+    } else {
+      delete els.tipsText.dataset.phaseCardKind;
+    }
+    motherV2TriggerReadoutFade();
+    return;
+  }
+  if (readoutHtml) {
+    els.tipsText.innerHTML = readoutHtml;
+    if (nextPhaseCardKind) {
+      els.tipsText.dataset.phaseCardKind = nextPhaseCardKind;
+    } else {
+      delete els.tipsText.dataset.phaseCardKind;
+    }
+    motherV2TriggerReadoutFade();
+    return;
+  }
+  delete els.tipsText.dataset.phaseCardKind;
+  els.tipsText.textContent = next;
+  motherV2TriggerReadoutFade();
+}
+
+function syncMotherPortrait() {
+  const overlay = els.motherOverlay || els.motherPanel;
+  const videoEl = els.motherVideo;
+
+  const motherRunning = Boolean(state.mother?.running);
+  const reelLocked = isReelSizeLocked();
+  const now = Date.now();
+  const mother = state.mother;
+  const hasImages = Boolean(state.images && state.images.length);
+  mother.rtHoldUntil = 0;
+  const idlePhase = state.motherIdle?.phase || motherIdleInitialState();
+
+  // Realtime border/video is driven by Mother's idle suggestion flow window, with
+  // hysteresis to prevent brief watch-phase spikes from blinking the portrait/border.
+  const rawRealtime = !reelLocked && !motherRunning && hasImages && motherIdleUsesRealtimeVisual(idlePhase);
+  if (rawRealtime) {
+    mother.rtVisualRawSince = Math.max(0, Number(mother.rtVisualRawSince) || 0) || now;
+  } else {
+    mother.rtVisualRawSince = 0;
+  }
+
+  let showRealtime = Boolean(mother.rtVisualActive);
+  const rawSince = Math.max(0, Number(mother.rtVisualRawSince) || 0);
+  const minUntil = Math.max(0, Number(mother.rtVisualMinUntil) || 0);
+  if (rawRealtime) {
+    if (!showRealtime && rawSince && now - rawSince >= MOTHER_RT_VISUAL_ON_DELAY_MS) {
+      showRealtime = true;
+      mother.rtVisualActive = true;
+      mother.rtVisualMinUntil = now + MOTHER_RT_VISUAL_MIN_ON_MS;
+    }
+  } else if (showRealtime && now >= minUntil) {
+    showRealtime = false;
+    mother.rtVisualActive = false;
+    mother.rtVisualMinUntil = 0;
+  }
+  if (!showRealtime && !rawRealtime) {
+    mother.rtVisualMinUntil = 0;
+  }
+
+  if (els.canvasWrap) {
+    els.canvasWrap.classList.toggle("mother-rt-active", showRealtime);
+  }
+
+  const refreshAts = [];
+  if (rawRealtime && !showRealtime && rawSince) {
+    refreshAts.push(rawSince + MOTHER_RT_VISUAL_ON_DELAY_MS);
+  }
+  if (!rawRealtime && showRealtime && minUntil) {
+    refreshAts.push(minUntil);
+  }
+  const refreshAt = refreshAts.length ? Math.min(...refreshAts) : 0;
+  if (refreshAt && refreshAt > now) {
+    clearTimeout(mother.rtHoldTimer);
+    mother.rtHoldTimer = setTimeout(() => {
+      mother.rtHoldTimer = null;
+      syncMotherPortrait();
+    }, Math.max(30, refreshAt - Date.now() + 24));
+  } else {
+    clearTimeout(mother.rtHoldTimer);
+    mother.rtHoldTimer = null;
+  }
+
+  // In Reel mode, keep Mother on a single stable loop to avoid frequent clip source
+  // swaps while idle-state phases change.
+  const mode = reelLocked ? (motherRunning ? "takeover" : "idle") : motherRunning ? "takeover" : showRealtime ? "realtime" : "idle";
+  const src =
+    mode === "takeover"
+      ? MOTHER_VIDEO_TAKEOVER_SRC
+      : mode === "realtime"
+        ? MOTHER_VIDEO_REALTIME_SRC
+        : mode === "working"
+          ? MOTHER_VIDEO_WORKING_SRC
+          : MOTHER_VIDEO_IDLE_SRC;
+
+  if (overlay) overlay.classList.toggle("busy", mode !== "idle");
+  if (!videoEl) return;
+
+  if (!videoEl.hasAttribute("muted")) videoEl.muted = true;
+  videoEl.loop = true;
+  videoEl.autoplay = true;
+  videoEl.playsInline = true;
+  // Mirror only during Mother takeover so she faces left.
+  videoEl.style.transform = mode === "takeover" ? "scaleX(-1) scale(1.02)" : "scale(1.02)";
+
+  const nextKey = `${mode}:${src}`;
+  const lastAssignedSrc = String(videoEl.dataset.motherSrc || "");
+  if (state.portraitMedia.activeKeyMother !== nextKey || (src && lastAssignedSrc !== String(src))) {
+    state.portraitMedia.activeKeyMother = nextKey;
+    videoEl.classList.remove("hidden");
+    videoEl.dataset.motherSrc = String(src || "");
+    videoEl.src = src;
+    try {
+      videoEl.currentTime = 0;
+    } catch (_) {}
+    try {
+      videoEl.load();
+    } catch (_) {}
+  }
+  videoEl.classList.remove("hidden");
+
+  try {
+    const p = videoEl.play();
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  } catch (_) {}
+}
+
+function motherV2CollectCommitSeedIds(intent = null) {
+  const ids = [];
+  const pushId = (rawId) => {
+    const id = String(rawId || "").trim();
+    if (!id) return;
+    if (!isVisibleCanvasImageId(id)) return;
+    if (!ids.includes(id)) ids.push(id);
+  };
+  const pushMany = (list) => {
+    for (const rawId of Array.isArray(list) ? list : []) pushId(rawId);
+  };
+  const normalizedIntent = intent && typeof intent === "object" ? intent : null;
+  const roles = normalizedIntent?.roles && typeof normalizedIntent.roles === "object"
+    ? normalizedIntent.roles
+    : null;
+  for (const role of MOTHER_V2_ROLE_KEYS) {
+    pushMany(roles?.[role]);
+  }
+  pushMany(normalizedIntent?.target_ids);
+  pushMany(normalizedIntent?.reference_ids);
+  pushMany(state.pendingMotherDraft?.sourceIds);
+  if (!ids.length) {
+    pushMany(motherV2RoleContextIds({ limit: Number.POSITIVE_INFINITY }));
+  }
+  return ids;
+}
+
+function motherV2OfferingHiddenSeedIds() {
+  // Keep parent inputs visible while Mother is drafting/offering.
+  // We intentionally no-op this legacy hide path and dim instead.
+  return new Set();
+}
+
+function motherV2OfferingDimSeedIds() {
+  const idle = state.motherIdle;
+  if (!idle) return new Set();
+  if (idle.phase !== MOTHER_IDLE_STATES.OFFERING) return new Set();
+  if (state.canvasMode !== "multi") return new Set();
+  if (!motherV2CurrentDraft()) return new Set();
+  const intent = idle.intent && typeof idle.intent === "object" ? idle.intent : null;
+  const seedIds = motherV2CollectCommitSeedIds(intent);
+  return new Set(
+    seedIds
+      .map((rawId) => String(rawId || "").trim())
+      .filter((id) => Boolean(id) && state.imagesById.has(id))
+  );
+}
+
+function motherV2SnapshotImageForUndo(imageId) {
+  const id = String(imageId || "").trim();
+  if (!id) return null;
+  const item = state.imagesById.get(id) || null;
+  if (!item?.path) return null;
+  const rect = state.freeformRects.get(id) || null;
+  const imageIndex = (state.images || []).findIndex((entry) => String(entry?.id || "") === id);
+  const zIndex = (state.freeformZOrder || []).indexOf(id);
+  const selectedIndex = getSelectedIds().indexOf(id);
+  return {
+    id,
+    imageIndex,
+    zIndex,
+    selectedIndex,
+    wasActive: state.activeId === id,
+    rect: rect ? { ...rect } : null,
+    item: {
+      id,
+      path: String(item.path),
+      receiptPath: item.receiptPath ? String(item.receiptPath) : null,
+      kind: item.kind ? String(item.kind) : null,
+      source: item.source ? String(item.source) : null,
+      label: item.label ? String(item.label) : null,
+      timelineNodeId: item.timelineNodeId ? String(item.timelineNodeId) : null,
+      visionDesc: item.visionDesc ? String(item.visionDesc) : null,
+      visionDescMeta: item.visionDescMeta && typeof item.visionDescMeta === "object" ? { ...item.visionDescMeta } : null,
+      width: Number(item.width) || null,
+      height: Number(item.height) || null,
+    },
+  };
+}
+
+async function motherV2DiscardCommitSeedImages({ seedIds = [], keepIds = [] } = {}) {
+  const keep = new Set(
+    (Array.isArray(keepIds) ? keepIds : [])
+      .map((v) => String(v || "").trim())
+      .filter(Boolean)
+  );
+  const removed = [];
+  const seen = new Set();
+  for (const rawId of Array.isArray(seedIds) ? seedIds : []) {
+    const id = String(rawId || "").trim();
+    if (!id || seen.has(id) || keep.has(id)) continue;
+    seen.add(id);
+    const snapshot = motherV2SnapshotImageForUndo(id);
+    if (!snapshot) continue;
+    const ok = await removeImageFromCanvas(id).catch(() => false);
+    if (ok) removed.push(snapshot);
+  }
+  return removed;
+}
+
+function motherV2MoveImageToIndex(imageId, targetIndex) {
+  const id = String(imageId || "").trim();
+  if (!id || !Array.isArray(state.images) || !state.images.length) return;
+  const from = state.images.findIndex((entry) => String(entry?.id || "") === id);
+  if (from < 0) return;
+  const maxIndex = Math.max(0, state.images.length - 1);
+  const desired = Math.max(0, Math.min(maxIndex, Math.floor(Number(targetIndex) || 0)));
+  if (from === desired) return;
+  const [entry] = state.images.splice(from, 1);
+  state.images.splice(desired, 0, entry);
+}
+
+function motherV2MoveFreeformZToIndex(imageId, targetIndex) {
+  const id = String(imageId || "").trim();
+  if (!id || !Array.isArray(state.freeformZOrder) || !state.freeformZOrder.length) return;
+  const from = state.freeformZOrder.indexOf(id);
+  if (from < 0) return;
+  const maxIndex = Math.max(0, state.freeformZOrder.length - 1);
+  const desired = Math.max(0, Math.min(maxIndex, Math.floor(Number(targetIndex) || 0)));
+  if (from === desired) return;
+  state.freeformZOrder.splice(from, 1);
+  state.freeformZOrder.splice(desired, 0, id);
+}
+
+async function motherV2RestoreDiscardedSeeds(removedSeeds = []) {
+  const snapshots = (Array.isArray(removedSeeds) ? removedSeeds : [])
+    .filter((entry) => entry?.item?.id && entry?.item?.path)
+    .sort((a, b) => {
+      const ai = Number.isFinite(Number(a?.imageIndex)) ? Number(a.imageIndex) : Number.MAX_SAFE_INTEGER;
+      const bi = Number.isFinite(Number(b?.imageIndex)) ? Number(b.imageIndex) : Number.MAX_SAFE_INTEGER;
+      if (ai !== bi) return ai - bi;
+      const az = Number.isFinite(Number(a?.zIndex)) ? Number(a.zIndex) : Number.MAX_SAFE_INTEGER;
+      const bz = Number.isFinite(Number(b?.zIndex)) ? Number(b.zIndex) : Number.MAX_SAFE_INTEGER;
+      return az - bz;
+    });
+  if (!snapshots.length) return;
+  for (const snapshot of snapshots) {
+    const saved = snapshot.item;
+    const id = String(saved?.id || "").trim();
+    if (!id || state.imagesById.has(id)) continue;
+    addImage(
+      {
+        id,
+        path: String(saved.path),
+        receiptPath: saved.receiptPath ? String(saved.receiptPath) : null,
+        kind: saved.kind ? String(saved.kind) : null,
+        source: saved.source ? String(saved.source) : null,
+        label: saved.label ? String(saved.label) : basename(saved.path),
+        timelineNodeId: saved.timelineNodeId ? String(saved.timelineNodeId) : null,
+        visionDesc: saved.visionDesc ? String(saved.visionDesc) : null,
+        visionDescMeta:
+          saved.visionDescMeta && typeof saved.visionDescMeta === "object"
+            ? { ...saved.visionDescMeta }
+            : null,
+        width: Number(saved.width) || null,
+        height: Number(saved.height) || null,
+      },
+      { select: false }
+    );
+    if (snapshot.rect) {
+      state.freeformRects.set(id, { ...snapshot.rect });
+    }
+    if (Number.isFinite(Number(snapshot.imageIndex)) && Number(snapshot.imageIndex) >= 0) {
+      motherV2MoveImageToIndex(id, Number(snapshot.imageIndex));
+    }
+    if (Number.isFinite(Number(snapshot.zIndex)) && Number(snapshot.zIndex) >= 0) {
+      motherV2MoveFreeformZToIndex(id, Number(snapshot.zIndex));
+    }
+  }
+  const selected = getSelectedIds();
+  let selectedChanged = false;
+  const withSelection = snapshots
+    .filter((entry) => Number.isFinite(Number(entry?.selectedIndex)) && Number(entry.selectedIndex) >= 0)
+    .sort((a, b) => Number(a.selectedIndex) - Number(b.selectedIndex));
+  for (const entry of withSelection) {
+    const id = String(entry?.item?.id || "").trim();
+    if (!id || !state.imagesById.has(id) || selected.includes(id)) continue;
+    const index = Math.max(0, Math.min(selected.length, Math.floor(Number(entry.selectedIndex) || 0)));
+    selected.splice(index, 0, id);
+    selectedChanged = true;
+  }
+  if (selectedChanged) setSelectedIds(selected.filter((id) => state.imagesById.has(id)));
+  const active = snapshots.find((entry) => entry?.wasActive && state.imagesById.has(String(entry?.item?.id || "")));
+  if (active?.item?.id) {
+    await setActiveImage(String(active.item.id), { preserveSelection: true }).catch(() => {});
+  }
+}
+
+async function motherV2CommitSelectedDraft() {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  const draft = motherV2CurrentDraft();
+  if (!draft?.path) return false;
+  const reelLocked = isReelSizeLocked();
+  const intent = motherV2SanitizeIntentImageIds(idle.intent && typeof idle.intent === "object" ? idle.intent : {}) || {};
+  const targetIds = Array.isArray(intent.target_ids) ? intent.target_ids.map((v) => String(v || "").trim()).filter(Boolean) : [];
+  const targetId = targetIds[0] || getVisibleActiveId();
+  const policy = String(intent.placement_policy || "adjacent").trim() || "adjacent";
+  const seedIds = motherV2CollectCommitSeedIds(intent);
+  const beforeTarget = targetId && state.imagesById.has(targetId)
+    ? (() => {
+        const t = state.imagesById.get(targetId);
+        return t
+          ? {
+              path: String(t.path || ""),
+              receiptPath: t.receiptPath ? String(t.receiptPath) : null,
+              kind: t.kind ? String(t.kind) : null,
+              source: t.source ? String(t.source) : null,
+              motherVersionId: t.motherVersionId ? String(t.motherVersionId) : null,
+              receiptMeta: t.receiptMeta && typeof t.receiptMeta === "object" ? { ...t.receiptMeta } : null,
+              receiptMetaChecked: Boolean(t.receiptMetaChecked),
+            }
+          : null;
+      })()
+    : null;
+
+  motherIdleTransitionTo(MOTHER_IDLE_EVENTS.DEPLOY);
+  idle.commitMutationInFlight = true;
+  try {
+    let commitUndo = null;
+    let committedImageId = null;
+    if (policy === "replace" && targetId && state.imagesById.has(targetId)) {
+      const ok = await replaceImageInPlace(targetId, {
+        path: draft.path,
+        receiptPath: draft.receiptPath || null,
+        kind: "engine",
+        label: basename(draft.path),
+      }).catch(() => false);
+      if (!ok) throw new Error("Mother commit failed to replace target.");
+      const targetItem = state.imagesById.get(targetId) || null;
+      if (targetItem) {
+        targetItem.source = MOTHER_GENERATED_SOURCE;
+        targetItem.motherVersionId = draft.versionId ? String(draft.versionId) : null;
+        if (draft.receiptMeta && typeof draft.receiptMeta === "object") {
+          targetItem.receiptMeta = { ...draft.receiptMeta };
+          targetItem.receiptMetaChecked = true;
+          targetItem.receiptMetaLoading = false;
+        }
+      }
+      committedImageId = String(targetId);
+      commitUndo = {
+        mode: "replace",
+        targetId: String(targetId),
+        before: beforeTarget,
+      };
+    } else {
+      const manualRect = policy === "replace" ? null : motherDraftingNormalizeRectCss(idle.draftCommitRectCss);
+      const predictedOfferRect = motherV2OfferPreviewRectCss({ policy, targetId, draftIndex: 0 });
+      const offerRect = manualRect || predictedOfferRect;
+      let rect = offerRect || motherIdleComputePlacementCss({ policy, targetId, draftIndex: 0 });
+      if (rect) {
+        const wrap = els.canvasWrap;
+        const canvasCssW = Math.max(1, Number(wrap?.clientWidth) || 1);
+        const canvasCssH = Math.max(1, Number(wrap?.clientHeight) || 1);
+        if (!manualRect && !predictedOfferRect) {
+          const visibleRatio = rectVisibleRatioInViewport(rect);
+          // Keep accepted Mother artifacts visible to the user.
+          if (reelLocked || visibleRatio < 0.35) {
+            rect = recenterRectToViewport(rect);
+          }
+        }
+        rect = clampFreeformRectCss(rect, canvasCssW, canvasCssH);
+      }
+      if (rect) state.freeformRects.set(draft.id, { ...rect });
+      addImage(
+        {
+          id: draft.id,
+          kind: "engine",
+          source: MOTHER_GENERATED_SOURCE,
+          path: draft.path,
+          receiptPath: draft.receiptPath || null,
+          label: basename(draft.path),
+          timelineAction: "Mother Suggestion",
+          timelineParents: [],
+          motherVersionId: draft.versionId ? String(draft.versionId) : null,
+          receiptMeta: draft.receiptMeta && typeof draft.receiptMeta === "object" ? { ...draft.receiptMeta } : null,
+          receiptMetaChecked: Boolean(draft.receiptMeta),
+          receiptMetaLoading: false,
+        },
+        { select: false }
+      );
+      committedImageId = String(draft.id);
+      commitUndo = {
+        mode: "insert",
+        insertedId: String(draft.id),
+      };
+    }
+    const removedSeeds = await motherV2DiscardCommitSeedImages({
+      seedIds,
+      keepIds: committedImageId ? [committedImageId] : [],
+    });
+    idle.commitUndo = {
+      ...(commitUndo || {}),
+      removedSeeds,
+      expiresAt: Date.now() + 4500,
+    };
+  } finally {
+    idle.commitMutationInFlight = false;
+  }
+
+  idle.telemetry.deployed = (Number(idle.telemetry?.deployed) || 0) + 1;
+  appendMotherTraceLog({
+    kind: "deployed",
+    traceId: idle.telemetry?.traceId || null,
+    actionVersion: Number(idle.actionVersion) || 0,
+    deployed: Number(idle.telemetry?.deployed) || 0,
+    intent_id: intent.intent_id || null,
+    placement_policy: policy,
+    optimization_target: motherCurrentOptimizationTarget(),
+    proposal_mode: motherV2NormalizeTransformationMode(intent?.transformation_mode),
+    proposal_candidates: motherV2ProposalCandidateSummary(intent, { limit: MOTHER_V2_MAX_RANKED_PROPOSALS }),
+    proposal_confidence: Number(intent?.confidence) || 0,
+  }).catch(() => {});
+  // Prevent immediate auto-reproposal loops right after deploy.
+  idle.blockedUntilUserInteraction = true;
+  state.lastInteractionAt = Date.now();
+  state.lastMotherHotAt = state.lastInteractionAt;
+  appendMotherTraceLog({
+    kind: "post_commit_wait_for_user_interaction",
+    traceId: idle.telemetry?.traceId || null,
+    actionVersion: Number(idle.actionVersion) || 0,
+  }).catch(() => {});
+  motherV2ClearIntentAndDrafts({ removeFiles: false });
+  motherIdleTransitionTo(MOTHER_IDLE_EVENTS.COMMIT_DONE);
+  motherV2ArmCooldown({ rejected: false });
+  setStatus("Mother: committed.");
+  if (!reelLocked) {
+    showToast("Mother commit applied. Undo available briefly.", "tip", 2200);
+  }
+  renderMotherReadout();
+  requestRender();
+  return true;
+}
+
+async function motherV2UndoCommit() {
+  const idle = state.motherIdle;
+  if (!idle?.commitUndo) return false;
+  const undo = idle.commitUndo;
+  if (Date.now() > (Number(undo.expiresAt) || 0)) {
+    idle.commitUndo = null;
+    renderMotherReadout();
+    return false;
+  }
+  if (undo.mode === "insert" && undo.insertedId) {
+    await removeImageFromCanvas(String(undo.insertedId)).catch(() => {});
+  } else if (undo.mode === "replace" && undo.targetId && undo.before?.path) {
+    const ok = await replaceImageInPlace(String(undo.targetId), {
+      path: String(undo.before.path),
+      receiptPath: undo.before.receiptPath ? String(undo.before.receiptPath) : null,
+      kind: undo.before.kind || null,
+      clearVision: false,
+    }).catch(() => false);
+    if (ok) {
+      const targetItem = state.imagesById.get(String(undo.targetId)) || null;
+      if (targetItem) {
+        targetItem.source = undo.before.source || null;
+        targetItem.motherVersionId = undo.before.motherVersionId ? String(undo.before.motherVersionId) : null;
+        targetItem.receiptMeta =
+          undo.before.receiptMeta && typeof undo.before.receiptMeta === "object"
+            ? { ...undo.before.receiptMeta }
+            : null;
+        targetItem.receiptMetaChecked = Boolean(undo.before.receiptMetaChecked);
+        targetItem.receiptMetaLoading = false;
+      }
+    }
+  }
+  if (Array.isArray(undo.removedSeeds) && undo.removedSeeds.length) {
+    await motherV2RestoreDiscardedSeeds(undo.removedSeeds);
+  }
+  idle.commitUndo = null;
+  showToast("Undid Mother commit.", "tip", 1800);
+  renderMotherReadout();
+  requestRender();
+  return true;
+}
+
+function motherV2RejectOrDismiss({ queueFollowup = false } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const phase = idle.phase || motherIdleInitialState();
+  const rejectablePhase =
+    phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING ||
+    phase === MOTHER_IDLE_STATES.OFFERING ||
+    phase === MOTHER_IDLE_STATES.DRAFTING;
+  if (!rejectablePhase) {
+    appendMotherTraceLog({
+      kind: "rejected_ignored",
+      traceId: idle.telemetry?.traceId || null,
+      actionVersion: Number(idle.actionVersion) || 0,
+      phase,
+      reason: "phase_not_rejectable",
+      queue_followup_requested: Boolean(queueFollowup),
+    }).catch(() => {});
+    return;
+  }
+  const currentIntent = idle.intent && typeof idle.intent === "object" ? idle.intent : null;
+  const shouldQueueFollowup = Boolean(
+    queueFollowup &&
+      !motherV2CommitUndoAvailable() &&
+      motherIdleHasArmedCanvas() &&
+      rejectablePhase
+  );
+  const contextSig = currentIntent ? motherV2IntentContextSignature(currentIntent) : "";
+  const imageSetSig = currentIntent ? motherV2IntentImageSetSignature(currentIntent) : "";
+  const rejectedMode = currentIntent ? motherV2NormalizeTransformationMode(currentIntent.transformation_mode) : null;
+  if (currentIntent) {
+    idle.lastRejectedProposal = {
+      contextSig,
+      imageSetSig,
+      mode: rejectedMode,
+      summary: String(currentIntent.summary || "").trim(),
+      at_ms: Date.now(),
+    };
+    if (shouldQueueFollowup && rejectedMode) {
+      if (contextSig) motherV2RememberRejectedMode(contextSig, rejectedMode);
+      if (imageSetSig && imageSetSig !== contextSig) motherV2RememberRejectedMode(imageSetSig, rejectedMode);
+    }
+  } else {
+    idle.lastRejectedProposal = null;
+  }
+  idle.pendingFollowupAfterCooldown = shouldQueueFollowup;
+  if (!shouldQueueFollowup) idle.pendingFollowupReason = null;
+  idle.telemetry.rejected = (Number(idle.telemetry?.rejected) || 0) + 1;
+  appendMotherTraceLog({
+    kind: "rejected",
+    traceId: idle.telemetry?.traceId || null,
+    actionVersion: Number(idle.actionVersion) || 0,
+    rejected: Number(idle.telemetry?.rejected) || 0,
+    phase,
+    queue_followup: shouldQueueFollowup,
+    optimization_target: motherCurrentOptimizationTarget(),
+    proposal_mode: motherV2NormalizeTransformationMode(currentIntent?.transformation_mode),
+    proposal_candidates: motherV2ProposalCandidateSummary(currentIntent, { limit: MOTHER_V2_MAX_RANKED_PROPOSALS }),
+    proposal_confidence: Number(currentIntent?.confidence) || 0,
+  }).catch(() => {});
+
+  if (phase === MOTHER_IDLE_STATES.DRAFTING) {
+    motherV2CancelInFlight({ reason: "manual_reject_drafting" });
+    motherV2ClearIntentAndDrafts({ removeFiles: true });
+    motherIdleTransitionTo(MOTHER_IDLE_EVENTS.REJECT);
+    if (state.motherIdle?.phase === MOTHER_IDLE_STATES.COOLDOWN) {
+      motherV2ArmCooldown({ rejected: true });
+    }
+    renderMotherReadout();
+    return;
+  }
+
+  motherV2ClearIntentAndDrafts({ removeFiles: true });
+  motherIdleTransitionTo(MOTHER_IDLE_EVENTS.REJECT);
+  if (state.motherIdle?.phase === MOTHER_IDLE_STATES.COOLDOWN) {
+    motherV2ArmCooldown({ rejected: true });
+  }
+  renderMotherReadout();
+}
+
+async function startMotherTakeover() {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  closeMotherWheelMenu({ immediate: true });
+  const phase = idle.phase || motherIdleInitialState();
+  if (phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+    if (state.pointer.active) {
+      showToast("Finish dragging before confirming.", "tip", 1600);
+      return;
+    }
+    const hasPrefetchedDraft = motherV2CurrentProposalHasPrefetchedDraft();
+    const awaitingMatchingSpeculative = motherV2InFlightSpeculativeMatchesCurrentProposal();
+    const staleSpeculativeDispatchInFlight = Boolean(
+      idle.pendingDispatchSpeculative &&
+      motherV2DispatchInFlight(idle) &&
+      !awaitingMatchingSpeculative
+    );
+    const awaitingSpeculativeCompile = Boolean(
+      idle.pendingPromptCompile &&
+      idle.pendingPromptCompileSpeculative &&
+      (Number(idle.pendingActionVersion) || 0) === (Number(idle.actionVersion) || 0)
+    );
+    idle.telemetry.accepted = (Number(idle.telemetry?.accepted) || 0) + 1;
+    appendMotherTraceLog({
+      kind: "accepted",
+      traceId: idle.telemetry?.traceId || null,
+      actionVersion: Number(idle.actionVersion) || 0,
+      accepted: Number(idle.telemetry?.accepted) || 0,
+      intent_id: idle.intent?.intent_id || null,
+      optimization_target: motherCurrentOptimizationTarget(),
+      proposal_mode: motherV2NormalizeTransformationMode(idle.intent?.transformation_mode),
+      proposal_candidates: motherV2ProposalCandidateSummary(idle.intent, { limit: MOTHER_V2_MAX_RANKED_PROPOSALS }),
+      proposal_confidence: Number(idle.intent?.confidence) || 0,
+    }).catch(() => {});
+    // Once user confirms, stale in-flight intent inference must not reject drafting.
+    motherV2ClearPendingIntentRequest({ reason: "confirm_takeover" });
+    if (hasPrefetchedDraft) {
+      motherIdleTransitionTo(MOTHER_IDLE_EVENTS.CONFIRM);
+      motherIdleTransitionTo(MOTHER_IDLE_EVENTS.DRAFT_READY);
+      setStatus("Mother: proposal ready.");
+      maybeEmitFirstProposalProposed({
+        source: "mother_prefetched_draft_ready",
+        proposal_mode: motherV2NormalizeTransformationMode(idle.intent?.transformation_mode),
+        proposal_confidence: Number(idle.intent?.confidence) || 0,
+      });
+      renderMotherReadout();
+      requestRender();
+      return;
+    }
+    if (staleSpeculativeDispatchInFlight) {
+      motherV2CancelInFlight({ reason: "confirm_stale_speculative_dispatch" });
+    }
+    motherIdleTransitionTo(MOTHER_IDLE_EVENTS.CONFIRM);
+    if (awaitingMatchingSpeculative || awaitingSpeculativeCompile) {
+      idle.pendingDispatchSpeculative = false;
+      idle.pendingPromptCompileSpeculative = false;
+      setStatus("Mother: drafting…");
+      renderMotherReadout();
+      return;
+    }
+    motherIdleDispatchGeneration().catch(() => {});
+    renderMotherReadout();
+    return;
+  }
+  if (phase === MOTHER_IDLE_STATES.WAITING_FOR_USER) {
+    const draftReady = Boolean(motherV2CurrentDraft());
+    if (!draftReady) {
+      showToast("Mother is still drafting.", "tip", 1400);
+      return;
+    }
+    maybeEmitFirstProposalAccepted({
+      source: "mother_confirm_waiting_for_user",
+      proposal_mode: motherV2NormalizeTransformationMode(idle.intent?.transformation_mode),
+      proposal_confidence: Number(idle.intent?.confidence) || 0,
+    });
+    motherV2ForcePhase(MOTHER_IDLE_STATES.OFFERING, "confirm_waiting_for_user");
+    await motherV2CommitSelectedDraft();
+    return;
+  }
+  if (phase === MOTHER_IDLE_STATES.OFFERING) {
+    maybeEmitFirstProposalAccepted({
+      source: "mother_confirm_offering",
+      proposal_mode: motherV2NormalizeTransformationMode(idle.intent?.transformation_mode),
+      proposal_confidence: Number(idle.intent?.confidence) || 0,
+    });
+    await motherV2CommitSelectedDraft();
+    return;
+  }
+  if (phase === MOTHER_IDLE_STATES.COOLDOWN) {
+    showToast("Mother cooling down.", "tip", 1400);
+    return;
+  }
+  showToast("Arrange images, then pause for intent.", "tip", 1800);
+}
+
+function stopMotherTakeover() {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  if (motherV2CommitUndoAvailable()) {
+    motherV2UndoCommit().catch(() => {});
+    return;
+  }
+  motherV2RejectOrDismiss({ queueFollowup: true });
+}
+
+function computeWorldProjection({
+  canvasCssW,
+  canvasCssH,
+  surfaceW,
+  surfaceH,
+  overscanRatio = WORLD_PROJECTION_OVERSCAN_RATIO,
+  padPx = 6,
+} = {}) {
+  const worldCanvasW = Math.max(1, Number(canvasCssW) || 1);
+  const worldCanvasH = Math.max(1, Number(canvasCssH) || 1);
+  const drawSurfaceW = Math.max(1, Number(surfaceW) || 1);
+  const drawSurfaceH = Math.max(1, Number(surfaceH) || 1);
+  const pad = Math.max(0, Number(padPx) || 0);
+  const overscan = Math.max(0, Number(overscanRatio) || 0);
+  const worldPadX = Math.max(0, worldCanvasW * overscan);
+  const worldPadY = Math.max(0, worldCanvasH * overscan);
+  const worldLeft = -worldPadX;
+  const worldTop = -worldPadY;
+  const worldW = Math.max(1, worldCanvasW + worldPadX * 2);
+  const worldH = Math.max(1, worldCanvasH + worldPadY * 2);
+  const availW = Math.max(1, drawSurfaceW - pad * 2);
+  const availH = Math.max(1, drawSurfaceH - pad * 2);
+  const scale = Math.max(0.0001, Math.min(availW / worldW, availH / worldH));
+  const drawW = worldW * scale;
+  const drawH = worldH * scale;
+  const ox = Math.round((drawSurfaceW - drawW) / 2);
+  const oy = Math.round((drawSurfaceH - drawH) / 2);
+  return { worldLeft, worldTop, worldW, worldH, scale, ox, oy };
+}
+
+function projectWorldRectToSurface(rect, projection) {
+  if (!rect || !projection) return null;
+  const x = Number(rect.x) || 0;
+  const y = Number(rect.y) || 0;
+  const w = Math.max(1, Number(rect.w) || 1);
+  const h = Math.max(1, Number(rect.h) || 1);
+  return {
+    x: Math.round(projection.ox + (x - projection.worldLeft) * projection.scale),
+    y: Math.round(projection.oy + (y - projection.worldTop) * projection.scale),
+    w: Math.max(1, Math.round(w * projection.scale)),
+    h: Math.max(1, Math.round(h * projection.scale)),
+  };
+}
+
+function setTip(message) {
+  state.lastTipText = String(message || "");
+  renderMotherReadout();
+}
+
+function setDirectorText(text, meta = null) {
+  state.lastDirectorText = text ? String(text) : null;
+  state.lastDirectorMeta = meta && typeof meta === "object" ? meta : null;
+  renderHudReadout();
+}
+
+function setRunInfo(message) {
+  if (!els.runInfo) return;
+  els.runInfo.textContent = message;
+}
+
+function isMotherGeneratedImageItem(item) {
+  return String(item?.source || "").trim() === MOTHER_GENERATED_SOURCE;
+}
+
+function motherIdleBaseImageItems() {
+  // Mother v2 follow-ups should be able to reason over newly generated outputs too.
+  return getVisibleCanvasImages();
+}
+
+function motherV2NormalizeTransformationMode(rawMode) {
+  const mode = String(rawMode || "").trim().toLowerCase();
+  if (MOTHER_V2_TRANSFORMATION_MODES.includes(mode)) return mode;
+  return MOTHER_V2_DEFAULT_TRANSFORMATION_MODE;
+}
+
+function motherV2MaybeTransformationMode(rawMode) {
+  const mode = String(rawMode || "").trim().toLowerCase();
+  if (MOTHER_V2_TRANSFORMATION_MODES.includes(mode)) return mode;
+  return null;
+}
+
+function motherV2NormalizeAweJoyScore(rawScore, rawConfidence = null) {
+  if (typeof rawScore === "number" && Number.isFinite(rawScore)) {
+    return clamp(Number(rawScore) || 0, 0, 100);
+  }
+  if (typeof rawConfidence === "number" && Number.isFinite(rawConfidence)) {
+    return clamp((Number(rawConfidence) || 0) * 100, 0, 100);
+  }
+  return null;
+}
+
+function motherV2NormalizeModeCandidate(rawEntry = null, { fallbackMode = null, idx = 0 } = {}) {
+  const entry = rawEntry && typeof rawEntry === "object" ? rawEntry : {};
+  const mode = motherV2MaybeTransformationMode(
+    entry.mode ||
+      entry.transformation_mode ||
+      (typeof rawEntry === "string" ? rawEntry : null) ||
+      fallbackMode
+  );
+  if (!mode) return null;
+  const confidence =
+    typeof entry.confidence === "number" && Number.isFinite(entry.confidence)
+      ? clamp(Number(entry.confidence) || 0, 0, 1)
+      : null;
+  const aweJoyScore = motherV2NormalizeAweJoyScore(entry.awe_joy_score, confidence);
+  return {
+    mode,
+    awe_joy_score: aweJoyScore,
+    confidence,
+    _idx: Number.isFinite(Number(idx)) ? Number(idx) : Number.MAX_SAFE_INTEGER,
+  };
+}
+
+function motherV2CompareModeCandidates(a, b) {
+  const as = typeof a?.awe_joy_score === "number" ? a.awe_joy_score : -1;
+  const bs = typeof b?.awe_joy_score === "number" ? b.awe_joy_score : -1;
+  if (bs !== as) return bs - as;
+  const ac = typeof a?.confidence === "number" ? a.confidence : -1;
+  const bc = typeof b?.confidence === "number" ? b.confidence : -1;
+  if (bc !== ac) return bc - ac;
+  const ai = Number.isFinite(Number(a?._idx)) ? Number(a._idx) : Number.MAX_SAFE_INTEGER;
+  const bi = Number.isFinite(Number(b?._idx)) ? Number(b._idx) : Number.MAX_SAFE_INTEGER;
+  if (ai !== bi) return ai - bi;
+  return String(a?.mode || "").localeCompare(String(b?.mode || ""));
+}
+
+function motherV2ProposalLimit(rawLimit = MOTHER_V2_MAX_RANKED_PROPOSALS) {
+  const parsed = Number(rawLimit);
+  if (!Number.isFinite(parsed)) return MOTHER_V2_MAX_RANKED_PROPOSALS;
+  return clamp(Math.floor(parsed), 1, MOTHER_V2_MAX_RANKED_PROPOSALS);
+}
+
+function motherV2CurrentTransformationMode() {
+  const idle = state.motherIdle;
+  const mode = idle?.intent?.transformation_mode;
+  return motherV2NormalizeTransformationMode(mode);
+}
+
+function motherV2NormalizeImageIdList(list = []) {
+  const out = [];
+  for (const raw of Array.isArray(list) ? list : []) {
+    const id = String(raw || "").trim();
+    if (!id) continue;
+    if (!isVisibleCanvasImageId(id)) continue;
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+function motherV2SanitizeIntentImageIds(intentPayload = null) {
+  if (!intentPayload || typeof intentPayload !== "object") return null;
+  const roles = intentPayload.roles && typeof intentPayload.roles === "object"
+    ? {
+        subject: motherV2NormalizeImageIdList(intentPayload.roles.subject),
+        model: motherV2NormalizeImageIdList(intentPayload.roles.model),
+        mediator: motherV2NormalizeImageIdList(intentPayload.roles.mediator),
+        object: motherV2NormalizeImageIdList(intentPayload.roles.object),
+      }
+    : null;
+  return {
+    ...intentPayload,
+    target_ids: motherV2NormalizeImageIdList(intentPayload.target_ids),
+    reference_ids: motherV2NormalizeImageIdList(intentPayload.reference_ids),
+    ...(roles ? { roles } : {}),
+  };
+}
+
+function motherV2RoleContextIds({ limit = 6 } = {}) {
+  const maxCount = Number.isFinite(Number(limit)) && Number(limit) > 0
+    ? Math.floor(Number(limit))
+    : Number.POSITIVE_INFINITY;
+  const ids = [];
+  const pushId = (rawId) => {
+    const normalized = String(rawId || "").trim();
+    if (!normalized) return;
+    if (!isVisibleCanvasImageId(normalized)) return;
+    if (ids.includes(normalized)) return;
+    ids.push(normalized);
+  };
+  const pushMany = (list) => {
+    for (const rawId of Array.isArray(list) ? list : []) {
+      pushId(rawId);
+      if (ids.length >= maxCount) return true;
+    }
+    return false;
+  };
+
+  // Keep role anchors first, then expand to full inferred intent context.
+  for (const role of MOTHER_V2_ROLE_KEYS) {
+    if (pushMany(motherV2RoleIds(role))) return ids;
+  }
+  const intent = state.motherIdle?.intent && typeof state.motherIdle.intent === "object"
+    ? state.motherIdle.intent
+    : null;
+  if (intent) {
+    if (pushMany(intent.target_ids)) return ids;
+    if (pushMany(intent.reference_ids)) return ids;
+  }
+  if (pushMany(getVisibleSelectedIds())) return ids;
+  pushId(getVisibleActiveId());
+  return ids;
+}
+
+function motherV2IsAdvancedVisible() {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  return Boolean(idle.advancedOpen || idle.optionReveal);
+}
+
+function motherV2HintsVisible() {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  if (motherV2IsAdvancedVisible()) return true;
+  return Date.now() < (Number(idle.hintVisibleUntil) || 0);
+}
+
+function motherV2HideHints({ immediate = false } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const close = () => {
+    idle.hintVisibleUntil = 0;
+    idle.hintLevel = 0;
+    clearTimeout(idle.hintFadeTimer);
+    idle.hintFadeTimer = null;
+    requestRender();
+  };
+  if (immediate) {
+    close();
+    return;
+  }
+  clearTimeout(idle.hintFadeTimer);
+  idle.hintFadeTimer = setTimeout(close, 420);
+}
+
+function motherV2RevealHints({ engaged = false, ms = 1400 } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const phase = idle.phase || motherIdleInitialState();
+  if (!(phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING || phase === MOTHER_IDLE_STATES.OFFERING)) return;
+  const level = engaged ? 2 : 1;
+  idle.hintLevel = Math.max(Number(idle.hintLevel) || 0, level);
+  const ttl = engaged ? Math.max(2000, Number(ms) || 0) : Math.max(900, Number(ms) || 0);
+  idle.hintVisibleUntil = Date.now() + ttl;
+  clearTimeout(idle.hintFadeTimer);
+  idle.hintFadeTimer = setTimeout(() => {
+    if (motherV2IsAdvancedVisible()) return;
+    if (Date.now() < (Number(idle.hintVisibleUntil) || 0)) return;
+    idle.hintLevel = 0;
+    requestRender();
+  }, ttl + 24);
+  requestRender();
+}
+
+function motherV2ProposalSentence(intent) {
+  const mode = motherV2NormalizeTransformationMode(intent?.transformation_mode);
+  if (mode === "hybridize") {
+    const uniqueIds = new Set();
+    const pushMany = (list) => {
+      for (const raw of Array.isArray(list) ? list : []) {
+        const id = String(raw || "").trim();
+        if (!id) continue;
+        if (!isVisibleCanvasImageId(id)) continue;
+        uniqueIds.add(id);
+      }
+    };
+    pushMany(intent?.target_ids);
+    pushMany(intent?.reference_ids);
+    const roles = intent?.roles && typeof intent.roles === "object" ? intent.roles : null;
+    if (roles) {
+      pushMany(roles.subject);
+      pushMany(roles.model);
+      pushMany(roles.mediator);
+      pushMany(roles.object);
+    }
+    if (uniqueIds.size >= 3) return "Fuse all references into one striking visual world.";
+  }
+  return MOTHER_V2_PROPOSAL_BY_MODE[mode] || MOTHER_V2_PROPOSAL_BY_MODE[MOTHER_V2_DEFAULT_TRANSFORMATION_MODE];
+}
+
+function motherV2ShotTypeHintForMode(rawMode = "") {
+  const mode = motherV2NormalizeTransformationMode(rawMode || MOTHER_V2_DEFAULT_TRANSFORMATION_MODE);
+  const preset = MOTHER_V2_SHOT_HINTS_BY_MODE[mode];
+  if (preset && typeof preset === "object") return { mode, ...preset };
+  return {
+    mode,
+    primary: "balanced medium shot",
+    alternate: "wide establishing shot",
+    rationale: "maintain clarity while keeping visual variety",
+    lighting_profile: "balanced cinematic key/fill with coherent directionality",
+    alternate_lighting_profile: "soft directional fill with shared ambient bounce",
+    lens_guidance: "35-50mm balanced medium perspective",
+    alternate_lens_guidance: "24-35mm wide establishing perspective",
+  };
+}
+
+function motherV2ShotTypeHints({ preferredMode = "", candidateModes = [] } = {}) {
+  const primaryMode = motherV2NormalizeTransformationMode(preferredMode || MOTHER_V2_DEFAULT_TRANSFORMATION_MODE);
+  const modes = [];
+  const pushMode = (rawMode) => {
+    const mode = motherV2MaybeTransformationMode(rawMode);
+    if (!mode) return;
+    if (!modes.includes(mode)) modes.push(mode);
+  };
+  pushMode(primaryMode);
+  for (const entry of Array.isArray(candidateModes) ? candidateModes : []) {
+    if (entry && typeof entry === "object") {
+      pushMode(entry.mode || entry.transformation_mode);
+    } else {
+      pushMode(entry);
+    }
+  }
+  const primaryPreset = motherV2ShotTypeHintForMode(primaryMode);
+  const alternateMode = modes.find((mode) => mode !== primaryMode) || null;
+  let alternateShotType = "";
+  if (alternateMode) {
+    alternateShotType = String(motherV2ShotTypeHintForMode(alternateMode)?.primary || "").trim();
+  }
+  if (!alternateShotType) {
+    alternateShotType = String(primaryPreset?.alternate || "").trim();
+  }
+  if (alternateShotType && alternateShotType.toLowerCase() === String(primaryPreset?.primary || "").toLowerCase()) {
+    alternateShotType = "";
+  }
+  const primaryLightingProfile = String(primaryPreset?.lighting_profile || "balanced cinematic key/fill with coherent directionality").trim();
+  let alternateLightingProfile = "";
+  if (alternateMode) {
+    alternateLightingProfile = String(motherV2ShotTypeHintForMode(alternateMode)?.lighting_profile || "").trim();
+  }
+  if (!alternateLightingProfile) {
+    alternateLightingProfile = String(primaryPreset?.alternate_lighting_profile || "").trim();
+  }
+  if (
+    alternateLightingProfile &&
+    alternateLightingProfile.toLowerCase() === primaryLightingProfile.toLowerCase()
+  ) {
+    alternateLightingProfile = "";
+  }
+  const primaryLensGuidance = String(primaryPreset?.lens_guidance || "35-50mm balanced medium perspective").trim();
+  let alternateLensGuidance = "";
+  if (alternateMode) {
+    alternateLensGuidance = String(motherV2ShotTypeHintForMode(alternateMode)?.lens_guidance || "").trim();
+  }
+  if (!alternateLensGuidance) {
+    alternateLensGuidance = String(primaryPreset?.alternate_lens_guidance || "").trim();
+  }
+  if (
+    alternateLensGuidance &&
+    alternateLensGuidance.toLowerCase() === primaryLensGuidance.toLowerCase()
+  ) {
+    alternateLensGuidance = "";
+  }
+  const primaryShotType = String(primaryPreset?.primary || "balanced medium shot").trim();
+  const shotInstruction = alternateShotType
+    ? `Prefer ${primaryShotType}. If composition clarity or emphasis weakens, try ${alternateShotType}.`
+    : `Prefer ${primaryShotType}.`;
+  const lightingInstruction = alternateLightingProfile
+    ? `Light with ${primaryLightingProfile}. If mood or subject separation is weak, try ${alternateLightingProfile}.`
+    : `Light with ${primaryLightingProfile}.`;
+  const lensInstruction = alternateLensGuidance
+    ? `Lens guidance: ${primaryLensGuidance} (fallback ${alternateLensGuidance}).`
+    : `Lens guidance: ${primaryLensGuidance}.`;
+  const instruction = `${shotInstruction} ${lightingInstruction} ${lensInstruction}`;
+  return {
+    primary_mode: primaryMode,
+    primary_shot_type: primaryShotType,
+    alternate_mode: alternateMode,
+    alternate_shot_type: alternateShotType || null,
+    primary_lighting_profile: primaryLightingProfile,
+    alternate_lighting_profile: alternateLightingProfile || null,
+    primary_lens_guidance: primaryLensGuidance,
+    alternate_lens_guidance: alternateLensGuidance || null,
+    rationale: String(primaryPreset?.rationale || "").trim() || null,
+    shot_instruction: shotInstruction,
+    lighting_instruction: lightingInstruction,
+    lens_instruction: lensInstruction,
+    instruction,
+  };
+}
+
+function motherV2EnsureProposalCandidates(intentPayload = null) {
+  const intent = intentPayload && typeof intentPayload === "object" ? intentPayload : null;
+  if (!intent) return intent;
+  const modes = [];
+  const confidenceByMode = new Map();
+  const aweJoyScoreByMode = new Map();
+  const firstIdxByMode = new Map();
+  let modeIndex = 0;
+  const pushMode = (rawMode, rawConfidence = null, rawAweJoyScore = null, { prepend = false } = {}) => {
+    const normalized = motherV2NormalizeModeCandidate(
+      {
+        mode: rawMode,
+        confidence: rawConfidence,
+        awe_joy_score: rawAweJoyScore,
+      },
+      { idx: modeIndex }
+    );
+    modeIndex += 1;
+    if (!normalized) return;
+    const { mode, confidence, awe_joy_score: aweJoyScore, _idx: firstIdx } = normalized;
+    if (!firstIdxByMode.has(mode)) firstIdxByMode.set(mode, firstIdx);
+    const existingIdx = modes.indexOf(mode);
+    if (existingIdx < 0) {
+      if (prepend) modes.unshift(mode);
+      else modes.push(mode);
+      confidenceByMode.set(mode, confidence);
+      aweJoyScoreByMode.set(mode, aweJoyScore);
+      return;
+    }
+    if (prepend && existingIdx > 0) {
+      modes.splice(existingIdx, 1);
+      modes.unshift(mode);
+    }
+    if (typeof confidence === "number") {
+      const prior = confidenceByMode.get(mode);
+      if (!(typeof prior === "number") || confidence > prior) {
+        confidenceByMode.set(mode, confidence);
+      }
+    }
+    if (typeof aweJoyScore === "number") {
+      const prior = aweJoyScoreByMode.get(mode);
+      if (!(typeof prior === "number") || aweJoyScore > prior) {
+        aweJoyScoreByMode.set(mode, aweJoyScore);
+      }
+    }
+  };
+  for (const entry of Array.isArray(intent.transformation_mode_candidates) ? intent.transformation_mode_candidates : []) {
+    pushMode(entry?.mode || entry?.transformation_mode, entry?.confidence, entry?.awe_joy_score);
+  }
+  const current = motherV2MaybeTransformationMode(intent.transformation_mode);
+  if (current) pushMode(current, null, null, { prepend: true });
+  const baseMode = current || modes[0] || MOTHER_V2_DEFAULT_TRANSFORMATION_MODE;
+  const baseIdx = Math.max(0, MOTHER_V2_TRANSFORMATION_MODES.indexOf(baseMode));
+  for (let offset = 0; offset < MOTHER_V2_TRANSFORMATION_MODES.length && modes.length < MOTHER_V2_MAX_RANKED_PROPOSALS; offset += 1) {
+    const idx = (baseIdx + offset) % MOTHER_V2_TRANSFORMATION_MODES.length;
+    const candidate = MOTHER_V2_TRANSFORMATION_MODES[idx];
+    if (!candidate) continue;
+    pushMode(candidate);
+  }
+  modes.sort((a, b) =>
+    motherV2CompareModeCandidates(
+      {
+        mode: a,
+        awe_joy_score: typeof aweJoyScoreByMode.get(a) === "number" ? aweJoyScoreByMode.get(a) : null,
+        confidence: typeof confidenceByMode.get(a) === "number" ? confidenceByMode.get(a) : null,
+        _idx: Number(firstIdxByMode.get(a) ?? Number.MAX_SAFE_INTEGER),
+      },
+      {
+        mode: b,
+        awe_joy_score: typeof aweJoyScoreByMode.get(b) === "number" ? aweJoyScoreByMode.get(b) : null,
+        confidence: typeof confidenceByMode.get(b) === "number" ? confidenceByMode.get(b) : null,
+        _idx: Number(firstIdxByMode.get(b) ?? Number.MAX_SAFE_INTEGER),
+      }
+    )
+  );
+  const rankedModes = modes.slice(0, motherV2ProposalLimit());
+  intent.transformation_mode_candidates = rankedModes.map((mode) => ({
+    mode,
+    awe_joy_score: typeof aweJoyScoreByMode.get(mode) === "number" ? aweJoyScoreByMode.get(mode) : null,
+    confidence: typeof confidenceByMode.get(mode) === "number" ? confidenceByMode.get(mode) : null,
+  }));
+  const normalizedCurrent = motherV2MaybeTransformationMode(intent.transformation_mode);
+  if ((!normalizedCurrent || !rankedModes.includes(normalizedCurrent)) && rankedModes.length) {
+    intent.transformation_mode = rankedModes[0];
+  }
+  return intent;
+}
+
+function motherV2ProposalModes(intentPayload = null) {
+  const intent = intentPayload && typeof intentPayload === "object" ? intentPayload : null;
+  if (!intent) return [];
+  const modes = [];
+  const pushMode = (rawMode) => {
+    const mode = motherV2MaybeTransformationMode(rawMode);
+    if (!mode) return;
+    if (!modes.includes(mode)) modes.push(mode);
+  };
+  const rawCandidates = Array.isArray(intent.transformation_mode_candidates) ? intent.transformation_mode_candidates : [];
+  for (const entry of rawCandidates) {
+    pushMode(entry?.mode || entry?.transformation_mode);
+  }
+  const current = motherV2MaybeTransformationMode(intent.transformation_mode);
+  if (!modes.length) modes.push(current || MOTHER_V2_DEFAULT_TRANSFORMATION_MODE);
+  return modes.slice(0, motherV2ProposalLimit());
+}
+
+function motherV2ProposalCandidateSummary(intentPayload = null, { limit = MOTHER_V2_MAX_RANKED_PROPOSALS } = {}) {
+  const intent = intentPayload && typeof intentPayload === "object" ? intentPayload : null;
+  if (!intent) return [];
+  const candidates = [];
+  const pushCandidate = (rawMode, rawConfidence = null, rawAweJoyScore = null, { prepend = false } = {}) => {
+    const normalized = motherV2NormalizeModeCandidate({
+      mode: rawMode,
+      confidence: rawConfidence,
+      awe_joy_score: rawAweJoyScore,
+    }, { idx: candidates.length });
+    if (!normalized) return;
+    const { mode, confidence, awe_joy_score: aweJoyScore } = normalized;
+    const existing = candidates.find((entry) => entry.mode === mode) || null;
+    if (!existing) {
+      if (prepend) candidates.unshift({ mode, awe_joy_score: aweJoyScore, confidence });
+      else candidates.push({ mode, awe_joy_score: aweJoyScore, confidence });
+      return;
+    }
+    if (prepend) {
+      const idx = candidates.findIndex((entry) => entry.mode === mode);
+      if (idx > 0) {
+        const [entry] = candidates.splice(idx, 1);
+        candidates.unshift(entry);
+      }
+    }
+    if (typeof confidence === "number") {
+      if (!(typeof existing.confidence === "number") || confidence > existing.confidence) {
+        existing.confidence = confidence;
+      }
+    }
+    if (typeof aweJoyScore === "number") {
+      if (!(typeof existing.awe_joy_score === "number") || aweJoyScore > existing.awe_joy_score) {
+        existing.awe_joy_score = aweJoyScore;
+      }
+    }
+  };
+  for (const entry of Array.isArray(intent.transformation_mode_candidates) ? intent.transformation_mode_candidates : []) {
+    pushCandidate(entry?.mode || entry?.transformation_mode, entry?.confidence, entry?.awe_joy_score);
+  }
+  pushCandidate(intent.transformation_mode, null, null);
+  candidates.sort(motherV2CompareModeCandidates);
+  const maxItems = motherV2ProposalLimit(limit);
+  return candidates.slice(0, maxItems).map((entry) => ({
+    mode: entry.mode,
+    awe_joy_score: typeof entry.awe_joy_score === "number" ? entry.awe_joy_score : null,
+    confidence: typeof entry.confidence === "number" ? entry.confidence : null,
+  }));
+}
+
+function motherV2ProposalIconAccent(mode) {
+  const normalizedMode = motherV2NormalizeTransformationMode(mode);
+  return MOTHER_V2_PROPOSAL_ICON_ACCENT_BY_MODE[normalizedMode] || "rgba(230, 237, 243, 0.94)";
+}
+
+function motherV2ProposalModeLabel(mode) {
+  const normalizedMode = motherV2NormalizeTransformationMode(mode);
+  return normalizedMode.replace(/_/g, " ").replace(/\b([a-z])/g, (m) => m.toUpperCase());
+}
+
+function motherV2ProposalIconSvg(mode) {
+  const normalizedMode = motherV2NormalizeTransformationMode(mode);
+  let inner = "";
+  if (normalizedMode === "amplify") {
+    inner = '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.6v3.2M12 18.2v3.2M2.6 12h3.2M18.2 12h3.2M5.3 5.3l2.2 2.2M16.5 16.5l2.2 2.2M18.7 5.3l-2.2 2.2M7.5 16.5l-2.2 2.2"/>';
+  } else if (normalizedMode === "transcend") {
+    inner = '<path d="M12 20.6V6.3"/><path d="M7.8 10.4L12 6.2l4.2 4.2"/><path d="M4 18.2c2.2-1.7 4.9-2.6 8-2.6s5.8.9 8 2.6"/>';
+  } else if (normalizedMode === "destabilize") {
+    inner = '<path d="M12 3.4l7.8 8.6L12 20.6 4.2 12z"/><path d="M8.1 8.2l2.4 2.1-2.6 2.3 2.6 2.2"/><path d="M14.8 7.7l-2.1 2 2.2 2.1-2.3 2.2"/>';
+  } else if (normalizedMode === "purify") {
+    inner = '<path d="M12 4.2c2.8 3 4.8 5.8 4.8 8.3a4.8 4.8 0 1 1-9.6 0c0-2.5 2-5.3 4.8-8.3z"/><path d="M12 9.2v5.8"/><path d="M9.3 12.1h5.4"/>';
+  } else if (normalizedMode === "hybridize") {
+    inner = '<circle cx="9" cy="12" r="4.4"/><circle cx="15" cy="12" r="4.4"/><path d="M12 7.6v8.8"/>';
+  } else if (normalizedMode === "mythologize") {
+    inner = '<circle cx="12" cy="12" r="8"/><path d="M12 6.1l1.7 3.4 3.8.6-2.8 2.7.7 3.8L12 14.8 8.6 16.6l.7-3.8-2.8-2.7 3.8-.6z"/>';
+  } else if (normalizedMode === "monumentalize") {
+    inner = '<path d="M4.5 19.5h15"/><path d="M6.4 18.8V7.6h3.1v11.2M10.6 18.8V5.8h2.8v13M14.5 18.8V7.6h3.1v11.2"/><path d="M5.6 5.8h12.8"/>';
+  } else if (normalizedMode === "fracture") {
+    inner = '<path d="M5 3.6h14v16.8H5z"/><path d="M13.8 4.7 10.6 10h2.4l-3 4.1 1.2 5.8"/>';
+  } else if (normalizedMode === "romanticize") {
+    inner = '<path d="M12 20.4c-5.2-3.6-8-6.4-8-9.7 0-2.2 1.8-4 4-4 1.7 0 3.1.8 4 2.1.9-1.3 2.3-2.1 4-2.1 2.2 0 4 1.8 4 4 0 3.3-2.8 6.1-8 9.7z"/>';
+  } else if (normalizedMode === "alienate") {
+    inner = '<path d="M2.8 12s3.3-5.2 9.2-5.2 9.2 5.2 9.2 5.2-3.3 5.2-9.2 5.2-9.2-5.2-9.2-5.2z"/><circle cx="12" cy="12" r="2.4"/><path d="M18.6 4.6l1.9-1.9M5.4 19.4l-1.9 1.9"/>';
+  } else {
+    inner = '<circle cx="12" cy="12" r="4.2"/>';
+  }
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${inner}</svg>`;
+}
+
+function motherV2ProposalIconsHtml(intentPayload = null, { phase = null } = {}) {
+  const intent = intentPayload && typeof intentPayload === "object" ? intentPayload : null;
+  const normalizedPhase = String(phase || state.motherIdle?.phase || "").trim();
+  if (motherIdleBaseImageItems().length < MOTHER_V2_MIN_IMAGES_FOR_PROPOSAL) return "";
+  const activePhases = new Set([
+    MOTHER_IDLE_STATES.WATCHING,
+    MOTHER_IDLE_STATES.OBSERVING,
+    MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING,
+    MOTHER_IDLE_STATES.DRAFTING,
+    MOTHER_IDLE_STATES.OFFERING,
+    MOTHER_IDLE_STATES.COMMITTING,
+    MOTHER_IDLE_STATES.COOLDOWN,
+  ]);
+  if (!activePhases.has(normalizedPhase)) {
+    if (!intent) return "";
+  }
+  const hasConfirmedIntentSource = Boolean(motherV2IntentSourceKind(intent?._intent_source_kind));
+  if (!hasConfirmedIntentSource) return "";
+  let activeMode = null;
+  let description = "";
+  if (intent) {
+    if (!motherV2HasRealProposalPayload(intent)) {
+      if (!activePhases.has(normalizedPhase)) return "";
+    } else {
+      const modes = motherV2ProposalModes(intent);
+      if (!modes.length) return "";
+      const activeNormalized = motherV2NormalizeTransformationMode(intent.transformation_mode || modes[0]);
+      activeMode = modes.includes(activeNormalized) ? activeNormalized : modes[0];
+      description = motherV2ProposalSentence({
+        ...intent,
+        transformation_mode: activeMode,
+      });
+    }
+  }
+  if (!activeMode) {
+    const rememberedMode = motherV2MaybeTransformationMode(state.motherIdle?.lastProposalMode);
+    if (rememberedMode) {
+      activeMode = rememberedMode;
+      if (!description) description = "Mother proposal";
+    }
+  }
+  if (!activeMode) {
+    activeMode = MOTHER_V2_DEFAULT_TRANSFORMATION_MODE;
+    if (!description) description = "Proposal pending";
+  }
+  if (state.motherIdle && activeMode) {
+    state.motherIdle.lastProposalMode = activeMode;
+  }
+  const label = motherV2ProposalModeLabel(activeMode);
+  const tooltip = `${label}: ${description}`;
+  const accent = motherV2ProposalIconAccent(activeMode);
+  const icon = motherV2ProposalIconSvg(activeMode);
+  const chip = `<span class="mother-proposal-icon is-active" data-mode="${escapeHtml(activeMode)}" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}" style="--proposal-accent:${escapeHtml(accent)}">${icon}</span>`;
+  return `<div class="mother-proposal-icons" aria-label="Proposal option">${chip}</div>`;
+}
+
+function motherV2DraftStatusIconSvg(kind = "drafting") {
+  const iconKind = String(kind || "drafting").trim();
+  let inner = "";
+  if (iconKind === "braiding") {
+    inner = '<path d="M4.8 8c2.9 0 3.3 7.8 7.2 7.8s4.3-7.8 7.2-7.8"/><path d="M4.8 16c2.9 0 3.3-7.8 7.2-7.8s4.3 7.8 7.2 7.8"/><circle cx="4.8" cy="8" r="1.2"/><circle cx="4.8" cy="16" r="1.2"/><circle cx="19.2" cy="8" r="1.2"/><circle cx="19.2" cy="16" r="1.2"/>';
+  } else if (iconKind === "ready") {
+    inner = '<path d="M5 12.7 9.3 17l9.7-9.7"/><path d="M12 4.2v2.1"/><path d="M6.8 6.1 8.2 7.5"/><path d="M17.2 6.1 15.8 7.5"/>';
+  } else if (iconKind === "cooldown") {
+    inner = '<circle cx="12" cy="12" r="7.4"/><path d="M12 8.4v4.4l2.9 2"/><path d="M9.6 3.8h4.8"/><path d="M6.2 6.2 4.6 4.6"/><path d="M17.8 6.2 19.4 4.6"/>';
+  } else {
+    inner = '<path d="M4.6 5.2h10.2M4.6 9.5h8.4M4.6 13.8h6.8"/><path d="M14.2 14.4 19 9.6l2.4 2.4-4.8 4.8-3 1z"/><path d="M18 8.2l2.8 2.8"/>';
+  }
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${inner}</svg>`;
+}
+
+function motherV2DraftStatusHtml({ phase = null } = {}) {
+  const statePhase = phase || state.motherIdle?.phase || motherIdleInitialState();
+  if (
+    statePhase !== MOTHER_IDLE_STATES.DRAFTING &&
+    statePhase !== MOTHER_IDLE_STATES.OFFERING &&
+    statePhase !== MOTHER_IDLE_STATES.COOLDOWN
+  ) {
+    return "";
+  }
+  if (statePhase === MOTHER_IDLE_STATES.COOLDOWN) {
+    const accent = "rgba(143, 222, 255, 0.95)";
+    const tooltip = "Mother is cooling down before the next intent cycle.";
+    const label = "COOLDOWN";
+    const icon = motherV2DraftStatusIconSvg("cooldown");
+    return `<div class="mother-phase-icons is-draft-card" aria-label="${escapeHtml(tooltip)}"><span class="mother-phase-icon is-cooldown is-draft-card" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}" style="--phase-accent:${escapeHtml(accent)}">${icon}</span><span class="mother-phase-label is-draft-card" style="--phase-accent:${escapeHtml(accent)}">${escapeHtml(label)}</span></div>`;
+  }
+  if (statePhase === MOTHER_IDLE_STATES.OFFERING) {
+    const accent = "rgba(122, 238, 178, 0.96)";
+    const tooltip = "Mother proposal is ready. Deploy, dismiss, or reroll.";
+    const label = "PROPOSAL READY";
+    const icon = motherV2DraftStatusIconSvg("ready");
+    return `<div class="mother-phase-icons is-draft-card" aria-label="${escapeHtml(tooltip)}"><span class="mother-phase-icon is-ready is-draft-card" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}" style="--phase-accent:${escapeHtml(accent)}">${icon}</span><span class="mother-phase-label is-draft-card" style="--phase-accent:${escapeHtml(accent)}">${escapeHtml(label)}</span></div>`;
+  }
+  const iconKind = "drafting";
+  const accent = "rgba(145, 238, 184, 0.95)";
+  const tooltip = "Mother is drafting now. No canvas mutation until deploy.";
+  const label = "DRAFTING";
+  const icon = motherV2DraftStatusIconSvg(iconKind);
+  return `<div class="mother-phase-icons is-draft-card" aria-label="${escapeHtml(tooltip)}"><span class="mother-phase-icon is-${escapeHtml(iconKind)} is-draft-card" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}" style="--phase-accent:${escapeHtml(accent)}">${icon}</span><span class="mother-phase-label is-draft-card" style="--phase-accent:${escapeHtml(accent)}">${escapeHtml(label)}</span></div>`;
+}
+
+function motherV2CycleProposal(step = 1) {
+  const idle = state.motherIdle;
+  if (!idle || !idle.intent || typeof idle.intent !== "object") return false;
+  if ((idle.phase || motherIdleInitialState()) !== MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) return false;
+  const modes = motherV2ProposalModes(idle.intent);
+  if (modes.length < 2) return false;
+  const activeMode = motherV2NormalizeTransformationMode(idle.intent.transformation_mode || modes[0]);
+  const activeIdx = Math.max(0, modes.indexOf(activeMode));
+  const dir = Number(step) < 0 ? -1 : 1;
+  const nextIdx = (activeIdx + dir + modes.length) % modes.length;
+  const nextMode = modes[nextIdx];
+  if (!nextMode || nextMode === activeMode) return false;
+  idle.intent.transformation_mode = nextMode;
+  idle.intent.summary = motherV2ProposalSentence({
+    ...idle.intent,
+    transformation_mode: nextMode,
+  });
+  const currentDraft = motherV2CurrentDraft();
+  const draftMode = motherV2CurrentDraftMode(currentDraft);
+  if (currentDraft && draftMode && draftMode !== nextMode) {
+    for (const draft of Array.isArray(idle.drafts) ? idle.drafts : []) {
+      if (draft?.path) removeFile(String(draft.path)).catch(() => {});
+      if (draft?.receiptPath) removeFile(String(draft.receiptPath)).catch(() => {});
+    }
+    idle.drafts = [];
+    idle.selectedDraftId = null;
+    idle.hoverDraftId = null;
+    idle.speculativePrefetchReadyMode = null;
+  }
+  const pendingMode = motherV2NormalizeTransformationMode(idle.pendingDispatchProposalMode);
+  if (idle.pendingPromptCompile && idle.pendingPromptCompileSpeculative) {
+    idle.pendingPromptCompile = false;
+    idle.pendingPromptCompileSpeculative = false;
+    idle.pendingPromptCompilePath = null;
+    clearTimeout(idle.pendingPromptCompileTimeout);
+    idle.pendingPromptCompileTimeout = null;
+  }
+  if (idle.pendingDispatchSpeculative && idle.pendingDispatchToken && pendingMode && pendingMode !== nextMode) {
+    motherV2CancelInFlight({ reason: "proposal_cycle_speculative_mismatch" });
+  }
+  motherV2RevealHints({ engaged: true, ms: 1900 });
+  renderMotherReadout();
+  requestRender();
+  return true;
+}
+
+function motherV2IntentContextSignature(intentPayload = null) {
+  const intent = intentPayload && typeof intentPayload === "object" ? intentPayload : {};
+  const ids = new Set();
+  const pushMany = (list) => {
+    for (const raw of Array.isArray(list) ? list : []) {
+      const id = String(raw || "").trim();
+      if (!id) continue;
+      if (!isVisibleCanvasImageId(id)) continue;
+      ids.add(id);
+    }
+  };
+  pushMany(intent.target_ids);
+  pushMany(intent.reference_ids);
+  const roles = intent.roles && typeof intent.roles === "object" ? intent.roles : null;
+  if (roles) {
+    pushMany(roles.subject);
+    pushMany(roles.model);
+    pushMany(roles.mediator);
+    pushMany(roles.object);
+  }
+  return Array.from(ids).sort().join("|");
+}
+
+function motherV2IntentImageSetSignature(intentPayload = null) {
+  const intentSig = motherV2IntentContextSignature(intentPayload);
+  if (intentSig) return intentSig;
+  const ids = [];
+  for (const item of motherIdleBaseImageItems()) {
+    const id = String(item?.id || "").trim();
+    if (!id) continue;
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return ids.sort().join("|");
+}
+
+function motherV2IntentRequiredImageIds() {
+  const selected = getVisibleSelectedIds().map((v) => String(v || "").trim()).filter(Boolean);
+  const images = motherIdleBaseImageItems().map((item) => {
+    const rect = state.freeformRects.get(item.id) || null;
+    return {
+      id: String(item?.id || "").trim(),
+      rect: rect
+        ? {
+            x: Number(rect.x) || 0,
+            y: Number(rect.y) || 0,
+            w: Number(rect.w) || 0,
+            h: Number(rect.h) || 0,
+          }
+        : null,
+    };
+  });
+  const rankedIds = motherV2RankImageIdsByProminence(images);
+  const activeId = String(getVisibleActiveId() || "").trim();
+
+  const targetIds = selected.length
+    ? selected.slice(0, Math.max(1, Number(MOTHER_V2_INTENT_TARGET_IMAGE_LIMIT) || 2))
+    : activeId
+      ? [activeId]
+      : rankedIds.slice(0, 1);
+  const targetSet = new Set(targetIds);
+  const referenceIds = rankedIds
+    .filter((id) => !targetSet.has(id))
+    .slice(0, Math.max(0, Number(MOTHER_V2_INTENT_REFERENCE_IMAGE_LIMIT) || 1));
+  const out = [];
+  for (const id of [...targetIds, ...referenceIds]) {
+    if (!id) continue;
+    if (!state.imagesById.has(id)) continue;
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+function motherV2VisionReadyForIntent({ schedule = true } = {}) {
+  void schedule;
+  const requiredIds = motherV2IntentRequiredImageIds();
+  const missingIds = [];
+  for (const imageId of requiredIds) {
+    const item = state.imagesById.get(imageId) || null;
+    if (!item?.path) continue;
+    const desc = typeof item.visionDesc === "string" ? item.visionDesc.trim() : "";
+    if (desc) continue;
+    missingIds.push(String(imageId));
+  }
+  return {
+    requiredIds,
+    missingIds,
+    ready: missingIds.length === 0,
+  };
+}
+
+function motherV2RejectedModesForContext(contextSig = "") {
+  const idle = state.motherIdle;
+  if (!idle) return [];
+  const key = String(contextSig || "").trim();
+  if (!key) return [];
+  const byContext =
+    idle.rejectedModeHistoryByContext && typeof idle.rejectedModeHistoryByContext === "object"
+      ? idle.rejectedModeHistoryByContext
+      : {};
+  const raw = Array.isArray(byContext[key]) ? byContext[key] : [];
+  return raw.map((mode) => motherV2NormalizeTransformationMode(mode)).filter(Boolean);
+}
+
+function motherV2RememberRejectedMode(contextSig = "", mode = "") {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const key = String(contextSig || "").trim();
+  if (!key) return;
+  const normalizedMode = motherV2NormalizeTransformationMode(mode);
+  const byContext =
+    idle.rejectedModeHistoryByContext && typeof idle.rejectedModeHistoryByContext === "object"
+      ? idle.rejectedModeHistoryByContext
+      : {};
+  const prior = motherV2RejectedModesForContext(key).filter((m) => m !== normalizedMode);
+  const next = prior.concat([normalizedMode]).slice(-MOTHER_V2_TRANSFORMATION_MODES.length);
+  byContext[key] = next;
+  const keys = Object.keys(byContext);
+  while (keys.length > 64) {
+    const drop = keys.shift();
+    if (!drop) break;
+    delete byContext[drop];
+  }
+  idle.rejectedModeHistoryByContext = byContext;
+}
+
+function motherV2DiversifyIntentForRejectFollowup(intentPayload = null) {
+  const idle = state.motherIdle;
+  const intent = intentPayload && typeof intentPayload === "object" ? intentPayload : null;
+  if (!idle || !intent) return intent;
+  if (String(idle.pendingFollowupReason || "") !== "reject_followup") {
+    idle.pendingFollowupReason = null;
+    return intent;
+  }
+  idle.pendingFollowupReason = null;
+
+  const rejected = idle.lastRejectedProposal && typeof idle.lastRejectedProposal === "object" ? idle.lastRejectedProposal : null;
+  const contextSig = motherV2IntentContextSignature(intent);
+  const imageSetSig = motherV2IntentImageSetSignature(intent);
+  const sigs = Array.from(new Set([contextSig, imageSetSig].map((v) => String(v || "").trim()).filter(Boolean)));
+  if (!sigs.length) return intent;
+  const rejectedModes = [];
+  for (const sig of sigs) {
+    for (const mode of motherV2RejectedModesForContext(sig)) {
+      if (!rejectedModes.includes(mode)) rejectedModes.push(mode);
+    }
+  }
+  if (!rejectedModes.length) return intent;
+
+  const proposedMode = motherV2NormalizeTransformationMode(intent.transformation_mode);
+  const proposedSummary = String(intent.summary || "").trim();
+  const rejectedMode = motherV2NormalizeTransformationMode(rejected?.mode);
+  const rejectedSummary = String(rejected?.summary || "").trim();
+  const sameContextAsLastRejected = sigs.includes(String(rejected?.contextSig || "")) || sigs.includes(String(rejected?.imageSetSig || ""));
+  const matchesRejected =
+    sameContextAsLastRejected && (proposedMode === rejectedMode || (proposedSummary && proposedSummary === rejectedSummary));
+  const alreadyRejectedForContext = rejectedModes.includes(proposedMode);
+  if (!alreadyRejectedForContext && !matchesRejected) return intent;
+
+  const baseIndex = Math.max(0, MOTHER_V2_TRANSFORMATION_MODES.indexOf(proposedMode));
+  let replacementMode = null;
+  for (let offset = 1; offset <= MOTHER_V2_TRANSFORMATION_MODES.length; offset += 1) {
+    const idx = (baseIndex + offset) % MOTHER_V2_TRANSFORMATION_MODES.length;
+    const candidate = MOTHER_V2_TRANSFORMATION_MODES[idx];
+    if (!candidate || candidate === proposedMode) continue;
+    if (!rejectedModes.includes(candidate)) {
+      replacementMode = candidate;
+      break;
+    }
+  }
+  if (!replacementMode) {
+    for (let offset = 1; offset <= MOTHER_V2_TRANSFORMATION_MODES.length; offset += 1) {
+      const idx = (baseIndex + offset) % MOTHER_V2_TRANSFORMATION_MODES.length;
+      const candidate = MOTHER_V2_TRANSFORMATION_MODES[idx];
+      if (!candidate || candidate === proposedMode) continue;
+      replacementMode = candidate;
+      break;
+    }
+  }
+  if (!replacementMode) return intent;
+
+  return {
+    ...intent,
+    transformation_mode: replacementMode,
+    summary: motherV2ProposalSentence({ transformation_mode: replacementMode }),
+  };
+}
+
+function motherV2SetAdvancedOpen(nextOpen) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const next = Boolean(nextOpen);
+  if (idle.advancedOpen === next) return;
+  idle.advancedOpen = next;
+  if (next) {
+    motherV2RevealHints({ engaged: true, ms: 2400 });
+  } else if (!idle.optionReveal) {
+    motherV2HideHints({ immediate: true });
+  }
+  renderMotherReadout();
+  requestRender();
+}
+
+function motherV2InvalidateOfferingForStructureEdit(reason = "structure_edit") {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  if (idle.phase !== MOTHER_IDLE_STATES.OFFERING) return;
+  for (const draft of Array.isArray(idle.drafts) ? idle.drafts : []) {
+    if (draft?.path) removeFile(String(draft.path)).catch(() => {});
+    if (draft?.receiptPath) removeFile(String(draft.receiptPath)).catch(() => {});
+  }
+  idle.drafts = [];
+  idle.selectedDraftId = null;
+  idle.hoverDraftId = null;
+  motherV2ForcePhase(MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING, reason);
+}
+
+function motherSuggestionLogPath() {
+  if (!state.runDir) return null;
+  return `${state.runDir}/${MOTHER_SUGGESTION_LOG_FILENAME}`;
+}
+
+async function appendMotherSuggestionLog(entry = {}) {
+  const logPath = motherSuggestionLogPath();
+  if (!logPath) return false;
+  const line = `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`;
+  try {
+    await appendTextWithFallback(logPath, line);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function motherTraceLogPath() {
+  if (!state.runDir) return null;
+  return `${state.runDir}/${MOTHER_TRACE_FILENAME}`;
+}
+
+async function appendMotherTraceLog(entry = {}) {
+  const logPath = motherTraceLogPath();
+  if (!logPath) return false;
+  const line = `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`;
+  try {
+    await appendTextWithFallback(logPath, line);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let automationEventSeq = 0;
+
+function _automationStateEnvelope() {
+  const mode = state.canvasMode || "multi";
+  const modeView = mode === "multi" ? state.multiView : state.view;
+  const selectedIds = getSelectedIds().slice(0, 3);
+  const motherPhase = String(state.motherIdle?.phase || "").toLowerCase().trim() || null;
+  const motherStatus = String(state.mother?.status || "").trim() || null;
+  return {
+    mother_phase: motherPhase,
+    mother_status: motherStatus,
+    canvas_mode: mode,
+    canvas_scale: Number(modeView?.scale) || 1,
+    canvas_offset_x: Number(modeView?.offsetX) || 0,
+    canvas_offset_y: Number(modeView?.offsetY) || 0,
+    mother: {
+      running: Boolean(state.mother?.running),
+      status: motherStatus,
+      phase: motherPhase || null,
+    },
+    canvas: {
+      mode,
+      active_id: state.activeId || null,
+      selected_ids: selectedIds,
+      scale: Number(modeView?.scale) || 1,
+      offset_x: Number(modeView?.offsetX) || 0,
+      offset_y: Number(modeView?.offsetY) || 0,
+      tool: state.tool || null,
+    },
+  };
+}
+
+function _makeAutomationEvent(type, entry = {}, { requestId = null } = {}) {
+  return {
+    type,
+    schema: "cue.desktop_automation_event",
+    schema_version: 1,
+    seq: ++automationEventSeq,
+    at: new Date().toISOString(),
+    request_id: requestId || null,
+    source: "desktop_ui_automation",
+    ...entry,
+  };
+}
+
+async function _appendAutomationEvents(events, { requestId = null } = {}) {
+  const outPath = state.eventsPath;
+  if (!outPath) return false;
+  const batch = Array.isArray(events) ? events : [events];
+  const payloads = [];
+  for (const event of batch) {
+    if (!event || typeof event !== "object") continue;
+    payloads.push(`${JSON.stringify(_makeAutomationEvent(event.type || "automation", event, { requestId }))}\n`);
+  }
+  if (!payloads.length) return false;
+  const text = payloads.join("");
+  try {
+    await appendTextWithFallback(outPath, text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function _coerceAutomationCanvasNumber(value, fallback) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (Number.isFinite(parsed)) return parsed;
+  return fallback;
+}
+
+function _coerceAutomationPayloadNumber(value, fallback) {
+  if (value == null) return fallback;
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (Number.isFinite(parsed)) return parsed;
+  return fallback;
+}
+
+function _resolveAutomationCanvasMode(value, actionName = "canvas_action") {
+  const mode = String(value || "").trim().toLowerCase();
+  if (!mode) return { ok: true, mode: "multi" };
+  if (mode === "multi") return { ok: true, mode };
+  if (mode === "single") {
+    return {
+      ok: false,
+      detail: `${actionName} mode=single is no longer supported; use mode=multi`,
+    };
+  }
+  return {
+    ok: false,
+    detail: `${actionName} unsupported mode=${mode}; use mode=multi`,
+  };
+}
+
+function _clampCanvasScale(value, fallback) {
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.max(0.05, Math.min(40, value));
+}
+
+function _normalizeAutomationMotherPhaseList(rawList = []) {
+  const out = [];
+  for (const raw of Array.isArray(rawList) ? rawList : []) {
+    const phase = String(raw || "").trim().toLowerCase();
+    if (!phase) continue;
+    if (!out.includes(phase)) out.push(phase);
+  }
+  return out;
+}
+
+function _waitForAutomationMotherPhases(targetPhases = [], timeoutMs = 12000) {
+  const targets = _normalizeAutomationMotherPhaseList(targetPhases);
+  if (!targets.length) {
+    const phase = String(state.motherIdle?.phase || "").toLowerCase().trim() || "";
+    return Promise.resolve({ ok: true, phase });
+  }
+  const timeout = Math.max(500, Math.min(45000, Math.round(Number(timeoutMs) || 0)));
+  const startedAt = Date.now();
+  return new Promise((resolve) => {
+    const tick = () => {
+      const phase = String(state.motherIdle?.phase || "").toLowerCase().trim() || "";
+      if (phase && targets.includes(phase)) {
+        resolve({ ok: true, phase, elapsed_ms: Date.now() - startedAt });
+        return;
+      }
+      if (Date.now() - startedAt >= timeout) {
+        resolve({ ok: false, phase, elapsed_ms: Date.now() - startedAt });
+        return;
+      }
+      setTimeout(tick, 120);
+    };
+    tick();
+  });
+}
+
+function _appendCanvasStateEvent() {
+  return {
+    type: "canvas_state",
+    marker: "canvas_state",
+    state: _automationStateEnvelope(),
+  };
+}
+
+function _applyCanvasPanFromPayload(payload = {}) {
+  const modeResult = _resolveAutomationCanvasMode(payload.mode, "canvas_pan");
+  if (!modeResult.ok) {
+    return { ok: false, detail: modeResult.detail };
+  }
+  const mode = modeResult.mode;
+  if (mode !== state.canvasMode) setCanvasMode(mode);
+  const view = mode === "multi" ? state.multiView : state.view;
+  if (!view) {
+    return { ok: false, detail: "canvas view is not initialized" };
+  }
+
+  const dx = _coerceAutomationPayloadNumber(payload.dx, 0);
+  const dy = _coerceAutomationPayloadNumber(payload.dy, 0);
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+    return { ok: false, detail: "invalid pan payload" };
+  }
+
+  if (dx === 0 && dy === 0) {
+    return { ok: false, detail: "canvas_pan requires non-zero dx or dy" };
+  }
+
+  view.offsetX = (Number(view.offsetX) || 0) + dx;
+  view.offsetY = (Number(view.offsetY) || 0) + dy;
+  renderHudReadout();
+  requestRender();
+
+  return {
+    ok: true,
+    detail: `pan dx=${Math.round(dx * 1000) / 1000}, dy=${Math.round(dy * 1000) / 1000} mode=${mode}`,
+    event: {
+      type: "canvas_view_updated",
+      marker: "canvas_view_updated",
+      mode,
+      dx,
+      dy,
+      scale: Number(view.scale) || 1,
+      offset_x: Number(view.offsetX) || 0,
+      offset_y: Number(view.offsetY) || 0,
+    },
+  };
+}
+
+function _applyCanvasZoomFromPayload(payload = {}) {
+  const modeResult = _resolveAutomationCanvasMode(payload.mode, "canvas_zoom");
+  if (!modeResult.ok) {
+    return { ok: false, detail: modeResult.detail };
+  }
+  const mode = modeResult.mode;
+  if (mode !== state.canvasMode) setCanvasMode(mode);
+  const view = mode === "multi" ? state.multiView : state.view;
+  if (!view) {
+    return { ok: false, detail: "canvas view is not initialized" };
+  }
+
+  const baseScale = _coerceAutomationPayloadNumber(payload.scale, Number.NaN);
+  const factor = _coerceAutomationPayloadNumber(payload.factor, Number.NaN);
+  const current = _coerceAutomationPayloadNumber(view.scale, 1);
+  const requestedScale = Number.isFinite(baseScale)
+    ? baseScale
+    : Number.isFinite(factor)
+      ? current * factor
+      : Number.NaN;
+  if (!Number.isFinite(requestedScale)) {
+    return { ok: false, detail: "invalid scale/factor for canvas_zoom" };
+  }
+
+  const nextScale = _clampCanvasScale(requestedScale, current);
+  if (nextScale === current) {
+    return { ok: true, detail: `zoom unchanged at ${nextScale}` };
+  }
+
+  const canvas = els.workCanvas;
+  const cx = Number(canvas?.width || 0) / 2;
+  const cy = Number(canvas?.height || 0) / 2;
+  const inv = Math.max(0.0001, Number(view.scale) || 1);
+  const wx = (cx - (Number(view.offsetX) || 0)) / inv;
+  const wy = (cy - (Number(view.offsetY) || 0)) / inv;
+
+  view.scale = nextScale;
+  view.offsetX = cx - wx * nextScale;
+  view.offsetY = cy - wy * nextScale;
+
+  renderHudReadout();
+  requestRender();
+
+  return {
+    ok: true,
+    detail: `zoom scale=${Math.round(nextScale * 1000) / 1000} mode=${mode}`,
+    event: {
+      type: "canvas_view_updated",
+      marker: "canvas_view_updated",
+      mode,
+      scale: nextScale,
+      offset_x: Number(view.offsetX) || 0,
+      offset_y: Number(view.offsetY) || 0,
+    },
+  };
+}
+
+function _applyCanvasFitAllFromPayload(payload = {}) {
+  const modeResult = _resolveAutomationCanvasMode(payload.mode, "canvas_fit_all");
+  if (!modeResult.ok) {
+    return { ok: false, detail: modeResult.detail };
+  }
+  const mode = modeResult.mode;
+  if (mode !== state.canvasMode) setCanvasMode(mode);
+  const view = mode === "multi" ? state.multiView : state.view;
+  const canvas = els.workCanvas;
+  if (!view || !canvas) {
+    return { ok: false, detail: "canvas view is not initialized" };
+  }
+
+  if (!state.multiRects || state.multiRects.size === 0) {
+    state.multiRects = computeFreeformRectsPx(canvas.width, canvas.height);
+  }
+  const orderedIds = Array.isArray(state.freeformZOrder) && state.freeformZOrder.length
+    ? state.freeformZOrder
+    : Array.from(state.multiRects.keys());
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let count = 0;
+  for (const rawId of orderedIds) {
+    const imageId = String(rawId || "").trim();
+    if (!imageId) continue;
+    if (!isVisibleCanvasImageId(imageId)) continue;
+    if (isImageEffectTokenized(imageId)) continue;
+    const rect = state.multiRects.get(imageId) || null;
+    if (!rect) continue;
+    const x = Number(rect.x) || 0;
+    const y = Number(rect.y) || 0;
+    const w = Math.max(1, Number(rect.w) || 1);
+    const h = Math.max(1, Number(rect.h) || 1);
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + w);
+    maxY = Math.max(maxY, y + h);
+    count += 1;
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY) || count <= 0) {
+    return { ok: false, detail: "no visible image bounds available for canvas_fit_all" };
+  }
+
+  const worldW = Math.max(1, maxX - minX);
+  const worldH = Math.max(1, maxY - minY);
+  const dpr = getDpr();
+  const paddingRatio = clamp(_coerceAutomationPayloadNumber(payload.padding_ratio, 0.07), 0, 0.4);
+  const padX = Math.max(Math.round(14 * dpr), Math.round(worldW * paddingRatio));
+  const padY = Math.max(Math.round(14 * dpr), Math.round(worldH * paddingRatio));
+  const maxWidthFrac = clamp(_coerceAutomationPayloadNumber(payload.max_width_frac, 0.94), 0.35, 1);
+  const maxHeightFrac = clamp(_coerceAutomationPayloadNumber(payload.max_height_frac, 0.82), 0.35, 1);
+  const availW = Math.max(1, Number(canvas.width || 0) * maxWidthFrac);
+  const availH = Math.max(1, Number(canvas.height || 0) * maxHeightFrac);
+  const targetW = Math.max(1, worldW + padX * 2);
+  const targetH = Math.max(1, worldH + padY * 2);
+  const fitScaleRaw = Math.min(availW / targetW, availH / targetH);
+  const minScale = clamp(_coerceAutomationPayloadNumber(payload.min_scale, 0.05), 0.05, 40);
+  const maxScale = clamp(_coerceAutomationPayloadNumber(payload.max_scale, 20), minScale, 40);
+  const nextScale = clamp(fitScaleRaw, minScale, maxScale);
+  const centerX = minX + worldW / 2;
+  const centerY = minY + worldH / 2;
+
+  view.scale = nextScale;
+  view.offsetX = Number(canvas.width || 0) / 2 - centerX * nextScale;
+  view.offsetY = Number(canvas.height || 0) / 2 - centerY * nextScale;
+  renderHudReadout();
+  requestRender();
+
+  return {
+    ok: true,
+    detail: `fit ${count} images into view mode=${mode}`,
+    event: {
+      type: "canvas_view_fitted",
+      marker: "canvas_view_fitted",
+      mode,
+      image_count: count,
+      scale: Number(view.scale) || nextScale,
+      offset_x: Number(view.offsetX) || 0,
+      offset_y: Number(view.offsetY) || 0,
+      bounds: {
+        min_x: minX,
+        min_y: minY,
+        max_x: maxX,
+        max_y: maxY,
+      },
+    },
+  };
+}
+
+function _resolveCanvasImageIdFromPayload(payload = {}) {
+  if (!payload || typeof payload !== "object") return null;
+  const byId = String(payload.image_id || payload.imageId || "").trim();
+  if (byId) {
+    if (state.imagesById.has(byId)) return byId;
+  }
+  const imageIndex = _coerceAutomationCanvasNumber(payload.image_index, NaN);
+  if (Number.isFinite(imageIndex)) {
+    const index = Math.floor(imageIndex);
+    const images = getVisibleCanvasImages();
+    if (index >= 0 && index < images.length) {
+      return String(images[index]?.id || "").trim() || null;
+    }
+  }
+  const targetPath = String(payload.path || "").trim();
+  if (!targetPath) return null;
+  const matched = (state.images || []).find((item) => String(item?.path || "") === targetPath) || null;
+  return matched ? String(matched.id || "") : null;
+}
+
+async function _runActionGridAutomation(action = {}) {
+  const key = String(action.key || "").trim().toLowerCase();
+  const hotkey = String(action.hotkey || "").trim();
+  const shift = Boolean(action.shift);
+  let targetKey = key;
+  if (!targetKey && hotkey) {
+    const btn = document.querySelector(`.action-grid .tool[data-hotkey="${CSS.escape(hotkey)}"]`);
+    targetKey = String(btn?.dataset?.key || "").trim().toLowerCase();
+  }
+  if (!targetKey) {
+    return { ok: false, detail: "missing action_grid key/hotkey" };
+  }
+
+  if (["annotate", "pan", "lasso"].includes(targetKey)) {
+    setTool(targetKey);
+    return { ok: true, detail: `tool=${targetKey}` };
+  }
+  if (targetKey === "bg") {
+    const style = shift ? "sweep" : "white";
+    applyBackground(style).catch(() => {});
+    return { ok: true, detail: `apply_background=${style}` };
+  }
+  if (targetKey === "extract_dna") {
+    runExtractDnaFromSelection().catch(() => {});
+    return { ok: true, detail: "extract_dna started" };
+  }
+  if (targetKey === "soul_leech") {
+    runSoulLeechFromSelection().catch(() => {});
+    return { ok: true, detail: "soul_leech started" };
+  }
+  if (targetKey === "create_layers") {
+    runCreateLayersFromSelection().catch(() => {});
+    return { ok: true, detail: "create_layers started" };
+  }
+  if (targetKey === "prompt_generate") {
+    const prompt = String(action.prompt || action.text || "").trim();
+    const model = String(action.model || "").trim();
+    if (!prompt) {
+      return { ok: false, detail: "prompt_generate requires action.prompt" };
+    }
+    runPromptGenerate({ prompt, model }).catch(() => {});
+    return { ok: true, detail: "prompt_generate started" };
+  }
+  if (targetKey === "remove_people") {
+    aiRemovePeople().catch(() => {});
+    return { ok: true, detail: "remove_people started" };
+  }
+  if (targetKey === "variations") {
+    runVariations().catch(() => {});
+    return { ok: true, detail: "variations started" };
+  }
+  if (targetKey === "recast") {
+    runRecast().catch(() => {});
+    return { ok: true, detail: "recast started" };
+  }
+  if (targetKey === "crop_square") {
+    cropSquare().catch(() => {});
+    return { ok: true, detail: "crop_square started" };
+  }
+  if (targetKey === "combine") {
+    runBlendPair().catch(() => {});
+    return { ok: true, detail: "combine started" };
+  }
+  if (targetKey === "bridge") {
+    runBridgePair().catch(() => {});
+    return { ok: true, detail: "bridge started" };
+  }
+  if (targetKey === "swap_dna") {
+    runSwapDnaPair({ invert: shift }).catch(() => {});
+    return { ok: true, detail: "swap_dna started" };
+  }
+  if (targetKey === "extract_rule") {
+    runExtractRuleTriplet().catch(() => {});
+    return { ok: true, detail: "extract_rule started" };
+  }
+  if (targetKey === "odd_one_out") {
+    runOddOneOutTriplet().catch(() => {});
+    return { ok: true, detail: "odd_one_out started" };
+  }
+  if (targetKey === "triforce") {
+    runTriforceTriplet().catch(() => {});
+    return { ok: true, detail: "triforce started" };
+  }
+  const fallback = document.querySelector(`.action-grid .tool[data-key="${CSS.escape(targetKey)}"]`);
+  if (fallback && !fallback.disabled) {
+    fallback.click();
+    return { ok: true, detail: `action_grid button click key=${targetKey}` };
+  }
+  return { ok: false, detail: `unsupported action_grid key: ${targetKey}` };
+}
+
+async function handleDesktopAutomation(event = {}) {
+  console.log("[desktop-automation] raw event", event);
+  const eventPayload = (() => {
+    let candidate = event;
+    if (typeof candidate === "string") {
+      try {
+        candidate = JSON.parse(candidate);
+      } catch {
+        candidate = null;
+      }
+    }
+    if (!candidate || typeof candidate !== "object") {
+      return null;
+    }
+    if (!("request_id" in candidate) && !("action" in candidate) && candidate.payload !== undefined) {
+      const nested = candidate.payload;
+      if (typeof nested === "string") {
+        try {
+          return JSON.parse(nested);
+        } catch {
+          return null;
+        }
+      }
+      if (nested && typeof nested === "object") {
+        return nested;
+      }
+    }
+    return candidate;
+  })();
+  if (!eventPayload) {
+    console.warn("desktop automation event missing payload envelope");
+    return;
+  }
+  const payload = eventPayload.payload && typeof eventPayload.payload === "object" ? eventPayload.payload : {};
+  const requestId = String(
+    eventPayload.request_id || eventPayload.payload?.request_id || eventPayload.id || ""
+  ).trim();
+  if (!requestId) return;
+  const action = String(eventPayload.action || "").trim().toLowerCase();
+  console.log(`[desktop-automation] processing request_id=${requestId} action=${action}`);
+  const actionPayload = payload && typeof payload === "object" ? payload : {};
+  const events = [];
+  const markers = new Set();
+  let ok = false;
+  let detail = `unsupported automation action: ${action || "<empty>"}`;
+
+  try {
+    if (action === "mother_next_proposal") {
+      const idle = state.motherIdle;
+      if (!idle) {
+        detail = "mother state unavailable";
+      } else {
+        const before = String(idle.phase || "").toLowerCase();
+        let primed = false;
+        if (
+          (before === MOTHER_IDLE_STATES.OBSERVING || before === MOTHER_IDLE_STATES.WATCHING) &&
+          motherIdleHasArmedCanvas()
+        ) {
+          primed = await motherV2StartFollowupProposal({ reason: "automation_next_proposal" });
+        }
+        const cycled = motherV2CycleProposal(1);
+        const after = String(state.motherIdle?.phase || "").toLowerCase() || before;
+        ok = Boolean(cycled || primed || before !== after);
+        detail = ok
+          ? `mother_next_proposal executed (${before || "unknown"} -> ${after || "unknown"})`
+          : `mother_next_proposal made no visible change (${before || "unknown"} -> ${after || "unknown"})`;
+        if (cycled) {
+          events.push({ type: "mother_next_proposal", marker: "mother_next_proposal_completed", before, after });
+        } else if (primed || before !== after) {
+          events.push({
+            type: "mother_next_proposal",
+            marker: "mother_next_proposal_completed",
+            before,
+            after,
+            note: "primed_intent_hypothesis",
+          });
+        } else {
+          events.push({
+            type: "mother_next_proposal",
+            marker: "mother_next_proposal_completed",
+            before,
+            after,
+            note: "already_at_boundary",
+          });
+        }
+        events.push(_appendCanvasStateEvent());
+        events.push({ type: "mother_state", marker: "mother_state", state: _automationStateEnvelope() });
+      }
+    } else if (action === "mother_confirm_suggestion") {
+      const before = String(state.motherIdle?.phase || "").toLowerCase();
+      if (!state.motherIdle) {
+        detail = "mother state unavailable";
+      } else {
+        if (
+          (before === MOTHER_IDLE_STATES.OBSERVING || before === MOTHER_IDLE_STATES.WATCHING) &&
+          motherIdleHasArmedCanvas()
+        ) {
+          await motherV2StartFollowupProposal({ reason: "automation_confirm_prime" });
+        }
+        await startMotherTakeover();
+        const requestedPhases = _normalizeAutomationMotherPhaseList(actionPayload.expect_mother_phases);
+        const targetPhases = requestedPhases.length
+          ? requestedPhases
+          : [String(MOTHER_IDLE_STATES.OFFERING).toLowerCase()];
+        if (targetPhases.includes(String(MOTHER_IDLE_STATES.OFFERING).toLowerCase())) {
+          const waitingForUser = String(MOTHER_IDLE_STATES.WAITING_FOR_USER).toLowerCase();
+          if (!targetPhases.includes(waitingForUser)) targetPhases.push(waitingForUser);
+        }
+        const timeoutMs = Math.max(
+          500,
+          Math.min(
+            45000,
+            Math.round(
+              _coerceAutomationPayloadNumber(
+                actionPayload.wait_timeout_ms,
+                _coerceAutomationPayloadNumber(eventPayload.timeout_ms, 16000)
+              )
+            )
+          )
+        );
+        const waitResult = await _waitForAutomationMotherPhases(targetPhases, timeoutMs);
+        const after = String(state.motherIdle?.phase || "").toLowerCase() || before;
+        ok = Boolean(waitResult.ok);
+        detail = waitResult.ok
+          ? `mother_confirm_suggestion executed (${before || "unknown"} -> ${after || "unknown"})`
+          : `mother_confirm_suggestion timed out waiting for phases=${targetPhases.join(",")} (current=${waitResult.phase || after || "unknown"})`;
+        events.push({
+          type: "mother_confirm",
+          marker: "mother_confirm_suggestion_completed",
+          before,
+          after,
+          target_phases: targetPhases,
+          timeout_ms: timeoutMs,
+          reached_phase: waitResult.phase || after || null,
+          timed_out: !waitResult.ok,
+        });
+        events.push({ type: "mother_state", marker: "mother_state", state: _automationStateEnvelope() });
+      }
+    } else if (action === "mother_reject_suggestion") {
+      if (!state.motherIdle) {
+        detail = "mother state unavailable";
+      } else {
+        const before = String(state.motherIdle?.phase || "").toLowerCase();
+        stopMotherTakeover();
+        const after = String(state.motherIdle?.phase || "").toLowerCase() || before;
+        ok = true;
+        detail = `mother_reject_suggestion executed (${before || "unknown"} -> ${after || "unknown"})`;
+        events.push({ type: "mother_reject", marker: "mother_reject_suggestion_completed", before, after });
+        events.push({ type: "mother_state", marker: "mother_state", state: _automationStateEnvelope() });
+      }
+    } else if (action === "mother_inject_local_draft") {
+      const idle = state.motherIdle;
+      const before = String(idle?.phase || "").toLowerCase();
+      if (!idle) {
+        detail = "mother state unavailable";
+      } else if (
+        before !== String(MOTHER_IDLE_STATES.DRAFTING).toLowerCase() &&
+        before !== String(MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING).toLowerCase()
+      ) {
+        detail = `mother_inject_local_draft requires phase=${String(MOTHER_IDLE_STATES.DRAFTING).toLowerCase()} or ${String(MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING).toLowerCase()} (current=${before || "unknown"})`;
+      } else {
+        await ensureRun();
+        const sourceItem = getActiveImage() || (state.images.length ? state.images[state.images.length - 1] : null);
+        if (!sourceItem?.path) {
+          detail = "mother_inject_local_draft requires at least one canvas image";
+        } else {
+          let sourceImg = sourceItem.img || null;
+          if (!sourceImg) {
+            try {
+              sourceImg = await loadImage(sourceItem.path);
+            } catch {
+              sourceImg = null;
+            }
+          }
+          if (!sourceImg) {
+            detail = "mother_inject_local_draft failed to load source image";
+          } else {
+            const canvas = document.createElement("canvas");
+            const w = Math.max(1, Number(sourceImg.naturalWidth) || Number(sourceImg.width) || 1);
+            const h = Math.max(1, Number(sourceImg.naturalHeight) || Number(sourceImg.height) || 1);
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              detail = "mother_inject_local_draft failed to create drawing context";
+              events.push({
+                type: "mother_inject_local_draft",
+                marker: "mother_inject_local_draft_ignored",
+                before,
+                after: before,
+              });
+              events.push({ type: "mother_state", marker: "mother_state", state: _automationStateEnvelope() });
+            } else {
+              ctx.drawImage(sourceImg, 0, 0, w, h);
+              const stamp = Date.now();
+              const artifactId = `mother-smoke-${stamp}`;
+              const imagePath = `${state.runDir}/artifact-${stamp}-mother-smoke-draft.png`;
+              await writeCanvasPngToPath(canvas, imagePath);
+              const receiptPath = await writeLocalReceipt({
+                artifactId,
+                imagePath,
+                operation: "mother_smoke_draft",
+                meta: {
+                  source: "desktop_automation",
+                  source_image_id: String(sourceItem.id || ""),
+                  source_image_path: String(sourceItem.path || ""),
+                },
+              });
+              const pendingVersionId = String(idle.pendingVersionId || "").trim();
+              const seededSyntheticDispatch = !idle.pendingDispatchToken && !idle.pendingGeneration;
+              if (
+                String(idle.phase || "").toLowerCase() === String(MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING).toLowerCase()
+              ) {
+                motherIdleTransitionTo(MOTHER_IDLE_EVENTS.CONFIRM);
+              }
+              if (seededSyntheticDispatch) {
+                idle.pendingGeneration = true;
+                idle.pendingDispatchToken = Date.now();
+                idle.pendingDispatchSpeculative = false;
+                idle.pendingDispatchProposalMode = motherV2NormalizeTransformationMode(idle.intent?.transformation_mode);
+                idle.pendingPromptCompileSpeculative = false;
+                idle.speculativePrefetchInFlight = false;
+                idle.pendingActionVersion = Number(idle.actionVersion) || 0;
+              }
+              const handled = await motherIdleHandleSuggestionArtifact({
+                id: artifactId,
+                path: imagePath,
+                receiptPath,
+                versionId: pendingVersionId || null,
+              }).catch(() => false);
+              if (!handled && seededSyntheticDispatch) {
+                idle.pendingGeneration = false;
+                idle.pendingDispatchToken = 0;
+                idle.pendingDispatchSpeculative = false;
+                idle.pendingDispatchProposalMode = null;
+                idle.pendingPromptCompileSpeculative = false;
+                idle.speculativePrefetchInFlight = false;
+              }
+              const after = String(state.motherIdle?.phase || "").toLowerCase() || before;
+              ok = Boolean(handled);
+              detail = handled
+                ? `mother_inject_local_draft completed (${before || "unknown"} -> ${after || "unknown"})`
+                : `mother_inject_local_draft was ignored (${before || "unknown"} -> ${after || "unknown"})`;
+              events.push({
+                type: "mother_inject_local_draft",
+                marker: handled ? "mother_inject_local_draft_completed" : "mother_inject_local_draft_ignored",
+                before,
+                after,
+                artifact_id: artifactId,
+                image_path: imagePath,
+                receipt_path: receiptPath || null,
+                source_image_id: String(sourceItem.id || ""),
+              });
+              events.push({ type: "mother_state", marker: "mother_state", state: _automationStateEnvelope() });
+            }
+          }
+        }
+      }
+    } else if (action === "select_canvas_image") {
+      const imageId = _resolveCanvasImageIdFromPayload(actionPayload);
+      if (!imageId) {
+        detail = "select_canvas_image missing image_id/image_index/path";
+      } else {
+        const toggle = Boolean(actionPayload.toggle);
+        await selectCanvasImage(imageId, { toggle });
+        const selectedIds = getSelectedIds().slice(0, 3);
+        ok = true;
+        detail = `select_canvas_image id=${imageId}`;
+        events.push({
+          type: "selection_change",
+          marker: "canvas_selection_updated",
+          active_id: state.activeId || null,
+          selected_ids: selectedIds,
+          image_id: imageId,
+          toggle,
+        });
+        events.push({ type: "canvas_state", marker: "canvas_state", state: _automationStateEnvelope() });
+      }
+    } else if (action === "set_canvas_mode") {
+      const modeResult = _resolveAutomationCanvasMode(actionPayload.mode, "set_canvas_mode");
+      if (!modeResult.ok) {
+        detail = modeResult.detail;
+      } else {
+        const before = state.canvasMode;
+        setCanvasMode(modeResult.mode);
+        const after = state.canvasMode;
+        ok = true;
+        detail = `set_canvas_mode ${before || "unknown"} -> ${after || "unknown"}`;
+        events.push({
+          type: "canvas_mode_set",
+          marker: "canvas_mode_changed",
+          prev: before || null,
+          next: after || modeResult.mode,
+        });
+        events.push({ type: "canvas_state", marker: "canvas_state", state: _automationStateEnvelope() });
+      }
+    } else if (action === "canvas_pan") {
+      const result = _applyCanvasPanFromPayload({ ...actionPayload, mode: actionPayload.mode });
+      if (!result.ok) {
+        detail = result.detail;
+      } else {
+        ok = true;
+        detail = result.detail;
+        if (result.event) events.push(result.event);
+        events.push({ type: "canvas_state", marker: "canvas_state", state: _automationStateEnvelope() });
+      }
+    } else if (action === "canvas_zoom") {
+      const result = _applyCanvasZoomFromPayload({ ...actionPayload, mode: actionPayload.mode });
+      if (!result.ok) {
+        detail = result.detail;
+      } else {
+        ok = true;
+        detail = result.detail;
+        if (result.event) events.push(result.event);
+        events.push({ type: "canvas_state", marker: "canvas_state", state: _automationStateEnvelope() });
+      }
+    } else if (action === "canvas_fit_all") {
+      const result = _applyCanvasFitAllFromPayload({ ...actionPayload, mode: actionPayload.mode });
+      if (!result.ok) {
+        detail = result.detail;
+      } else {
+        ok = true;
+        detail = result.detail;
+        if (result.event) events.push(result.event);
+        events.push({ type: "canvas_state", marker: "canvas_state", state: _automationStateEnvelope() });
+      }
+    } else if (action === "import_local_paths") {
+      const rawPaths = Array.isArray(actionPayload.paths)
+        ? actionPayload.paths
+        : actionPayload.path
+          ? [actionPayload.path]
+          : [];
+      const normalizedPaths = rawPaths
+        .map((value) => normalizeLocalFsPath(typeof value === "string" ? value : ""))
+        .filter(Boolean);
+      if (!normalizedPaths.length) {
+        detail = "import_local_paths requires payload.path or payload.paths";
+      } else {
+        const defaultPoint = _defaultImportPointCss();
+        const pointCssRaw =
+          actionPayload.point_css && typeof actionPayload.point_css === "object"
+            ? actionPayload.point_css
+            : {};
+        const pointCss = {
+          x: _coerceAutomationPayloadNumber(
+            pointCssRaw.x,
+            _coerceAutomationPayloadNumber(actionPayload.x, defaultPoint.x)
+          ),
+          y: _coerceAutomationPayloadNumber(
+            pointCssRaw.y,
+            _coerceAutomationPayloadNumber(actionPayload.y, defaultPoint.y)
+          ),
+        };
+        const source = String(actionPayload.source || "automation").trim() || "automation";
+        const rawPrefix = String(actionPayload.id_prefix || "autoimport")
+          .trim()
+          .toLowerCase();
+        const idPrefix = rawPrefix.replace(/[^a-z0-9_-]+/g, "").slice(0, 24) || "autoimport";
+        const importResult = await importLocalPathsAtCanvasPoint(
+          normalizedPaths,
+          canvasScreenCssToWorldCss(pointCss),
+          {
+            source,
+            idPrefix,
+            enforceIntentLimit: actionPayload.enforce_intent_limit !== false,
+            focusImported: actionPayload.focus_imported !== false,
+          }
+        );
+        const importedCount = Math.max(0, Number(importResult?.ok) || 0);
+        const failedCount = Math.max(0, Number(importResult?.failed) || 0);
+        const importedIds = Array.isArray(importResult?.importedIds)
+          ? importResult.importedIds.map((value) => String(value || "").trim()).filter(Boolean)
+          : [];
+        if (importedIds.length) {
+          await setActiveImage(importedIds[0], {
+            source: "automation",
+            reason: "import_local_paths",
+            actor: "system",
+          }).catch(() => {});
+        }
+        ok = importedCount > 0;
+        detail = ok
+          ? `import_local_paths imported=${importedCount} failed=${failedCount}`
+          : `import_local_paths imported=0 failed=${failedCount}`;
+        events.push({
+          type: "import_local_paths",
+          marker: ok ? "import_local_paths_completed" : "import_local_paths_failed",
+          imported_count: importedCount,
+          failed_count: failedCount,
+          imported_ids: importedIds,
+          source,
+        });
+        events.push({ type: "canvas_state", marker: "canvas_state", state: _automationStateEnvelope() });
+      }
+    } else if (action === "action_grid") {
+      const out = await _runActionGridAutomation(actionPayload);
+      if (out?.ok) {
+        ok = true;
+        detail = out.detail || "action_grid completed";
+        events.push({
+          type: "action_grid_press",
+          marker: "action_grid_invoked",
+          key: String(actionPayload.key || "").trim().toLowerCase() || null,
+          hotkey: String(actionPayload.hotkey || "").trim() || null,
+        });
+        events.push({ type: "canvas_state", marker: "canvas_state", state: _automationStateEnvelope() });
+      } else {
+        detail = out?.detail || "action_grid failed";
+      }
+    }
+  } catch (err) {
+    ok = false;
+    detail = err?.message || String(err || "automation action failed");
+  }
+
+  for (const event of events) {
+    const marker = String(event?.marker || "").trim();
+    if (marker) markers.add(marker);
+  }
+
+  if (!events.length) {
+    events.push({ type: "automation_fallback", marker: "automation_fallback", detail: detail || "no event emitted", request_id: requestId });
+    markers.add("automation_fallback");
+  }
+
+  console.log(`[desktop-automation] event_count=${events.length} for request_id=${requestId}`);
+  console.log(`[desktop-automation] before append events request_id=${requestId}`);
+  await _appendAutomationEvents(events, { requestId });
+  console.log(`[desktop-automation] append complete request_id=${requestId}`);
+  const reply = {
+    request_id: requestId,
+    ok,
+    detail,
+    state: _automationStateEnvelope(),
+    events,
+    markers: Array.from(markers),
+  };
+  console.log(`[desktop-automation] reporting result request_id=${requestId} ok=${ok} markers=${JSON.stringify(reply.markers)}`);
+  try {
+    await invoke("report_automation_result", { result: reply });
+    console.log(`[desktop-automation] report_automation_result success request_id=${requestId}`);
+  } catch (err) {
+    console.log(`[desktop-automation] report_automation_result failed request_id=${requestId} detail=${String(err)}`);
+    console.error(
+      "[desktop-automation] report_automation_result failed",
+      String(requestId),
+      err
+    );
+    const failEvent = {
+      type: "automation_result_invoke_failed",
+      marker: "automation_result_invoke_failed",
+      request_id: requestId,
+      error: String(err),
+      source: "desktop_ui_automation",
+      detail: String(err),
+    };
+    await _appendAutomationEvents([failEvent], { requestId });
+  }
+}
+
+function motherV2RoleMapClone() {
+  const normalize = (list) =>
+    Array.from(
+      new Set(
+        (Array.isArray(list) ? list : [])
+          .map((v) => String(v || "").trim())
+          .filter((id) => Boolean(id) && isVisibleCanvasImageId(id))
+      )
+    );
+  const base = state.motherIdle?.roles || {};
+  return {
+    subject: normalize(base.subject),
+    model: normalize(base.model),
+    mediator: normalize(base.mediator),
+    object: normalize(base.object),
+  };
+}
+
+function motherV2NormalizeRoles(nextRoles = null) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const source = nextRoles && typeof nextRoles === "object" ? nextRoles : idle.roles || {};
+  const out = { subject: [], model: [], mediator: [], object: [] };
+  for (const key of MOTHER_V2_ROLE_KEYS) {
+    const list = Array.isArray(source[key]) ? source[key] : [];
+    out[key] = Array.from(new Set(list.map((v) => String(v || "").trim()).filter((id) => Boolean(id) && isVisibleCanvasImageId(id))));
+  }
+  idle.roles = out;
+}
+
+function motherV2InInteractivePhase() {
+  const phase = state.motherIdle?.phase || motherIdleInitialState();
+  return phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING || phase === MOTHER_IDLE_STATES.OFFERING;
+}
+
+function motherV2InCooldown() {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  const now = Date.now();
+  return idle.phase === MOTHER_IDLE_STATES.COOLDOWN && now < (Number(idle.cooldownUntil) || 0);
+}
+
+function motherV2CurrentIntentMode(intentPayload = null) {
+  const intent = intentPayload && typeof intentPayload === "object"
+    ? intentPayload
+    : state.motherIdle?.intent && typeof state.motherIdle.intent === "object"
+      ? state.motherIdle.intent
+      : null;
+  return motherV2NormalizeTransformationMode(intent?.transformation_mode);
+}
+
+function motherV2CurrentDraft() {
+  const idle = state.motherIdle;
+  if (!idle) return null;
+  const drafts = Array.isArray(idle.drafts) ? idle.drafts : [];
+  if (!drafts.length) return null;
+  const selected = String(idle.selectedDraftId || "").trim();
+  if (selected) {
+    const match = drafts.find((d) => String(d?.id || "") === selected) || null;
+    if (match) return match;
+  }
+  return drafts[0] || null;
+}
+
+function motherV2CurrentDraftMode(draft = null) {
+  const entry = draft && typeof draft === "object" ? draft : motherV2CurrentDraft();
+  if (!entry) return null;
+  const rawMode = entry.proposalMode || entry.transformation_mode || null;
+  return rawMode ? motherV2NormalizeTransformationMode(rawMode) : null;
+}
+
+function motherV2DispatchInFlight(idle = state.motherIdle) {
+  if (!idle) return false;
+  if (!idle.pendingDispatchToken) return false;
+  if (idle.phase === MOTHER_IDLE_STATES.DRAFTING) return true;
+  if (idle.phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING && idle.pendingDispatchSpeculative) return true;
+  return false;
+}
+
+function motherV2ClearIntentReplayTimer() {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  clearTimeout(idle.intentReplayTimer);
+  idle.intentReplayTimer = null;
+}
+
+function motherV2ScheduleIntentReplayArm({ delayMs = 0, reason = "busy_cleared" } = {}) {
+  const idle = state.motherIdle;
+  if (!idle || !idle.intentReplayQueued) return false;
+  motherV2ClearIntentReplayTimer();
+  const delay = Math.max(MOTHER_V2_INTENT_REPLAY_ARM_MIN_DELAY_MS, Number(delayMs) || 0);
+  idle.intentReplayTimer = setTimeout(() => {
+    const current = state.motherIdle;
+    if (!current) return;
+    current.intentReplayTimer = null;
+    motherV2MaybeArmIntentReplay(String(reason || "busy_cleared"));
+  }, delay);
+  return true;
+}
+
+function motherV2QueueIntentReplay(reason = "pending_intent") {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  const queuedBefore = Boolean(idle.intentReplayQueued);
+  idle.intentReplayQueued = true;
+  idle.intentReplayReason = String(reason || idle.intentReplayReason || "pending_intent");
+  if (!queuedBefore) {
+    appendMotherTraceLog({
+      kind: "intent_replay_queued",
+      traceId: idle.telemetry?.traceId || null,
+      actionVersion: Number(idle.actionVersion) || 0,
+      reason: idle.intentReplayReason,
+    }).catch(() => {});
+  }
+  return !queuedBefore;
+}
+
+function motherV2MaybeArmIntentReplay(reason = "busy_cleared") {
+  const idle = state.motherIdle;
+  if (!idle || !idle.intentReplayQueued) return false;
+  if (!motherIdleHasArmedCanvas()) return false;
+  if (motherV2InCooldown()) return false;
+  if (state.pointer.active) return false;
+  if (idle.pendingIntent || idle.pendingPromptCompile || idle.pendingGeneration) return false;
+  const replayReason = String(idle.intentReplayReason || reason || "busy_cleared");
+  if (String(idle.phase || "") === MOTHER_IDLE_STATES.OBSERVING) {
+    motherV2ClearIntentReplayTimer();
+    idle.intentReplayQueued = false;
+    idle.intentReplayReason = null;
+    appendMotherTraceLog({
+      kind: "intent_replay_armed",
+      traceId: idle.telemetry?.traceId || null,
+      actionVersion: Number(idle.actionVersion) || 0,
+      reason: replayReason,
+      phase: MOTHER_IDLE_STATES.OBSERVING,
+    }).catch(() => {});
+    motherIdleArmFirstTimer();
+    return true;
+  }
+  if (String(idle.phase || "") === MOTHER_IDLE_STATES.WATCHING) {
+    motherV2ClearIntentReplayTimer();
+    idle.intentReplayQueued = false;
+    idle.intentReplayReason = null;
+    appendMotherTraceLog({
+      kind: "intent_replay_armed",
+      traceId: idle.telemetry?.traceId || null,
+      actionVersion: Number(idle.actionVersion) || 0,
+      reason: replayReason,
+      phase: String(idle.phase || ""),
+    }).catch(() => {});
+    motherIdleArmIntentTimer();
+    return true;
+  }
+  if (String(idle.phase || "") === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+    motherV2ClearIntentReplayTimer();
+    Promise.resolve()
+      .then(async () => {
+        const current = state.motherIdle;
+        if (!current || !current.intentReplayQueued) return;
+        if (String(current.phase || "") !== MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+          motherV2MaybeArmIntentReplay("phase_shifted");
+          return;
+        }
+        const dispatched = await motherV2RequestIntentInference().catch(() => false);
+        const latest = state.motherIdle;
+        if (!latest || !latest.intentReplayQueued) return;
+        if (dispatched) {
+          latest.intentReplayQueued = false;
+          latest.intentReplayReason = null;
+          appendMotherTraceLog({
+            kind: "intent_replay_armed",
+            traceId: latest.telemetry?.traceId || null,
+            actionVersion: Number(latest.actionVersion) || 0,
+            reason: replayReason,
+            phase: MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING,
+            dispatch: "direct",
+          }).catch(() => {});
+          return;
+        }
+        if (!latest.intentReplayTimer) {
+          motherV2ScheduleIntentReplayArm({
+            delayMs: MOTHER_V2_INTENT_REPLAY_ARM_MIN_DELAY_MS,
+            reason: "intent_replay_retry",
+          });
+        }
+      })
+      .catch(() => {
+        const latest = state.motherIdle;
+        if (!latest || !latest.intentReplayQueued || latest.intentReplayTimer) return;
+        motherV2ScheduleIntentReplayArm({
+          delayMs: MOTHER_V2_INTENT_REPLAY_ARM_MIN_DELAY_MS,
+          reason: "intent_replay_retry",
+        });
+      });
+    return true;
+  }
+  return false;
+}
+
+function motherV2SetIntentRealtimeBusy({ path = "", requestId = null } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const normalizedPath = String(path || "").trim();
+  if (!normalizedPath) return;
+  idle.intentRealtimeBusyPath = normalizedPath;
+  idle.intentRealtimeBusyRequestId = requestId ? String(requestId || "").trim() || null : null;
+  idle.intentRealtimeBusyUntil = Date.now() + MOTHER_V2_INTENT_RT_BUSY_TTL_MS;
+}
+
+function motherV2IntentRealtimeBusy(nowMs = Date.now()) {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  const busyPath = String(idle.intentRealtimeBusyPath || "").trim();
+  const busyUntil = Number(idle.intentRealtimeBusyUntil) || 0;
+  if (!busyPath || busyUntil <= 0) return false;
+  if (busyUntil > (Number(nowMs) || Date.now())) return true;
+  idle.intentRealtimeBusyPath = null;
+  idle.intentRealtimeBusyRequestId = null;
+  idle.intentRealtimeBusyUntil = 0;
+  motherV2MaybeArmIntentReplay("busy_ttl_expired");
+  return false;
+}
+
+function motherV2ClearIntentRealtimeBusy({ path = "", requestId = null, force = false, reason = "completed" } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  const busyPath = String(idle.intentRealtimeBusyPath || "").trim();
+  if (!busyPath) return false;
+  const busyRequestId = String(idle.intentRealtimeBusyRequestId || "").trim();
+  const normalizedPath = String(path || "").trim();
+  const normalizedRequestId = String(requestId || "").trim();
+  const matchesPath = Boolean(normalizedPath && normalizedPath === busyPath);
+  const matchesRequest = Boolean(normalizedRequestId && busyRequestId && normalizedRequestId === busyRequestId);
+  if (!force && !matchesPath && !matchesRequest) return false;
+  idle.intentRealtimeBusyPath = null;
+  idle.intentRealtimeBusyRequestId = null;
+  idle.intentRealtimeBusyUntil = 0;
+  motherV2MaybeArmIntentReplay(reason);
+  return true;
+}
+
+function motherV2UploadSettleDueAtMs() {
+  const idle = state.motherIdle;
+  if (!idle) return 0;
+  const lastUploadAt = Number(idle.lastUploadCompletedAt) || 0;
+  if (!lastUploadAt) return 0;
+  return lastUploadAt + MOTHER_V2_UPLOAD_SETTLE_MS;
+}
+
+function motherV2UploadSettleRemainingMs(nowMs = Date.now()) {
+  const dueAt = motherV2UploadSettleDueAtMs();
+  if (!dueAt) return 0;
+  return Math.max(0, dueAt - (Number(nowMs) || Date.now()));
+}
+
+function motherV2CurrentProposalHasPrefetchedDraft() {
+  if (!MOTHER_V2_ENABLE_SPECULATIVE_PREFETCH) return false;
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  const draft = motherV2CurrentDraft();
+  if (!draft) return false;
+  const currentMode = motherV2CurrentIntentMode(idle.intent);
+  const draftMode = motherV2CurrentDraftMode(draft);
+  if (!draftMode || draftMode !== currentMode) return false;
+  if ((Number(draft.actionVersion) || 0) !== (Number(idle.actionVersion) || 0)) return false;
+  return true;
+}
+
+function motherV2InFlightSpeculativeMatchesCurrentProposal() {
+  if (!MOTHER_V2_ENABLE_SPECULATIVE_PREFETCH) return false;
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  if (!idle.pendingDispatchSpeculative) return false;
+  if (!motherV2DispatchInFlight(idle)) return false;
+  if ((Number(idle.pendingActionVersion) || 0) !== (Number(idle.actionVersion) || 0)) return false;
+  const pendingMode = motherV2NormalizeTransformationMode(idle.pendingDispatchProposalMode);
+  const currentMode = motherV2CurrentIntentMode(idle.intent);
+  return Boolean(pendingMode && currentMode && pendingMode === currentMode);
+}
+
+function motherV2ClearSpeculativePrefetchTimer() {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  clearTimeout(idle.speculativePrefetchTimer);
+  idle.speculativePrefetchTimer = null;
+}
+
+function motherV2ClearLiveProposalRefreshTimer() {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  clearTimeout(idle.liveProposalRefreshTimer);
+  idle.liveProposalRefreshTimer = null;
+}
+
+function motherV2CanUseLiveProposalRefresh(idle = state.motherIdle) {
+  if (!idle) return false;
+  if (!motherV2HasProposalImageSet()) return false;
+  if (!idle.intent || !motherV2HasRealProposalPayload(idle.intent)) return false;
+  return true;
+}
+
+function motherV2ScheduleLiveProposalRefresh({
+  reason = "interaction",
+  delayMs = MOTHER_V2_LIVE_PROPOSAL_REFRESH_DEBOUNCE_MS,
+} = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  if (!motherV2CanUseLiveProposalRefresh(idle)) return false;
+  motherV2ClearLiveProposalRefreshTimer();
+  if (!idle.liveProposalUpdating) {
+    idle.liveProposalUpdating = true;
+    renderMotherReadout();
+  }
+  const delay = Math.max(80, Number(delayMs) || MOTHER_V2_LIVE_PROPOSAL_REFRESH_DEBOUNCE_MS);
+  idle.liveProposalRefreshTimer = setTimeout(() => {
+    const current = state.motherIdle;
+    if (!current) return;
+    current.liveProposalRefreshTimer = null;
+    if (!motherV2CanUseLiveProposalRefresh(current)) {
+      current.liveProposalUpdating = false;
+      renderMotherReadout();
+      return;
+    }
+    if (motherV2InCooldown()) {
+      current.liveProposalUpdating = false;
+      renderMotherReadout();
+      return;
+    }
+    if (state.pointer.active) {
+      motherV2ScheduleLiveProposalRefresh({
+        reason: "pointer_active",
+        delayMs: MOTHER_V2_LIVE_PROPOSAL_REFRESH_DEBOUNCE_MS,
+      });
+      return;
+    }
+    if (current.pendingIntent || current.pendingPromptCompile || current.pendingGeneration || current.pendingDispatchToken) {
+      return;
+    }
+    const now = Date.now();
+    const lastRefreshAt = Number(current.lastLiveProposalRefreshAt) || 0;
+    if (lastRefreshAt > 0) {
+      const sinceMs = Math.max(0, now - lastRefreshAt);
+      if (sinceMs < MOTHER_V2_LIVE_PROPOSAL_REFRESH_MIN_INTERVAL_MS) {
+        motherV2ScheduleLiveProposalRefresh({
+          reason: "rate_limited",
+          delayMs: MOTHER_V2_LIVE_PROPOSAL_REFRESH_MIN_INTERVAL_MS - sinceMs,
+        });
+        return;
+      }
+    }
+    if (current.phase === MOTHER_IDLE_STATES.OBSERVING) {
+      motherIdleTransitionTo(MOTHER_IDLE_EVENTS.IDLE_WINDOW_ELAPSED);
+    }
+    if (current.phase === MOTHER_IDLE_STATES.WATCHING) {
+      motherIdleTransitionTo(MOTHER_IDLE_EVENTS.IDLE_WINDOW_ELAPSED);
+    }
+    if (current.phase !== MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+      current.liveProposalUpdating = false;
+      renderMotherReadout();
+      return;
+    }
+    current.lastLiveProposalRefreshAt = now;
+    appendMotherTraceLog({
+      kind: "live_proposal_refresh_started",
+      traceId: current.telemetry?.traceId || null,
+      actionVersion: Number(current.actionVersion) || 0,
+      reason: String(reason || "interaction"),
+      proposal_mode: motherV2CurrentIntentMode(current.intent),
+    }).catch(() => {});
+    motherV2RequestIntentInference()
+      .then((started) => {
+        if (started) return;
+        const latest = state.motherIdle;
+        if (!latest) return;
+        latest.liveProposalUpdating = false;
+        appendMotherTraceLog({
+          kind: "live_proposal_refresh_skipped",
+          traceId: latest.telemetry?.traceId || null,
+          actionVersion: Number(latest.actionVersion) || 0,
+          reason: "request_not_started",
+        }).catch(() => {});
+        renderMotherReadout();
+      })
+      .catch(() => {
+        const latest = state.motherIdle;
+        if (!latest) return;
+        latest.liveProposalUpdating = false;
+        renderMotherReadout();
+      });
+  }, delay);
+  return true;
+}
+
+function motherV2SpeculativePrefetchGate(nowMs = Date.now()) {
+  if (!MOTHER_V2_ENABLE_SPECULATIVE_PREFETCH) {
+    return { ok: false, reason: "feature_disabled", retryAfterMs: 0 };
+  }
+  const idle = state.motherIdle;
+  if (!idle) return { ok: false, reason: "no_idle", retryAfterMs: 0 };
+  if (idle.phase !== MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+    return { ok: false, reason: "phase_not_intent", retryAfterMs: 0 };
+  }
+  if (!idle.intent || !motherV2HasRealProposalPayload(idle.intent)) {
+    return { ok: false, reason: "missing_proposal_payload", retryAfterMs: 0 };
+  }
+  if (state.pointer.active) return { ok: false, reason: "pointer_active", retryAfterMs: 200 };
+  if (motherV2InCooldown()) return { ok: false, reason: "cooldown", retryAfterMs: 0 };
+  if (idle.liveProposalUpdating || idle.liveProposalRefreshTimer) {
+    return { ok: false, reason: "live_refresh_active", retryAfterMs: 220 };
+  }
+  if (idle.pendingIntent || idle.pendingPromptCompile || idle.pendingGeneration || idle.pendingDispatchToken) {
+    return { ok: false, reason: "dispatch_busy", retryAfterMs: 180 };
+  }
+  const lastUploadAt = Number(idle.lastUploadCompletedAt) || 0;
+  if (!lastUploadAt) return { ok: false, reason: "no_upload_signal", retryAfterMs: 0 };
+  if (lastUploadAt <= (Number(idle.lastSpeculativePrefetchUploadAt) || 0)) {
+    return { ok: false, reason: "upload_already_prefetched", retryAfterMs: 0 };
+  }
+  const now = Number(nowMs) || Date.now();
+  const settledAt = lastUploadAt + MOTHER_V2_UPLOAD_SETTLE_MS;
+  if (now < settledAt) {
+    return { ok: false, reason: "upload_not_settled", retryAfterMs: Math.max(25, settledAt - now) };
+  }
+  if (now > lastUploadAt + MOTHER_V2_UPLOAD_PREFETCH_WINDOW_MS) {
+    return { ok: false, reason: "upload_window_elapsed", retryAfterMs: 0 };
+  }
+  if (motherV2CurrentProposalHasPrefetchedDraft()) {
+    return { ok: false, reason: "prefetched_draft_already_ready", retryAfterMs: 0 };
+  }
+  return { ok: true, reason: null, retryAfterMs: 0 };
+}
+
+function motherV2CanRunSpeculativePrefetch(nowMs = Date.now()) {
+  return motherV2SpeculativePrefetchGate(nowMs).ok;
+}
+
+function motherV2LogSpeculativePrefetchSkipped(reason = "unknown", { trigger = "intent_inferred" } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  appendMotherTraceLog({
+    kind: "speculative_prefetch_skipped",
+    traceId: idle.telemetry?.traceId || null,
+    actionVersion: Number(idle.actionVersion) || 0,
+    trigger: String(trigger || "intent_inferred"),
+    reason: String(reason || "unknown"),
+    proposal_mode: motherV2CurrentIntentMode(idle.intent),
+    upload_age_ms: Math.max(0, Date.now() - (Number(idle.lastUploadCompletedAt) || 0)),
+  }).catch(() => {});
+}
+
+function motherV2ScheduleSpeculativePrefetch({ reason = "intent_inferred", delayMs = MOTHER_V2_SPECULATIVE_PREFETCH_DELAY_MS } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  motherV2ClearSpeculativePrefetchTimer();
+  const gate = motherV2SpeculativePrefetchGate();
+  if (!gate.ok) {
+    if (gate.reason === "upload_not_settled") {
+      const retryDelay = Math.max(25, Number(gate.retryAfterMs) || 25);
+      idle.speculativePrefetchTimer = setTimeout(() => {
+        const current = state.motherIdle;
+        if (!current) return;
+        current.speculativePrefetchTimer = null;
+        motherV2ScheduleSpeculativePrefetch({ reason: "upload_settle_retry", delayMs: 0 });
+      }, retryDelay);
+      return true;
+    }
+    motherV2LogSpeculativePrefetchSkipped(gate.reason, { trigger: reason });
+    return false;
+  }
+  const delay = Math.max(0, Number(delayMs) || 0);
+  idle.speculativePrefetchTimer = setTimeout(() => {
+    const current = state.motherIdle;
+    if (!current) return;
+    current.speculativePrefetchTimer = null;
+    const callbackGate = motherV2SpeculativePrefetchGate();
+    if (!callbackGate.ok) {
+      motherV2LogSpeculativePrefetchSkipped(callbackGate.reason, { trigger: `${reason}:timer` });
+      return;
+    }
+    motherIdleDispatchGeneration()
+      .then((started) => {
+        if (!started) {
+          motherV2LogSpeculativePrefetchSkipped("dispatch_not_started", { trigger: reason });
+          return;
+        }
+        current.lastSpeculativePrefetchUploadAt = Number(current.lastUploadCompletedAt) || 0;
+        appendMotherTraceLog({
+          kind: "speculative_prefetch_started",
+          traceId: current.telemetry?.traceId || null,
+          actionVersion: Number(current.actionVersion) || 0,
+          reason: String(reason || "intent_inferred"),
+          proposal_mode: motherV2CurrentIntentMode(current.intent),
+        }).catch(() => {});
+      })
+      .catch(() => {});
+  }, delay);
+  return true;
+}
+
+function motherV2RoleIds(roleKey) {
+  const idle = state.motherIdle;
+  if (!idle) return [];
+  const list = Array.isArray(idle.roles?.[roleKey]) ? idle.roles[roleKey] : [];
+  return list.map((v) => String(v || "").trim()).filter((id) => Boolean(id) && isVisibleCanvasImageId(id));
+}
+
+function motherV2SetRoleIds(roleKey, imageIds) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  if (!MOTHER_V2_ROLE_KEYS.includes(roleKey)) return;
+  idle.roles[roleKey] = Array.from(
+    new Set(
+      (Array.isArray(imageIds) ? imageIds : [])
+        .map((v) => String(v || "").trim())
+        .filter((id) => Boolean(id) && isVisibleCanvasImageId(id))
+    )
+  );
+}
+
+function motherV2ResetInteractionState() {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  idle.pendingIntent = false;
+  idle.pendingPromptCompile = false;
+  idle.pendingGeneration = false;
+  idle.pendingFollowupAfterCooldown = false;
+  idle.pendingFollowupReason = null;
+  idle.pendingVisionImageIds = [];
+  idle.pendingActionVersion = 0;
+  idle.pendingIntentRequestId = null;
+  idle.pendingIntentTransportRetryCount = 0;
+  idle.pendingIntentStartedAt = 0;
+  idle.pendingIntentUpgradeUntil = 0;
+  idle.pendingIntentRealtimePath = null;
+  idle.intentRealtimeBusyPath = null;
+  idle.intentRealtimeBusyRequestId = null;
+  idle.intentRealtimeBusyUntil = 0;
+  idle.intentReplayQueued = false;
+  idle.intentReplayReason = null;
+  clearTimeout(idle.intentReplayTimer);
+  idle.intentReplayTimer = null;
+  idle.pendingIntentPath = null;
+  idle.pendingIntentPayload = null;
+  idle.pendingDispatchSpeculative = false;
+  idle.pendingDispatchProposalMode = null;
+  idle.pendingPromptCompilePath = null;
+  idle.pendingPromptCompileSpeculative = false;
+  clearTimeout(idle.pendingIntentTimeout);
+  idle.pendingIntentTimeout = null;
+  clearTimeout(idle.pendingPromptCompileTimeout);
+  idle.pendingPromptCompileTimeout = null;
+  motherV2ClearSpeculativePrefetchTimer();
+  motherV2ClearLiveProposalRefreshTimer();
+  idle.liveProposalUpdating = false;
+  idle.speculativePrefetchInFlight = false;
+  idle.speculativePrefetchReadyMode = null;
+  clearTimeout(idle.pendingVisionRetryTimer);
+  idle.pendingVisionRetryTimer = null;
+  clearMotherIdleDispatchTimeout();
+  idle.pendingDispatchToken = 0;
+  idle.dispatchTimeoutExtensions = 0;
+  motherIdleResetDispatchCorrelation({ rememberPendingVersion: false });
+  state.pendingMotherDraft = null;
+  idle.draftCommitRectCss = null;
+  motherV2ResetGenerationPayloadWarmState();
+}
+
+function motherV2ClearGlyphs() {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  idle.roleGlyphHits = [];
+  idle.roleGlyphDrag = null;
+}
+
+function motherV2ClearDraftsOnly({ removeFiles = false } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const drafts = Array.isArray(idle.drafts) ? idle.drafts.slice() : [];
+  if (removeFiles) {
+    for (const draft of drafts) {
+      if (draft?.path) removeFile(String(draft.path)).catch(() => {});
+      if (draft?.receiptPath) removeFile(String(draft.receiptPath)).catch(() => {});
+    }
+  }
+  idle.drafts = [];
+  idle.selectedDraftId = null;
+  idle.hoverDraftId = null;
+  idle.draftCommitRectCss = null;
+  idle.speculativePrefetchReadyMode = null;
+}
+
+function motherV2ClearIntentAndDrafts({ removeFiles = false } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  motherV2ClearDraftsOnly({ removeFiles });
+  motherV2ClearLiveProposalRefreshTimer();
+  idle.liveProposalUpdating = false;
+  idle.lastLiveProposalRefreshAt = 0;
+  idle.intent = null;
+  idle.roles = { subject: [], model: [], mediator: [], object: [] };
+  idle.offerDetailsOpen = false;
+  idle.pendingVisionImageIds = [];
+  clearTimeout(idle.pendingVisionRetryTimer);
+  idle.pendingVisionRetryTimer = null;
+  idle.pendingIntent = false;
+  idle.pendingIntentRequestId = null;
+  idle.pendingIntentTransportRetryCount = 0;
+  idle.pendingIntentStartedAt = 0;
+  idle.pendingIntentUpgradeUntil = 0;
+  idle.pendingIntentRealtimePath = null;
+  idle.intentRealtimeBusyPath = null;
+  idle.intentRealtimeBusyRequestId = null;
+  idle.intentRealtimeBusyUntil = 0;
+  idle.intentReplayQueued = false;
+  idle.intentReplayReason = null;
+  clearTimeout(idle.intentReplayTimer);
+  idle.intentReplayTimer = null;
+  idle.pendingIntentPath = null;
+  idle.pendingDispatchSpeculative = false;
+  idle.pendingDispatchProposalMode = null;
+  idle.pendingPromptCompileSpeculative = false;
+  motherV2ClearSpeculativePrefetchTimer();
+  idle.speculativePrefetchInFlight = false;
+  idle.speculativePrefetchReadyMode = null;
+  idle.promptMotionProfile = null;
+  idle.draftCommitRectCss = null;
+  clearTimeout(idle.pendingIntentTimeout);
+  idle.pendingIntentTimeout = null;
+  state.pendingMotherDraft = null;
+  motherV2ResetGenerationPayloadWarmState();
+  idle.hintVisibleUntil = 0;
+  idle.hintLevel = 0;
+  clearTimeout(idle.hintFadeTimer);
+  idle.hintFadeTimer = null;
+  motherV2ClearGlyphs();
+}
+
+function motherV2CooldownMs({ rejected = false } = {}) {
+  return rejected ? MOTHER_V2_COOLDOWN_AFTER_REJECT_MS : MOTHER_V2_COOLDOWN_AFTER_COMMIT_MS;
+}
+
+async function motherV2StartFollowupProposal({ reason = "manual_reject" } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  if (idle.phase !== MOTHER_IDLE_STATES.OBSERVING) return false;
+  if (!motherIdleHasArmedCanvas()) return false;
+  if (state.pointer.active) return false;
+  if (motherV2InCooldown()) return false;
+  if (idle.pendingIntent || idle.pendingPromptCompile || idle.pendingGeneration) return false;
+  idle.pendingFollowupReason = String(reason || "manual_reject");
+
+  clearMotherIdleTimers({ first: true, takeover: false });
+  motherIdleTransitionTo(MOTHER_IDLE_EVENTS.IDLE_WINDOW_ELAPSED); // observing -> watching
+  motherIdleTransitionTo(MOTHER_IDLE_EVENTS.IDLE_WINDOW_ELAPSED); // watching -> intent_hypothesizing
+  appendMotherTraceLog({
+    kind: "followup_rehypothesis",
+    traceId: idle.telemetry?.traceId || null,
+    actionVersion: Number(idle.actionVersion) || 0,
+    reason: String(reason || "manual_reject"),
+  }).catch(() => {});
+  renderMotherReadout();
+  const started = await motherV2RequestIntentInference();
+  if (!started) {
+    idle.pendingFollowupReason = null;
+    motherIdleTransitionTo(MOTHER_IDLE_EVENTS.DISQUALIFY);
+    return false;
+  }
+  return true;
+}
+
+function motherV2ArmCooldown({ rejected = false } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const ms = motherV2CooldownMs({ rejected });
+  idle.cooldownUntil = Date.now() + ms;
+  clearTimeout(idle.cooldownTimer);
+  idle.cooldownTimer = setTimeout(() => {
+    idle.cooldownTimer = null;
+    const queueFollowupAfterCooldown = rejected && Boolean(idle.pendingFollowupAfterCooldown);
+    idle.pendingFollowupAfterCooldown = false;
+    motherIdleTransitionTo(MOTHER_IDLE_EVENTS.COOLDOWN_DONE);
+    if (queueFollowupAfterCooldown) {
+      motherV2StartFollowupProposal({ reason: "reject_followup" })
+        .then((started) => {
+          if (!started) motherIdleArmFirstTimer();
+          renderMotherReadout();
+        })
+        .catch(() => {
+          motherIdleArmFirstTimer();
+          renderMotherReadout();
+        });
+      return;
+    }
+    motherIdleArmFirstTimer();
+    renderMotherReadout();
+  }, ms + 8);
+}
+
+function motherV2MarkStale(extra = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  idle.telemetry.stale = (Number(idle.telemetry?.stale) || 0) + 1;
+  appendMotherTraceLog({
+    kind: "stale",
+    traceId: idle.telemetry?.traceId || null,
+    actionVersion: Number(idle.actionVersion) || 0,
+    stale: Number(idle.telemetry?.stale) || 0,
+    ...extra,
+  }).catch(() => {});
+}
+
+function motherV2ForcePhase(nextState, eventName = "force") {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const prev = idle.phase || motherIdleInitialState();
+  const next = String(nextState || "").trim();
+  if (!next || prev === next) return;
+  idle.phase = next;
+  const transitions = Array.isArray(idle.telemetry?.stateTransitions) ? idle.telemetry.stateTransitions : [];
+  transitions.push({
+    at_ms: Date.now(),
+    from: String(prev || ""),
+    to: next,
+    event: String(eventName || "force"),
+  });
+  if (transitions.length > 96) transitions.splice(0, transitions.length - 96);
+  if (idle.telemetry && typeof idle.telemetry === "object") idle.telemetry.stateTransitions = transitions;
+  appendMotherTraceLog({
+    kind: "state_transition",
+    traceId: idle.telemetry?.traceId || null,
+    from: String(prev || ""),
+    to: next,
+    event: String(eventName || "force"),
+    actionVersion: Number(idle.actionVersion) || 0,
+  }).catch(() => {});
+  syncMotherPortrait();
+}
+
+function motherIdleHasArmedCanvas() {
+  const base = motherIdleBaseImageItems();
+  if (!motherV2HasProposalImageSet()) return false;
+  if (state.canvasMode === "single") {
+    const activeId = String(getVisibleActiveId() || "").trim();
+    if (!activeId) return false;
+    const active = state.imagesById.get(activeId) || getActiveImage() || null;
+    const iw = Number(active?.img?.naturalWidth || active?.width) || 0;
+    const ih = Number(active?.img?.naturalHeight || active?.height) || 0;
+    return iw > 0 && ih > 0;
+  }
+  if (state.canvasMode !== "multi") return false;
+  const required = base.slice(0, Math.min(2, base.length));
+  for (const item of required) {
+    const rect = state.freeformRects.get(item.id) || null;
+    if (!rect) return false;
+    if ((Number(rect.w) || 0) <= 0 || (Number(rect.h) || 0) <= 0) return false;
+  }
+  return true;
+}
+
+function motherV2HasProposalImageSet() {
+  return motherIdleBaseImageItems().length >= MOTHER_V2_MIN_IMAGES_FOR_PROPOSAL;
+}
+
+function motherPreferredGenerationModel() {
+  const preferred = String(settings.imageModel || "").trim();
+  return preferred || MOTHER_GENERATION_MODEL;
+}
+
+function motherIdleGenerationModelCandidates() {
+  const out = [];
+  const seen = new Set();
+  const push = (raw) => {
+    const model = String(raw || "").trim();
+    if (!model) return;
+    if (providerFromModel(model) !== "gemini") return;
+    if (seen.has(model)) return;
+    seen.add(model);
+    out.push(model);
+  };
+  push(MOTHER_GENERATION_MODEL);
+  push(pickGeminiImageModel());
+  if (providerFromModel(settings.imageModel) === "gemini") push(settings.imageModel);
+  return out.length ? out : [MOTHER_GENERATION_MODEL];
+}
+
+function motherIdlePickRetryModel(lastModel = null) {
+  const current = String(lastModel || "").trim();
+  const candidates = motherIdleGenerationModelCandidates();
+  for (const model of candidates) {
+    if (model !== current) return model;
+  }
+  return null;
+}
+
+function motherIdlePromptLineForPty(prompt) {
+  return String(prompt || "")
+    .replace(/\r?\n+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function motherEventVersionId(event) {
   const versionId = String(event?.version_id || "").trim();
   return versionId || null;
 }
 
-function bumpInteraction({ semantic = true, proposalLiveRefresh = false } = {}) {
-  void semantic;
-  void proposalLiveRefresh;
+function motherIdleRememberIgnoredVersion(versionId) {
+  const idle = state.motherIdle;
+  const normalized = String(versionId || "").trim();
+  if (!idle || !normalized) return;
+  if (!(idle.ignoredVersionIds instanceof Set)) idle.ignoredVersionIds = new Set();
+  idle.ignoredVersionIds.add(normalized);
+  while (idle.ignoredVersionIds.size > 96) {
+    const first = idle.ignoredVersionIds.values().next();
+    if (first.done) break;
+    idle.ignoredVersionIds.delete(first.value);
+  }
+}
+
+function motherIdleIsIgnoredVersion(versionId) {
+  const idle = state.motherIdle;
+  const normalized = String(versionId || "").trim();
+  if (!idle || !normalized) return false;
+  return idle.ignoredVersionIds instanceof Set && idle.ignoredVersionIds.has(normalized);
+}
+
+function motherIdleResetDispatchCorrelation({ rememberPendingVersion = false } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const pendingVersionId = String(idle.pendingVersionId || "").trim();
+  if (rememberPendingVersion && pendingVersionId) {
+    motherIdleRememberIgnoredVersion(pendingVersionId);
+  }
+  idle.pendingVersionId = null;
+  idle.pendingPromptLine = null;
+}
+
+function motherIdleDispatchVersionMatches(versionId) {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  const expected = String(idle.pendingVersionId || "").trim();
+  if (!expected) return true;
+  const incoming = String(versionId || "").trim();
+  if (!incoming) return true;
+  return incoming === expected;
+}
+
+function motherIdleTrackVersionCreated(event = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  if (!motherV2DispatchInFlight(idle)) return;
+  const versionId = motherEventVersionId(event);
+  if (!versionId) return;
+  if (!idle.pendingVersionId) {
+    idle.pendingVersionId = versionId;
+    if (state.pendingMotherDraft && typeof state.pendingMotherDraft === "object") {
+      state.pendingMotherDraft.timeoutCeilingMs = motherDraftingTimeoutCeilingMs({ hasVersionBound: true });
+    }
+    motherIdleArmDispatchTimeout(
+      MOTHER_GENERATION_POST_VERSION_TIMEOUT_MS,
+      `Mother draft timed out after ${Math.round(MOTHER_GENERATION_POST_VERSION_TIMEOUT_MS / 1000)}s while image generation was in progress.`,
+      { allowExtension: false }
+    );
+    appendMotherSuggestionLog({
+      stage: "version_bound",
+      request_id: idle.pendingSuggestionLog?.request_id || null,
+      model: idle.lastDispatchModel || idle.pendingSuggestionLog?.model || null,
+      version_id: versionId,
+    }).catch(() => {});
+    return;
+  }
+  if (idle.pendingVersionId === versionId) return;
+  motherIdleRememberIgnoredVersion(versionId);
+  appendMotherSuggestionLog({
+    stage: "extra_version_ignored",
+    request_id: idle.pendingSuggestionLog?.request_id || null,
+    model: idle.lastDispatchModel || idle.pendingSuggestionLog?.model || null,
+    expected_version_id: idle.pendingVersionId,
+    ignored_version_id: versionId,
+    ignored_prompt: event?.prompt ? String(event.prompt) : null,
+  }).catch(() => {});
+  console.warn("[mother_suggestion] ignored extra version", {
+    expected_version_id: idle.pendingVersionId,
+    ignored_version_id: versionId,
+  });
+}
+
+function motherIdleTransitionTo(eventName) {
+  if (!state.motherIdle) return motherIdleInitialState();
+  const prev = state.motherIdle.phase;
+  const next = motherIdleTransition(prev, eventName);
+  state.motherIdle.phase = next;
+  if (next !== prev) {
+    const idle = state.motherIdle;
+    const transitions = Array.isArray(idle.telemetry?.stateTransitions) ? idle.telemetry.stateTransitions : [];
+    transitions.push({
+      at_ms: Date.now(),
+      from: String(prev || ""),
+      to: String(next || ""),
+      event: String(eventName || ""),
+    });
+    if (transitions.length > 96) transitions.splice(0, transitions.length - 96);
+    if (idle.telemetry && typeof idle.telemetry === "object") idle.telemetry.stateTransitions = transitions;
+    appendMotherTraceLog({
+      kind: "state_transition",
+      traceId: idle.telemetry?.traceId || null,
+      from: String(prev || ""),
+      to: String(next || ""),
+      event: String(eventName || ""),
+      actionVersion: Number(idle.actionVersion) || 0,
+      accepted: Number(idle.telemetry?.accepted) || 0,
+      rejected: Number(idle.telemetry?.rejected) || 0,
+      deployed: Number(idle.telemetry?.deployed) || 0,
+      stale: Number(idle.telemetry?.stale) || 0,
+    }).catch(() => {});
+    if (next === MOTHER_IDLE_STATES.OBSERVING) {
+      motherV2ClearGlyphs();
+    }
+    syncMotherPortrait();
+  }
+  return next;
+}
+
+function clearMotherIdleTimers({ first = true, takeover = true } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  if (first) {
+    clearTimeout(idle.firstIdleTimer);
+    idle.firstIdleTimer = null;
+    clearTimeout(idle.intentIdleTimer);
+    idle.intentIdleTimer = null;
+  }
+  if (takeover) {
+    clearTimeout(idle.takeoverTimer);
+    idle.takeoverTimer = null;
+  }
+}
+
+function clearMotherIdleDispatchTimeout() {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  clearTimeout(idle.dispatchTimeoutTimer);
+  idle.dispatchTimeoutTimer = null;
+}
+
+function motherIdleArmDispatchTimeout(timeoutMs, message, { allowExtension = false } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  clearMotherIdleDispatchTimeout();
+  const dispatchToken = Number(idle.pendingDispatchToken) || 0;
+  if (!dispatchToken) return;
+  const ms = Math.max(1_000, Number(timeoutMs) || MOTHER_GENERATION_TIMEOUT_MS);
+  const fallbackMessage = message || `Mother draft timed out after ${Math.round(ms / 1000)}s.`;
+  const extendable = Boolean(allowExtension);
+  idle.dispatchTimeoutTimer = setTimeout(() => {
+    const current = state.motherIdle;
+    if (!current) return;
+    if (Number(current.pendingDispatchToken) !== dispatchToken) return;
+    if (extendable) {
+      const hasBoundVersion = Boolean(String(current.pendingVersionId || "").trim());
+      const extensionCount = Number(current.dispatchTimeoutExtensions) || 0;
+      if (!hasBoundVersion && extensionCount < 1) {
+        current.dispatchTimeoutExtensions = extensionCount + 1;
+        const extensionMs = Math.max(1_000, Number(MOTHER_GENERATION_TIMEOUT_EXTENSION_MS) || 1_000);
+        appendMotherSuggestionLog({
+          stage: "dispatch_timeout_extended",
+          request_id: current.pendingSuggestionLog?.request_id || null,
+          model: current.lastDispatchModel || current.pendingSuggestionLog?.model || null,
+          extension_count: current.dispatchTimeoutExtensions,
+          extension_ms: extensionMs,
+        }).catch(() => {});
+        motherIdleArmDispatchTimeout(extensionMs, fallbackMessage, { allowExtension: false });
+        return;
+      }
+    }
+    motherIdleHandleGenerationFailed(fallbackMessage);
+  }, ms);
+}
+
+function resetMotherIdleAndWheelState() {
+  clearMotherIdleTimers({ first: true, takeover: true });
+  clearMotherIdleDispatchTimeout();
+  motherV2ResetGenerationPayloadWarmState();
+  if (state.motherIdle) {
+    state.motherIdle.hasGeneratedSinceInteraction = false;
+    state.motherIdle.generatedImageId = null;
+    state.motherIdle.generatedVersionId = null;
+    state.motherIdle.pendingDispatchToken = 0;
+    state.motherIdle.dispatchTimeoutExtensions = 0;
+    motherIdleResetDispatchCorrelation({ rememberPendingVersion: false });
+    state.motherIdle.promptMotionProfile = null;
+    if (state.motherIdle.ignoredVersionIds instanceof Set) state.motherIdle.ignoredVersionIds.clear();
+    state.motherIdle.waitingSince = 0;
+    state.motherIdle.pendingSuggestionLog = null;
+    state.motherIdle.lastSuggestionAt = 0;
+    state.motherIdle.suppressFailureUntil = 0;
+    state.motherIdle.retryAttempted = false;
+    state.motherIdle.lastDispatchModel = null;
+    state.motherIdle.blockedUntilUserInteraction = false;
+    clearTimeout(state.motherIdle.cooldownTimer);
+    state.motherIdle.cooldownTimer = null;
+    clearTimeout(state.motherIdle.pendingIntentTimeout);
+    state.motherIdle.pendingIntentTimeout = null;
+    clearTimeout(state.motherIdle.pendingPromptCompileTimeout);
+    state.motherIdle.pendingPromptCompileTimeout = null;
+    state.motherIdle.actionVersion = 0;
+    state.motherIdle.pendingActionVersion = 0;
+    state.motherIdle.cooldownUntil = 0;
+    state.motherIdle.multiUploadIdleBoostUntil = 0;
+    state.motherIdle.lastUploadCompletedAt = 0;
+    state.motherIdle.lastSpeculativePrefetchUploadAt = 0;
+    clearTimeout(state.motherIdle.speculativePrefetchTimer);
+    state.motherIdle.speculativePrefetchTimer = null;
+    state.motherIdle.speculativePrefetchInFlight = false;
+    state.motherIdle.speculativePrefetchReadyMode = null;
+    clearTimeout(state.motherIdle.liveProposalRefreshTimer);
+    state.motherIdle.liveProposalRefreshTimer = null;
+    state.motherIdle.liveProposalUpdating = false;
+    state.motherIdle.lastLiveProposalRefreshAt = 0;
+    state.motherIdle.pendingIntent = false;
+    state.motherIdle.pendingIntentRequestId = null;
+    state.motherIdle.pendingIntentTransportRetryCount = 0;
+    state.motherIdle.pendingIntentStartedAt = 0;
+    state.motherIdle.pendingIntentUpgradeUntil = 0;
+    state.motherIdle.pendingIntentRealtimePath = null;
+    state.motherIdle.intentRealtimeBusyPath = null;
+    state.motherIdle.intentRealtimeBusyRequestId = null;
+    state.motherIdle.intentRealtimeBusyUntil = 0;
+    state.motherIdle.intentReplayQueued = false;
+    state.motherIdle.intentReplayReason = null;
+    clearTimeout(state.motherIdle.intentReplayTimer);
+    state.motherIdle.intentReplayTimer = null;
+    state.motherIdle.lastIntentRequestAt = 0;
+    state.motherIdle.pendingIntentPath = null;
+    state.motherIdle.pendingIntentPayload = null;
+    state.motherIdle.pendingPromptCompile = false;
+    state.motherIdle.pendingPromptCompileSpeculative = false;
+    state.motherIdle.pendingPromptCompilePath = null;
+    state.motherIdle.pendingVisionImageIds = [];
+    clearTimeout(state.motherIdle.pendingVisionRetryTimer);
+    state.motherIdle.pendingVisionRetryTimer = null;
+    state.motherIdle.pendingGeneration = false;
+    state.motherIdle.pendingDispatchSpeculative = false;
+    state.motherIdle.pendingDispatchProposalMode = null;
+    state.motherIdle.pendingFollowupAfterCooldown = false;
+    state.motherIdle.pendingFollowupReason = null;
+    state.motherIdle.lastRejectedProposal = null;
+    state.motherIdle.rejectedModeHistoryByContext = {};
+    state.motherIdle.cancelArtifactUntil = 0;
+    state.motherIdle.cancelArtifactReason = null;
+    state.motherIdle.currentOperationSpec = null;
+    state.motherIdle.intent = null;
+    state.motherIdle.roles = { subject: [], model: [], mediator: [], object: [] };
+    state.motherIdle.drafts = [];
+    state.motherIdle.selectedDraftId = null;
+    state.motherIdle.hoverDraftId = null;
+    state.motherIdle.draftCommitRectCss = null;
+    state.motherIdle.commitMutationInFlight = false;
+    state.motherIdle.roleGlyphHits = [];
+    state.motherIdle.roleGlyphDrag = null;
+    state.motherIdle.advancedOpen = false;
+    state.motherIdle.optionReveal = false;
+    state.motherIdle.hintLevel = 0;
+    state.motherIdle.hintVisibleUntil = 0;
+    clearTimeout(state.motherIdle.hintFadeTimer);
+    state.motherIdle.hintFadeTimer = null;
+    state.motherIdle.intensity = 62;
+    state.motherIdle.commitUndo = null;
+    state.motherIdle.telemetry = {
+      traceId: `mother-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`,
+      stateTransitions: [],
+      accepted: 0,
+      rejected: 0,
+      deployed: 0,
+      stale: 0,
+    };
+    motherIdleTransitionTo(MOTHER_IDLE_EVENTS.RESET);
+  }
+  closeMotherWheelMenu({ immediate: true });
+  if (state.wheelMenu) {
+    state.wheelMenu.anchorCss = null;
+    state.wheelMenu.anchorWorld = null;
+    clearTimeout(state.wheelMenu.hideTimer);
+    state.wheelMenu.hideTimer = null;
+    state.wheelMenu.open = false;
+  }
+  syncMotherPortrait();
+}
+
+function isMotherWheelOpen() {
+  return Boolean(state.wheelMenu?.open);
+}
+
+function closeMotherWheelMenu({ immediate = false } = {}) {
+  const menu = els.motherWheelMenu;
+  const wheel = state.wheelMenu;
+  if (!menu || !wheel) return;
+  clearTimeout(wheel.hideTimer);
+  wheel.hideTimer = null;
+  wheel.open = false;
+  menu.classList.remove("is-open");
+  if (immediate) {
+    menu.classList.add("hidden");
+    return;
+  }
+  wheel.hideTimer = setTimeout(() => {
+    if (state.wheelMenu?.open) return;
+    menu.classList.add("hidden");
+  }, 220);
+}
+
+function openMotherWheelMenuAt(ptCss) {
+  const menu = els.motherWheelMenu;
+  const wrap = els.canvasWrap;
+  if (!menu || !wrap || !ptCss) return false;
+  if (state.mother?.running) return false;
+
+  const xRaw = Number(ptCss.x) || 0;
+  const yRaw = Number(ptCss.y) || 0;
+  const x = clamp(xRaw, 18, Math.max(18, wrap.clientWidth - 18));
+  const y = clamp(yRaw, 18, Math.max(18, wrap.clientHeight - 18));
+
+  clearTimeout(state.wheelMenu.hideTimer);
+  state.wheelMenu.hideTimer = null;
+  state.wheelMenu.open = true;
+  state.wheelMenu.anchorCss = { x, y };
+  state.wheelMenu.anchorWorld = canvasScreenCssToWorldCss({ x, y });
+
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menu.classList.remove("hidden");
+  requestAnimationFrame(() => {
+    if (!state.wheelMenu?.open) return;
+    menu.classList.add("is-open");
+  });
+  return true;
+}
+
+async function dispatchMotherWheelAction(action) {
+  const raw = String(action || "").trim();
+  closeMotherWheelMenu({ immediate: false });
+  if (raw) recordUserEvent("mother_wheel_action", { action: raw });
+  if (raw === "add_photo") {
+    const world = state.wheelMenu?.anchorWorld || canvasScreenCssToWorldCss(_defaultImportPointCss());
+    await importPhotosAtCanvasPoint(world);
+    return;
+  }
+}
+
+function motherIdleUseCasePromptMeta(useCaseKey) {
+  const key = _intentUseCaseKeyFromBranchId(useCaseKey) || MOTHER_V2_DEFAULT_TRANSFORMATION_MODE;
+  const title = _intentUseCaseTitle(key);
+  return {
+    key,
+    title,
+    goal: `direction anchored to ${String(title || "the active branch").toLowerCase()} while preserving active-image continuity`,
+    cue: "keep the active image as the anchor and let secondary references support composition and atmosphere",
+  };
+}
+
+function motherIdleInferUseCaseFromVisionLines(lines = []) {
+  const haystack = (Array.isArray(lines) ? lines : [])
+    .map((v) => String(v || "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .trim();
+  if (!haystack) return null;
+  const branches = Array.isArray(state.intent?.iconState?.branches) ? state.intent.iconState.branches : [];
+  if (!branches.length) return null;
+  let bestKey = null;
+  let bestScore = 0;
+  for (const branch of branches) {
+    const key = String(branch?.branch_id || "").trim();
+    if (!key) continue;
+    let s = _intentBranchTokenScore(haystack, branch);
+    if (typeof branch?.confidence === "number" && Number.isFinite(branch.confidence)) {
+      s += clamp(Number(branch.confidence), 0, 1) * 0.75;
+    }
+    if (s > bestScore) {
+      bestScore = s;
+      bestKey = key;
+    }
+  }
+  if (!bestKey || bestScore < 1.5) return null;
+  return bestKey;
+}
+
+function motherIdlePickIntentHypotheses(visionLines = []) {
+  const candidates = [];
+  const seen = new Set();
+  const push = (key, reason) => {
+    const normalized = String(key || "").trim();
+    if (!normalized) return;
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    candidates.push({
+      key: normalized,
+      reason: String(reason || "").trim() || "signal",
+    });
+  };
+
+  const visionHint = motherIdleInferUseCaseFromVisionLines(visionLines);
+  if (visionHint) push(visionHint, "vision_descriptions");
+
+  const iconState = state.intent?.iconState || null;
+  const availableBranchIds = (Array.isArray(iconState?.branches) ? iconState.branches : [])
+    .map((branch) => String(branch?.branch_id || "").trim())
+    .filter(Boolean);
+  const suggested = pickSuggestedIntentBranch(iconState);
+  const suggestedKey = _intentUseCaseKeyFromBranchId(suggested?.branch_id) || String(suggested?.branch_id || "").trim();
+  if (suggestedKey) push(suggestedKey, suggested?.reason ? `intent_${suggested.reason}` : "intent_branch");
+
+  const focusKey = _intentUseCaseKeyFromBranchId(state.intent?.focusBranchId || state.intent?.lockedBranchId || "");
+  if (focusKey) push(focusKey, "intent_focus");
+
+  if (!candidates.length) {
+    push(availableBranchIds[0] || MOTHER_V2_DEFAULT_TRANSFORMATION_MODE, "default_fallback");
+  }
+
+  const primary = candidates[0]?.key || availableBranchIds[0] || MOTHER_V2_DEFAULT_TRANSFORMATION_MODE;
+  const alternate =
+    candidates.find((entry) => entry.key !== primary)?.key ||
+    availableBranchIds.find((key) => key !== primary) ||
+    MOTHER_V2_TRANSFORMATION_MODES.find((key) => key !== primary) ||
+    primary;
+
+  const whyParts = [];
+  const primaryReason = candidates[0]?.reason || "signal";
+  whyParts.push(`primary ${_intentUseCaseTitle(primary)} via ${primaryReason}`);
+  if (alternate && alternate !== primary) {
+    const altReason = candidates.find((entry) => entry.key === alternate)?.reason || "coverage";
+    whyParts.push(`alternate ${_intentUseCaseTitle(alternate)} via ${altReason}`);
+  }
+
+  return {
+    primary,
+    alternate,
+    reasonText: whyParts.join("; "),
+    signals: candidates.map((entry) => ({
+      use_case: entry.key,
+      branch_id: entry.key,
+      title: _intentUseCaseTitle(entry.key),
+      reason: entry.reason,
+    })),
+  };
+}
+
+function motherIdleComputePlacementCss({ policy = "adjacent", targetId = null, draftIndex = 0 } = {}) {
+  const wrap = els.canvasWrap;
+  const canvasCssW = wrap?.clientWidth || 0;
+  const canvasCssH = wrap?.clientHeight || 0;
+  if (!canvasCssW || !canvasCssH) return null;
+  const targetRect = targetId ? state.freeformRects.get(targetId) || null : null;
+  const activeRect = state.activeId ? state.freeformRects.get(state.activeId) || null : null;
+  const baseRect = targetRect || activeRect;
+
+  const intersects = (a, b) => {
+    if (!a || !b) return false;
+    return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+  };
+  const collidesWithExisting = (rect, ignoreIds = []) => {
+    const ignore = new Set((Array.isArray(ignoreIds) ? ignoreIds : []).map((v) => String(v || "").trim()).filter(Boolean));
+    for (const item of state.images || []) {
+      const imageId = String(item?.id || "").trim();
+      if (!imageId || ignore.has(imageId)) continue;
+      const r = state.freeformRects.get(imageId) || null;
+      if (!r) continue;
+      if (intersects(rect, r)) return true;
+    }
+    return false;
+  };
+
+  if (policy === "replace" && baseRect) {
+    return clampFreeformRectCss(
+      { x: Number(baseRect.x) || 0, y: Number(baseRect.y) || 0, w: Number(baseRect.w) || 1, h: Number(baseRect.h) || 1, autoAspect: false },
+      canvasCssW,
+      canvasCssH
+    );
+  }
+
+  const tile = Math.round(
+    freeformDefaultTileCss(canvasCssW, canvasCssH, { count: Math.max(3, (state.images?.length || 0) + 1) }) * 0.88
+  );
+  const w = clamp(tile, 170, Math.round(canvasCssW * 0.46));
+  const h = clamp(Math.round(w * 1.06), 170, Math.round(canvasCssH * 0.58));
+
+  if (policy === "grid") {
+    const gap = 24;
+    const colCount = 2;
+    const slot = Math.max(0, Number(draftIndex) || 0);
+    const col = slot % colCount;
+    const row = Math.floor(slot / colCount);
+    const startX = baseRect ? (Number(baseRect.x) || 0) : Math.round((canvasCssW - (w * colCount + gap)) / 2);
+    const startY = baseRect ? (Number(baseRect.y) || 0) : Math.round((canvasCssH - h) / 2);
+    return clampFreeformRectCss(
+      {
+        x: Math.round(startX + col * (w + gap)),
+        y: Math.round(startY + row * (h + gap)),
+        w,
+        h,
+        autoAspect: true,
+      },
+      canvasCssW,
+      canvasCssH
+    );
+  }
+
+  // Adjacent placement (default): place to the right with 24px offset and avoid overlap.
+  const gap = 24;
+  let baseX = 0;
+  let baseY = 0;
+  if (baseRect) {
+    baseX = (Number(baseRect.x) || 0) + (Number(baseRect.w) || 0) + gap;
+    baseY = Number(baseRect.y) || 0;
+  } else {
+    let rightmost = 0;
+    let topMost = 0;
+    let seeded = false;
+    for (const item of state.images || []) {
+      const r = state.freeformRects.get(String(item?.id || "")) || null;
+      if (!r) continue;
+      const rx = Number(r.x) || 0;
+      const rw = Number(r.w) || 0;
+      const ry = Number(r.y) || 0;
+      if (!seeded) {
+        rightmost = rx + rw;
+        topMost = ry;
+        seeded = true;
+      } else {
+        rightmost = Math.max(rightmost, rx + rw);
+        topMost = Math.min(topMost, ry);
+      }
+    }
+    baseX = seeded ? rightmost + gap : gap;
+    baseY = seeded ? topMost : gap;
+  }
+  let candidate = clampFreeformRectCss({ x: Math.round(baseX), y: Math.round(baseY), w, h, autoAspect: true }, canvasCssW, canvasCssH);
+  const ignore = targetId ? [targetId] : [];
+  for (let i = 0; i < 10 && collidesWithExisting(candidate, ignore); i += 1) {
+    const nx = Number(candidate.x) + w + gap;
+    const ny = Number(candidate.y) + (i % 2 === 0 ? 0 : h + gap);
+    candidate = clampFreeformRectCss({ x: nx, y: ny, w, h, autoAspect: true }, canvasCssW, canvasCssH);
+  }
+  return candidate;
+}
+
+function motherV2OfferPreviewRectCss({ policy = "adjacent", targetId = null, draftIndex = 0 } = {}) {
+  const wrap = els.canvasWrap;
+  const canvasCssW = wrap?.clientWidth || 0;
+  const canvasCssH = wrap?.clientHeight || 0;
+  if (!canvasCssW || !canvasCssH) return null;
+  const baseRect = motherIdleComputePlacementCss({ policy, targetId, draftIndex });
+  if (!baseRect) return null;
+  if (String(policy || "") === "replace") return baseRect;
+
+  const ms = Math.max(0.0001, Number(state.multiView?.scale) || 1);
+  const dpr = Math.max(0.0001, getDpr());
+  const offsetCssX = (Number(state.multiView?.offsetX) || 0) / dpr;
+  const offsetCssY = (Number(state.multiView?.offsetY) || 0) / dpr;
+  const viewportX0 = (0 - offsetCssX) / ms;
+  const viewportY0 = (0 - offsetCssY) / ms;
+  const viewportW = Math.max(1, canvasCssW / ms);
+  const viewportH = Math.max(1, canvasCssH / ms);
+
+  const viewportMinCss = Math.max(1, Math.min(canvasCssW, canvasCssH));
+  const minPreviewWorld = (viewportMinCss * MOTHER_OFFER_PREVIEW_MIN_VIEWPORT_COVER) / ms;
+  const maxPreviewWorld = (viewportMinCss * MOTHER_OFFER_PREVIEW_MAX_VIEWPORT_COVER) / ms;
+
+  const baseW = Math.max(1, Number(baseRect.w) || 1);
+  const baseH = Math.max(1, Number(baseRect.h) || 1);
+  let w = baseW * MOTHER_OFFER_PREVIEW_SCALE;
+  let h = baseH * MOTHER_OFFER_PREVIEW_SCALE;
+  let longest = Math.max(w, h);
+  if (longest < minPreviewWorld) {
+    const up = minPreviewWorld / Math.max(1, longest);
+    w *= up;
+    h *= up;
+  }
+  longest = Math.max(w, h);
+  if (longest > maxPreviewWorld) {
+    const down = maxPreviewWorld / Math.max(1, longest);
+    w *= down;
+    h *= down;
+  }
+
+  const cx = (Number(baseRect.x) || 0) + baseW * 0.5;
+  const cy = (Number(baseRect.y) || 0) + baseH * 0.5;
+  const edgePadWorld = Math.max(8, 10) / ms;
+  let x = cx - w * 0.5;
+  let y = cy - h * 0.5;
+  const minX = viewportX0 + edgePadWorld;
+  const minY = viewportY0 + edgePadWorld;
+  const maxX = viewportX0 + viewportW - w - edgePadWorld;
+  const maxY = viewportY0 + viewportH - h - edgePadWorld;
+  x = clamp(x, minX, Math.max(minX, maxX));
+  y = clamp(y, minY, Math.max(minY, maxY));
+  return clampFreeformRectCss({ x, y, w, h, autoAspect: false }, canvasCssW, canvasCssH);
+}
+
+function motherDraftingResolvePlacement(intent = null) {
+  const normalizedIntent = motherV2SanitizeIntentImageIds(
+    intent && typeof intent === "object"
+      ? intent
+      : state.motherIdle?.intent && typeof state.motherIdle.intent === "object"
+        ? state.motherIdle.intent
+        : {}
+  ) || {};
+  const policy = String(normalizedIntent.placement_policy || "adjacent").trim() || "adjacent";
+  const targetIds = Array.isArray(normalizedIntent.target_ids)
+    ? normalizedIntent.target_ids.map((v) => String(v || "").trim()).filter(Boolean)
+    : [];
+  const fallbackTargetId = String(getVisibleActiveId() || "").trim();
+  const targetId = targetIds[0] || fallbackTargetId || null;
+  if (policy === "replace") {
+    const replaceRect = targetId ? state.freeformRects.get(targetId) || null : null;
+    if (replaceRect) {
+      return {
+        policy,
+        targetId,
+        rectCss: {
+          x: Number(replaceRect.x) || 0,
+          y: Number(replaceRect.y) || 0,
+          w: Math.max(1, Number(replaceRect.w) || 1),
+          h: Math.max(1, Number(replaceRect.h) || 1),
+        },
+      };
+    }
+  }
+  const offerRect = motherV2OfferPreviewRectCss({ policy, targetId, draftIndex: 0 });
+  const rectCss = offerRect || motherIdleComputePlacementCss({ policy, targetId, draftIndex: 0 });
+  return {
+    policy,
+    targetId,
+    rectCss: rectCss ? { ...rectCss } : null,
+  };
+}
+
+function motherDraftingTimeoutCeilingMs({ hasVersionBound = false } = {}) {
+  const baseMs = Math.max(1_000, Number(MOTHER_GENERATION_TIMEOUT_MS) || 0);
+  const extensionMs = Math.max(0, Number(MOTHER_GENERATION_TIMEOUT_EXTENSION_MS) || 0);
+  const postVersionMs = Math.max(1_000, Number(MOTHER_GENERATION_POST_VERSION_TIMEOUT_MS) || 0);
+  const initialCeilingMs = baseMs + extensionMs;
+  if (!hasVersionBound) return initialCeilingMs;
+  return Math.max(initialCeilingMs, postVersionMs);
+}
+
+function motherDraftingQuantile(sortedValues = [], p = 0.5) {
+  if (!Array.isArray(sortedValues) || !sortedValues.length) return null;
+  const t = clamp(Number(p) || 0, 0, 1);
+  const idx = (sortedValues.length - 1) * t;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sortedValues[lo];
+  const frac = idx - lo;
+  return sortedValues[lo] + (sortedValues[hi] - sortedValues[lo]) * frac;
+}
+
+function motherDraftingComputeUncertaintyEnvelope(pendingDraft = null, { nowMs = Date.now() } = {}) {
+  const pending = pendingDraft || state.pendingMotherDraft;
+  if (!pending) return null;
+  const startedAt = Number(pending.startedAt) || nowMs;
+  const elapsedMs = Math.max(0, nowMs - startedAt);
+  const hasVersionBound = Boolean(String(state.motherIdle?.pendingVersionId || "").trim());
+  const timeoutCeilingMs = Math.max(
+    8_000,
+    Number(pending.timeoutCeilingMs) || motherDraftingTimeoutCeilingMs({ hasVersionBound })
+  );
+
+  const metrics = state.topMetrics || null;
+  const renderDurationsS = Array.isArray(metrics?.renderDurationsS) ? metrics.renderDurationsS : [];
+  const samplesMs = renderDurationsS
+    .map((v) => Number(v) * 1000)
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const recentLatencyS = Number(state.lastCostLatency?.latency_per_image_s);
+  const recentLatencyAt = Number(state.lastCostLatency?.at) || 0;
+  if (
+    Number.isFinite(recentLatencyS) &&
+    recentLatencyS > 0 &&
+    recentLatencyAt > 0 &&
+    nowMs - recentLatencyAt <= 12 * 60 * 1000
+  ) {
+    samplesMs.push(recentLatencyS * 1000);
+  }
+  const sortedSamples = samplesMs.slice().sort((a, b) => a - b);
+
+  let lowMs = 18_000;
+  let highMs = 42_000;
+  if (sortedSamples.length >= 5) {
+    lowMs = motherDraftingQuantile(sortedSamples, 0.25) || lowMs;
+    highMs = motherDraftingQuantile(sortedSamples, 0.8) || highMs;
+  } else if (sortedSamples.length >= 2) {
+    lowMs = motherDraftingQuantile(sortedSamples, 0.2) || lowMs;
+    highMs = motherDraftingQuantile(sortedSamples, 0.9) || highMs;
+  } else if (sortedSamples.length === 1) {
+    lowMs = sortedSamples[0] * 0.72;
+    highMs = sortedSamples[0] * 1.58;
+  }
+
+  const queue = topMetricQueueCounts();
+  const queueDepth = Math.max(0, Number(queue.pending) || 0) + Math.max(0, Number(queue.running) || 0);
+  const queuePenalty = Math.max(0, queueDepth - 1);
+  lowMs *= 1 + Math.min(0.4, queuePenalty * 0.08);
+  highMs *= 1 + Math.min(1.3, queuePenalty * 0.24);
+
+  const highCeilingMs = Math.max(8_000, Math.round(timeoutCeilingMs * 0.92));
+  lowMs = clamp(Math.round(lowMs), 4_000, Math.max(4_000, highCeilingMs - 2_000));
+  highMs = clamp(Math.round(highMs), Math.max(lowMs + 2_000, 7_000), Math.max(lowMs + 3_000, highCeilingMs));
+
+  return {
+    elapsedMs,
+    lowMs,
+    highMs,
+    timeoutCeilingMs,
+    queueDepth,
+    sampleCount: sortedSamples.length,
+    takingLongerThanUsual: elapsedMs > highMs,
+  };
+}
+
+function motherDraftingResolvePendingPreviewRectCss(pendingDraft = null) {
+  const pending = pendingDraft || state.pendingMotherDraft;
+  if (!pending) return null;
+  const existing = pending.previewRectCss;
+  if (
+    existing &&
+    Number.isFinite(Number(existing.x)) &&
+    Number.isFinite(Number(existing.y)) &&
+    Number.isFinite(Number(existing.w)) &&
+    Number.isFinite(Number(existing.h))
+  ) {
+    return {
+      x: Number(existing.x) || 0,
+      y: Number(existing.y) || 0,
+      w: Math.max(1, Number(existing.w) || 1),
+      h: Math.max(1, Number(existing.h) || 1),
+    };
+  }
+  const idleIntent = state.motherIdle?.intent && typeof state.motherIdle.intent === "object" ? state.motherIdle.intent : {};
+  const placement = motherDraftingResolvePlacement({
+    ...idleIntent,
+    placement_policy: pending.previewPolicy || idleIntent?.placement_policy || "adjacent",
+    target_ids: pending.previewTargetId ? [pending.previewTargetId] : idleIntent?.target_ids,
+  });
+  if (!placement.rectCss) return null;
+  pending.previewPolicy = placement.policy;
+  pending.previewTargetId = placement.targetId || null;
+  pending.previewRectCss = { ...placement.rectCss };
+  return { ...placement.rectCss };
+}
+
+function motherDraftingNormalizeRectCss(rectCss = null) {
+  if (!rectCss || typeof rectCss !== "object") return null;
+  const x = Number(rectCss.x);
+  const y = Number(rectCss.y);
+  const w = Number(rectCss.w);
+  const h = Number(rectCss.h);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return null;
+  let normalized = {
+    x,
+    y,
+    w: Math.max(1, w),
+    h: Math.max(1, h),
+    autoAspect: false,
+  };
+  const wrap = els.canvasWrap;
+  const canvasCssW = Number(wrap?.clientWidth) || 0;
+  const canvasCssH = Number(wrap?.clientHeight) || 0;
+  if (canvasCssW > 0 && canvasCssH > 0) {
+    normalized = clampFreeformRectCss(
+      normalized,
+      canvasCssW,
+      canvasCssH,
+      freeformWorkspaceClampOptions(canvasCssW, canvasCssH, { minSize: 44 })
+    );
+  }
+  return {
+    x: Number(normalized.x) || 0,
+    y: Number(normalized.y) || 0,
+    w: Math.max(1, Number(normalized.w) || 1),
+    h: Math.max(1, Number(normalized.h) || 1),
+  };
+}
+
+function motherDraftingRectCssToCanvasRectPx(rectCss = null) {
+  const normalized = motherDraftingNormalizeRectCss(rectCss);
+  if (!normalized) return null;
+  const dpr = getDpr();
+  const ms = state.canvasMode === "multi" ? Math.max(0.0001, Number(state.multiView?.scale) || 1) : 1;
+  const mox = state.canvasMode === "multi" ? Number(state.multiView?.offsetX) || 0 : 0;
+  const moy = state.canvasMode === "multi" ? Number(state.multiView?.offsetY) || 0 : 0;
+  return {
+    x: normalized.x * dpr * ms + mox,
+    y: normalized.y * dpr * ms + moy,
+    w: Math.max(1, normalized.w * dpr * ms),
+    h: Math.max(1, normalized.h * dpr * ms),
+  };
+}
+
+function hitTestMotherDraftingPreviewRect(ptCanvas, { padPx = 0 } = {}) {
+  if (!ptCanvas || state.canvasMode !== "multi") return null;
+  const idle = state.motherIdle;
+  const pending = state.pendingMotherDraft;
+  if (!idle || !pending || idle.phase !== MOTHER_IDLE_STATES.DRAFTING) return null;
+  if (String(pending.previewPolicy || "").trim().toLowerCase() === "replace") return null;
+  const rectCss = motherDraftingResolvePendingPreviewRectCss(pending);
+  if (!rectCss) return null;
+  const rectPx = motherDraftingRectCssToCanvasRectPx(rectCss);
+  if (!rectPx) return null;
+  const pad = Math.max(0, Number(padPx) || 0);
+  const x = Number(ptCanvas.x) || 0;
+  const y = Number(ptCanvas.y) || 0;
+  if (x < rectPx.x - pad || x > rectPx.x + rectPx.w + pad) return null;
+  if (y < rectPx.y - pad || y > rectPx.y + rectPx.h + pad) return null;
+  return {
+    rectCss: { ...rectCss },
+    rectPx,
+  };
+}
+
+function motherV2ImageHints(images = []) {
+  const hints = [];
+  for (const img of Array.isArray(images) ? images : []) {
+    hints.push(String(img?.vision_desc || "").trim());
+    hints.push(String(img?.file || "").trim());
+  }
+  return hints.filter(Boolean);
+}
+
+function motherV2HasHumanSignal(hints = []) {
+  const text = (Array.isArray(hints) ? hints : []).join(" ").toLowerCase();
+  return /(person|people|human|face|portrait|selfie|woman|man|child)/i.test(text);
+}
+
+const MOTHER_V2_PHOTOREAL_STYLE_PATTERNS = Object.freeze([
+  /\bphoto\b/i,
+  /\bphotograph(ic|y)?\b/i,
+  /\bphotoreal\b/i,
+  /\bphotorealistic\b/i,
+  /\brealistic\b/i,
+  /\bdslr\b/i,
+  /\b35mm\b/i,
+  /\bcinematic\b/i,
+  /\bfilm\s+still\b/i,
+  /\bbokeh\b/i,
+  /\bnatural\s+light(?:ing)?\b/i,
+]);
+
+const MOTHER_V2_STYLIZED_STYLE_PATTERNS = Object.freeze([
+  /\bcartoon\b/i,
+  /\btoon\b/i,
+  /\banime\b/i,
+  /\bmanga\b/i,
+  /\billustration\b/i,
+  /\billustrated\b/i,
+  /\bgraphic\b/i,
+  /\bvector\b/i,
+  /\bcomic\b/i,
+  /\bline\s*art\b/i,
+  /\bsketch\b/i,
+  /\bpainterly\b/i,
+  /\bpainting\b/i,
+  /\bcel[-\s]?shaded\b/i,
+  /\bcgi\b/i,
+  /\b3d\s+render(?:ed|ing)?\b/i,
+  /\bpixel\s*art\b/i,
+  /\blow[-\s]?poly\b/i,
+  /\bstylized\b/i,
+  /\bstylised\b/i,
+]);
+
+function motherV2CountStylePatternHits(text = "", patterns = []) {
+  let hits = 0;
+  const haystack = String(text || "");
+  for (const pattern of Array.isArray(patterns) ? patterns : []) {
+    if (!pattern || typeof pattern.test !== "function") continue;
+    if (pattern.test(haystack)) hits += 1;
+  }
+  return hits;
+}
+
+function motherV2StyleSignalsFromHints(hints = []) {
+  const text = (Array.isArray(hints) ? hints : []).join(" ").toLowerCase();
+  return {
+    text,
+    photorealHits: motherV2CountStylePatternHits(text, MOTHER_V2_PHOTOREAL_STYLE_PATTERNS),
+    stylizedHits: motherV2CountStylePatternHits(text, MOTHER_V2_STYLIZED_STYLE_PATTERNS),
+  };
+}
+
+function motherV2HasPhotorealSignal(hints = []) {
+  const signals = motherV2StyleSignalsFromHints(hints);
+  return Number(signals.photorealHits) > 0;
+}
+
+function motherV2ActiveAnchorStyleProfile(hints = []) {
+  const signals = motherV2StyleSignalsFromHints(hints);
+  const photorealHits = Number(signals.photorealHits) || 0;
+  const stylizedHits = Number(signals.stylizedHits) || 0;
+  if (photorealHits <= 0 && stylizedHits <= 0) return "unknown";
+  if (stylizedHits > photorealHits) return "stylized";
+  if (photorealHits > stylizedHits) return "photoreal";
+  // Tie-breaker: preserve stylized rendering when both signals are equally strong.
+  if (stylizedHits > 0) return "stylized";
+  return "photoreal";
+}
+
+function motherV2RankImageIdsByProminence(images = []) {
+  const ranked = [];
+  for (let idx = 0; idx < (Array.isArray(images) ? images.length : 0); idx += 1) {
+    const img = images[idx];
+    const id = String(img?.id || "").trim();
+    if (!id) continue;
+    const rect = img?.rect && typeof img.rect === "object" ? img.rect : null;
+    const w = Math.max(0, Number(rect?.w) || 0);
+    const h = Math.max(0, Number(rect?.h) || 0);
+    const area = Math.max(0, w * h);
+    ranked.push({ id, idx, area });
+  }
+  if (!ranked.length) return [];
+  const hasArea = ranked.some((entry) => Number(entry.area) > 0);
+  ranked.sort((a, b) => {
+    if (hasArea && Number(b.area) !== Number(a.area)) return Number(b.area) - Number(a.area);
+    return Number(a.idx) - Number(b.idx);
+  });
+  return ranked.map((entry) => String(entry.id));
+}
+
+function motherV2IntentFromRealtimeIcons(iconState = null, payload = {}) {
+  const icons = iconState && typeof iconState === "object" ? iconState : {};
+  const images = Array.isArray(payload.images) ? payload.images : [];
+  const imageIds = images.map((img) => String(img?.id || "").trim()).filter(Boolean);
+  const imageIdSet = new Set(imageIds);
+  const selectedIds = motherV2NormalizeImageIdList(payload.selected_ids || []).filter((id) => imageIdSet.has(id));
+  const rankedIds = motherV2RankImageIdsByProminence(images).filter((id) => imageIdSet.has(id));
+  const activeIdRaw = String(payload.active_id || "").trim();
+  const activeId = imageIdSet.has(activeIdRaw) ? activeIdRaw : null;
+  const branches = Array.isArray(icons.branches) ? icons.branches : [];
+  const checkpointBranchId = String(icons?.checkpoint?.applies_to || "").trim();
+  const preferredBranch = checkpointBranchId
+    ? branches.find((branch) => String(branch?.branch_id || "").trim() === checkpointBranchId) || null
+    : null;
+  const topBranch = preferredBranch || branches[0] || null;
+  const evidenceIds = Array.isArray(topBranch?.evidence_image_ids)
+    ? topBranch.evidence_image_ids.map((v) => String(v || "").trim()).filter((id) => imageIdSet.has(id))
+    : [];
+
+  const targetIds = [];
+  const pushTarget = (rawId) => {
+    const id = String(rawId || "").trim();
+    if (!id || !imageIdSet.has(id)) return;
+    if (targetIds.includes(id)) return;
+    targetIds.push(id);
+  };
+  if (selectedIds.length) {
+    for (const id of selectedIds) pushTarget(id);
+  } else if (evidenceIds.length) {
+    pushTarget(evidenceIds[0]);
+  } else if (activeId) {
+    pushTarget(activeId);
+  } else {
+    pushTarget(rankedIds[0] || imageIds[0] || "");
+  }
+
+  const referenceIds = [];
+  const pushRef = (rawId) => {
+    const id = String(rawId || "").trim();
+    if (!id || !imageIdSet.has(id)) return;
+    if (targetIds.includes(id)) return;
+    if (referenceIds.includes(id)) return;
+    referenceIds.push(id);
+  };
+  for (const id of evidenceIds) pushRef(id);
+  for (const id of rankedIds) pushRef(id);
+  for (const id of imageIds) pushRef(id);
+
+  const transformationModeCandidates = [];
+  const pushModeCandidate = (rawMode, rawConfidence = null, rawAweJoyScore = null, { idx = null } = {}) => {
+    const normalized = motherV2NormalizeModeCandidate(
+      {
+        mode: rawMode,
+        confidence: rawConfidence,
+        awe_joy_score: rawAweJoyScore,
+      },
+      { idx: idx === null ? transformationModeCandidates.length : idx }
+    );
+    if (!normalized) return;
+    const existing = transformationModeCandidates.find((entry) => entry.mode === normalized.mode) || null;
+    if (!existing) {
+      transformationModeCandidates.push(normalized);
+      return;
+    }
+    if (typeof normalized.confidence === "number") {
+      const prior = typeof existing.confidence === "number" ? existing.confidence : -1;
+      if (normalized.confidence > prior) existing.confidence = normalized.confidence;
+    }
+    if (typeof normalized.awe_joy_score === "number") {
+      const prior = typeof existing.awe_joy_score === "number" ? existing.awe_joy_score : -1;
+      if (normalized.awe_joy_score > prior) existing.awe_joy_score = normalized.awe_joy_score;
+    }
+    const priorIdx = Number.isFinite(Number(existing._idx)) ? Number(existing._idx) : Number.MAX_SAFE_INTEGER;
+    const nextIdx = Number.isFinite(Number(normalized._idx)) ? Number(normalized._idx) : Number.MAX_SAFE_INTEGER;
+    existing._idx = Math.min(priorIdx, nextIdx);
+  };
+  const explicitRealtimeModeHint = motherV2MaybeTransformationMode(icons?.transformation_mode);
+  if (explicitRealtimeModeHint) pushModeCandidate(explicitRealtimeModeHint, null, null, { idx: 0 });
+  let modeCandidateIdx = explicitRealtimeModeHint ? 1 : 0;
+  for (const candidate of Array.isArray(icons?.transformation_mode_candidates) ? icons.transformation_mode_candidates : []) {
+    pushModeCandidate(candidate?.mode || candidate?.transformation_mode, candidate?.confidence, candidate?.awe_joy_score, {
+      idx: modeCandidateIdx,
+    });
+    modeCandidateIdx += 1;
+  }
+  transformationModeCandidates.sort(motherV2CompareModeCandidates);
+  const transformationMode = motherV2MaybeTransformationMode(transformationModeCandidates[0]?.mode || explicitRealtimeModeHint);
+  if (transformationMode) {
+    pushModeCandidate(transformationMode, null, null, { idx: modeCandidateIdx + 1 });
+    transformationModeCandidates.sort(motherV2CompareModeCandidates);
+  }
+  const rankedTransformationModeCandidates = transformationModeCandidates.slice(0, motherV2ProposalLimit()).map((entry) => ({
+    mode: entry.mode,
+    awe_joy_score: typeof entry.awe_joy_score === "number" ? entry.awe_joy_score : null,
+    confidence: typeof entry.confidence === "number" ? entry.confidence : null,
+  }));
+
+  const summary = transformationMode
+    ? motherV2ProposalSentence({ transformation_mode: transformationMode })
+    : "Proposal pending realtime mode";
+  const confidence = clamp(
+    typeof topBranch?.confidence === "number" && Number.isFinite(topBranch.confidence)
+      ? Number(topBranch.confidence)
+      : rankedTransformationModeCandidates.length && typeof rankedTransformationModeCandidates[0].confidence === "number"
+        ? Number(rankedTransformationModeCandidates[0].confidence)
+        : targetIds.length
+          ? 0.78
+          : 0.62,
+    0.2,
+    0.99
+  );
+
+  const placementPolicy = imageIds.length >= 4
+    ? "grid"
+    : targetIds.length && referenceIds.length
+      ? "adjacent"
+      : targetIds.length
+        ? "replace"
+        : "adjacent";
+  const subject = targetIds.slice(0, 1);
+  const model = referenceIds.slice(0, 1);
+  const mediator = referenceIds.slice(1, 2).length ? referenceIds.slice(1, 2) : referenceIds.slice(0, 1);
+  const obj = targetIds.slice(0, 1);
+  const actionVersion = Number(payload.action_version) || 0;
+  const frameId = String(icons?.frame_id || "").trim();
+  const branchId = String(topBranch?.branch_id || "").trim();
+  const shotTypeHints = motherV2ShotTypeHints({
+    preferredMode: transformationMode,
+    candidateModes: rankedTransformationModeCandidates,
+  });
+  return {
+    intent_id: frameId ? `intent-rt-${frameId}` : `intent-rt-${actionVersion}-${Math.random().toString(16).slice(2, 7)}`,
+    summary,
+    creative_directive: motherCurrentCreativeDirective(),
+    transformation_mode: transformationMode || null,
+    transformation_mode_candidates: rankedTransformationModeCandidates,
+    shot_type: shotTypeHints.primary_shot_type,
+    alternate_shot_type: shotTypeHints.alternate_shot_type,
+    lighting_profile: shotTypeHints.primary_lighting_profile,
+    alternate_lighting_profile: shotTypeHints.alternate_lighting_profile,
+    lens_guidance: shotTypeHints.primary_lens_guidance,
+    alternate_lens_guidance: shotTypeHints.alternate_lens_guidance,
+    shot_type_hints: shotTypeHints,
+    target_ids: targetIds.slice(0, 3),
+    reference_ids: referenceIds.slice(0, 3),
+    placement_policy: placementPolicy,
+    confidence,
+    roles: {
+      subject,
+      model,
+      mediator,
+      object: obj,
+    },
+    realtime_frame_id: frameId || null,
+    branch_id: branchId || null,
+    alternatives: [
+      { placement_policy: "adjacent" },
+      { placement_policy: "grid" },
+    ],
+  };
+}
+
+function motherV2CompilePromptLocal(payload = {}) {
+  const intent = payload.intent && typeof payload.intent === "object" ? payload.intent : {};
+  const summary =
+    String(intent.summary || intent.label || "").trim() ||
+    MOTHER_V2_PROPOSAL_BY_MODE[MOTHER_V2_DEFAULT_TRANSFORMATION_MODE];
+  const creativeDirective =
+    String(payload.creative_directive || intent.creative_directive || "").trim() || motherCurrentCreativeDirective();
+  const transformationMode = motherV2NormalizeTransformationMode(
+    payload.transformation_mode || intent.transformation_mode || MOTHER_V2_DEFAULT_TRANSFORMATION_MODE
+  );
+  const shotTypeHints = motherV2ShotTypeHints({
+    preferredMode: transformationMode,
+    candidateModes: Array.isArray(intent.transformation_mode_candidates) ? intent.transformation_mode_candidates : [],
+  });
+  const roles = intent.roles && typeof intent.roles === "object" ? intent.roles : {};
+  const subjectIds = Array.isArray(roles.subject) ? roles.subject.map((v) => String(v || "").trim()).filter(Boolean).slice(0, 2) : [];
+  const modelIds = Array.isArray(roles.model) ? roles.model.map((v) => String(v || "").trim()).filter(Boolean).slice(0, 2) : [];
+  const roleText = MOTHER_V2_ROLE_KEYS.map((key) => {
+    const ids = Array.isArray(roles[key]) ? roles[key].map((v) => String(v || "").trim()).filter(Boolean) : [];
+    return `${MOTHER_V2_ROLE_LABEL[key] || key.toUpperCase()}: ${ids.length ? ids.join(", ") : "none"}`;
+  }).join("; ");
+  const targetIds = Array.isArray(intent.target_ids) ? intent.target_ids.map((v) => String(v || "").trim()).filter(Boolean) : [];
+  const referenceIds = Array.isArray(intent.reference_ids) ? intent.reference_ids.map((v) => String(v || "").trim()).filter(Boolean) : [];
+  const activeId = String(payload.active_id || getVisibleActiveId() || "").trim();
+  const contextIds = [];
+  for (const id of [...targetIds, ...referenceIds]) {
+    if (id && !contextIds.includes(id)) contextIds.push(id);
+  }
+  const imageRows = Array.isArray(payload.images) ? payload.images : [];
+  const imageById = new Map(
+    imageRows
+      .map((entry) => [String(entry?.id || "").trim(), entry])
+      .filter(([id]) => Boolean(id))
+  );
+  const parseTransformLock = (rawTransform = null) => {
+    if (!rawTransform || typeof rawTransform !== "object") return null;
+    const rotateDeg = Number(rawTransform.rotate_deg);
+    const skewXDeg = Number(rawTransform.skew_x_deg);
+    const userResized = Boolean(rawTransform.user_resized);
+    return {
+      rotateDeg: Number.isFinite(rotateDeg) ? normalizeFreeformRotateDeg(rotateDeg) : 0,
+      skewXDeg: Number.isFinite(skewXDeg) ? normalizeFreeformSkewDeg(skewXDeg) : 0,
+      userResized,
+    };
+  };
+  const transformById = new Map(
+    imageRows
+      .map((entry) => {
+        const imageId = String(entry?.id || "").trim();
+        if (!imageId) return null;
+        const transform = parseTransformLock(entry?.transform);
+        return transform ? [imageId, transform] : null;
+      })
+      .filter(Boolean)
+  );
+  const activeAnchorId = activeId || targetIds[0] || contextIds[0] || "";
+  const activeAnchorImage = activeAnchorId ? imageById.get(activeAnchorId) || null : null;
+  const activeAnchorHints = activeAnchorImage
+    ? [
+        String(activeAnchorImage?.vision_desc || "").trim(),
+        String(activeAnchorImage?.file || "").trim(),
+      ].filter(Boolean)
+    : [];
+  const activeAnchorStyleProfile = motherV2ActiveAnchorStyleProfile(activeAnchorHints);
+  const activeAnchorPhotoreal = activeAnchorStyleProfile === "photoreal";
+  const activeAnchorStylized = activeAnchorStyleProfile === "stylized";
+  const multiImage = contextIds.length > 1;
+  const imageHints = motherV2ImageHints(payload.images || []);
+  const hasHumanInputs = motherV2HasHumanSignal(imageHints);
+  const activeAnchorTransform = activeAnchorId ? transformById.get(activeAnchorId) || null : null;
+  const transformLockedIds = contextIds
+    .map((id) => ({ id, transform: transformById.get(id) || null }))
+    .filter((entry) => {
+      const transform = entry?.transform;
+      if (!transform) return false;
+      if (transform.userResized) return true;
+      return Math.abs(Number(transform.rotateDeg) || 0) > 0.2 || Math.abs(Number(transform.skewXDeg) || 0) > 0.2;
+    })
+    .slice(0, 3);
+  const allowDoubleExposure = ["destabilize", "fracture", "alienate"].includes(transformationMode);
+  const constraints = [
+    "No unintended ghosted human overlays.",
+    allowDoubleExposure
+      ? "Allow intentional double-exposure only when it clearly supports the chosen transformation mode."
+      : "No accidental double-exposure artifacts.",
+    "No icon-overpaint artifacts.",
+    "Keep role-anchor cues readable when continuity matters.",
+  ];
+  if (activeAnchorId) {
+    constraints.push(
+      `Preserve active image ${activeAnchorId} identity, framing, and scene continuity as the primary edit anchor.`
+    );
+    constraints.push("Apply proposal changes as controlled edits, not a full replacement of the anchor image.");
+  }
+  if (activeAnchorPhotoreal) {
+    constraints.push("Keep the output photorealistic with natural lighting, lens behavior, and realistic surface texture.");
+  }
+  if (activeAnchorStylized) {
+    constraints.push(
+      "Keep the output in the active anchor's stylized rendering language (illustration/cartoon/anime/graphic) and avoid forced photoreal conversion."
+    );
+  }
+  if (!hasHumanInputs) {
+    constraints.push("No extra humans or faces unless clearly present in the input references.");
+  }
+  if (transformLockedIds.length) {
+    constraints.push("Respect current canvas transform locks (rotation, skew, and user-set scale) for referenced source images.");
+  }
+  const multiImageRules = [];
+  if (multiImage) {
+    multiImageRules.push("Fuse all references into one striking scene (not a split-screen collage).");
+    if (subjectIds.length && modelIds.length) {
+      multiImageRules.push(
+        `Blend cues from ${subjectIds.join(", ")} and ${modelIds.join(", ")} into one unexpected but visually compelling scene.`
+      );
+    } else if (targetIds.length && referenceIds.length) {
+      multiImageRules.push(
+        `Remix structure from ${targetIds[0]} with visual language from ${referenceIds[0]} in a surprising way.`
+      );
+    }
+    multiImageRules.push("Use perspective, scale, and lighting intentionally so the blend feels deliberate.");
+    multiImageRules.push("Keep a clear focal hierarchy so the image reads instantly.");
+  }
+  const positiveLines = [
+    `Transformation mode: ${transformationMode}.`,
+    `Shot type guidance: ${shotTypeHints.shot_instruction}`,
+    `Lighting guidance: ${shotTypeHints.lighting_instruction}`,
+    shotTypeHints.lens_instruction,
+    `Creative directive: ${creativeDirective}.`,
+    `Intent summary: ${summary}.`,
+    `Role anchors: ${roleText}.`,
+  ];
+  if (activeAnchorId) {
+    positiveLines.push(
+      `Active image anchor: ${activeAnchorId}. Preserve as much of this image as possible while integrating the proposal.`
+    );
+  }
+  if (activeAnchorPhotoreal) {
+    positiveLines.push("Style continuity: keep the anchor image photorealistic and avoid painterly/cartoon stylization.");
+  }
+  if (activeAnchorStylized) {
+    positiveLines.push(
+      "Style continuity: keep the anchor image stylized (illustration/cartoon/anime/graphic) and avoid photoreal restyling."
+    );
+  }
+  if (activeAnchorTransform) {
+    const transformParts = [];
+    if (Math.abs(Number(activeAnchorTransform.rotateDeg) || 0) > 0.2) {
+      transformParts.push(`rotation ${Number(activeAnchorTransform.rotateDeg).toFixed(2)}deg`);
+    }
+    if (Math.abs(Number(activeAnchorTransform.skewXDeg) || 0) > 0.2) {
+      transformParts.push(`skew ${Number(activeAnchorTransform.skewXDeg).toFixed(2)}deg`);
+    }
+    if (activeAnchorTransform.userResized) transformParts.push("user-resized scale");
+    if (transformParts.length) {
+      positiveLines.push(`Active anchor transform lock: preserve ${transformParts.join(", ")} unless explicitly contradicted by intent.`);
+    }
+  }
+  if (transformLockedIds.length) {
+    const lockList = transformLockedIds
+      .map((entry) => {
+        const transform = entry.transform || {};
+        const parts = [];
+        if (Math.abs(Number(transform.rotateDeg) || 0) > 0.2) parts.push(`rot ${Number(transform.rotateDeg).toFixed(2)}deg`);
+        if (Math.abs(Number(transform.skewXDeg) || 0) > 0.2) parts.push(`skew ${Number(transform.skewXDeg).toFixed(2)}deg`);
+        if (transform.userResized) parts.push("resized");
+        if (!parts.length) return "";
+        return `${entry.id}(${parts.join(", ")})`;
+      })
+      .filter(Boolean);
+    if (lockList.length) {
+      positiveLines.push(`Canvas transform guidance: ${lockList.join("; ")}.`);
+    }
+  }
+  if (multiImageRules.length) {
+    positiveLines.push(`Multi-image fusion rules: ${multiImageRules.join(" ")}`);
+  }
+  positiveLines.push(`Anti-overlay constraints: ${constraints.join(" ")}`);
+  positiveLines.push("Produce bold composition, emotional resonance, and production-grade lighting.");
+  positiveLines.push("No text overlays, words, letters, logos-as-text, or watermarks.");
+  positiveLines.push("Create one production-ready concept image.");
+  const styleContinuityAvoid = activeAnchorPhotoreal
+    ? "No painterly/cartoon restyling."
+    : activeAnchorStylized
+      ? "No forced photoreal conversion."
+      : "";
+  return {
+    action_version: Number(payload.action_version) || 0,
+    creative_directive: creativeDirective,
+    transformation_mode: transformationMode,
+    shot_type: shotTypeHints.primary_shot_type,
+    alternate_shot_type: shotTypeHints.alternate_shot_type,
+    lighting_profile: shotTypeHints.primary_lighting_profile,
+    alternate_lighting_profile: shotTypeHints.alternate_lighting_profile,
+    lens_guidance: shotTypeHints.primary_lens_guidance,
+    alternate_lens_guidance: shotTypeHints.alternate_lens_guidance,
+    shot_type_hints: shotTypeHints,
+    positive_prompt: positiveLines.join(" "),
+    negative_prompt: `No collage split-screen. No text overlays. No watermark. No ghosted human overlays. No icon-overpaint artifacts. No low-detail artifacts.${
+      styleContinuityAvoid ? ` ${styleContinuityAvoid}` : ""
+    } ${
+      hasHumanInputs ? "No unintended extra faces." : "No extra humans/faces unless present in inputs."
+    }`,
+    compile_constraints: constraints,
+    generation_params: {
+      guidance_scale: 7,
+      layout_hint: String(intent.placement_policy || "adjacent"),
+      seed_strategy: "random",
+      transformation_mode: transformationMode,
+      intensity: clamp(Number(payload.intensity) || Number(state.motherIdle?.intensity) || 62, 0, 100),
+    },
+  };
+}
+
+async function motherV2WritePayloadFile(prefix, payload = {}) {
+  if (!state.runDir) return null;
+  const stamp = `${Date.now()}-${Math.random().toString(16).slice(2, 6)}`;
+  const outPath = `${state.runDir}/${prefix}-${stamp}.json`;
+  try {
+    await writeTextFile(outPath, JSON.stringify(payload, null, 2));
+    return outPath;
+  } catch {
+    return null;
+  }
+}
+
+function motherV2AmbientIntentHints(maxBranches = 3) {
+  const iconState = state.intentAmbient?.iconState;
+  const branches = Array.isArray(iconState?.branches) ? iconState.branches.slice() : [];
+  if (!branches.length) return [];
+  const normalized = branches
+    .map((branch) => {
+      if (!branch || typeof branch !== "object") return null;
+      const branchId = String(branch.branch_id || "").trim();
+      if (!branchId) return null;
+      const confidence = typeof branch.confidence === "number" && Number.isFinite(branch.confidence)
+        ? clamp(Number(branch.confidence) || 0, 0, 1)
+        : null;
+      const evidence = Array.isArray(branch.evidence_image_ids)
+        ? branch.evidence_image_ids.map((v) => String(v || "").trim()).filter(Boolean).slice(0, 3)
+        : [];
+      return {
+        branch_id: branchId,
+        confidence,
+        evidence_image_ids: evidence,
+      };
+    })
+    .filter(Boolean);
+  normalized.sort((a, b) => {
+    const ac = typeof a.confidence === "number" ? a.confidence : -1;
+    const bc = typeof b.confidence === "number" ? b.confidence : -1;
+    return bc - ac;
+  });
+  return normalized.slice(0, Math.max(1, Number(maxBranches) || 3));
+}
+
+function motherV2AmbientTransformationModeHints() {
+  const iconState = state.intentAmbient?.iconState;
+  if (!iconState || typeof iconState !== "object") {
+    return { preferredMode: null, candidates: [] };
+  }
+  const candidates = [];
+  const pushCandidate = (rawMode, rawConfidence = null, rawAweJoyScore = null, { idx = null } = {}) => {
+    const normalized = motherV2NormalizeModeCandidate(
+      {
+        mode: rawMode,
+        confidence: rawConfidence,
+        awe_joy_score: rawAweJoyScore,
+      },
+      { idx: idx === null ? candidates.length : idx }
+    );
+    if (!normalized) return;
+    const exists = candidates.find((entry) => entry.mode === normalized.mode);
+    if (!exists) {
+      candidates.push(normalized);
+      return;
+    }
+    if (typeof normalized.confidence === "number") {
+      const prior = typeof exists.confidence === "number" ? exists.confidence : -1;
+      if (normalized.confidence > prior) exists.confidence = normalized.confidence;
+    }
+    if (typeof normalized.awe_joy_score === "number") {
+      const prior = typeof exists.awe_joy_score === "number" ? exists.awe_joy_score : -1;
+      if (normalized.awe_joy_score > prior) exists.awe_joy_score = normalized.awe_joy_score;
+    }
+    const priorIdx = Number.isFinite(Number(exists._idx)) ? Number(exists._idx) : Number.MAX_SAFE_INTEGER;
+    const nextIdx = Number.isFinite(Number(normalized._idx)) ? Number(normalized._idx) : Number.MAX_SAFE_INTEGER;
+    exists._idx = Math.min(priorIdx, nextIdx);
+  };
+
+  pushCandidate(iconState.transformation_mode, null, null, { idx: 0 });
+  let modeCandidateIdx = 1;
+  for (const entry of Array.isArray(iconState.transformation_mode_candidates) ? iconState.transformation_mode_candidates : []) {
+    if (!entry || typeof entry !== "object") continue;
+    pushCandidate(entry.mode || entry.transformation_mode, entry.confidence, entry.awe_joy_score, {
+      idx: modeCandidateIdx,
+    });
+    modeCandidateIdx += 1;
+  }
+  candidates.sort(motherV2CompareModeCandidates);
+  const outputCandidates = candidates.slice(0, motherV2ProposalLimit()).map((entry) => ({
+    mode: entry.mode,
+    awe_joy_score: typeof entry.awe_joy_score === "number" ? entry.awe_joy_score : null,
+    confidence: typeof entry.confidence === "number" ? entry.confidence : null,
+  }));
+  return {
+    preferredMode: outputCandidates[0]?.mode || null,
+    candidates: outputCandidates,
+  };
+}
+
+function motherV2PreferredTransformationModeHint() {
+  const intentMode = motherV2MaybeTransformationMode(state.motherIdle?.intent?.transformation_mode);
+  if (intentMode) return intentMode;
+  return motherV2AmbientTransformationModeHints().preferredMode;
+}
+
+function motherV2CanvasContextSummaryHint() {
+  return null;
+}
+
+function motherV2BuildProposalContextForIntentPayload({
+  images = [],
+  selectedIds = [],
+  activeId = null,
+  preferredTransformationMode = "",
+  transformationModeCandidates = [],
+} = {}) {
+  const sourceImages = Array.isArray(images) ? images : [];
+  if (!sourceImages.length) return null;
+
+  const SATURATION_K = Object.freeze({
+    move: 8,
+    resize: 4,
+    transform: 5,
+    selection: 8,
+    action: 4,
+  });
+  const INTERACTION_DECAY_TAU_MS = 90_000;
+  const INTERACTION_STALE_CUTOFF_MS = 10 * 60 * 1000;
+  const EPS = 1e-9;
+  const nowMs = Date.now();
+  const selectedIdSet = new Set(
+    (Array.isArray(selectedIds) ? selectedIds : [])
+      .map((v) => String(v || "").trim())
+      .filter(Boolean)
+  );
+  const activeIdNorm = String(activeId || "").trim();
+  const clamp01 = (value) => clamp(Number(value) || 0, 0, 1);
+  const round4 = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.round(n * 10000) / 10000;
+  };
+  const round2 = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.round(n * 100) / 100;
+  };
+  const sat = (count, k) => {
+    const c = Math.max(0, Number(count) || 0);
+    const cap = Math.max(1, Number(k) || 1);
+    const v = Math.log(1 + c) / Math.log(1 + cap);
+    return clamp01(v);
+  };
+  const slotLabelForIndex = (index) => {
+    const i = Math.max(0, Math.floor(Number(index) || 0));
+    if (i < 26) return String.fromCharCode(65 + i);
+    return `I${i + 1}`;
+  };
+  const sizeTierFromArea = (areaRatio) => {
+    const n = Math.max(0, Number(areaRatio) || 0);
+    if (n >= 0.07) return "DOMINANT";
+    if (n >= 0.03) return "MEDIUM";
+    return "SMALL";
+  };
+  const positionTierFromRect = (rectNorm) => {
+    const cx = Number(rectNorm?.cx);
+    const cy = Number(rectNorm?.cy);
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return "CENTER_MIDDLE";
+    const xTier = cx < 0.34 ? "LEFT" : cx > 0.66 ? "RIGHT" : "CENTER";
+    const yTier = cy < 0.34 ? "TOP" : cy > 0.66 ? "BOTTOM" : "MIDDLE";
+    return `${xTier}_${yTier}`;
+  };
+  const relationFromDelta = (dx, dy, overlaps = false) => {
+    if (overlaps) return "OVERLAP";
+    return Math.abs(dx) >= Math.abs(dy)
+      ? (dx >= 0 ? "RIGHT" : "LEFT")
+      : (dy >= 0 ? "BELOW" : "ABOVE");
+  };
+
+  const rows = [];
+  const imageIds = [];
+  for (let i = 0; i < sourceImages.length; i += 1) {
+    const image = sourceImages[i];
+    const id = String(image?.id || "").trim();
+    if (!id || imageIds.includes(id)) continue;
+    imageIds.push(id);
+    const rectNormRaw = image?.rect_norm && typeof image.rect_norm === "object" ? image.rect_norm : null;
+    const rectNorm = rectNormRaw
+      ? {
+          x: round4(Number(rectNormRaw.x) || 0),
+          y: round4(Number(rectNormRaw.y) || 0),
+          w: round4(Math.max(0, Number(rectNormRaw.w) || 0)),
+          h: round4(Math.max(0, Number(rectNormRaw.h) || 0)),
+          cx: round4((Number(rectNormRaw.x) || 0) + (Math.max(0, Number(rectNormRaw.w) || 0) / 2)),
+          cy: round4((Number(rectNormRaw.y) || 0) + (Math.max(0, Number(rectNormRaw.h) || 0) / 2)),
+        }
+      : null;
+    const canvasAreaRatio = rectNorm ? Math.max(0, Number(rectNorm.w) * Number(rectNorm.h)) : 0;
+    rows.push({
+      id,
+      slot: slotLabelForIndex(rows.length),
+      rect_norm: rectNorm,
+      canvas_area_ratio: canvasAreaRatio,
+      selected: selectedIdSet.has(id),
+      active: Boolean(activeIdNorm && activeIdNorm === id),
+      interaction_base: 0,
+      interaction_raw: 0,
+      interaction_stale: true,
+      focus_score_raw: 0,
+      focus_score: 0,
+      geometry_score_raw: 0,
+      geometry_score: 0,
+      relative_scale_to_largest: 0,
+      score: 0,
+      weight_hint: 0,
+      size_tier: sizeTierFromArea(canvasAreaRatio),
+      position_tier: positionTierFromRect(rectNorm),
+      geometry_trace: null,
+    });
+  }
+  if (!rows.length) return null;
+
+  const signalsById = motherV2CollectImageInteractionSignals(imageIds);
+  for (const row of rows) {
+    const signal = signalsById.get(row.id) || {
+      move_count: 0,
+      resize_count: 0,
+      transform_count: 0,
+      selection_hits: 0,
+      action_grid_hits: 0,
+      last_event_at_ms: 0,
+      last_transform_at_ms: 0,
+    };
+    const moveSat = sat(signal.move_count, SATURATION_K.move);
+    const resizeSat = sat(signal.resize_count, SATURATION_K.resize);
+    const transformSat = sat(signal.transform_count, SATURATION_K.transform);
+    const selectionSat = sat(signal.selection_hits, SATURATION_K.selection);
+    const actionSat = sat(signal.action_grid_hits, SATURATION_K.action);
+    const interactionBase =
+      0.3 * moveSat + 0.22 * resizeSat + 0.23 * transformSat + 0.2 * selectionSat + 0.05 * actionSat;
+    const transformRecencyMs = Number(signal.last_transform_at_ms) || 0;
+    const recencyMs = transformRecencyMs || Number(signal.last_event_at_ms) || 0;
+    const ageMs = recencyMs ? Math.max(0, nowMs - recencyMs) : INTERACTION_STALE_CUTOFF_MS + 1;
+    const transformAgeMs = transformRecencyMs
+      ? Math.max(0, nowMs - transformRecencyMs)
+      : INTERACTION_STALE_CUTOFF_MS + 1;
+    const interactionStale = transformAgeMs > INTERACTION_STALE_CUTOFF_MS;
+    let interactionRaw = interactionStale
+      ? 0
+      : interactionBase * Math.exp(-ageMs / INTERACTION_DECAY_TAU_MS);
+    if (
+      Number(signal.move_count) <= 1 &&
+      Number(signal.resize_count) === 0 &&
+      Number(signal.transform_count) === 0 &&
+      Number(signal.selection_hits) <= 2 &&
+      Number(signal.action_grid_hits) === 0
+    ) {
+      interactionRaw = 0;
+    }
+    row.interaction_base = interactionBase;
+    row.interaction_raw = Math.max(0, Number(interactionRaw) || 0);
+    row.interaction_stale = interactionStale;
+  }
+
+  const interactionBaseMax = rows.reduce(
+    (maxVal, row) => Math.max(maxVal, Math.max(0, Number(row.interaction_base) || 0)),
+    0
+  );
+  const interactionRawMax = rows.reduce(
+    (maxVal, row) => Math.max(maxVal, Math.max(0, Number(row.interaction_raw) || 0)),
+    0
+  );
+  const interactionConfidence = clamp01((interactionBaseMax - 0.15) / 0.35);
+  for (const row of rows) {
+    const focusRaw = interactionRawMax > 0 ? (Number(row.interaction_raw) || 0) / (interactionRawMax + EPS) : 0;
+    row.focus_score_raw = clamp01(focusRaw);
+    row.focus_score = clamp01(interactionConfidence * row.focus_score_raw);
+  }
+
+  const areaValues = rows
+    .map((row) => Math.max(0, Number(row.canvas_area_ratio) || 0))
+    .filter((value) => value > 0);
+  const areaMax = areaValues.length ? Math.max(...areaValues) : 0;
+  const areaMin = areaValues.length ? Math.min(...areaValues) : 0;
+  const sqrtAreaMax = areaMax > 0 ? Math.sqrt(areaMax) : 0;
+  const geometryConfidence =
+    areaMax > 0 && areaMin > 0
+      ? clamp01(Math.log((areaMax + EPS) / (areaMin + EPS)) / Math.log(2.5))
+      : 0;
+  let geometryRawMax = 0;
+  for (const row of rows) {
+    const area = Math.max(0, Number(row.canvas_area_ratio) || 0);
+    const size = sqrtAreaMax > 0 ? Math.sqrt(area) / (sqrtAreaMax + EPS) : 0;
+    row.relative_scale_to_largest = clamp01(size);
+    const cx = Number(row.rect_norm?.cx);
+    const cy = Number(row.rect_norm?.cy);
+    const centerDist = Number.isFinite(cx) && Number.isFinite(cy) ? Math.hypot(cx - 0.5, cy - 0.5) : 0.7071;
+    const centrality = clamp01(1 - centerDist / 0.7071);
+    const geometryRaw = 0.8 * size + 0.2 * centrality;
+    row.geometry_score_raw = clamp01(geometryRaw);
+    geometryRawMax = Math.max(geometryRawMax, row.geometry_score_raw);
+  }
+  for (const row of rows) {
+    const normalized = geometryRawMax > 0 ? row.geometry_score_raw / (geometryRawMax + EPS) : 0;
+    row.geometry_score = clamp01(geometryConfidence * normalized);
+    row.score =
+      (1 + 0.8 * row.focus_score) *
+      (1 + 0.5 * row.geometry_score) *
+      (1 + (row.selected ? 0.25 : 0) + (row.active ? 0.15 : 0));
+  }
+
+  let scoreTotal = rows.reduce((sum, row) => sum + Math.max(0, Number(row.score) || 0), 0);
+  if (!(scoreTotal > 0)) {
+    for (const row of rows) row.score = 1;
+    scoreTotal = rows.length;
+  }
+  for (const row of rows) {
+    row.weight_hint = scoreTotal > 0 ? (Number(row.score) || 0) / (scoreTotal + EPS) : 0;
+    row.geometry_trace = {
+      cx: round4(row.rect_norm?.cx ?? 0),
+      cy: round4(row.rect_norm?.cy ?? 0),
+      relative_scale: round4(row.relative_scale_to_largest),
+    };
+  }
+
+  const rowsByWeight = rows
+    .slice()
+    .sort((a, b) => Number(b.weight_hint || 0) - Number(a.weight_hint || 0));
+  const tierById = new Map();
+  for (let i = 0; i < rowsByWeight.length; i += 1) {
+    const row = rowsByWeight[i];
+    const weight = Number(row.weight_hint || 0);
+    const tier = i === 0 ? "PRIMARY" : weight >= 0.25 ? "SECONDARY" : "ACCENT";
+    tierById.set(row.id, tier);
+  }
+
+  const spatialRows = rows.filter((row) => row.rect_norm && typeof row.rect_norm === "object").slice(0, 8);
+  const relations = [];
+  const diagonalNorm = Math.sqrt(2);
+  for (let i = 0; i < spatialRows.length; i += 1) {
+    for (let j = i + 1; j < spatialRows.length; j += 1) {
+      const a = spatialRows[i];
+      const b = spatialRows[j];
+      const ar = a.rect_norm || null;
+      const br = b.rect_norm || null;
+      if (!ar || !br) continue;
+      const ax1 = Number(ar.x) || 0;
+      const ay1 = Number(ar.y) || 0;
+      const ax2 = ax1 + Math.max(0, Number(ar.w) || 0);
+      const ay2 = ay1 + Math.max(0, Number(ar.h) || 0);
+      const bx1 = Number(br.x) || 0;
+      const by1 = Number(br.y) || 0;
+      const bx2 = bx1 + Math.max(0, Number(br.w) || 0);
+      const by2 = by1 + Math.max(0, Number(br.h) || 0);
+      const acx = ax1 + (ax2 - ax1) / 2;
+      const acy = ay1 + (ay2 - ay1) / 2;
+      const bcx = bx1 + (bx2 - bx1) / 2;
+      const bcy = by1 + (by2 - by1) / 2;
+      const dx = bcx - acx;
+      const dy = bcy - acy;
+      const centerDistanceNorm = diagonalNorm > 0 ? Math.hypot(dx, dy) / diagonalNorm : 0;
+      const gapX = Math.max(0, Math.max(ax1 - bx2, bx1 - ax2));
+      const gapY = Math.max(0, Math.max(ay1 - by2, by1 - ay2));
+      const edgeGapNorm = Math.hypot(gapX, gapY);
+      const ix1 = Math.max(ax1, bx1);
+      const iy1 = Math.max(ay1, by1);
+      const ix2 = Math.min(ax2, bx2);
+      const iy2 = Math.min(ay2, by2);
+      const iw = Math.max(0, ix2 - ix1);
+      const ih = Math.max(0, iy2 - iy1);
+      const overlapArea = Math.max(0, iw * ih);
+      const overlaps = overlapArea > 1e-8;
+      const areaA = Math.max(0, (ax2 - ax1) * (ay2 - ay1));
+      const areaB = Math.max(0, (bx2 - bx1) * (by2 - by1));
+      const union = Math.max(0, areaA + areaB - overlapArea);
+      const iou = union > 1e-8 ? overlapArea / union : 0;
+
+      let confidence = 0;
+      if (overlaps) {
+        const overlapRatioA = areaA > 1e-8 ? overlapArea / areaA : 0;
+        const overlapRatioB = areaB > 1e-8 ? overlapArea / areaB : 0;
+        const areaNorm = overlapArea;
+        const confIou = clamp01((iou - 0.03) / 0.12);
+        const confArea = clamp01((areaNorm - 0.005) / 0.02);
+        const confCov = clamp01((Math.max(overlapRatioA, overlapRatioB) - 0.25) / 0.5);
+        confidence = Math.max(confIou, confArea, confCov);
+      } else {
+        confidence =
+          clamp01((0.35 - Number(centerDistanceNorm || 0)) / 0.35) *
+          clamp01((0.12 - Number(edgeGapNorm || 0)) / 0.12);
+      }
+      if (confidence < 0.55) continue;
+
+      relations.push({
+        id_a: a.id,
+        id_b: b.id,
+        slot_a: a.slot,
+        slot_b: b.slot,
+        relation: relationFromDelta(dx, dy, overlaps),
+        confidence: round4(confidence),
+        iou: round4(iou),
+      });
+    }
+  }
+  relations.sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0));
+  const relationLimit = rows.length <= 4 ? 4 : 6;
+
+  const shotTypeHints = motherV2ShotTypeHints({
+    preferredMode: preferredTransformationMode || MOTHER_V2_DEFAULT_TRANSFORMATION_MODE,
+    candidateModes: transformationModeCandidates,
+  });
+  const overallConfidence = round4(clamp01(0.6 * interactionConfidence + 0.4 * geometryConfidence));
+  return {
+    schema: "cue.mother.proposal_context.v1",
+    interaction_decay_tau_ms: INTERACTION_DECAY_TAU_MS,
+    interaction_stale_cutoff_ms: INTERACTION_STALE_CUTOFF_MS,
+    focus_rank: rows
+      .slice()
+      .sort((a, b) => Number(b.focus_score || 0) - Number(a.focus_score || 0))
+      .map((row) => row.id)
+      .slice(0, 8),
+    interaction_confidence: round4(interactionConfidence),
+    geometry_confidence: round4(geometryConfidence),
+    overall_confidence: overallConfidence,
+    images: rowsByWeight.slice(0, 8).map((row) => ({
+      id: row.id,
+      slot: row.slot,
+      selected: row.selected,
+      active: row.active,
+      tier: tierById.get(row.id) || "ACCENT",
+      weight_hint: round2(row.weight_hint),
+      focus_score: round2(row.focus_score),
+      geometry_score: round2(row.geometry_score),
+      interaction_stale: row.interaction_stale,
+      size_tier: row.size_tier,
+      position_tier: row.position_tier,
+      geometry_trace: row.geometry_trace,
+    })),
+    preferred_shot_type: shotTypeHints.primary_shot_type,
+    alternate_shot_type: shotTypeHints.alternate_shot_type,
+    preferred_lighting_profile: shotTypeHints.primary_lighting_profile,
+    alternate_lighting_profile: shotTypeHints.alternate_lighting_profile,
+    preferred_lens_guidance: shotTypeHints.primary_lens_guidance,
+    alternate_lens_guidance: shotTypeHints.alternate_lens_guidance,
+    shot_type_hints: shotTypeHints,
+    relations: relations.slice(0, relationLimit),
+  };
+}
+
+function motherV2IntentPayload() {
+  const idle = state.motherIdle;
+  const wrap = els.canvasWrap;
+  const canvasCssW = Math.max(1, Number(wrap?.clientWidth) || 1);
+  const canvasCssH = Math.max(1, Number(wrap?.clientHeight) || 1);
+  const selectedIds = getVisibleSelectedIds().map((v) => String(v || "").trim()).filter(Boolean);
+  const activeId = getVisibleActiveId();
+  const ambientBranches = motherV2AmbientIntentHints(3);
+  const ambientModeHints = motherV2AmbientTransformationModeHints();
+  const preferredTransformationMode = motherV2PreferredTransformationModeHint();
+  const canvasSummary = motherV2CanvasContextSummaryHint();
+  const images = motherIdleBaseImageItems().map((item) => {
+    const rect = state.freeformRects.get(item.id) || null;
+    const rectTransform = readFreeformRectTransform(rect);
+    const visionDesc = normalizeVisionHintForIntent(item?.visionDesc, { maxChars: REALTIME_VISION_LABEL_MAX_CHARS }) || "";
+    return {
+      id: String(item.id || ""),
+      path: String(item.path || ""),
+      file: basename(item.path || ""),
+      vision_desc: visionDesc,
+      rect: rect
+        ? {
+            x: Number(rect.x) || 0,
+            y: Number(rect.y) || 0,
+            w: Number(rect.w) || 0,
+            h: Number(rect.h) || 0,
+          }
+        : null,
+      rect_norm: rect
+        ? {
+            x: (Number(rect.x) || 0) / canvasCssW,
+            y: (Number(rect.y) || 0) / canvasCssH,
+            w: Math.max(0, Number(rect.w) || 0) / canvasCssW,
+            h: Math.max(0, Number(rect.h) || 0) / canvasCssH,
+          }
+        : null,
+      transform: rect
+        ? {
+            rotate_deg: rectTransform.rotateDeg,
+            skew_x_deg: rectTransform.skewXDeg,
+            user_resized: rect.autoAspect === false,
+          }
+        : null,
+      };
+  });
+  const proposalModeCandidates = [
+    ...(Array.isArray(idle?.intent?.transformation_mode_candidates) ? idle.intent.transformation_mode_candidates : []),
+    ...(Array.isArray(ambientModeHints?.candidates) ? ambientModeHints.candidates : []),
+  ];
+  const proposalContext = motherV2BuildProposalContextForIntentPayload({
+    images,
+    selectedIds,
+    activeId,
+    preferredTransformationMode,
+    transformationModeCandidates: proposalModeCandidates,
+  });
+  return {
+    schema: "cue.mother.intent_infer.v1",
+    action_version: Number(idle?.actionVersion) || 0,
+    creative_directive: motherCurrentCreativeDirective(),
+    creative_directive_instruction: motherCurrentCreativeDirectiveSentence(),
+    preferred_transformation_mode: preferredTransformationMode,
+    intensity: clamp(Number(idle?.intensity) || 62, 0, 100),
+    active_id: activeId ? String(activeId) : null,
+    selected_ids: selectedIds,
+    canvas_context_summary: canvasSummary || null,
+    ambient_intent: (ambientBranches.length || ambientModeHints.preferredMode)
+      ? {
+          source: "intent_rt",
+          model: state.intentAmbient?.iconState ? realtimeProviderForScope("intent") : null,
+          branches: ambientBranches,
+          preferred_transformation_mode: ambientModeHints.preferredMode || null,
+          transformation_mode_candidates: ambientModeHints.candidates,
+        }
+      : null,
+    proposal_context: proposalContext,
+    images,
+  };
+}
+
+function motherV2BuildIntentRequestId(actionVersion = 0) {
+  const stamp = Date.now().toString(36);
+  const rand = Math.random().toString(16).slice(2, 8);
+  return `mother-intent-a${Number(actionVersion) || 0}-${stamp}-${rand}`;
+}
+
+function motherV2StopRealtimeIntentSession() {
+  if (!state.ptySpawned) return;
+  invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_MOTHER_STOP}\n` }).catch(() => {});
+}
+
+function motherV2ClearPendingIntentRequest({ reason = "intent_request_cleared", clearBusy = true } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  const requestId = String(idle.pendingIntentRequestId || "").trim() || null;
+  const activePath = String(idle.pendingIntentRealtimePath || "").trim();
+  const hadPending = Boolean(
+    idle.pendingIntent ||
+      requestId ||
+      activePath ||
+      idle.pendingIntentPath ||
+      idle.pendingIntentPayload
+  );
+  if (!hadPending) return false;
+  motherV2StopRealtimeIntentSession();
+  idle.pendingIntent = false;
+  idle.pendingIntentRequestId = null;
+  idle.pendingIntentTransportRetryCount = 0;
+  idle.pendingIntentStartedAt = 0;
+  idle.pendingIntentUpgradeUntil = 0;
+  idle.pendingIntentRealtimePath = null;
+  idle.pendingIntentPath = null;
+  idle.pendingIntentPayload = null;
+  clearTimeout(idle.pendingIntentTimeout);
+  idle.pendingIntentTimeout = null;
+  if (clearBusy) {
+    motherV2ClearIntentRealtimeBusy({
+      path: activePath,
+      requestId,
+      force: true,
+      reason: String(reason || "intent_request_cleared"),
+    });
+  }
+  return true;
+}
+
+function motherV2ApplyIntent(
+  intentPayload = {},
+  { source = "local", sourceModel = null, preserveMode = false, requestId = null } = {}
+) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  if (idle.phase !== MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) return;
+  const sourceTag = String(source || "local").trim();
+  const sourceModelLabel = realtimeIntentModelLabel(sourceModel || intentPayload?._intent_source_model || "");
+  const priorPendingRealtimePath = String(idle.pendingIntentRealtimePath || "").trim();
+  const priorPendingIntentPath = String(idle.pendingIntentPath || "").trim();
+  const priorRequestId = String(idle.pendingIntentRequestId || "").trim();
+  const resolvedRequestId = String(requestId || priorRequestId || "").trim() || null;
+  const wasPendingIntent = Boolean(idle.pendingIntent);
+  const sourceKind = motherV2IntentSourceKind(sourceTag);
+  let normalizedIntent =
+    intentPayload && typeof intentPayload === "object"
+      ? {
+          ...intentPayload,
+          creative_directive: String(intentPayload.creative_directive || "").trim() || motherCurrentCreativeDirective(),
+          transformation_mode: motherV2NormalizeTransformationMode(intentPayload.transformation_mode),
+          _intent_request_id: resolvedRequestId,
+          _intent_source_kind: sourceKind || null,
+          _intent_source_model: sourceModelLabel || null,
+        }
+      : null;
+  normalizedIntent = motherV2DiversifyIntentForRejectFollowup(normalizedIntent);
+  normalizedIntent = motherV2SanitizeIntentImageIds(normalizedIntent);
+  normalizedIntent = motherV2EnsureProposalCandidates(normalizedIntent);
+  idle.promptMotionProfile = null;
+  if (preserveMode && normalizedIntent && idle.intent && typeof idle.intent === "object") {
+    const priorMode = motherV2MaybeTransformationMode(idle.intent.transformation_mode);
+    const nextModes = motherV2ProposalModes(normalizedIntent);
+    if (priorMode && nextModes.includes(priorMode)) {
+      normalizedIntent.transformation_mode = priorMode;
+      normalizedIntent.summary = motherV2ProposalSentence({
+        ...normalizedIntent,
+        transformation_mode: priorMode,
+      });
+    }
+  }
+  idle.intent = normalizedIntent;
+  motherV2ClearLiveProposalRefreshTimer();
+  idle.liveProposalUpdating = false;
+  if (Array.isArray(idle.drafts) && idle.drafts.length) {
+    for (const draft of idle.drafts) {
+      if (draft?.path) removeFile(String(draft.path)).catch(() => {});
+      if (draft?.receiptPath) removeFile(String(draft.receiptPath)).catch(() => {});
+    }
+    idle.drafts = [];
+    idle.selectedDraftId = null;
+    idle.hoverDraftId = null;
+  }
+  idle.speculativePrefetchReadyMode = null;
+  motherV2NormalizeRoles(normalizedIntent?.roles || null);
+  idle.pendingIntent = false;
+  motherV2ClearIntentRealtimeBusy({
+    path: priorPendingRealtimePath,
+    requestId: resolvedRequestId,
+    reason: "intent_applied",
+  });
+  const canUpgradeFromLateRealtime = sourceKind !== "realtime" && priorPendingRealtimePath;
+  idle.pendingIntentRealtimePath = canUpgradeFromLateRealtime ? priorPendingRealtimePath : null;
+  idle.pendingIntentRequestId = canUpgradeFromLateRealtime ? (resolvedRequestId || priorRequestId || null) : null;
+  idle.pendingIntentTransportRetryCount = canUpgradeFromLateRealtime
+    ? (Number(idle.pendingIntentTransportRetryCount) || 0)
+    : 0;
+  idle.pendingIntentStartedAt = canUpgradeFromLateRealtime ? (Number(idle.pendingIntentStartedAt) || Date.now()) : 0;
+  idle.pendingIntentUpgradeUntil = canUpgradeFromLateRealtime ? Date.now() + MOTHER_V2_INTENT_LATE_REALTIME_UPGRADE_MS : 0;
+  idle.pendingIntentPayload = null;
+  // Mother proposals are realtime-only; ignore heuristic intent payload upgrades.
+  idle.pendingIntentPath = null;
+  clearTimeout(idle.pendingIntentTimeout);
+  idle.pendingIntentTimeout = null;
+  idle.pendingVisionImageIds = [];
+  clearTimeout(idle.pendingVisionRetryTimer);
+  idle.pendingVisionRetryTimer = null;
+  motherIdleTransitionTo(MOTHER_IDLE_EVENTS.INTENT_INFERRED);
+  appendMotherTraceLog({
+    kind: "intent_inferred",
+    traceId: idle.telemetry?.traceId || null,
+    actionVersion: Number(idle.actionVersion) || 0,
+    source,
+    source_kind: sourceKind || null,
+    request_id: resolvedRequestId,
+    late_realtime_upgrade: Boolean(sourceKind === "realtime" && !wasPendingIntent),
+    intent_id: intentPayload?.intent_id || null,
+    placement_policy: intentPayload?.placement_policy || null,
+    confidence: Number(intentPayload?.confidence) || 0,
+    optimization_target: motherCurrentOptimizationTarget(),
+    proposal_mode: motherV2NormalizeTransformationMode(normalizedIntent?.transformation_mode),
+    proposal_candidates: motherV2ProposalCandidateSummary(normalizedIntent, { limit: MOTHER_V2_MAX_RANKED_PROPOSALS }),
+    target_ids: motherV2NormalizeImageIdList(normalizedIntent?.target_ids || []).slice(0, 6),
+    reference_ids: motherV2NormalizeImageIdList(normalizedIntent?.reference_ids || []).slice(0, 6),
+  }).catch(() => {});
+  motherV2ScheduleGenerationPayloadWarmup({ reason: "intent_inferred" });
+  renderMotherReadout();
+  requestRender();
+}
+
+function motherV2ArmRealtimeIntentTimeout({ timeoutMs = MOTHER_V2_INTENT_RT_TIMEOUT_MS } = {}) {
+  const idle = state.motherIdle;
+  if (!idle || !idle.pendingIntent) return;
+  const actionVersion = Number(idle.actionVersion) || 0;
+  const pendingActionVersion = Number(idle.pendingActionVersion) || 0;
+  if (!actionVersion || actionVersion !== pendingActionVersion) return;
+  const requestId = String(idle.pendingIntentRequestId || "").trim() || null;
+  const ms = Math.max(1_000, Number(timeoutMs) || MOTHER_V2_INTENT_RT_TIMEOUT_MS);
+
+  clearTimeout(idle.pendingIntentTimeout);
+  idle.pendingIntentTimeout = setTimeout(() => {
+    const resolveActiveTimeoutRequest = () => {
+      const latest = state.motherIdle;
+      if (!latest || !latest.pendingIntent) return null;
+      if (String(latest.phase || "") !== MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) return null;
+      if ((Number(latest.actionVersion) || 0) !== actionVersion) return null;
+      if ((Number(latest.pendingActionVersion) || 0) !== pendingActionVersion) return null;
+      const latestRequestId = String(latest.pendingIntentRequestId || "").trim() || null;
+      if (requestId && latestRequestId !== requestId) return null;
+      return latest;
+    };
+    const emitTimeoutFailure = (activeIdle) => {
+      if (!activeIdle) return;
+      const activePath = String(activeIdle.pendingIntentRealtimePath || "").trim();
+      appendMotherTraceLog({
+        kind: "intent_realtime_failed",
+        traceId: activeIdle.telemetry?.traceId || null,
+        actionVersion,
+        request_id: requestId,
+        source: "intent_rt_timeout",
+        error: message,
+      }).catch(() => {});
+      motherV2ClearIntentRealtimeBusy({
+        path: activePath,
+        requestId,
+        force: true,
+        reason: "intent_timeout",
+      });
+      motherIdleHandleGenerationFailed(message);
+    };
+    const current = resolveActiveTimeoutRequest();
+    if (!current) return;
+    const timeoutSec = Math.max(1, Math.round(ms / 1000));
+    const message = `Mother realtime intent timed out after ${timeoutSec}s.`;
+    const snapshotPath = String(current.pendingIntentRealtimePath || "").trim();
+    const retryCount = Math.max(0, Number(current.pendingIntentTransportRetryCount) || 0);
+    const startedAt = Number(current.pendingIntentStartedAt) || 0;
+    const elapsedMs = startedAt > 0 ? Math.max(0, Date.now() - startedAt) : ms;
+    const workerTimeoutMs = Math.max(ms, MOTHER_V2_INTENT_RT_WORKER_TIMEOUT_MS);
+    if (
+      snapshotPath &&
+      retryCount < MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_MAX &&
+      elapsedMs + MOTHER_V2_INTENT_RT_TIMEOUT_DEFER_GRACE_MS < workerTimeoutMs
+    ) {
+      const deferMs = Math.max(
+        1_000,
+        Math.ceil(workerTimeoutMs - elapsedMs + MOTHER_V2_INTENT_RT_TIMEOUT_DEFER_GRACE_MS)
+      );
+      appendMotherTraceLog({
+        kind: "intent_realtime_retry_deferred",
+        traceId: current.telemetry?.traceId || null,
+        actionVersion,
+        request_id: requestId,
+        retry_count: retryCount,
+        max_retries: MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_MAX,
+        elapsed_ms: Math.round(elapsedMs),
+        worker_timeout_ms: workerTimeoutMs,
+        wait_ms: deferMs,
+        reason: "awaiting_worker_timeout",
+      }).catch(() => {});
+      motherV2ArmRealtimeIntentTimeout({ timeoutMs: deferMs });
+      return;
+    }
+    if (snapshotPath && retryCount < MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_MAX) {
+      motherV2RetryRealtimeIntentTransport({ path: snapshotPath, errorMessage: message })
+        .then((retried) => {
+          if (!retried) {
+            const latest = resolveActiveTimeoutRequest();
+            if (!latest) return;
+            appendMotherTraceLog({
+              kind: "intent_realtime_retry_exhausted",
+              traceId: latest.telemetry?.traceId || null,
+              actionVersion,
+              request_id: requestId,
+              retry_count: Number(latest.pendingIntentTransportRetryCount) || 0,
+              max_retries: MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_MAX,
+              reason: "timeout_retry_dispatch_failed",
+              error: message,
+            }).catch(() => {});
+            emitTimeoutFailure(latest);
+          }
+        })
+        .catch(() => {
+          const latest = resolveActiveTimeoutRequest();
+          emitTimeoutFailure(latest);
+        });
+      return;
+    }
+    emitTimeoutFailure(current);
+  }, ms);
+}
+
+async function motherV2RetryRealtimeIntentTransport({ path = "", errorMessage = null } = {}) {
+  const idle = state.motherIdle;
+  const snapshotPath = String(path || "").trim();
+  if (!idle || !snapshotPath) return false;
+  if (!idle.pendingIntent) return false;
+  if (String(idle.phase || "") !== MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) return false;
+  const actionVersion = Number(idle.actionVersion) || 0;
+  const pendingActionVersion = Number(idle.pendingActionVersion) || 0;
+  if (!actionVersion || actionVersion !== pendingActionVersion) return false;
+  const retryCount = Math.max(0, Number(idle.pendingIntentTransportRetryCount) || 0);
+  if (retryCount >= MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_MAX) return false;
+
+  const nextRetry = retryCount + 1;
+  const requestId = motherV2BuildIntentRequestId(actionVersion);
+  idle.pendingIntentTransportRetryCount = nextRetry;
+  idle.pendingIntentRequestId = requestId;
+  idle.pendingIntentStartedAt = Date.now();
+  idle.pendingIntentUpgradeUntil = 0;
+  idle.pendingIntentRealtimePath = snapshotPath;
+  clearTimeout(idle.pendingIntentTimeout);
+  idle.pendingIntentTimeout = null;
+
+  appendMotherTraceLog({
+    kind: "intent_realtime_retrying",
+    traceId: idle.telemetry?.traceId || null,
+    actionVersion,
+    request_id: requestId,
+    retry_count: nextRetry,
+    max_retries: MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_MAX,
+    snapshot_path: snapshotPath,
+    error: errorMessage ? String(errorMessage) : null,
+  }).catch(() => {});
+
+  const delayMs = Math.max(0, MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_DELAY_MS * nextRetry);
+  if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+  const current = state.motherIdle;
+  if (!current || !current.pendingIntent) return false;
+  if ((Number(current.actionVersion) || 0) !== actionVersion) return false;
+  if ((Number(current.pendingActionVersion) || 0) !== actionVersion) return false;
+  if (String(current.pendingIntentRequestId || "") !== requestId) return false;
+  if (!state.ptySpawned) return false;
+
+  await invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_MOTHER_START}\n` }).catch(() => {});
+  const dispatched = await invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_MOTHER} ${quoteForPtyArg(snapshotPath)}\n` })
+    .then(() => true)
+    .catch(() => false);
+  if (!dispatched) return false;
+  motherV2SetIntentRealtimeBusy({ path: snapshotPath, requestId });
+
+  appendMotherTraceLog({
+    kind: "intent_realtime_retry_dispatched",
+    traceId: current.telemetry?.traceId || null,
+    actionVersion,
+    request_id: requestId,
+    retry_count: nextRetry,
+    snapshot_path: snapshotPath,
+  }).catch(() => {});
+  motherV2ArmRealtimeIntentTimeout({ timeoutMs: MOTHER_V2_INTENT_RT_TIMEOUT_MS });
+  return true;
+}
+
+async function motherV2RequestIntentInference({
+  snapshotLoadTimeoutMs = INTENT_SNAPSHOT_FAST_LOAD_TIMEOUT_MS,
+  snapshotMaxDimPx = INTENT_SNAPSHOT_MAX_DIM_PX,
+  scheduleVisionLabels = true,
+  fastUploadPath = false,
+} = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  if (motherV2IntentRealtimeBusy()) {
+    motherV2QueueIntentReplay("intent_realtime_inflight");
+    return false;
+  }
+  if (idle.pendingIntent || idle.pendingPromptCompile || idle.pendingGeneration) {
+    if (idle.pendingIntent && String(idle.phase || "") === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+      motherV2QueueIntentReplay("intent_pending");
+    }
+    return false;
+  }
+  if (!motherIdleHasArmedCanvas()) return false;
+  if (motherV2InCooldown()) return false;
+  const nowMs = Date.now();
+  const lastIntentRequestAt = Number(idle.lastIntentRequestAt) || 0;
+  const sinceLastIntentRequestMs = lastIntentRequestAt > 0 ? Math.max(0, nowMs - lastIntentRequestAt) : Number.POSITIVE_INFINITY;
+  if (sinceLastIntentRequestMs < MOTHER_V2_INTENT_REQUEST_COALESCE_MS) {
+    const waitMs = Math.max(
+      MOTHER_V2_INTENT_REPLAY_ARM_MIN_DELAY_MS,
+      MOTHER_V2_INTENT_REQUEST_COALESCE_MS - sinceLastIntentRequestMs
+    );
+    motherV2QueueIntentReplay("coalesce_window");
+    motherV2ScheduleIntentReplayArm({
+      delayMs: waitMs,
+      reason: "coalesce_window_elapsed",
+    });
+    return false;
+  }
+  const visionGate = motherV2VisionReadyForIntent({ schedule: Boolean(scheduleVisionLabels) });
+  idle.pendingVisionImageIds = visionGate.ready ? [] : visionGate.missingIds.slice();
+  clearTimeout(idle.pendingVisionRetryTimer);
+  idle.pendingVisionRetryTimer = null;
+  const actionVersion = Number(idle.actionVersion) || 0;
+  const requestId = motherV2BuildIntentRequestId(actionVersion);
+  const requestMatchesCurrent = (current, { requirePending = true } = {}) => {
+    if (!current) return false;
+    if (requirePending && !current.pendingIntent) return false;
+    if ((Number(current.pendingActionVersion) || 0) !== actionVersion) return false;
+    if ((Number(current.actionVersion) || 0) !== actionVersion) return false;
+    return String(current.pendingIntentRequestId || "") === requestId;
+  };
+  const clearOwnedPendingRequest = (current, { clearBusy = false, busyReason = "intent_request_cleanup" } = {}) => {
+    if (!current) return;
+    if (String(current.pendingIntentRequestId || "") !== requestId) return;
+    const activePath = String(current.pendingIntentRealtimePath || "").trim();
+    current.pendingIntent = false;
+    current.pendingIntentRequestId = null;
+    current.pendingIntentTransportRetryCount = 0;
+    current.pendingIntentStartedAt = 0;
+    current.pendingIntentUpgradeUntil = 0;
+    current.pendingIntentRealtimePath = null;
+    current.pendingIntentPath = null;
+    current.pendingIntentPayload = null;
+    clearTimeout(current.pendingIntentTimeout);
+    current.pendingIntentTimeout = null;
+    if (clearBusy) {
+      motherV2ClearIntentRealtimeBusy({
+        path: activePath,
+        requestId,
+        force: true,
+        reason: String(busyReason || "intent_request_cleanup"),
+      });
+    }
+  };
+  // Claim the request before any async work to close the duplicate-start race window.
+  const requestStartedAt = Date.now();
+  idle.lastIntentRequestAt = requestStartedAt;
+  idle.pendingIntent = true;
+  idle.pendingIntentRequestId = requestId;
+  idle.pendingIntentTransportRetryCount = 0;
+  idle.pendingIntentStartedAt = requestStartedAt;
+  idle.pendingIntentUpgradeUntil = 0;
+  idle.pendingActionVersion = actionVersion;
+  idle.pendingIntentRealtimePath = null;
+  idle.pendingIntentPath = null;
+  idle.pendingIntentPayload = null;
+  clearTimeout(idle.pendingIntentTimeout);
+  idle.pendingIntentTimeout = null;
+
+  let keepPendingRequest = false;
+  try {
+    const failRealtimeIntent = ({ sourceTag = "intent_rt_failed", message = null } = {}) => {
+      const current = state.motherIdle;
+      if (!requestMatchesCurrent(current, { requirePending: true })) {
+        clearOwnedPendingRequest(current, {
+          clearBusy: true,
+          busyReason: "intent_request_stale_failure",
+        });
+        return;
+      }
+      const failureMessage = String(message || "Mother realtime intent inference failed.").trim();
+      appendMotherTraceLog({
+        kind: "intent_realtime_failed",
+        traceId: current.telemetry?.traceId || null,
+        actionVersion,
+        request_id: requestId,
+        source: String(sourceTag || "intent_rt_failed"),
+        error: failureMessage,
+      }).catch(() => {});
+      motherIdleHandleGenerationFailed(failureMessage);
+    };
+
+    await ensureRun();
+    if (!requestMatchesCurrent(state.motherIdle, { requirePending: true })) return false;
+
+    const payload = motherV2IntentPayload();
+    const payloadPath = await motherV2WritePayloadFile("mother_intent_infer", payload);
+    if (!requestMatchesCurrent(state.motherIdle, { requirePending: true })) return false;
+
+    const ok = await ensureEngineSpawned({ reason: "mother_intent_rt" });
+    if (!ok) return false;
+    if (!requestMatchesCurrent(state.motherIdle, { requirePending: true })) return false;
+
+    const uploadFastPath = Boolean(fastUploadPath);
+    let snapshotPath = null;
+    if (state.runDir) {
+      const stamp = Date.now();
+      const suffix = `${stamp}-a${String(actionVersion).padStart(2, "0")}`;
+      snapshotPath = `${state.runDir}/mother-intent-${suffix}.png`;
+      const frameId = `mother-intent-a${actionVersion}-${suffix}`;
+      try {
+        if (!uploadFastPath) {
+          await waitForIntentImagesLoaded({
+            timeoutMs: Math.max(0, Number(snapshotLoadTimeoutMs) || 0),
+            maxImages: MOTHER_V2_INTENT_TARGET_IMAGE_LIMIT,
+          });
+          if (!requestMatchesCurrent(state.motherIdle, { requirePending: true })) return false;
+        }
+        render();
+        await writeIntentSnapshot(snapshotPath, {
+          maxDimPx: Math.max(420, Number(snapshotMaxDimPx) || INTENT_SNAPSHOT_MAX_DIM_PX),
+        });
+        if (!requestMatchesCurrent(state.motherIdle, { requirePending: true })) return false;
+        if (!uploadFastPath) {
+          const ctxResult = await motherV2WriteIntentContextEnvelopeWithRefRetry(
+            snapshotPath,
+            frameId,
+            payload,
+            { requestId, actionVersion }
+          );
+          if (!requestMatchesCurrent(state.motherIdle, { requirePending: true })) return false;
+          if (!ctxResult.ok) {
+            appendMotherTraceLog({
+              kind: "intent_request_context_refs_soft_missing",
+              traceId: idle.telemetry?.traceId || null,
+              actionVersion,
+              request_id: requestId,
+              snapshot_path: snapshotPath || null,
+              required_refs: ctxResult.requiredRefs,
+              available_refs: ctxResult.availableRefs,
+            }).catch(() => {});
+          }
+        }
+      } catch {
+        snapshotPath = null;
+      }
+    }
+
+    const currentIdle = state.motherIdle;
+    if (
+      !requestMatchesCurrent(currentIdle, { requirePending: true }) ||
+      currentIdle !== idle ||
+      idle.phase !== MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING ||
+      state.pointer.active
+    ) {
+      return false;
+    }
+
+    idle.pendingIntentTransportRetryCount = 0;
+    idle.pendingIntentStartedAt = Date.now();
+    idle.pendingIntentUpgradeUntil = 0;
+    idle.pendingIntentRealtimePath = snapshotPath;
+    idle.pendingIntentPath = null;
+    idle.pendingIntentPayload = payload;
+    clearTimeout(idle.pendingIntentTimeout);
+    idle.pendingIntentTimeout = null;
+    appendMotherTraceLog({
+      kind: "intent_request_started",
+      traceId: idle.telemetry?.traceId || null,
+      actionVersion,
+      request_id: requestId,
+      payload_path: payloadPath || null,
+      snapshot_path: snapshotPath || null,
+    }).catch(() => {});
+    setStatus("Mother: hypothesizing intent (realtime)…");
+    renderMotherReadout();
+
+    let realtimeDispatched = false;
+    if (snapshotPath) {
+      await invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_MOTHER_START}\n` }).catch(() => {});
+      if (!requestMatchesCurrent(state.motherIdle, { requirePending: true })) return false;
+      realtimeDispatched = await invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_MOTHER} ${quoteForPtyArg(snapshotPath)}\n` })
+        .then(() => true)
+        .catch(() => false);
+    }
+
+    if (realtimeDispatched) {
+      motherV2SetIntentRealtimeBusy({ path: snapshotPath, requestId });
+      motherV2ArmRealtimeIntentTimeout({ timeoutMs: MOTHER_V2_INTENT_RT_TIMEOUT_MS });
+      keepPendingRequest = true;
+      return true;
+    }
+
+    failRealtimeIntent({
+      sourceTag: snapshotPath ? "intent_rt_dispatch_failed" : "intent_rt_snapshot_unavailable",
+      message: snapshotPath
+        ? "Mother realtime intent dispatch failed."
+        : "Mother realtime intent snapshot unavailable.",
+    });
+    return false;
+  } finally {
+    if (!keepPendingRequest) {
+      const current = state.motherIdle;
+      clearOwnedPendingRequest(current, {
+        clearBusy: true,
+        busyReason: "intent_request_exit",
+      });
+      // If another flow nulled the request id mid-setup (reject/cancel), avoid a stuck pending latch.
+      if (current && current.pendingIntent && !String(current.pendingIntentRequestId || "").trim()) {
+        motherV2ClearPendingIntentRequest({
+          reason: "intent_request_exit_orphaned",
+          clearBusy: true,
+        });
+      }
+    }
+  }
+}
+
+function motherV2PromptCompileImageRows() {
+  return motherIdleBaseImageItems().map((item) => {
+    const imageId = String(item?.id || "").trim();
+    const rect = imageId ? state.freeformRects.get(imageId) || null : null;
+    const rectTransform = readFreeformRectTransform(rect);
+    return {
+      id: imageId,
+      file: basename(item?.path || ""),
+      vision_desc: normalizeVisionHintForIntent(item?.visionDesc, { maxChars: REALTIME_VISION_LABEL_MAX_CHARS }) || "",
+      transform: rect
+        ? {
+            rotate_deg: rectTransform.rotateDeg,
+            skew_x_deg: rectTransform.skewXDeg,
+            user_resized: rect.autoAspect === false,
+          }
+        : null,
+    };
+  });
+}
+
+async function motherV2RequestPromptCompile({ speculative = false } = {}) {
+  const idle = state.motherIdle;
+  if (!idle || !idle.intent) return null;
+  const sanitizedIntent = motherV2SanitizeIntentImageIds(idle.intent) || idle.intent;
+  const activeId = getVisibleActiveId();
+  const selectedIds = getVisibleSelectedIds().map((v) => String(v || "").trim()).filter(Boolean);
+  const payload = {
+    schema: "cue.mother.prompt_compile.v1",
+    action_version: Number(idle.actionVersion) || 0,
+    intent: sanitizedIntent,
+    roles: motherV2RoleMapClone(),
+    creative_directive: String(sanitizedIntent?.creative_directive || "").trim() || motherCurrentCreativeDirective(),
+    transformation_mode: motherV2NormalizeTransformationMode(sanitizedIntent?.transformation_mode),
+    intensity: clamp(Number(idle.intensity) || 62, 0, 100),
+    active_id: activeId ? String(activeId) : null,
+    selected_ids: selectedIds,
+    images: motherV2PromptCompileImageRows(),
+  };
+  const payloadPath = await motherV2WritePayloadFile("mother_prompt_compile", payload);
+  idle.pendingPromptCompile = true;
+  idle.pendingPromptCompileSpeculative = Boolean(speculative);
+  idle.pendingPromptCompilePath = payloadPath;
+  idle.pendingActionVersion = Number(idle.actionVersion) || 0;
+  clearTimeout(idle.pendingPromptCompileTimeout);
+  idle.pendingPromptCompileTimeout = setTimeout(() => {
+    if (!state.motherIdle?.pendingPromptCompile) return;
+    if (Number(state.motherIdle.pendingActionVersion) !== Number(state.motherIdle.actionVersion)) {
+      state.motherIdle.pendingPromptCompile = false;
+      state.motherIdle.pendingPromptCompileSpeculative = false;
+      return;
+    }
+    const compiled = motherV2CompilePromptLocal(payload);
+    motherV2DispatchCompiledPrompt(compiled).catch(() => {});
+  }, MOTHER_V2_PROMPT_COMPILE_FALLBACK_MS);
+
+  if (payloadPath) {
+    await invoke("write_pty", { data: `${PTY_COMMANDS.PROMPT_COMPILE} ${quoteForPtyArg(payloadPath)}\n` }).catch(() => {});
+  } else {
+    const compiled = motherV2CompilePromptLocal(payload);
+    await motherV2DispatchCompiledPrompt(compiled);
+  }
+  return payloadPath;
+}
+
+function motherV2SplitConstraints(raw = "") {
+  return String(raw || "")
+    .split(/\n|;|,/g)
+    .map((entry) => String(entry || "").trim())
+    .filter(Boolean)
+    .map((entry) => entry.replace(/^[-*•]\s*/, "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+function motherV2ExtractPromptConstraints(compiled = {}) {
+  const constraints = [];
+  const seen = new Set();
+  const push = (raw) => {
+    const text = String(raw || "").trim().replace(/\s+/g, " ");
+    if (!text) return;
+    const key = text.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    constraints.push(text);
+  };
+  for (const item of Array.isArray(compiled?.compile_constraints) ? compiled.compile_constraints : []) {
+    push(item);
+  }
+  const negative = String(compiled?.negative_prompt || "").trim();
+  if (negative) {
+    for (const item of motherV2SplitConstraints(negative)) push(item);
+  }
+  return constraints;
+}
+
+function motherV2BuildPromptComposerResult(compiled = {}) {
+  const currentDirective = motherCurrentCreativeDirective();
+  let positive = String(compiled?.positive_prompt || "").trim();
+  if (positive && !positive.toLowerCase().includes(currentDirective.toLowerCase())) {
+    positive = `Create one ${currentDirective} image. ${positive}`.trim();
+  }
+  const negative = String(compiled?.negative_prompt || "").trim();
+  const constraints = motherV2ExtractPromptConstraints(compiled).slice(0, 8);
+  const configuredMode = normalizePromptStrategyMode(settings.promptStrategyMode);
+  const resolvedAuto =
+    configuredMode === "auto"
+      ? promptBenchmarkAutoStrategyForModel(state.motherIdle?.lastDispatchModel || settings.imageModel, { fallback: "tail" })
+      : null;
+  const strategyMode = configuredMode === "auto" ? resolvedAuto?.strategy || "tail" : configuredMode;
+  const repeatFull = Boolean(settings.promptRepeatFull);
+  const lines = [];
+  if (positive) lines.push(positive);
+  if (negative) lines.push(`Avoid: ${negative}`);
+  if (strategyMode === "tail" && constraints.length) {
+    lines.push(`MUST: ${constraints.join("; ")}`);
+  }
+  let rawPrompt = lines.join("\n");
+  if (repeatFull && rawPrompt) {
+    rawPrompt = `${rawPrompt}\n${rawPrompt}`;
+  }
+  const line = motherIdlePromptLineForPty(rawPrompt);
+  return {
+    line,
+    strategy: repeatFull ? "repeat" : strategyMode,
+    promptChars: line.length,
+    constraintCount: constraints.length,
+  };
+}
+
+function motherV2PromptLineFromCompiled(compiled = {}) {
+  return motherV2BuildPromptComposerResult(compiled).line;
+}
+
+function motherV2TransformLockManifestEntries(dispatchManifest = []) {
+  return (Array.isArray(dispatchManifest) ? dispatchManifest : [])
+    .map((entry) => {
+      const imageId = String(entry?.id || "").trim();
+      const rotateDeg = normalizeFreeformRotateDeg(entry?.rotate_deg);
+      const skewXDeg = normalizeFreeformSkewDeg(entry?.skew_x_deg);
+      const userResized = Boolean(entry?.user_resized);
+      const hasLock = userResized || Math.abs(rotateDeg) > 0.2 || Math.abs(skewXDeg) > 0.2;
+      if (!hasLock) return null;
+      return {
+        id: imageId,
+        rotateDeg,
+        skewXDeg,
+        userResized,
+      };
+    })
+    .filter(Boolean);
+}
+
+function motherV2TransformLockPromptLine(dispatchManifest = []) {
+  const locks = motherV2TransformLockManifestEntries(dispatchManifest);
+  if (!locks.length) return "";
+  const maxListed = 4;
+  const listed = locks.slice(0, maxListed).map((entry, idx) => {
+    const parts = [];
+    if (Math.abs(Number(entry.rotateDeg) || 0) > 0.2) parts.push(`rot ${Number(entry.rotateDeg).toFixed(2)}deg`);
+    if (Math.abs(Number(entry.skewXDeg) || 0) > 0.2) parts.push(`skew ${Number(entry.skewXDeg).toFixed(2)}deg`);
+    if (entry.userResized) parts.push("resized");
+    if (!parts.length) return "";
+    const label = String(entry.id || "").trim() || `src${idx + 1}`;
+    return `${label}(${parts.join(", ")})`;
+  }).filter(Boolean);
+  if (!listed.length) return "";
+  const overflow = locks.length > maxListed ? `; +${locks.length - maxListed} more` : "";
+  return `CANVAS TRANSFORM LOCK (MANDATORY): Preserve source orientation/geometry exactly as supplied (${listed.join("; ")}${overflow}). Do not auto-upright, de-skew, or normalize user scale unless explicitly instructed.`;
+}
+
+function motherV2EnsureTransformLockPromptLine(promptLine = "", dispatchManifest = []) {
+  const base = String(promptLine || "").trim();
+  if (!base) return base;
+  const lockLine = motherV2TransformLockPromptLine(dispatchManifest);
+  if (!lockLine) return base;
+  if (base.toLowerCase().includes("canvas transform lock (mandatory):")) return base;
+  return `${base}\n${lockLine}`;
+}
+
+function motherV2GenerationPayloadSignature(imagePayload = null) {
+  const payload = imagePayload && typeof imagePayload === "object" ? imagePayload : {};
+  const records = Array.isArray(payload.sourceRecords) ? payload.sourceRecords : [];
+  if (!records.length) return "";
+  const parts = [];
+  for (const record of records) {
+    const imageId = String(record?.id || "").trim();
+    const path = String(record?.path || "").trim();
+    if (!imageId || !path) continue;
+    if (motherV2ShouldExportGenerationImageTransform(record)) {
+      const sig = motherV2GenerationImageTransformSignature(record);
+      if (sig) {
+        parts.push(sig);
+        continue;
+      }
+    }
+    parts.push(`${imageId}|${path}`);
+  }
+  return parts.join("||");
+}
+
+function motherV2ResetGenerationPayloadWarmState() {
+  clearTimeout(motherDispatchPayloadWarmTimer);
+  motherDispatchPayloadWarmTimer = null;
+  motherDispatchPayloadWarmToken += 1;
+  motherDispatchPayloadWarmState = {
+    signature: "",
+    payload: null,
+    promise: null,
+    startedAt: 0,
+    reason: "",
+  };
+}
+
+function motherV2ScheduleGenerationPayloadWarmup({ reason = "intent_inferred", immediate = false } = {}) {
+  clearTimeout(motherDispatchPayloadWarmTimer);
+  motherDispatchPayloadWarmTimer = null;
+  const scheduleToken = motherDispatchPayloadWarmToken + 1;
+  motherDispatchPayloadWarmToken = scheduleToken;
+  const runWarmup = () => {
+    motherDispatchPayloadWarmTimer = null;
+    if (scheduleToken !== motherDispatchPayloadWarmToken) return;
+    void motherV2PrimeGenerationPayloadWarmup({ reason }).catch(() => {});
+  };
+  const useIdleCallback =
+    !immediate &&
+    typeof window !== "undefined" &&
+    typeof window.requestIdleCallback === "function";
+  if (useIdleCallback) {
+    window.requestIdleCallback(
+      () => {
+        runWarmup();
+      },
+      { timeout: 900 }
+    );
+    return;
+  }
+  const delayMs = immediate ? 0 : 40;
+  motherDispatchPayloadWarmTimer = setTimeout(runWarmup, delayMs);
+}
+
+async function motherV2PrimeGenerationPayloadWarmup({ reason = "intent_inferred", payload = null } = {}) {
+  const collected = payload && typeof payload === "object" ? payload : motherV2CollectGenerationImagePaths();
+  const signature = motherV2GenerationPayloadSignature(collected);
+  if (!signature) {
+    motherV2ResetGenerationPayloadWarmState();
+    return null;
+  }
+  if (motherDispatchPayloadWarmState.signature === signature) {
+    if (motherDispatchPayloadWarmState.payload && typeof motherDispatchPayloadWarmState.payload === "object") {
+      return motherDispatchPayloadWarmState.payload;
+    }
+    if (motherDispatchPayloadWarmState.promise) {
+      return motherDispatchPayloadWarmState.promise;
+    }
+  }
+  motherDispatchPayloadWarmState = {
+    signature,
+    payload: null,
+    promise: null,
+    startedAt: Date.now(),
+    reason: String(reason || "intent_inferred"),
+  };
+  const warmPromise = motherV2ResolveGenerationImagePayload(collected, { yieldForUi: true })
+    .catch(() => collected)
+    .then((resolved) => {
+      if (motherDispatchPayloadWarmState.signature !== signature) return null;
+      motherDispatchPayloadWarmState.payload = resolved && typeof resolved === "object" ? resolved : collected;
+      return motherDispatchPayloadWarmState.payload;
+    })
+    .finally(() => {
+      if (motherDispatchPayloadWarmState.signature === signature) {
+        motherDispatchPayloadWarmState.promise = null;
+      }
+    });
+  motherDispatchPayloadWarmState.promise = warmPromise;
+  return warmPromise;
+}
+
+function motherV2YieldForUiFrame() {
+  return new Promise((resolve) => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => setTimeout(resolve, 0));
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+}
+
+function motherV2CollectGenerationImagePaths() {
+  const idle = state.motherIdle;
+  const intent = idle?.intent && typeof idle.intent === "object" ? idle.intent : {};
+  const ids = [];
+  const push = (raw) => {
+    const id = String(raw || "").trim();
+    if (!id) return;
+    if (!isVisibleCanvasImageId(id)) return;
+    if (ids.includes(id)) return;
+    ids.push(id);
+  };
+  const pushMany = (list) => {
+    for (const value of Array.isArray(list) ? list : []) push(value);
+  };
+  const selectedIds = getVisibleSelectedIds().map((v) => String(v || "").trim()).filter(Boolean);
+  const activeId = String(getVisibleActiveId() || "").trim();
+  const preferredPairIds = (() => {
+    const visibleItems = getVisibleCanvasImages();
+    if (!visibleItems.length) return [];
+    const byId = new Map(
+      visibleItems
+        .map((item) => [String(item?.id || "").trim(), item])
+        .filter(([id]) => Boolean(id))
+    );
+    const findLatestId = (predicate) => {
+      for (let i = (state.images?.length || 0) - 1; i >= 0; i -= 1) {
+        const item = state.images[i];
+        const id = String(item?.id || "").trim();
+        if (!id) continue;
+        const visible = byId.get(id);
+        if (!visible) continue;
+        if (predicate(visible)) return id;
+      }
+      return "";
+    };
+    const latestMotherId = findLatestId((item) => isMotherGeneratedImageItem(item));
+    const latestUploadId = findLatestId((item) => !isMotherGeneratedImageItem(item));
+    if (!latestMotherId || !latestUploadId || latestMotherId === latestUploadId) return [];
+
+    const firstSelectedId = selectedIds[0] || activeId || "";
+    if (firstSelectedId) {
+      const firstItem = byId.get(firstSelectedId) || null;
+      if (firstItem) {
+        if (isMotherGeneratedImageItem(firstItem)) return [firstSelectedId, latestUploadId];
+        return [firstSelectedId, latestMotherId];
+      }
+    }
+    return [latestUploadId, latestMotherId];
+  })();
+
+  // Keep the active image first so proposal drafts behave like controlled edits of the active anchor.
+  push(activeId);
+  // Then include user-selected/supporting references.
+  pushMany(selectedIds);
+  pushMany(preferredPairIds);
+
+  const roles = motherV2RoleMapClone();
+  pushMany(roles.subject);
+  pushMany(roles.model);
+  pushMany(roles.mediator);
+  pushMany(roles.object);
+  pushMany(intent.target_ids);
+  pushMany(intent.reference_ids);
+  // Always include full canvas context so follow-ups can evolve beyond a small role subset.
+  pushMany(motherIdleBaseImageItems().map((item) => String(item?.id || "").trim()));
+  if (!ids.length) push(getVisibleActiveId());
+
+  const records = [];
+  for (const imageId of ids) {
+    const item = state.imagesById.get(imageId) || null;
+    if (!item?.path) continue;
+    const path = String(item.path || "").trim();
+    if (!path) continue;
+    if (records.some((entry) => entry.path === path)) continue;
+    const rect = state.freeformRects.get(imageId) || null;
+    const transform = readFreeformRectTransform(rect);
+    records.push({
+      id: imageId,
+      path,
+      rect: rect
+        ? {
+            w: Math.max(1, Number(rect.w) || 1),
+            h: Math.max(1, Number(rect.h) || 1),
+            autoAspect: rect.autoAspect !== false,
+          }
+        : null,
+      transform: {
+        rotateDeg: transform.rotateDeg,
+        skewXDeg: transform.skewXDeg,
+      },
+    });
+  }
+  const paths = records.map((entry) => entry.path);
+
+  const initImage = paths[0] || null;
+  const referenceImages = paths.slice(1);
+  return {
+    sourceImageIds: ids.slice(),
+    sourceRecords: records,
+    sourceImagesOriginal: paths.slice(),
+    sourceImages: paths,
+    initImage,
+    referenceImages,
+  };
+}
+
+function motherV2GenerationImageTransformSignature(record = null) {
+  const imageId = String(record?.id || "").trim();
+  const path = String(record?.path || "").trim();
+  if (!imageId || !path) return "";
+  const transform = record?.transform && typeof record.transform === "object" ? record.transform : {};
+  const rect = record?.rect && typeof record.rect === "object" ? record.rect : {};
+  const rotateDeg = normalizeFreeformRotateDeg(transform.rotateDeg);
+  const skewXDeg = normalizeFreeformSkewDeg(transform.skewXDeg);
+  const w = Math.max(1, Math.round(Number(rect.w) || 1));
+  const h = Math.max(1, Math.round(Number(rect.h) || 1));
+  const resized = rect.autoAspect === false ? 1 : 0;
+  return `${imageId}|${path}|w${w}|h${h}|r${rotateDeg.toFixed(2)}|s${skewXDeg.toFixed(2)}|z${resized}`;
+}
+
+function motherV2ShouldExportGenerationImageTransform(record = null) {
+  if (!record || typeof record !== "object") return false;
+  const rotateDeg = normalizeFreeformRotateDeg(record?.transform?.rotateDeg);
+  const skewXDeg = normalizeFreeformSkewDeg(record?.transform?.skewXDeg);
+  const userResized = record?.rect?.autoAspect === false;
+  if (userResized) return true;
+  return Math.abs(rotateDeg) > 0.2 || Math.abs(skewXDeg) > 0.2;
+}
+
+function motherV2GenerationImageDispatchSize(record = null, img = null) {
+  const rectW = Math.max(1, Number(record?.rect?.w) || Number(img?.naturalWidth) || Number(img?.width) || 1);
+  const rectH = Math.max(1, Number(record?.rect?.h) || Number(img?.naturalHeight) || Number(img?.height) || 1);
+  const aspect = rectW / Math.max(1, rectH);
+  const targetLong = clamp(
+    Math.round(Math.max(rectW, rectH) * 2),
+    MOTHER_V2_DISPATCH_TRANSFORM_EXPORT_MIN_DIM_PX,
+    MOTHER_V2_DISPATCH_TRANSFORM_EXPORT_MAX_DIM_PX
+  );
+  let baseW = aspect >= 1 ? targetLong : Math.round(targetLong * aspect);
+  let baseH = aspect >= 1 ? Math.round(targetLong / Math.max(0.0001, aspect)) : targetLong;
+  baseW = Math.max(1, Math.round(baseW));
+  baseH = Math.max(1, Math.round(baseH));
+  return { baseW, baseH };
+}
+
+async function motherV2ExportGenerationImageTransform(record = null) {
+  if (!state.runDir || !record?.path || !record?.id) return null;
+  if (!motherV2ShouldExportGenerationImageTransform(record)) return null;
+  const signature = motherV2GenerationImageTransformSignature(record);
+  if (!signature) return null;
+
+  const cachedPath = String(motherDispatchTransformExportCache.get(signature) || "").trim();
+  if (cachedPath && (await exists(cachedPath).catch(() => false))) return cachedPath;
+  const inFlight = motherDispatchTransformExportInFlight.get(signature);
+  if (inFlight) {
+    return (await inFlight.catch(() => null)) || null;
+  }
+
+  const exportPromise = (async () => {
+    const cacheKey = Math.abs(hash32(signature)).toString(16);
+    const outPath = `${state.runDir}/mother-src-${cacheKey}.png`;
+    if (await exists(outPath).catch(() => false)) {
+      motherDispatchTransformExportCache.set(signature, outPath);
+      return outPath;
+    }
+
+    const imageId = String(record.id || "").trim();
+    const item = state.imagesById.get(imageId) || null;
+    let img = item?.img || null;
+    if (!img) {
+      img = await loadImage(record.path).catch(() => null);
+    }
+    if (!img) return null;
+    const transform = readFreeformRectTransform(record.transform || null);
+    const { baseW, baseH } = motherV2GenerationImageDispatchSize(record, img);
+    const points = transformedRectPolygonPoints({
+      x: 0,
+      y: 0,
+      w: baseW,
+      h: baseH,
+      rotateDeg: transform.rotateDeg,
+      skewXDeg: transform.skewXDeg,
+    });
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const pt of points) {
+      minX = Math.min(minX, Number(pt?.x) || 0);
+      minY = Math.min(minY, Number(pt?.y) || 0);
+      maxX = Math.max(maxX, Number(pt?.x) || 0);
+      maxY = Math.max(maxY, Number(pt?.y) || 0);
+    }
+    const outW = Math.max(1, Math.min(4096, Math.ceil(maxX - minX)));
+    const outH = Math.max(1, Math.min(4096, Math.ceil(maxY - minY)));
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.clearRect(0, 0, outW, outH);
+    drawImageRectWithTransform(ctx, img, {
+      x: -minX,
+      y: -minY,
+      w: baseW,
+      h: baseH,
+      rotateDeg: transform.rotateDeg,
+      skewXDeg: transform.skewXDeg,
+    });
+    await writeCanvasPngToPath(canvas, outPath);
+    motherDispatchTransformExportCache.set(signature, outPath);
+    if (motherDispatchTransformExportCache.size > 96) {
+      const oldestKey = motherDispatchTransformExportCache.keys().next().value;
+      if (oldestKey) motherDispatchTransformExportCache.delete(oldestKey);
+    }
+    return outPath;
+  })();
+  motherDispatchTransformExportInFlight.set(signature, exportPromise);
+  try {
+    return (await exportPromise) || null;
+  } finally {
+    if (motherDispatchTransformExportInFlight.get(signature) === exportPromise) {
+      motherDispatchTransformExportInFlight.delete(signature);
+    }
+  }
+}
+
+async function motherV2ResolveGenerationImagePayload(imagePayload = null, { yieldForUi = false } = {}) {
+  const payload = imagePayload && typeof imagePayload === "object" ? imagePayload : {};
+  const records = Array.isArray(payload.sourceRecords) ? payload.sourceRecords : [];
+  if (!records.length) return payload;
+
+  const manifest = [];
+  const resolvedPaths = [];
+  for (let i = 0; i < records.length; i += 1) {
+    const record = records[i];
+    const sourcePath = String(record?.path || "").trim();
+    if (!sourcePath) continue;
+    const rotateDeg = normalizeFreeformRotateDeg(record?.transform?.rotateDeg);
+    const skewXDeg = normalizeFreeformSkewDeg(record?.transform?.skewXDeg);
+    const userResized = record?.rect?.autoAspect === false;
+    const canTransform = i < MOTHER_V2_DISPATCH_TRANSFORM_EXPORT_LIMIT;
+    const shouldTransform = canTransform && motherV2ShouldExportGenerationImageTransform(record);
+    let dispatchPath = sourcePath;
+    let transformed = false;
+    if (shouldTransform) {
+      if (yieldForUi) await motherV2YieldForUiFrame();
+      const exportedPath = await motherV2ExportGenerationImageTransform(record).catch(() => null);
+      if (exportedPath) {
+        dispatchPath = exportedPath;
+        transformed = true;
+      }
+    }
+    manifest.push({
+      id: String(record?.id || "").trim() || null,
+      source_path: sourcePath,
+      dispatch_path: dispatchPath,
+      transformed,
+      rotate_deg: rotateDeg,
+      skew_x_deg: skewXDeg,
+      user_resized: userResized,
+      canvas_rect:
+        record?.rect && typeof record.rect === "object"
+          ? {
+              w: Math.max(1, Math.round(Number(record.rect.w) || 1)),
+              h: Math.max(1, Math.round(Number(record.rect.h) || 1)),
+            }
+          : null,
+    });
+    if (!resolvedPaths.includes(dispatchPath)) resolvedPaths.push(dispatchPath);
+  }
+  return {
+    ...payload,
+    sourceImagesOriginal: Array.isArray(payload.sourceImagesOriginal) ? payload.sourceImagesOriginal.slice() : [],
+    sourceImages: resolvedPaths,
+    initImage: resolvedPaths[0] || null,
+    referenceImages: resolvedPaths.slice(1),
+    dispatchImageManifest: manifest,
+  };
+}
+
+function motherV2BuildOperationSpec({ intent = null, imagePayload = null, actionVersion = 0, triggerSource = "auto" } = {}) {
+  const parsedIntent = intent && typeof intent === "object" ? intent : {};
+  const sourceImageIds = motherV2NormalizeImageIdList(imagePayload?.sourceImageIds || []).slice(0, 10);
+  const targetIds = motherV2NormalizeImageIdList(parsedIntent.target_ids || []);
+  const referenceIds = motherV2NormalizeImageIdList(parsedIntent.reference_ids || []);
+  const activeId = String(getVisibleActiveId() || "").trim();
+  const targetId = activeId || targetIds[0] || sourceImageIds[0] || null;
+  if (!targetId) return null;
+  const refs = [];
+  const refSet = new Set([targetId]);
+  const pushRef = (raw) => {
+    const id = String(raw || "").trim();
+    if (!id || refSet.has(id)) return;
+    refSet.add(id);
+    refs.push(id);
+  };
+  for (const id of referenceIds) pushRef(id);
+  for (const id of sourceImageIds) pushRef(id);
+  const mode = motherV2NormalizeTransformationMode(parsedIntent.transformation_mode);
+  const opType = MOTHER_V2_OPERATION_TYPE_BY_MODE[mode] || mode;
+  const actionVersionNum = Math.max(0, Math.trunc(Number(actionVersion) || 0));
+  const opId = [
+    "op",
+    String(parsedIntent.intent_id || "mother"),
+    String(actionVersionNum),
+    Date.now().toString(36),
+  ].join("-");
+  return {
+    op_id: opId,
+    op_type: String(opType || mode || "operation"),
+    target_id: targetId,
+    reference_ids: refs.slice(0, 8),
+    dna_token_id: null,
+    mode,
+    trigger_source: String(triggerSource || "auto") === "user" ? "user" : "auto",
+  };
+}
+
+function motherV2InferOperationTriggerSource(nowMs = Date.now()) {
+  const events =
+    Array.isArray(state.userTelemetryEvents) && state.userTelemetryEvents.length
+      ? state.userTelemetryEvents
+      : Array.isArray(state.userEvents)
+      ? state.userEvents
+      : [];
+  const isUserAuthoredTrigger = (entry, type) => {
+    const actor = String(entry?.actor || "").trim().toLowerCase();
+    if (actor && actor !== "user") return false;
+    if (type === "dna_apply" || type === "dna_extract") {
+      const phase = String(entry?.phase || "").trim().toLowerCase();
+      // Only request-phase DNA interactions should imply user-triggered operations.
+      if (phase && phase !== "request") return false;
+    }
+    return true;
+  };
+  for (let idx = events.length - 1; idx >= 0; idx -= 1) {
+    const entry = events[idx];
+    if (!entry || typeof entry !== "object") continue;
+    const atMs = Number(entry.at_ms) || 0;
+    if (atMs > 0 && nowMs - atMs > 3000) break;
+    const type = String(entry.type || "").trim();
+    if (!type) continue;
+    if (type === "mother_accept" || type === "action_grid_press" || type === "dna_apply" || type === "dna_extract") {
+      if (!isUserAuthoredTrigger(entry, type)) continue;
+      return "user";
+    }
+  }
+  return "auto";
+}
+
+function motherV2CollectImageInteractionSignals(imageIds = []) {
+  const ids = (Array.isArray(imageIds) ? imageIds : [])
+    .map((v) => String(v || "").trim())
+    .filter(Boolean);
+  const idSet = new Set(ids);
+  const ensure = (map, imageId) => {
+    if (!idSet.has(imageId)) return null;
+    if (!map.has(imageId)) {
+      map.set(imageId, {
+        move_count: 0,
+        resize_count: 0,
+        transform_count: 0,
+        selection_hits: 0,
+        action_grid_hits: 0,
+        last_event_at_ms: 0,
+        last_transform_at_ms: 0,
+      });
+    }
+    return map.get(imageId);
+  };
+  const out = new Map();
+  for (const id of ids) {
+    ensure(out, id);
+  }
+  const events = Array.isArray(state.userEvents) ? state.userEvents : [];
+  for (const entry of events) {
+    if (!entry || typeof entry !== "object") continue;
+    const type = String(entry.type || "").trim();
+    const atMs = Number(entry.at_ms) || 0;
+    if (type === "image_move" || type === "image_resize" || type === "image_transform") {
+      const imageId = String(entry.image_id || "").trim();
+      const row = ensure(out, imageId);
+      if (!row) continue;
+      if (type === "image_move") row.move_count += 1;
+      if (type === "image_resize") row.resize_count += 1;
+      if (type === "image_transform") row.transform_count += 1;
+      if (atMs > row.last_transform_at_ms) row.last_transform_at_ms = atMs;
+      if (atMs > row.last_event_at_ms) row.last_event_at_ms = atMs;
+      continue;
+    }
+    if (type === "selection_change") {
+      const selectedIds = Array.isArray(entry.selected_ids)
+        ? entry.selected_ids.map((v) => String(v || "").trim()).filter(Boolean)
+        : [];
+      for (const imageId of selectedIds) {
+        const row = ensure(out, imageId);
+        if (!row) continue;
+        row.selection_hits += 1;
+        if (atMs > row.last_event_at_ms) row.last_event_at_ms = atMs;
+      }
+      continue;
+    }
+    if (type === "action_grid_press") {
+      const selectedIds = Array.isArray(entry.selected_ids)
+        ? entry.selected_ids.map((v) => String(v || "").trim()).filter(Boolean)
+        : [];
+      const activeId = String(entry.active_id || "").trim();
+      for (const imageId of selectedIds) {
+        const row = ensure(out, imageId);
+        if (!row) continue;
+        row.action_grid_hits += 1;
+        if (atMs > row.last_event_at_ms) row.last_event_at_ms = atMs;
+      }
+      if (activeId) {
+        const row = ensure(out, activeId);
+        if (row) {
+          row.action_grid_hits += 1;
+          if (atMs > row.last_event_at_ms) row.last_event_at_ms = atMs;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function motherV2EnvelopeBudgetForProvider(provider = "", model = "") {
+  const providerKey = String(provider || "").trim().toLowerCase();
+  const modelKey = String(model || "").trim().toLowerCase();
+  if (providerKey === "openai") {
+    if (modelKey.includes("mini")) return { maxImages: 3, maxRelations: 2, maxMustNot: 5, maxChars: 1300 };
+    return { maxImages: 4, maxRelations: 3, maxMustNot: 6, maxChars: 1700 };
+  }
+  if (providerKey === "flux") {
+    if (modelKey.includes("flex")) return { maxImages: 3, maxRelations: 2, maxMustNot: 4, maxChars: 1100 };
+    return { maxImages: 4, maxRelations: 2, maxMustNot: 5, maxChars: 1300 };
+  }
+  if (providerKey === "imagen") return { maxImages: 4, maxRelations: 3, maxMustNot: 6, maxChars: 1500 };
+  return { maxImages: 3, maxRelations: 2, maxMustNot: 5, maxChars: 1200 };
+}
+
+function motherV2BuildNonGeminiModelContextEnvelope({
+  provider = "",
+  model = "",
+  compiled = {},
+  promptLine = "",
+  sanitizedIntent = null,
+  imagePayload = null,
+  geminiContextPacket = null,
+} = {}) {
+  const providerKey = String(provider || "").trim().toLowerCase();
+  if (!providerKey || providerKey === "gemini") return null;
+  const modelKey = String(model || "").trim();
+  const budget = motherV2EnvelopeBudgetForProvider(providerKey, modelKey);
+  const normalizeIds = (values, limit = 8) =>
+    (Array.isArray(values) ? values : [])
+      .map((v) => String(v || "").trim())
+      .filter(Boolean)
+      .slice(0, Math.max(1, Number(limit) || 1));
+  const intent = sanitizedIntent && typeof sanitizedIntent === "object" ? sanitizedIntent : {};
+  const packet = geminiContextPacket && typeof geminiContextPacket === "object" ? geminiContextPacket : {};
+  const proposalLock = packet?.proposal_lock && typeof packet.proposal_lock === "object" ? packet.proposal_lock : {};
+  const sourceImageIds = normalizeIds(imagePayload?.sourceImageIds, 10);
+  const transformationMode = motherV2NormalizeTransformationMode(
+    proposalLock.transformation_mode || intent.transformation_mode || compiled?.transformation_mode || MOTHER_V2_DEFAULT_TRANSFORMATION_MODE
+  );
+  const shotTypeHints = motherV2ShotTypeHints({
+    preferredMode: transformationMode,
+    candidateModes:
+      proposalLock.transformation_mode_candidates ||
+      intent.transformation_mode_candidates ||
+      [],
+  });
+  const layout = String(
+    proposalLock.placement_policy || intent.placement_policy || compiled?.generation_params?.layout_hint || "adjacent"
+  ).trim() || "adjacent";
+  const selectedIds = normalizeIds(proposalLock.selected_ids || getVisibleSelectedIds(), 6);
+  const targetIds = normalizeIds(proposalLock.target_ids || intent.target_ids, 6);
+  const referenceIds = normalizeIds(proposalLock.reference_ids || intent.reference_ids, 8);
+  const dispatchManifestById = new Map(
+    (Array.isArray(imagePayload?.dispatchImageManifest) ? imagePayload.dispatchImageManifest : [])
+      .map((entry) => [String(entry?.id || "").trim(), entry])
+      .filter(([id]) => Boolean(id))
+  );
+  const packetImages = Array.isArray(packet?.images) ? packet.images : [];
+  let images = packetImages
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const id = String(entry.id || "").trim();
+      if (!id) return null;
+      const dispatchEntry = dispatchManifestById.get(id) || null;
+      return {
+        slot: String(entry.slot || "").trim() || null,
+        id,
+        role: String(entry.role || "").trim() || "context",
+        tier: String(entry.tier || "").trim() || null,
+        weight: Number.isFinite(Number(entry.weight)) ? Number(entry.weight) : null,
+        preserve: (Array.isArray(entry.preserve) ? entry.preserve : []).map((v) => String(v || "").trim()).filter(Boolean).slice(0, 2),
+        transform: (Array.isArray(entry.transform) ? entry.transform : []).map((v) => String(v || "").trim()).filter(Boolean).slice(0, 2),
+        transform_state:
+          entry.transform_state && typeof entry.transform_state === "object"
+            ? {
+                rotate_deg: Number(entry.transform_state.rotate_deg) || 0,
+                skew_x_deg: Number(entry.transform_state.skew_x_deg) || 0,
+                user_resized: Boolean(entry.transform_state.user_resized),
+              }
+            : dispatchEntry
+            ? {
+                rotate_deg: Number(dispatchEntry.rotate_deg) || 0,
+                skew_x_deg: Number(dispatchEntry.skew_x_deg) || 0,
+                user_resized: Boolean(dispatchEntry.user_resized),
+              }
+            : null,
+        position_tier: String(entry.position_tier || "").trim() || null,
+        size_tier: String(entry.size_tier || "").trim() || null,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, budget.maxImages);
+  if (!images.length) {
+    images = sourceImageIds.slice(0, budget.maxImages).map((id, index) => ({
+      slot: null,
+      id,
+      role: index === 0 ? "target" : "reference",
+      tier: index === 0 ? "PRIMARY" : "SECONDARY",
+      weight: null,
+      preserve: [],
+      transform: [],
+      transform_state: null,
+      position_tier: null,
+      size_tier: null,
+    }));
+  }
+  const packetRelations = Array.isArray(packet?.relations) ? packet.relations : [];
+  const relations = packetRelations
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const refId = String(entry.ref_id || "").trim();
+      if (!refId) return null;
+      return {
+        ref_id: refId,
+        to_target: String(entry.to_target || "").trim() || "ADJACENT",
+        direction: String(entry.direction || "").trim() || null,
+        overlap_strength: String(entry.overlap_strength || "").trim() || null,
+        region_on_target: String(entry.region_on_target || "").trim() || null,
+        semantic: String(entry.semantic || "").trim() || null,
+        confidence: Number.isFinite(Number(entry.confidence)) ? Number(entry.confidence) : null,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, budget.maxRelations);
+  const mustNotValues = [];
+  const mustNotSeen = new Set();
+  const pushMustNot = (raw) => {
+    const text = String(raw || "")
+      .trim()
+      .replace(/^[-*•]\s*/, "")
+      .replace(/\s+/g, " ");
+    if (!text) return;
+    const key = text.toLowerCase();
+    if (mustNotSeen.has(key)) return;
+    mustNotSeen.add(key);
+    mustNotValues.push(text);
+  };
+  const packetMustNot = Array.isArray(packet?.constraints?.must_not)
+    ? packet.constraints.must_not
+    : Array.isArray(packet?.must_not)
+      ? packet.must_not
+      : [];
+  for (const item of packetMustNot) pushMustNot(item);
+  for (const item of Array.isArray(compiled?.compile_constraints) ? compiled.compile_constraints : []) pushMustNot(item);
+  const negativePrompt = String(compiled?.negative_prompt || "").trim();
+  if (negativePrompt) {
+    for (const item of negativePrompt.split(/\n|;|,/g)) pushMustNot(item);
+  }
+  const mustNot = mustNotValues.slice(0, budget.maxMustNot);
+  const goal = clampText(
+    String(packet?.goal || intent?.summary || "Create one coherent production-ready image."),
+    260
+  );
+  const creativeDirective = clampText(
+    String(compiled?.creative_directive || intent?.creative_directive || motherCurrentCreativeDirective()),
+    140
+  );
+  const guidance =
+    providerKey === "flux"
+      ? [
+          "Keep directives concise and concrete.",
+          "Prioritize subject continuity and lighting realism.",
+          "Respect canvas rotation/skew/scale intent from input geometry.",
+          "Treat must_not constraints as hard requirements.",
+        ]
+      : [
+          "Use explicit composition and subject continuity instructions.",
+          "Respect canvas rotation/skew/scale intent from input geometry.",
+          "Treat must_not constraints as hard requirements.",
+        ];
+  const transformedSourceCount = Array.isArray(imagePayload?.dispatchImageManifest)
+    ? imagePayload.dispatchImageManifest.filter((entry) => Boolean(entry?.transformed)).length
+    : 0;
+  const envelope = {
+    schema: `cue.model_context_envelope.${providerKey}.v1`,
+    provider: providerKey,
+    model: modelKey || null,
+    profile: providerKey === "flux" ? "flux-editing-compact" : "openai-image-structured",
+    prompt_budget_chars: budget.maxChars,
+    goal,
+    creative_directive: creativeDirective,
+    transformation_mode: transformationMode,
+    shot_type: shotTypeHints.primary_shot_type,
+    alternate_shot_type: shotTypeHints.alternate_shot_type,
+    lighting_profile: shotTypeHints.primary_lighting_profile,
+    alternate_lighting_profile: shotTypeHints.alternate_lighting_profile,
+    lens_guidance: shotTypeHints.primary_lens_guidance,
+    alternate_lens_guidance: shotTypeHints.alternate_lens_guidance,
+    layout,
+    source_image_ids: sourceImageIds.slice(0, 8),
+    respect_canvas_transforms: true,
+    transformed_source_images: transformedSourceCount,
+    target_ids: targetIds.slice(0, 4),
+    reference_ids: referenceIds.slice(0, 6),
+    selected_ids: selectedIds.slice(0, 4),
+    images,
+    relations,
+    must_not: mustNot,
+    guidance,
+    prompt_preview: clampText(promptLine, 280),
+  };
+  const serializedLen = () => JSON.stringify(envelope).length;
+  while (serializedLen() > budget.maxChars && envelope.relations.length > 1) envelope.relations.pop();
+  while (serializedLen() > budget.maxChars && envelope.images.length > 2) envelope.images.pop();
+  while (serializedLen() > budget.maxChars && envelope.must_not.length > 3) envelope.must_not.pop();
+  if (serializedLen() > budget.maxChars) {
+    envelope.goal = clampText(envelope.goal, 180);
+    envelope.prompt_preview = clampText(envelope.prompt_preview, 180);
+  }
+  return envelope;
+}
+
+function motherV2BuildModelContextEnvelopes({
+  selectedModel = "",
+  compiled = {},
+  promptLine = "",
+  sanitizedIntent = null,
+  imagePayload = null,
+  geminiContextPacket = null,
+} = {}) {
+  const model = String(selectedModel || "").trim();
+  if (!model) return null;
+  const provider = providerFromModel(model);
+  if (!provider || provider === "unknown" || provider === "gemini") return null;
+  const providerKey = provider === "sdxl" ? "replicate" : provider;
+  const envelope = motherV2BuildNonGeminiModelContextEnvelope({
+    provider: providerKey,
+    model,
+    compiled,
+    promptLine,
+    sanitizedIntent,
+    imagePayload,
+    geminiContextPacket,
+  });
+  if (!envelope || typeof envelope !== "object") return null;
+  return { [providerKey]: envelope };
+}
+
+function motherV2BuildGeminiContextPacket({ compiled = {}, promptLine = "", sanitizedIntent = null, imagePayload = null } = {}) {
+  const idle = state.motherIdle;
+  const intent = sanitizedIntent && typeof sanitizedIntent === "object" ? sanitizedIntent : {};
+  const sourceImageIds = Array.isArray(imagePayload?.sourceImageIds)
+    ? imagePayload.sourceImageIds.map((v) => String(v || "").trim()).filter(Boolean)
+    : [];
+  if (!sourceImageIds.length) return null;
+
+  const SATURATION_K = Object.freeze({
+    move: 8,
+    resize: 4,
+    transform: 5,
+    selection: 8,
+    action: 4,
+  });
+  const MUST_NOT_DEFAULTS = Object.freeze([
+    "No collage or split-screen.",
+    "No text, captions, or watermarks.",
+    "No ghosted double-exposure overlays.",
+    "No UI residue or icon-overpaint artifacts.",
+    "No duplicated heads or limbs.",
+    "No extra humans or faces unless present in inputs.",
+  ]);
+  const INTERACTION_DECAY_TAU_MS = 90_000;
+  const INTERACTION_STALE_CUTOFF_MS = 10 * 60 * 1000;
+  const EPS = 1e-9;
+  const wrap = els.canvasWrap;
+  const canvasCssW = Math.max(1, Number(wrap?.clientWidth) || 1);
+  const canvasCssH = Math.max(1, Number(wrap?.clientHeight) || 1);
+  const nowMs = Date.now();
+  const clamp01 = (value) => clamp(Number(value) || 0, 0, 1);
+  const round4 = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.round(n * 10000) / 10000;
+  };
+  const round2 = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.round(n * 100) / 100;
+  };
+  const sat = (count, k) => {
+    const c = Math.max(0, Number(count) || 0);
+    const cap = Math.max(1, Number(k) || 1);
+    const v = Math.log(1 + c) / Math.log(1 + cap);
+    return clamp01(v);
+  };
+  const uniqueIds = (values = []) => {
+    const out = [];
+    for (const raw of Array.isArray(values) ? values : []) {
+      const id = String(raw || "").trim();
+      if (!id || out.includes(id)) continue;
+      out.push(id);
+    }
+    return out;
+  };
+  const slotLabelForIndex = (index) => {
+    const i = Math.max(0, Math.floor(Number(index) || 0));
+    if (i < 26) return String.fromCharCode(65 + i);
+    return `I${i + 1}`;
+  };
+  const toRectNorm = (rectRaw) => {
+    if (!rectRaw || typeof rectRaw !== "object") return null;
+    const x = (Number(rectRaw.x) || 0) / canvasCssW;
+    const y = (Number(rectRaw.y) || 0) / canvasCssH;
+    const w = Math.max(0, Number(rectRaw.w) || 0) / canvasCssW;
+    const h = Math.max(0, Number(rectRaw.h) || 0) / canvasCssH;
+    return {
+      x: round4(x),
+      y: round4(y),
+      w: round4(w),
+      h: round4(h),
+      cx: round4(x + w / 2),
+      cy: round4(y + h / 2),
+    };
+  };
+  const positionTierFromRect = (rectNorm) => {
+    const cx = Number(rectNorm?.cx);
+    const cy = Number(rectNorm?.cy);
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return "CENTER_MIDDLE";
+    const xTier = cx < 0.34 ? "LEFT" : cx > 0.66 ? "RIGHT" : "CENTER";
+    const yTier = cy < 0.34 ? "TOP" : cy > 0.66 ? "BOTTOM" : "MIDDLE";
+    return `${xTier}_${yTier}`;
+  };
+  const sizeTierFromArea = (areaRatio) => {
+    const n = Math.max(0, Number(areaRatio) || 0);
+    if (n >= 0.07) return "DOMINANT";
+    if (n >= 0.03) return "MEDIUM";
+    return "SMALL";
+  };
+  const relationFromDelta = (dx, dy, overlaps = false) => {
+    if (overlaps) return "OVERLAP";
+    return Math.abs(dx) >= Math.abs(dy)
+      ? (dx >= 0 ? "RIGHT" : "LEFT")
+      : (dy >= 0 ? "BELOW" : "ABOVE");
+  };
+  const overlapRegionForRect = (rectNorm, ix1, iy1, ix2, iy2) => {
+    const rw = Math.max(1e-6, Number(rectNorm?.w) || 0);
+    const rh = Math.max(1e-6, Number(rectNorm?.h) || 0);
+    const rx = Number(rectNorm?.x) || 0;
+    const ry = Number(rectNorm?.y) || 0;
+    const cx = ((Number(ix1) || 0) + (Number(ix2) || 0)) / 2;
+    const cy = ((Number(iy1) || 0) + (Number(iy2) || 0)) / 2;
+    const localCx = clamp((cx - rx) / rw, 0, 1);
+    const localCy = clamp((cy - ry) / rh, 0, 1);
+    const hBucket = localCx < 0.34 ? "left" : localCx > 0.66 ? "right" : "center";
+    const vBucket = localCy < 0.34 ? "top" : localCy > 0.66 ? "bottom" : "middle";
+    return {
+      region: `${vBucket}_${hBucket}`,
+      x_norm: round4(clamp(((Number(ix1) || 0) - rx) / rw, 0, 1)),
+      y_norm: round4(clamp(((Number(iy1) || 0) - ry) / rh, 0, 1)),
+    };
+  };
+  const invertRelation = (value = "") => {
+    const rel = String(value || "").trim().toUpperCase();
+    if (rel === "LEFT") return "RIGHT";
+    if (rel === "RIGHT") return "LEFT";
+    if (rel === "ABOVE") return "BELOW";
+    if (rel === "BELOW") return "ABOVE";
+    return rel || "UNKNOWN";
+  };
+  const normalizeMustNot = (raw) => {
+    const text = String(raw || "")
+      .trim()
+      .replace(/^[-*•]\s*/, "")
+      .replace(/\s+/g, " ");
+    if (!text) return null;
+    return text;
+  };
+  const splitNegativePrompt = (raw) =>
+    String(raw || "")
+      .split(/\n|;|,/g)
+      .map((v) => v.trim())
+      .filter(Boolean);
+  const rolePriorForImage = (imageId, roleTags = [], targetIdSet = new Set(), referenceIdSet = new Set()) => {
+    let prior = 0.3;
+    if (targetIdSet.has(imageId)) prior = 1.0;
+    else if (referenceIdSet.has(imageId)) prior = 0.6;
+    if (roleTags.includes("subject")) prior *= 1.05;
+    if (roleTags.includes("mediator")) prior *= 0.97;
+    return clamp(prior, 0.25, 1.0);
+  };
+
+  const actionVersion = Number(idle?.actionVersion) || 0;
+  const summary = String(intent.summary || motherV2ProposalSentence(intent) || "").trim();
+  const creativeDirective = String(compiled?.creative_directive || intent.creative_directive || motherCurrentCreativeDirective() || "").trim();
+  const transformationMode = motherV2NormalizeTransformationMode(
+    intent.transformation_mode || compiled?.transformation_mode || MOTHER_V2_DEFAULT_TRANSFORMATION_MODE
+  );
+  const transformationModeCandidatesRaw = Array.isArray(intent.transformation_mode_candidates)
+    ? intent.transformation_mode_candidates
+    : [];
+  const transformationModeCandidates = [];
+  const pushModeCandidate = (rawMode, rawConfidence = null, rawAweJoyScore = null, { idx = null } = {}) => {
+    const normalized = motherV2NormalizeModeCandidate(
+      {
+        mode: rawMode,
+        confidence: rawConfidence,
+        awe_joy_score: rawAweJoyScore,
+      },
+      { idx: idx === null ? transformationModeCandidates.length : idx }
+    );
+    if (!normalized) return;
+    const existing = transformationModeCandidates.find((entry) => entry.mode === normalized.mode) || null;
+    if (!existing) {
+      transformationModeCandidates.push(normalized);
+      return;
+    }
+    if (typeof normalized.confidence === "number") {
+      const prior = typeof existing.confidence === "number" ? existing.confidence : -1;
+      if (normalized.confidence > prior) existing.confidence = normalized.confidence;
+    }
+    if (typeof normalized.awe_joy_score === "number") {
+      const prior = typeof existing.awe_joy_score === "number" ? existing.awe_joy_score : -1;
+      if (normalized.awe_joy_score > prior) existing.awe_joy_score = normalized.awe_joy_score;
+    }
+    const priorIdx = Number.isFinite(Number(existing._idx)) ? Number(existing._idx) : Number.MAX_SAFE_INTEGER;
+    const nextIdx = Number.isFinite(Number(normalized._idx)) ? Number(normalized._idx) : Number.MAX_SAFE_INTEGER;
+    existing._idx = Math.min(priorIdx, nextIdx);
+  };
+  pushModeCandidate(transformationMode, null, null, { idx: 0 });
+  let modeCandidateIdx = 1;
+  for (const entry of transformationModeCandidatesRaw) {
+    if (entry && typeof entry === "object") {
+      pushModeCandidate(entry.mode || entry.transformation_mode, entry.confidence, entry.awe_joy_score, { idx: modeCandidateIdx });
+    } else {
+      pushModeCandidate(entry, null, null, { idx: modeCandidateIdx });
+    }
+    modeCandidateIdx += 1;
+  }
+  transformationModeCandidates.sort(motherV2CompareModeCandidates);
+  const rankedTransformationModeCandidates = transformationModeCandidates.slice(0, motherV2ProposalLimit()).map((entry) => ({
+    mode: entry.mode,
+    awe_joy_score: typeof entry.awe_joy_score === "number" ? entry.awe_joy_score : null,
+    confidence: typeof entry.confidence === "number" ? entry.confidence : null,
+  }));
+  const shotTypeHints = motherV2ShotTypeHints({
+    preferredMode: transformationMode,
+    candidateModes: rankedTransformationModeCandidates,
+  });
+  const placementPolicy = String(
+    intent.placement_policy ||
+      compiled?.generation_params?.layout_hint ||
+      "adjacent"
+  ).trim() || "adjacent";
+  const selectedIds = getVisibleSelectedIds().map((v) => String(v || "").trim()).filter(Boolean).slice(0, 3);
+  const activeId = String(getVisibleActiveId() || "").trim() || null;
+  const targetIds = uniqueIds(motherV2NormalizeImageIdList(intent.target_ids || [])).slice(0, 3);
+  const referenceIds = uniqueIds(motherV2NormalizeImageIdList(intent.reference_ids || [])).slice(0, 4);
+  const targetIdSet = new Set(targetIds);
+  const referenceIdSet = new Set(referenceIds);
+  const roleMapRaw = intent.roles && typeof intent.roles === "object" ? intent.roles : motherV2RoleMapClone();
+  const roleMap = {
+    subject: uniqueIds(motherV2NormalizeImageIdList(roleMapRaw.subject || [])).slice(0, 3),
+    model: uniqueIds(motherV2NormalizeImageIdList(roleMapRaw.model || [])).slice(0, 3),
+    mediator: uniqueIds(motherV2NormalizeImageIdList(roleMapRaw.mediator || [])).slice(0, 3),
+    object: uniqueIds(motherV2NormalizeImageIdList(roleMapRaw.object || [])).slice(0, 3),
+  };
+  const signalsById = motherV2CollectImageInteractionSignals(sourceImageIds);
+
+  const draft = [];
+  for (const imageId of sourceImageIds) {
+    const item = state.imagesById.get(imageId) || null;
+    const rectCss = state.freeformRects.get(imageId) || null;
+    const rectNorm = toRectNorm(rectCss);
+    const rectTransform = readFreeformRectTransform(rectCss);
+    const canvasAreaRatio = rectNorm ? Math.max(0, Number(rectNorm.w) * Number(rectNorm.h)) : 0;
+    const aspectRatioNorm =
+      rectNorm && Number(rectNorm.h) > 1e-6 ? Number(rectNorm.w) / Number(rectNorm.h) : null;
+    const signal = signalsById.get(imageId) || {
+      move_count: 0,
+      resize_count: 0,
+      transform_count: 0,
+      selection_hits: 0,
+      action_grid_hits: 0,
+      last_event_at_ms: 0,
+      last_transform_at_ms: 0,
+    };
+    const roleTags = MOTHER_V2_ROLE_KEYS.filter((key) => roleMap[key]?.includes(imageId));
+    const isTarget = targetIdSet.has(imageId);
+    const isReference = referenceIdSet.has(imageId);
+    const isSubject = roleTags.includes("subject");
+    const isModel = roleTags.includes("model");
+    const isMediator = roleTags.includes("mediator");
+    const isObject = roleTags.includes("object");
+
+    const preserve = [];
+    if (isTarget || isSubject || isObject || imageId === sourceImageIds[0]) preserve.push("primary anchor");
+    if (Number(signal.resize_count) > 0) preserve.push("user framing emphasis");
+    if (Number(signal.transform_count) > 0) preserve.push("user transform intent");
+    if (Number(signal.selection_hits) > 0 || Number(signal.action_grid_hits) > 0) preserve.push("user focus cues");
+
+    const transform = [];
+    if (isReference || isModel || isMediator) transform.push("material and style cues");
+    if (Number(signal.move_count) > 0) transform.push("composition relationship cues");
+    if (Number(signal.transform_count) > 0) transform.push("rotation/skew cues");
+    if (Math.abs(Number(rectTransform.rotateDeg) || 0) > 0.2 || Math.abs(Number(rectTransform.skewXDeg) || 0) > 0.2) {
+      transform.push("canvas transform lock");
+    }
+    if (rectCss?.autoAspect === false) transform.push("user scale lock");
+
+    const moveSat = sat(signal.move_count, SATURATION_K.move);
+    const resizeSat = sat(signal.resize_count, SATURATION_K.resize);
+    const transformSat = sat(signal.transform_count, SATURATION_K.transform);
+    const selectionSat = sat(signal.selection_hits, SATURATION_K.selection);
+    const actionSat = sat(signal.action_grid_hits, SATURATION_K.action);
+    const interactionBase =
+      0.3 * moveSat + 0.22 * resizeSat + 0.23 * transformSat + 0.2 * selectionSat + 0.05 * actionSat;
+    const transformRecencyMs = Number(signal.last_transform_at_ms) || 0;
+    const recencyMs = transformRecencyMs || Number(signal.last_event_at_ms) || 0;
+    const ageMs = recencyMs ? Math.max(0, nowMs - recencyMs) : INTERACTION_STALE_CUTOFF_MS + 1;
+    const transformAgeMs = transformRecencyMs
+      ? Math.max(0, nowMs - transformRecencyMs)
+      : INTERACTION_STALE_CUTOFF_MS + 1;
+    const interactionStale = transformAgeMs > INTERACTION_STALE_CUTOFF_MS;
+    let interactionRaw = interactionStale
+      ? 0
+      : interactionBase * Math.exp(-ageMs / INTERACTION_DECAY_TAU_MS);
+    if (
+      Number(signal.move_count) <= 1 &&
+      Number(signal.resize_count) === 0 &&
+      Number(signal.transform_count) === 0 &&
+      Number(signal.selection_hits) <= 2 &&
+      Number(signal.action_grid_hits) === 0
+    ) {
+      interactionRaw = 0;
+    }
+    const rolePrior = rolePriorForImage(imageId, roleTags, targetIdSet, referenceIdSet);
+
+    draft.push({
+      id: imageId,
+      file: item?.path ? basename(item.path) : null,
+      origin: item && isMotherGeneratedImageItem(item) ? "mother_generated" : "uploaded",
+      role_tags: roleTags,
+      role: isTarget ? "target" : isReference ? "reference" : "context",
+      role_prior: rolePrior,
+      preserve,
+      transform,
+      signal,
+      interaction_base: interactionBase,
+      interaction_raw: Math.max(0, Number(interactionRaw) || 0),
+      interaction_stale: interactionStale,
+      rect_norm: rectNorm,
+      transform_state: {
+        rotate_deg: round2(rectTransform.rotateDeg),
+        skew_x_deg: round2(rectTransform.skewXDeg),
+        user_resized: rectCss?.autoAspect === false,
+      },
+      canvas_area_ratio: canvasAreaRatio,
+      aspect_ratio_norm: aspectRatioNorm,
+      focus_score_raw: 0,
+      focus_score: 0,
+      geometry_score_raw: 0,
+      geometry_score: 0,
+      relative_scale_to_largest: 0,
+      centrality: 0,
+      score: 0,
+      weight: 0,
+      position_tier: positionTierFromRect(rectNorm),
+      size_tier: sizeTierFromArea(canvasAreaRatio),
+    });
+  }
+
+  const interactionBaseMax = draft.reduce(
+    (maxVal, entry) => Math.max(maxVal, Math.max(0, Number(entry.interaction_base) || 0)),
+    0
+  );
+  const interactionRawMax = draft.reduce(
+    (maxVal, entry) => Math.max(maxVal, Math.max(0, Number(entry.interaction_raw) || 0)),
+    0
+  );
+  const interactionConfidence = clamp01((interactionBaseMax - 0.15) / 0.35);
+  for (const entry of draft) {
+    const focusRaw = interactionRawMax > 0 ? (Number(entry.interaction_raw) || 0) / (interactionRawMax + EPS) : 0;
+    entry.focus_score_raw = clamp01(focusRaw);
+    entry.focus_score = clamp01(interactionConfidence * entry.focus_score_raw);
+  }
+
+  const areaValues = draft
+    .map((entry) => Math.max(0, Number(entry.canvas_area_ratio) || 0))
+    .filter((value) => value > 0);
+  const areaMax = areaValues.length ? Math.max(...areaValues) : 0;
+  const areaMin = areaValues.length ? Math.min(...areaValues) : 0;
+  const sqrtAreaMax = areaMax > 0 ? Math.sqrt(areaMax) : 0;
+  const geometryConfidence =
+    areaMax > 0 && areaMin > 0
+      ? clamp01(Math.log((areaMax + EPS) / (areaMin + EPS)) / Math.log(2.5))
+      : 0;
+  let geometryRawMax = 0;
+  for (const entry of draft) {
+    const area = Math.max(0, Number(entry.canvas_area_ratio) || 0);
+    const size = sqrtAreaMax > 0 ? Math.sqrt(area) / (sqrtAreaMax + EPS) : 0;
+    entry.relative_scale_to_largest = clamp01(size);
+    const cx = Number(entry.rect_norm?.cx);
+    const cy = Number(entry.rect_norm?.cy);
+    const centerDist = Number.isFinite(cx) && Number.isFinite(cy) ? Math.hypot(cx - 0.5, cy - 0.5) : 0.7071;
+    const centrality = clamp01(1 - centerDist / 0.7071);
+    entry.centrality = centrality;
+    const geometryRaw = 0.8 * size + 0.2 * centrality;
+    entry.geometry_score_raw = clamp01(geometryRaw);
+    geometryRawMax = Math.max(geometryRawMax, entry.geometry_score_raw);
+  }
+  for (const entry of draft) {
+    const normalized = geometryRawMax > 0 ? entry.geometry_score_raw / (geometryRawMax + EPS) : 0;
+    entry.geometry_score = clamp01(geometryConfidence * normalized);
+  }
+
+  for (const entry of draft) {
+    const selectedBonus = selectedIds.includes(entry.id) ? 0.1 : 0;
+    const activeBonus = activeId && entry.id === activeId ? 0.05 : 0;
+    entry.score =
+      entry.role_prior *
+      (1 + 0.6 * entry.focus_score) *
+      (1 + 0.4 * entry.geometry_score) *
+      (1 + selectedBonus + activeBonus);
+  }
+  let scoreTotal = draft.reduce((sum, entry) => sum + Math.max(0, Number(entry.score) || 0), 0);
+  if (!(scoreTotal > 0)) {
+    for (const entry of draft) entry.score = Math.max(0.001, Number(entry.role_prior) || 0.001);
+    scoreTotal = draft.reduce((sum, entry) => sum + Math.max(0, Number(entry.score) || 0), 0);
+  }
+  for (const entry of draft) {
+    entry.weight = scoreTotal > 0 ? (Number(entry.score) || 0) / (scoreTotal + EPS) : 0;
+  }
+
+  // Identity guardrails apply only for the single-target case.
+  const targetIdList = targetIds.filter((id) => draft.some((entry) => entry.id === id));
+  if (targetIdList.length === 1) {
+    const tId = targetIdList[0];
+    const targetEntry = draft.find((entry) => entry.id === tId) || null;
+    if (targetEntry && Number(targetEntry.weight) < 0.55) {
+      const delta = 0.55 - Number(targetEntry.weight || 0);
+      const nonTargetEntries = draft.filter((entry) => entry.id !== tId);
+      const nonTargetTotal = nonTargetEntries.reduce((sum, entry) => sum + Math.max(0, Number(entry.weight) || 0), 0);
+      for (const entry of nonTargetEntries) {
+        const share = nonTargetTotal > 0 ? (Number(entry.weight) || 0) / (nonTargetTotal + EPS) : 0;
+        entry.weight = Math.max(0, (Number(entry.weight) || 0) - delta * share);
+      }
+      targetEntry.weight = 0.55;
+    }
+    for (const refId of referenceIds) {
+      const refEntry = draft.find((entry) => entry.id === refId) || null;
+      if (!refEntry) continue;
+      if (Number(refEntry.weight) <= 0.3) continue;
+      const excess = Number(refEntry.weight) - 0.3;
+      refEntry.weight = 0.3;
+      const targetEntryNow = draft.find((entry) => entry.id === tId) || null;
+      if (targetEntryNow) targetEntryNow.weight = Number(targetEntryNow.weight || 0) + excess;
+    }
+    const renorm = draft.reduce((sum, entry) => sum + Math.max(0, Number(entry.weight) || 0), 0);
+    for (const entry of draft) {
+      entry.weight = renorm > 0 ? (Number(entry.weight) || 0) / (renorm + EPS) : entry.weight;
+    }
+  }
+
+  const zIndexById = new Map();
+  for (let i = 0; i < (state.freeformZOrder?.length || 0); i += 1) {
+    const id = String(state.freeformZOrder[i] || "").trim();
+    if (!id) continue;
+    if (!zIndexById.has(id)) zIndexById.set(id, i);
+  }
+  const slotById = new Map();
+  const orderForSlots = uniqueIds(sourceImageIds.filter((id) => draft.some((entry) => entry.id === id)));
+  for (let i = 0; i < orderForSlots.length; i += 1) {
+    slotById.set(orderForSlots[i], slotLabelForIndex(i));
+  }
+
+  const spatialImageEntries = draft.filter((entry) => entry.rect_norm && typeof entry.rect_norm === "object").slice(0, 8);
+  const pairwise = [];
+  const pairMap = new Map();
+  const pairKey = (aId, bId) => {
+    const a = String(aId || "").trim();
+    const b = String(bId || "").trim();
+    if (!a || !b) return "";
+    return a < b ? `${a}::${b}` : `${b}::${a}`;
+  };
+  const diagonalNorm = Math.sqrt(2);
+  for (let i = 0; i < spatialImageEntries.length; i += 1) {
+    for (let j = i + 1; j < spatialImageEntries.length; j += 1) {
+      const a = spatialImageEntries[i];
+      const b = spatialImageEntries[j];
+      const ar = a.rect_norm || null;
+      const br = b.rect_norm || null;
+      if (!ar || !br) continue;
+      const ax1 = Number(ar.x) || 0;
+      const ay1 = Number(ar.y) || 0;
+      const ax2 = ax1 + Math.max(0, Number(ar.w) || 0);
+      const ay2 = ay1 + Math.max(0, Number(ar.h) || 0);
+      const bx1 = Number(br.x) || 0;
+      const by1 = Number(br.y) || 0;
+      const bx2 = bx1 + Math.max(0, Number(br.w) || 0);
+      const by2 = by1 + Math.max(0, Number(br.h) || 0);
+      const acx = ax1 + (ax2 - ax1) / 2;
+      const acy = ay1 + (ay2 - ay1) / 2;
+      const bcx = bx1 + (bx2 - bx1) / 2;
+      const bcy = by1 + (by2 - by1) / 2;
+      const dx = bcx - acx;
+      const dy = bcy - acy;
+      const centerDistanceNorm = diagonalNorm > 0 ? Math.hypot(dx, dy) / diagonalNorm : 0;
+      const gapX = Math.max(0, Math.max(ax1 - bx2, bx1 - ax2));
+      const gapY = Math.max(0, Math.max(ay1 - by2, by1 - ay2));
+      const edgeGapNorm = Math.hypot(gapX, gapY);
+      const ix1 = Math.max(ax1, bx1);
+      const iy1 = Math.max(ay1, by1);
+      const ix2 = Math.min(ax2, bx2);
+      const iy2 = Math.min(ay2, by2);
+      const iw = Math.max(0, ix2 - ix1);
+      const ih = Math.max(0, iy2 - iy1);
+      const overlapArea = Math.max(0, iw * ih);
+      const overlaps = overlapArea > 1e-8;
+      const areaA = Math.max(0, (ax2 - ax1) * (ay2 - ay1));
+      const areaB = Math.max(0, (bx2 - bx1) * (by2 - by1));
+      const union = Math.max(0, areaA + areaB - overlapArea);
+      const iou = union > 1e-8 ? overlapArea / union : 0;
+      const overlapRatioA = areaA > 1e-8 ? overlapArea / areaA : 0;
+      const overlapRatioB = areaB > 1e-8 ? overlapArea / areaB : 0;
+      const aToB = relationFromDelta(dx, dy, overlaps);
+      const overlapOnA = overlaps
+        ? {
+            ...overlapRegionForRect(ar, ix1, iy1, ix2, iy2),
+            ratio: round4(overlapRatioA),
+          }
+        : null;
+      const overlapOnB = overlaps
+        ? {
+            ...overlapRegionForRect(br, ix1, iy1, ix2, iy2),
+            ratio: round4(overlapRatioB),
+          }
+        : null;
+      const zA = zIndexById.has(a.id) ? Number(zIndexById.get(a.id)) : null;
+      const zB = zIndexById.has(b.id) ? Number(zIndexById.get(b.id)) : null;
+      const topId = zA === null || zB === null ? null : (zA > zB ? a.id : b.id);
+      const pair = {
+        id_a: a.id,
+        id_b: b.id,
+        a_to_b: aToB,
+        b_to_a: invertRelation(aToB),
+        center_distance_norm: round4(centerDistanceNorm),
+        edge_gap_norm: round4(edgeGapNorm),
+        overlaps,
+        overlap: overlaps
+          ? {
+              iou: round4(iou),
+              area_norm: round4(overlapArea),
+              on_a: overlapOnA,
+              on_b: overlapOnB,
+            }
+          : null,
+        z_order: {
+          index_a: zA,
+          index_b: zB,
+          top_id: topId,
+        },
+      };
+      pairwise.push(pair);
+      const k = pairKey(a.id, b.id);
+      if (k) pairMap.set(k, pair);
+    }
+  }
+  pairwise.sort((a, b) => {
+    if (Number(Boolean(b.overlaps)) !== Number(Boolean(a.overlaps))) {
+      return Number(Boolean(b.overlaps)) - Number(Boolean(a.overlaps));
+    }
+    return Number(a.center_distance_norm) - Number(b.center_distance_norm);
+  });
+
+  const sortedByWeight = draft.slice().sort((a, b) => Number(b.weight) - Number(a.weight));
+  const primaryTargetId =
+    targetIdList[0] ||
+    sortedByWeight[0]?.id ||
+    null;
+
+  const relations = [];
+  for (const refId of referenceIds) {
+    if (!primaryTargetId || refId === primaryTargetId) continue;
+    const refEntry = draft.find((entry) => entry.id === refId) || null;
+    if (!refEntry) continue;
+    const key = pairKey(primaryTargetId, refId);
+    const pair = key ? pairMap.get(key) : null;
+    if (!pair) continue;
+    const primaryIsA = String(pair.id_a || "") === String(primaryTargetId || "");
+    const direction = primaryIsA ? pair.a_to_b : pair.b_to_a;
+    if (direction === "OVERLAP") {
+      const overlap = pair.overlap || null;
+      if (!overlap) continue;
+      const overlapOnTarget = primaryIsA ? overlap.on_a : overlap.on_b;
+      const overlapOnRef = primaryIsA ? overlap.on_b : overlap.on_a;
+      const iou = Number(overlap.iou) || 0;
+      const areaNorm = Number(overlap.area_norm) || 0;
+      const coverMax = Math.max(Number(overlapOnTarget?.ratio) || 0, Number(overlapOnRef?.ratio) || 0);
+      const confIou = clamp01((iou - 0.03) / 0.12);
+      const confArea = clamp01((areaNorm - 0.005) / 0.02);
+      const confCov = clamp01((coverMax - 0.25) / 0.5);
+      const confidence = round4(Math.max(confIou, confArea, confCov));
+      if (confidence < 0.55) continue;
+      const strength =
+        iou >= 0.12 || areaNorm >= 0.015 ? "STRONG" : iou >= 0.05 || areaNorm >= 0.008 ? "MEDIUM" : "LIGHT";
+      const topId = String(pair.z_order?.top_id || "").trim();
+      const occlusion =
+        topId && topId === primaryTargetId
+          ? "TARGET_FRONT"
+          : topId && topId === refId
+            ? "REF_FRONT"
+            : "UNKNOWN";
+      let semantic = "NONE";
+      if (occlusion === "TARGET_FRONT" && (Number(overlapOnRef?.ratio) || 0) >= 0.6) {
+        semantic = "STYLE_TUCK";
+      } else if (occlusion === "REF_FRONT" && (strength === "MEDIUM" || strength === "STRONG") && placementPolicy !== "adjacent") {
+        semantic = "FOREGROUND_ACCENT";
+      } else if (strength === "LIGHT" && Number(pair.edge_gap_norm || 0) === 0) {
+        semantic = "TOUCH";
+      }
+      relations.push({
+        ref_id: refId,
+        ref_slot: slotById.get(refId) || null,
+        to_target: "OVERLAP",
+        overlap_strength: strength,
+        occlusion,
+        region_on_target: String(overlapOnTarget?.region || "").toUpperCase() || null,
+        semantic,
+        confidence,
+        iou: round4(iou),
+      });
+      continue;
+    }
+    const confDir =
+      clamp01((0.35 - Number(pair.center_distance_norm || 0)) / 0.35) *
+      clamp01((0.12 - Number(pair.edge_gap_norm || 0)) / 0.12);
+    if (confDir < 0.6) continue;
+    relations.push({
+      ref_id: refId,
+      ref_slot: slotById.get(refId) || null,
+      to_target: "ADJACENT",
+      direction: direction,
+      confidence: round4(confDir),
+      iou: 0,
+    });
+  }
+  relations.sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0));
+  const relationLimit = referenceIds.length <= 4 ? 2 : 4;
+  const compactRelations = relations.slice(0, relationLimit);
+
+  for (const entry of draft) {
+    const key = primaryTargetId && entry.id !== primaryTargetId ? pairKey(primaryTargetId, entry.id) : "";
+    const pair = key ? pairMap.get(key) : null;
+    const iouToPrimary = pair?.overlap ? Number(pair.overlap.iou) || 0 : 0;
+    entry.geometry_trace = {
+      cx: round4(entry.rect_norm?.cx ?? 0),
+      cy: round4(entry.rect_norm?.cy ?? 0),
+      relative_scale: round4(entry.relative_scale_to_largest),
+      iou_to_primary: round4(iouToPrimary),
+    };
+  }
+
+  const imagesCompact = sortedByWeight.map((entry, idx) => {
+    const weight = round2(entry.weight);
+    const tier = idx === 0 || weight >= 0.5 ? "PRIMARY" : weight >= 0.2 ? "SECONDARY" : "ACCENT";
+    return {
+      slot: slotById.get(entry.id) || null,
+      id: entry.id,
+      role: entry.role,
+      weight,
+      tier,
+      size_tier: entry.size_tier,
+      position_tier: entry.position_tier,
+      focus_score: round2(entry.focus_score),
+      geometry_score: round2(entry.geometry_score),
+      role_tags: entry.role_tags.slice(0, 3),
+      preserve: Array.from(new Set(entry.preserve)).slice(0, 3),
+      transform: Array.from(new Set(entry.transform)).slice(0, 3),
+      transform_state: entry.transform_state,
+      geometry_trace: entry.geometry_trace,
+    };
+  });
+
+  const imageManifest = sortedByWeight.map((entry, idx) => ({
+    slot: slotById.get(entry.id) || null,
+    id: entry.id,
+    file: entry.file,
+    origin: entry.origin,
+    role: entry.role,
+    role_tags: entry.role_tags,
+    tier: idx === 0 || entry.weight >= 0.5 ? "PRIMARY" : entry.weight >= 0.2 ? "SECONDARY" : "ACCENT",
+    preserve: Array.from(new Set(entry.preserve)).slice(0, 3),
+    transform: Array.from(new Set(entry.transform)).slice(0, 3),
+    transform_state: entry.transform_state,
+    weight: round4(entry.weight),
+    focus_score: round4(entry.focus_score),
+    geometry_score: round4(entry.geometry_score),
+    rect_norm: entry.rect_norm,
+    canvas_area_ratio: round4(entry.canvas_area_ratio),
+    relative_scale_to_largest: round4(entry.relative_scale_to_largest),
+    aspect_ratio_norm: entry.aspect_ratio_norm !== null ? round4(entry.aspect_ratio_norm) : null,
+    geometry_trace: entry.geometry_trace,
+  }));
+
+  const spatialRelations = {
+    primary_target_id: primaryTargetId,
+    image_ids_considered: spatialImageEntries.map((entry) => String(entry.id || "")),
+    compact_relations: compactRelations,
+    pairwise: pairwise.slice(0, 12),
+  };
+
+  const mustNot = [];
+  const mustNotSeen = new Set();
+  const pushMustNot = (raw) => {
+    const text = normalizeMustNot(raw);
+    if (!text) return;
+    const key = text.toLowerCase();
+    if (mustNotSeen.has(key)) return;
+    mustNotSeen.add(key);
+    mustNot.push(text);
+  };
+  for (const constraint of Array.isArray(compiled?.compile_constraints) ? compiled.compile_constraints : []) {
+    pushMustNot(constraint);
+  }
+  const negativePrompt = String(compiled?.negative_prompt || "").trim();
+  if (negativePrompt) {
+    for (const line of splitNegativePrompt(negativePrompt)) pushMustNot(line);
+  }
+  for (const fallback of MUST_NOT_DEFAULTS) {
+    if (mustNot.length >= 6) break;
+    pushMustNot(fallback);
+  }
+  const mustNotFinal = mustNot.slice(0, 6);
+  const overallConfidence = round4(clamp01(0.6 * interactionConfidence + 0.4 * geometryConfidence));
+  const dispatchManifest = Array.isArray(imagePayload?.dispatchImageManifest) ? imagePayload.dispatchImageManifest : [];
+  const transformedDispatchCount = dispatchManifest.filter((entry) => Boolean(entry?.transformed)).length;
+
+  return {
+    schema: "cue.gemini.context_packet.v2",
+    action_version: actionVersion,
+    intent_id: String(intent.intent_id || idle?.intent?.intent_id || "").trim() || null,
+    goal: `Intent summary: ${summary || MOTHER_V2_PROPOSAL_BY_MODE[transformationMode] || "Create one coherent image."}`,
+    creative_directive: creativeDirective || motherCurrentCreativeDirective(),
+    optimization_target: motherCurrentOptimizationTarget(),
+    style: {
+      creative_directive: creativeDirective || motherCurrentCreativeDirective(),
+      optimization_target: motherCurrentOptimizationTarget(),
+      shot_type: shotTypeHints.primary_shot_type,
+      lighting_profile: shotTypeHints.primary_lighting_profile,
+      lens_guidance: shotTypeHints.primary_lens_guidance,
+    },
+    prompt_preview: clampText(String(promptLine || ""), 320),
+    shot_type_hints: shotTypeHints,
+    camera: {
+      shot_type: shotTypeHints.primary_shot_type,
+      alternate_shot_type: shotTypeHints.alternate_shot_type,
+      lens_guidance: shotTypeHints.primary_lens_guidance,
+      alternate_lens_guidance: shotTypeHints.alternate_lens_guidance,
+    },
+    lighting: {
+      profile: shotTypeHints.primary_lighting_profile,
+      alternate_profile: shotTypeHints.alternate_lighting_profile,
+    },
+    proposal_lock: {
+      transformation_mode: transformationMode,
+      transformation_mode_candidates: rankedTransformationModeCandidates,
+      placement_policy: placementPolicy,
+      shot_type: shotTypeHints.primary_shot_type,
+      alternate_shot_type: shotTypeHints.alternate_shot_type,
+      lighting_profile: shotTypeHints.primary_lighting_profile,
+      alternate_lighting_profile: shotTypeHints.alternate_lighting_profile,
+      lens_guidance: shotTypeHints.primary_lens_guidance,
+      alternate_lens_guidance: shotTypeHints.alternate_lens_guidance,
+      active_id: activeId,
+      selected_ids: selectedIds,
+      target_ids: targetIds,
+      reference_ids: referenceIds,
+      respect_canvas_transforms: true,
+    },
+    images: imagesCompact,
+    relations: compactRelations,
+    image_manifest: imageManifest,
+    source_image_manifest: dispatchManifest.slice(0, 10),
+    canvas_transform_lock: {
+      respect_canvas_transforms: true,
+      transformed_source_images: transformedDispatchCount,
+      active_id: activeId,
+    },
+    spatial_relations: spatialRelations,
+    behavior_signals: {
+      focus_rank: imageManifest.map((entry) => entry.id).slice(0, 5),
+      interaction_confidence: round4(interactionConfidence),
+      geometry_confidence: round4(geometryConfidence),
+      overall_confidence: overallConfidence,
+      interaction_stale_cutoff_ms: INTERACTION_STALE_CUTOFF_MS,
+      focus_scores: imageManifest
+        .map((entry) => ({ id: entry.id, focus_score: round4(entry.focus_score) }))
+        .slice(0, 8),
+    },
+    constraints: {
+      must_not: mustNotFinal,
+    },
+    must_not: mustNotFinal,
+    output: {
+      count: 1,
+      layout: placementPolicy,
+      quality: "production-ready",
+    },
+  };
+}
+
+async function motherV2DispatchViaImagePayload(compiled = {}, promptLine = "", { selectedModel = "" } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  const collectedImagePayload = motherV2CollectGenerationImagePaths();
+  const payloadSignature = motherV2GenerationPayloadSignature(collectedImagePayload);
+  let imagePayload = null;
+  if (payloadSignature && motherDispatchPayloadWarmState.signature === payloadSignature) {
+    if (motherDispatchPayloadWarmState.payload && typeof motherDispatchPayloadWarmState.payload === "object") {
+      imagePayload = motherDispatchPayloadWarmState.payload;
+    } else if (motherDispatchPayloadWarmState.promise) {
+      imagePayload = await motherDispatchPayloadWarmState.promise.catch(() => null);
+    }
+  }
+  if (!imagePayload || typeof imagePayload !== "object") {
+    imagePayload = await motherV2ResolveGenerationImagePayload(collectedImagePayload, { yieldForUi: true })
+      .catch(() => collectedImagePayload);
+  }
+  if (!imagePayload || typeof imagePayload !== "object") {
+    imagePayload = collectedImagePayload;
+  }
+  const hasResolvedDispatchManifest = Array.isArray(imagePayload?.dispatchImageManifest);
+  if (payloadSignature && hasResolvedDispatchManifest) {
+    motherDispatchPayloadWarmState = {
+      signature: payloadSignature,
+      payload: imagePayload,
+      promise: null,
+      startedAt: motherDispatchPayloadWarmState.startedAt || Date.now(),
+      reason: "dispatch",
+    };
+  }
+  const dispatchManifest = Array.isArray(imagePayload?.dispatchImageManifest) ? imagePayload.dispatchImageManifest : [];
+  const finalPromptLine = motherV2EnsureTransformLockPromptLine(promptLine, dispatchManifest);
+  const transformLockEntries = motherV2TransformLockManifestEntries(dispatchManifest);
+  const transformPromptEnforced = Boolean(transformLockEntries.length && finalPromptLine !== String(promptLine || "").trim());
+  if (transformPromptEnforced) {
+    idle.pendingPromptLine = finalPromptLine;
+  }
+  const sanitizedIntent = motherV2SanitizeIntentImageIds(idle.intent) || idle.intent || null;
+  const resolvedModel = String(selectedModel || settings.imageModel || MOTHER_GENERATION_MODEL).trim() || MOTHER_GENERATION_MODEL;
+  const geminiContextPacket = motherV2BuildGeminiContextPacket({
+    compiled,
+    promptLine: finalPromptLine,
+    sanitizedIntent,
+    imagePayload,
+  });
+  const modelContextEnvelopes = motherV2BuildModelContextEnvelopes({
+    selectedModel: resolvedModel,
+    compiled,
+    promptLine: finalPromptLine,
+    sanitizedIntent,
+    imagePayload,
+    geminiContextPacket,
+  });
+  const compiledGenerationParams =
+    compiled?.generation_params && typeof compiled.generation_params === "object" ? compiled.generation_params : {};
+  const generationParams = {};
+  const seedStrategy = String(compiledGenerationParams.seed_strategy || "").trim().toLowerCase();
+  if (seedStrategy === "random") generationParams.seed_strategy = "random";
+  if (compiledGenerationParams.seed !== undefined && compiledGenerationParams.seed !== null) {
+    const seedValue = Number(compiledGenerationParams.seed);
+    if (Number.isFinite(seedValue)) {
+      generationParams.seed = Math.trunc(seedValue);
+    }
+  }
+  if (typeof compiledGenerationParams.aspect_ratio === "string" && compiledGenerationParams.aspect_ratio.trim()) {
+    generationParams.aspect_ratio = compiledGenerationParams.aspect_ratio.trim();
+  }
+  if (typeof compiledGenerationParams.image_size === "string" && compiledGenerationParams.image_size.trim()) {
+    generationParams.image_size = compiledGenerationParams.image_size.trim();
+  }
+  if (Array.isArray(compiledGenerationParams.safety_settings) && compiledGenerationParams.safety_settings.length) {
+    generationParams.safety_settings = compiledGenerationParams.safety_settings.slice();
+  }
+  if (compiledGenerationParams.add_watermark !== undefined && compiledGenerationParams.add_watermark !== null) {
+    generationParams.add_watermark = Boolean(compiledGenerationParams.add_watermark);
+  }
+  if (compiledGenerationParams.person_generation !== undefined && compiledGenerationParams.person_generation !== null) {
+    generationParams.person_generation = compiledGenerationParams.person_generation;
+  }
+  if (compiledGenerationParams.transport_retries !== undefined && compiledGenerationParams.transport_retries !== null) {
+    const retriesValue = Number(compiledGenerationParams.transport_retries);
+    if (Number.isFinite(retriesValue)) {
+      generationParams.transport_retries = Math.max(0, Math.trunc(retriesValue));
+    }
+  }
+  if (compiledGenerationParams.request_retries !== undefined && compiledGenerationParams.request_retries !== null) {
+    const requestRetriesValue = Number(compiledGenerationParams.request_retries);
+    if (Number.isFinite(requestRetriesValue)) {
+      generationParams.request_retries = Math.max(0, Math.trunc(requestRetriesValue));
+    }
+  }
+  if (compiledGenerationParams.retry_backoff !== undefined && compiledGenerationParams.retry_backoff !== null) {
+    const retryBackoffValue = Number(compiledGenerationParams.retry_backoff);
+    if (Number.isFinite(retryBackoffValue) && retryBackoffValue > 0) {
+      generationParams.retry_backoff = retryBackoffValue;
+    }
+  }
+  const normalizedModel = String(resolvedModel || "").toLowerCase();
+  const isGeminiProImagePreviewModel = normalizedModel.includes("gemini-3-pro-image-preview");
+  if (isGeminiProImagePreviewModel) {
+    if (typeof generationParams.image_size !== "string" || !generationParams.image_size.trim()) {
+      generationParams.image_size = "1K";
+    }
+    if (generationParams.transport_retries === undefined && generationParams.request_retries === undefined) {
+      generationParams.transport_retries = 0;
+    }
+    if (generationParams.retry_backoff === undefined) {
+      generationParams.retry_backoff = 0.1;
+    }
+  }
+  const payload = {
+    schema: "cue.mother.generate.v2",
+    action_version: Number(idle.actionVersion) || 0,
+    intent_id: sanitizedIntent?.intent_id || idle.intent?.intent_id || null,
+    prompt: finalPromptLine,
+    n: 1,
+    generation_params: generationParams,
+    init_image: imagePayload.initImage,
+    reference_images: imagePayload.referenceImages,
+    gemini_context_packet: geminiContextPacket,
+    source_image_manifest: dispatchManifest.slice(0, 10),
+    canvas_transform_lock: {
+      respect_canvas_transforms: true,
+    },
+  };
+  const operationSpec = motherV2BuildOperationSpec({
+    intent: sanitizedIntent,
+    imagePayload,
+    actionVersion: Number(idle.actionVersion) || 0,
+    triggerSource: motherV2InferOperationTriggerSource(),
+  });
+  idle.currentOperationSpec = operationSpec;
+  if (operationSpec) {
+    payload.operation_spec = operationSpec;
+    recordUserEvent("operation_spec_created", {
+      actor: "system",
+      source: "mother_dispatch",
+      op_id: operationSpec.op_id,
+      op_type: operationSpec.op_type,
+      target_id: operationSpec.target_id,
+      reference_ids: operationSpec.reference_ids.slice(0, 8),
+      mode: operationSpec.mode || null,
+      trigger_source: operationSpec.trigger_source,
+      intent_id: sanitizedIntent?.intent_id || idle.intent?.intent_id || null,
+      action_version: Number(idle.actionVersion) || 0,
+    }, { includeInScoringRing: false });
+  }
+  if (modelContextEnvelopes && typeof modelContextEnvelopes === "object" && Object.keys(modelContextEnvelopes).length) {
+    payload.model_context_envelopes = modelContextEnvelopes;
+  }
+  const payloadPath = await motherV2WritePayloadFile("mother_generate", payload);
+  if (!payloadPath) return false;
+  appendMotherTraceLog({
+    kind: "generation_payload",
+    traceId: idle.telemetry?.traceId || null,
+    actionVersion: Number(idle.actionVersion) || 0,
+    intent_id: sanitizedIntent?.intent_id || idle.intent?.intent_id || null,
+    transformation_mode: motherV2NormalizeTransformationMode(sanitizedIntent?.transformation_mode),
+    placement_policy: sanitizedIntent?.placement_policy || null,
+    selected_ids: getVisibleSelectedIds().map((v) => String(v || "").trim()).filter(Boolean),
+    source_image_ids: Array.isArray(imagePayload.sourceImageIds) ? imagePayload.sourceImageIds.slice(0, 10) : [],
+    source_images_transformed: dispatchManifest.filter((entry) => Boolean(entry?.transformed)).length,
+    transform_prompt_lock_enforced: transformPromptEnforced,
+    transform_prompt_lock_count: transformLockEntries.length,
+    init_image_id: Array.isArray(imagePayload.sourceImageIds) && imagePayload.sourceImageIds.length
+      ? String(imagePayload.sourceImageIds[0] || "")
+      : null,
+    operation_spec: operationSpec || null,
+  }).catch(() => {});
+  await invoke("write_pty", { data: `${PTY_COMMANDS.MOTHER_GENERATE} ${quoteForPtyArg(payloadPath)}\n` });
+  return true;
+}
+
+async function motherV2DispatchCompiledPrompt(compiled = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  const inIntentPhase = idle.phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING;
+  const effectiveSpeculative = Boolean(idle.pendingPromptCompileSpeculative && inIntentPhase);
+  const canDispatch =
+    idle.phase === MOTHER_IDLE_STATES.DRAFTING ||
+    effectiveSpeculative;
+  if (!canDispatch) return false;
+  if (Number(idle.pendingActionVersion) !== Number(idle.actionVersion)) {
+    motherV2MarkStale({ stage: "prompt_compile", pending_action_version: Number(idle.pendingActionVersion) || 0 });
+    return false;
+  }
+  idle.pendingPromptCompile = false;
+  idle.pendingPromptCompileSpeculative = false;
+  clearTimeout(idle.pendingPromptCompileTimeout);
+  idle.pendingPromptCompileTimeout = null;
+  idle.promptMotionProfile = motherV2PromptMotionProfileFromCompiled(compiled);
+  const selectedModel = motherPreferredGenerationModel();
+  const dispatchProvider = providerFromModel(selectedModel) || null;
+  idle.lastDispatchModel = selectedModel;
+  const promptComposer = motherV2BuildPromptComposerResult(compiled);
+  const promptLine = promptComposer.line;
+  if (!promptLine) {
+    motherIdleHandleGenerationFailed("Mother prompt compile produced an empty prompt.", {
+      speculative: effectiveSpeculative,
+    });
+    return false;
+  }
+  motherIdleResetDispatchCorrelation({ rememberPendingVersion: true });
+  idle.dispatchTimeoutExtensions = 0;
+  idle.cancelArtifactUntil = 0;
+  idle.cancelArtifactReason = null;
+  idle.hasGeneratedSinceInteraction = false;
+  idle.generatedImageId = null;
+  idle.generatedVersionId = null;
+  idle.suppressFailureUntil = 0;
+  idle.pendingGeneration = true;
+  idle.pendingDispatchToken = Date.now();
+  idle.pendingPromptLine = promptLine;
+  idle.pendingDispatchSpeculative = effectiveSpeculative;
+  idle.pendingDispatchProposalMode = motherV2CurrentIntentMode(idle.intent);
+  if (effectiveSpeculative) {
+    idle.speculativePrefetchInFlight = true;
+    idle.speculativePrefetchReadyMode = null;
+    idle.draftCommitRectCss = null;
+    state.lastAction = "Mother Suggestion";
+    state.pendingMotherDraft = null;
+    state.expectingArtifacts = false;
+  } else {
+    const existingStartedAt = Number(state.pendingMotherDraft?.startedAt) || 0;
+    const existingKeypointSeed = Number(state.pendingMotherDraft?.keypointSeed) || 0;
+    const keypointSeed = existingKeypointSeed || hash32(`mother-siphon:${Date.now()}:${motherV2RoleContextIds().join(",")}`);
+    const keypointCache = state.pendingMotherDraft?.keypointCache instanceof Map
+      ? state.pendingMotherDraft.keypointCache
+      : new Map();
+    const previewPlacement = motherDraftingResolvePlacement(idle.intent);
+    const hasVersionBound = Boolean(String(idle.pendingVersionId || "").trim());
+    state.pendingMotherDraft = {
+      sourceIds: motherV2RoleContextIds(),
+      startedAt: existingStartedAt > 0 ? existingStartedAt : Date.now(),
+      previewPolicy: previewPlacement.policy,
+      previewTargetId: previewPlacement.targetId || null,
+      previewRectCss: previewPlacement.rectCss ? { ...previewPlacement.rectCss } : null,
+      timeoutCeilingMs: motherDraftingTimeoutCeilingMs({ hasVersionBound }),
+      keypointSeed,
+      keypointCache,
+    };
+    idle.draftCommitRectCss = previewPlacement.rectCss ? { ...previewPlacement.rectCss } : null;
+    state.lastAction = "Mother Suggestion";
+    state.expectingArtifacts = true;
+    setImageFxActive(true, "Mother Draft");
+    portraitWorking("Mother Draft", {
+      providerOverride: dispatchProvider,
+      forceProvider: true,
+    });
+    setStatus("Mother: drafting…");
+  }
+  await maybeOverrideEngineImageModel(selectedModel);
+  motherIdleArmDispatchTimeout(
+    MOTHER_GENERATION_TIMEOUT_MS,
+    `Mother draft timed out after ${Math.round((MOTHER_GENERATION_TIMEOUT_MS + MOTHER_GENERATION_TIMEOUT_EXTENSION_MS) / 1000)}s.`,
+    { allowExtension: true }
+  );
+  const benchmarkTrialId = promptBenchmarkRegisterDispatch({
+    strategy: promptComposer.strategy,
+    model: selectedModel,
+    promptChars: promptComposer.promptChars,
+    constraintCount: promptComposer.constraintCount,
+  });
+  const sentViaPayload = await motherV2DispatchViaImagePayload(compiled, promptLine, { selectedModel }).catch(() => false);
+  if (!sentViaPayload) {
+    if (benchmarkTrialId) {
+      promptBenchmarkFinalizeTrial(benchmarkTrialId, {
+        status: "failed",
+        error: "dispatch_failed",
+      });
+    }
+    // Mother drafts must dispatch via structured payload so source_images always includes
+    // the full canvas context (uploaded + Mother-generated images).
+    motherIdleHandleGenerationFailed("Mother could not start drafting payload.", {
+      speculative: effectiveSpeculative,
+    });
+    return false;
+  }
+  return true;
+}
+
+async function motherIdleHandleSuggestionArtifact({ id, path, receiptPath = null, versionId = null } = {}) {
+  if (!id || !path) return false;
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  const isSpeculativeIntentDispatch =
+    idle.phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING &&
+    Boolean(idle.pendingDispatchSpeculative);
+  if (!(idle.phase === MOTHER_IDLE_STATES.DRAFTING || isSpeculativeIntentDispatch)) return false;
+  if (!idle.pendingDispatchToken && !idle.pendingGeneration) return false;
+  const pendingPreviewRectCss = motherDraftingResolvePendingPreviewRectCss(state.pendingMotherDraft);
+
+  const dispatchWasSpeculative = Boolean(idle.pendingDispatchSpeculative);
+  const dispatchMode = motherV2NormalizeTransformationMode(
+    idle.pendingDispatchProposalMode || idle.intent?.transformation_mode
+  );
+  const incomingVersionId = String(versionId || "").trim() || null;
+  if (!motherIdleDispatchVersionMatches(incomingVersionId)) {
+    if (incomingVersionId) motherIdleRememberIgnoredVersion(incomingVersionId);
+    return false;
+  }
+  if (Number(idle.pendingActionVersion) !== Number(idle.actionVersion)) {
+    motherV2MarkStale({
+      stage: "artifact_created",
+      incoming_version_id: incomingVersionId,
+      pending_action_version: Number(idle.pendingActionVersion) || 0,
+    });
+    removeFile(path).catch(() => {});
+    if (receiptPath) removeFile(receiptPath).catch(() => {});
+    idle.pendingGeneration = false;
+    if (!idle.pendingVersionId && incomingVersionId) idle.pendingVersionId = incomingVersionId;
+    motherIdleResetDispatchCorrelation({ rememberPendingVersion: true });
+    idle.pendingDispatchToken = 0;
+    idle.pendingDispatchSpeculative = false;
+    idle.pendingDispatchProposalMode = null;
+    idle.pendingPromptCompileSpeculative = false;
+    idle.speculativePrefetchInFlight = false;
+    idle.dispatchTimeoutExtensions = 0;
+    state.pendingMotherDraft = null;
+    idle.draftCommitRectCss = null;
+    state.expectingArtifacts = false;
+    restoreEngineImageModelIfNeeded();
+    setImageFxActive(false);
+    updatePortraitIdle();
+    return true;
+  }
+
+  clearMotherIdleDispatchTimeout();
+  idle.pendingGeneration = false;
+  if (!idle.pendingVersionId && incomingVersionId) idle.pendingVersionId = incomingVersionId;
+  motherIdleResetDispatchCorrelation({ rememberPendingVersion: true });
+  idle.pendingDispatchToken = 0;
+  idle.pendingDispatchSpeculative = false;
+  idle.pendingDispatchProposalMode = null;
+  idle.pendingPromptCompileSpeculative = false;
+  idle.speculativePrefetchInFlight = false;
+  idle.dispatchTimeoutExtensions = 0;
+  state.pendingMotherDraft = null;
+  idle.draftCommitRectCss = pendingPreviewRectCss ? { ...pendingPreviewRectCss } : null;
+  idle.generatedImageId = id;
+  idle.generatedVersionId = incomingVersionId || null;
+  idle.lastSuggestionAt = Date.now();
+  idle.hasGeneratedSinceInteraction = true;
+  idle.suppressFailureUntil = idle.lastSuggestionAt + MOTHER_V2_SINGLE_RESULT_GUARD_WINDOW_MS;
+  state.expectingArtifacts = false;
+  restoreEngineImageModelIfNeeded();
+  setImageFxActive(false);
+  updatePortraitIdle();
+
+  // Keep reroll simple: one active draft at a time.
+  for (const draft of Array.isArray(idle.drafts) ? idle.drafts : []) {
+    if (String(draft?.id || "") === String(id)) continue;
+    if (draft?.path) removeFile(String(draft.path)).catch(() => {});
+    if (draft?.receiptPath) removeFile(String(draft.receiptPath)).catch(() => {});
+  }
+  const draft = {
+    id: String(id),
+    path: String(path),
+    receiptPath: receiptPath ? String(receiptPath) : null,
+    versionId: incomingVersionId,
+    actionVersion: Number(idle.actionVersion) || 0,
+    proposalMode: dispatchMode,
+    speculative: dispatchWasSpeculative,
+    createdAt: Date.now(),
+    receiptMeta: null,
+    img: null,
+  };
+  if (draft.receiptPath) {
+    try {
+      const payload = JSON.parse(await readTextFile(draft.receiptPath));
+      draft.receiptMeta = extractReceiptMeta(payload);
+    } catch {
+      draft.receiptMeta = null;
+    }
+  }
+  try {
+    draft.img = await loadImage(draft.path);
+  } catch {
+    draft.img = null;
+  }
+  idle.drafts = [draft];
+  idle.selectedDraftId = draft.id;
+  idle.hoverDraftId = draft.id;
+  if (dispatchWasSpeculative && idle.phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+    const currentMode = motherV2CurrentIntentMode(idle.intent);
+    if (dispatchMode !== currentMode) {
+      if (draft?.path) removeFile(String(draft.path)).catch(() => {});
+      if (draft?.receiptPath) removeFile(String(draft.receiptPath)).catch(() => {});
+      idle.drafts = [];
+      idle.selectedDraftId = null;
+      idle.hoverDraftId = null;
+      idle.speculativePrefetchReadyMode = null;
+      appendMotherTraceLog({
+        kind: "speculative_prefetch_discarded",
+        traceId: idle.telemetry?.traceId || null,
+        actionVersion: Number(idle.actionVersion) || 0,
+        proposal_mode: dispatchMode,
+        current_mode: currentMode,
+      }).catch(() => {});
+      renderMotherReadout();
+      requestRender();
+      return true;
+    }
+    idle.speculativePrefetchReadyMode = dispatchMode;
+    appendMotherTraceLog({
+      kind: "speculative_prefetch_ready",
+      traceId: idle.telemetry?.traceId || null,
+      actionVersion: Number(idle.actionVersion) || 0,
+      draft_id: draft.id,
+      proposal_mode: dispatchMode,
+    }).catch(() => {});
+    renderMotherReadout();
+    requestRender();
+    return true;
+  }
+  motherIdleTransitionTo(MOTHER_IDLE_EVENTS.DRAFT_READY);
+  setStatus("Mother: proposal ready.");
+  maybeEmitFirstProposalProposed({
+    source: "mother_draft_ready",
+    proposal_mode: motherV2NormalizeTransformationMode(idle.intent?.transformation_mode),
+    proposal_confidence: Number(idle.intent?.confidence) || 0,
+  });
+  renderMotherReadout();
+  appendMotherTraceLog({
+    kind: "draft_ready",
+    traceId: idle.telemetry?.traceId || null,
+    actionVersion: Number(idle.actionVersion) || 0,
+    draft_id: draft.id,
+    intent_id: idle.intent?.intent_id || null,
+    placement_policy: idle.intent?.placement_policy || null,
+    optimization_target: motherCurrentOptimizationTarget(),
+    proposal_mode: motherV2NormalizeTransformationMode(idle.intent?.transformation_mode),
+    proposal_candidates: motherV2ProposalCandidateSummary(idle.intent, { limit: MOTHER_V2_MAX_RANKED_PROPOSALS }),
+    proposal_confidence: Number(idle.intent?.confidence) || 0,
+  }).catch(() => {});
+  if (!isReelSizeLocked()) {
+    showToast("Mother proposal ready. ✓ deploy, M dismiss, R reroll.", "tip", 2200);
+  }
+  requestRender();
+  return true;
+}
+
+function motherIdleHandleGenerationFailed(message = null, { speculative = false } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const speculativeFailure = Boolean(
+    speculative ||
+      (
+        idle.phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING &&
+        (idle.pendingDispatchSpeculative || idle.pendingPromptCompileSpeculative || idle.speculativePrefetchInFlight)
+      )
+  );
+  clearMotherIdleDispatchTimeout();
+  motherV2ClearLiveProposalRefreshTimer();
+  idle.liveProposalUpdating = false;
+  motherIdleResetDispatchCorrelation({ rememberPendingVersion: true });
+  idle.dispatchTimeoutExtensions = 0;
+  idle.pendingGeneration = false;
+  idle.pendingPromptCompile = false;
+  idle.pendingPromptCompileSpeculative = false;
+  idle.pendingIntent = false;
+  idle.pendingIntentRequestId = null;
+  idle.pendingIntentTransportRetryCount = 0;
+  idle.pendingIntentStartedAt = 0;
+  idle.pendingIntentUpgradeUntil = 0;
+  idle.pendingIntentRealtimePath = null;
+  idle.intentRealtimeBusyPath = null;
+  idle.intentRealtimeBusyRequestId = null;
+  idle.intentRealtimeBusyUntil = 0;
+  idle.intentReplayQueued = false;
+  idle.intentReplayReason = null;
+  idle.pendingIntentPath = null;
+  idle.pendingIntentPayload = null;
+  idle.pendingDispatchToken = 0;
+  idle.pendingDispatchSpeculative = false;
+  idle.pendingDispatchProposalMode = null;
+  idle.speculativePrefetchInFlight = false;
+  state.pendingMotherDraft = null;
+  idle.draftCommitRectCss = null;
+  state.expectingArtifacts = false;
+  restoreEngineImageModelIfNeeded();
+  setImageFxActive(false);
+  updatePortraitIdle();
+  if (speculativeFailure) {
+    idle.speculativePrefetchReadyMode = null;
+    appendMotherTraceLog({
+      kind: "speculative_prefetch_failed",
+      traceId: idle.telemetry?.traceId || null,
+      actionVersion: Number(idle.actionVersion) || 0,
+      error: message || null,
+    }).catch(() => {});
+    renderMotherReadout();
+    requestRender();
+    return;
+  }
+  motherIdleTransitionTo(MOTHER_IDLE_EVENTS.REJECT);
+  if (state.motherIdle?.phase === MOTHER_IDLE_STATES.COOLDOWN) {
+    motherV2ArmCooldown({ rejected: true });
+  }
+  appendMotherTraceLog({
+    kind: "generation_failed",
+    traceId: idle.telemetry?.traceId || null,
+    actionVersion: Number(idle.actionVersion) || 0,
+    error: message || null,
+  }).catch(() => {});
+  if (message) showToast(message, "error", 2600);
+}
+
+function motherIdlePrimeDraftFx() {
+  const idle = state.motherIdle;
+  const existingStartedAt = Number(state.pendingMotherDraft?.startedAt) || 0;
+  const existingKeypointSeed = Number(state.pendingMotherDraft?.keypointSeed) || 0;
+  const keypointSeed = existingKeypointSeed || hash32(`mother-siphon:${Date.now()}:${motherV2RoleContextIds().join(",")}`);
+  const keypointCache = state.pendingMotherDraft?.keypointCache instanceof Map
+    ? state.pendingMotherDraft.keypointCache
+    : new Map();
+  const previewPlacement = motherDraftingResolvePlacement(state.motherIdle?.intent || null);
+  const hasVersionBound = Boolean(String(state.motherIdle?.pendingVersionId || "").trim());
+  state.pendingMotherDraft = {
+    sourceIds: motherV2RoleContextIds(),
+    startedAt: existingStartedAt > 0 ? existingStartedAt : Date.now(),
+    previewPolicy: previewPlacement.policy,
+    previewTargetId: previewPlacement.targetId || null,
+    previewRectCss: previewPlacement.rectCss ? { ...previewPlacement.rectCss } : null,
+    timeoutCeilingMs: motherDraftingTimeoutCeilingMs({ hasVersionBound }),
+    keypointSeed,
+    keypointCache,
+  };
+  if (idle) {
+    idle.draftCommitRectCss = previewPlacement.rectCss ? { ...previewPlacement.rectCss } : null;
+  }
+  setImageFxActive(true, "Mother Draft");
+  motherV2ScheduleGenerationPayloadWarmup({ reason: "draft_fx_primed", immediate: true });
+  requestRender();
+}
+
+function motherIdleRollbackDraftFxIfDispatchUnarmed() {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  if (idle.phase !== MOTHER_IDLE_STATES.DRAFTING) return;
+  if (idle.pendingPromptCompile || idle.pendingGeneration || idle.pendingDispatchToken) return;
+  state.pendingMotherDraft = null;
+  idle.draftCommitRectCss = null;
+  setImageFxActive(false);
+}
+
+async function motherIdleDispatchGeneration() {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  const allowSpeculative = idle.phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING;
+  if (!(idle.phase === MOTHER_IDLE_STATES.DRAFTING || allowSpeculative)) return false;
+  if (state.pointer.active) return false;
+  if (!allowSpeculative) {
+    motherIdlePrimeDraftFx();
+  } else {
+    state.pendingMotherDraft = null;
+    idle.draftCommitRectCss = null;
+  }
+  const ok = await ensureEngineSpawned({ reason: "mother_drafting" });
+  if (!ok) {
+    motherIdleRollbackDraftFxIfDispatchUnarmed();
+    return false;
+  }
+  await motherV2RequestPromptCompile({ speculative: allowSpeculative });
+  const dispatchArmed = Boolean(idle.pendingPromptCompile || idle.pendingGeneration || idle.pendingDispatchToken);
+  if (!dispatchArmed) {
+    motherIdleRollbackDraftFxIfDispatchUnarmed();
+    return false;
+  }
+  return true;
+}
+
+function motherV2HasMultiUploadIdleBoost(nowMs = Date.now()) {
+  const idle = state.motherIdle;
+  if (!idle) return false;
+  return (Number(idle.multiUploadIdleBoostUntil) || 0) > nowMs;
+}
+
+function motherV2WatchIdleDelayMs(nowMs = Date.now()) {
+  return motherV2HasMultiUploadIdleBoost(nowMs) ? MOTHER_V2_MULTI_UPLOAD_WATCH_IDLE_MS : MOTHER_V2_WATCH_IDLE_MS;
+}
+
+function motherV2IntentIdleDelayMs(nowMs = Date.now()) {
+  return motherV2HasMultiUploadIdleBoost(nowMs) ? MOTHER_V2_MULTI_UPLOAD_INTENT_IDLE_MS : MOTHER_V2_INTENT_IDLE_MS;
+}
+
+function motherV2ArmMultiUploadIdleBoost(importCount = 0) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const count = Math.max(0, Number(importCount) || 0);
+  if (count < 2) return;
+  idle.multiUploadIdleBoostUntil = Date.now() + MOTHER_V2_MULTI_UPLOAD_IDLE_BOOST_WINDOW_MS;
+  if (idle.phase === MOTHER_IDLE_STATES.OBSERVING && !state.pointer.active) {
+    motherIdleArmFirstTimer();
+  } else if (idle.phase === MOTHER_IDLE_STATES.WATCHING && !state.pointer.active) {
+    motherIdleArmIntentTimer();
+  }
+}
+
+function motherIdleArmFirstTimer() {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  clearTimeout(idle.firstIdleTimer);
+  idle.firstIdleTimer = null;
+  clearTimeout(idle.intentIdleTimer);
+  idle.intentIdleTimer = null;
+  if (idle.blockedUntilUserInteraction) return;
+  if (!motherIdleHasArmedCanvas()) return;
+  if (state.pointer.active) return;
+  if (motherV2InCooldown()) return;
+  if (idle.phase !== MOTHER_IDLE_STATES.OBSERVING) return;
+  const nowMs = Date.now();
+  const watchIdleMs = motherV2WatchIdleDelayMs(nowMs);
+  const dueAt = (Number(state.lastInteractionAt) || nowMs) + watchIdleMs;
+  const delay = Math.max(25, dueAt - Date.now());
+  idle.firstIdleTimer = setTimeout(() => {
+    idle.firstIdleTimer = null;
+    if (state.motherIdle?.blockedUntilUserInteraction) return;
+    if (!motherIdleHasArmedCanvas()) return;
+    if (state.pointer.active) return;
+    if (motherV2InCooldown()) return;
+    const quietFor = Date.now() - (Number(state.lastInteractionAt) || 0);
+    const now = Date.now();
+    const watchDelayMs = motherV2WatchIdleDelayMs(now);
+    if (quietFor < watchDelayMs) {
+      motherIdleArmFirstTimer();
+      return;
+    }
+    if (state.motherIdle?.phase !== MOTHER_IDLE_STATES.OBSERVING) return;
+    motherIdleTransitionTo(MOTHER_IDLE_EVENTS.IDLE_WINDOW_ELAPSED);
+    renderMotherReadout();
+    motherIdleArmIntentTimer();
+  }, delay);
+}
+
+function motherIdleArmIntentTimer() {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  clearTimeout(idle.intentIdleTimer);
+  idle.intentIdleTimer = null;
+  if (idle.blockedUntilUserInteraction) return;
+  if (!motherIdleHasArmedCanvas()) return;
+  if (state.pointer.active) return;
+  if (motherV2InCooldown()) return;
+  if (idle.phase !== MOTHER_IDLE_STATES.WATCHING) return;
+  const nowMs = Date.now();
+  const intentIdleMs = motherV2IntentIdleDelayMs(nowMs);
+  const quietDueAt = (Number(state.lastInteractionAt) || nowMs) + intentIdleMs;
+  const settleDueAt = motherV2UploadSettleDueAtMs();
+  const dueAt = Math.max(quietDueAt, settleDueAt || 0);
+  const delay = Math.max(0, dueAt - Date.now());
+  idle.intentIdleTimer = setTimeout(async () => {
+    idle.intentIdleTimer = null;
+    if (state.motherIdle?.blockedUntilUserInteraction) return;
+    if (!motherIdleHasArmedCanvas()) return;
+    if (state.pointer.active) return;
+    if (motherV2InCooldown()) return;
+    const quietFor = Date.now() - (Number(state.lastInteractionAt) || 0);
+    const now = Date.now();
+    const intentDelayMs = motherV2IntentIdleDelayMs(now);
+    if (quietFor < intentDelayMs) {
+      motherIdleArmIntentTimer();
+      return;
+    }
+    if (motherV2UploadSettleRemainingMs(now) > 0) {
+      motherIdleArmIntentTimer();
+      return;
+    }
+    if (state.motherIdle?.phase !== MOTHER_IDLE_STATES.WATCHING) return;
+    if (motherV2HasMultiUploadIdleBoost(now)) {
+      idle.multiUploadIdleBoostUntil = 0;
+    }
+    motherIdleTransitionTo(MOTHER_IDLE_EVENTS.IDLE_WINDOW_ELAPSED);
+    await motherV2RequestIntentInference();
+    renderMotherReadout();
+  }, delay);
+}
+
+function motherV2CancelInFlight({ reason = "interaction" } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const hadPending =
+    Boolean(idle.pendingIntent) ||
+    Boolean(idle.pendingPromptCompile) ||
+    Boolean(idle.pendingGeneration) ||
+    Boolean(idle.pendingDispatchToken);
+  if (!hadPending) return;
+  motherV2StopRealtimeIntentSession();
+  idle.cancelArtifactUntil = Date.now() + 14_000;
+  idle.cancelArtifactReason = String(reason || "interaction");
+  state.pendingMotherDraft = null;
+  motherV2ResetInteractionState();
+  state.expectingArtifacts = false;
+  restoreEngineImageModelIfNeeded();
+  setImageFxActive(false);
+  updatePortraitIdle();
+  appendMotherTraceLog({
+    kind: "cancel",
+    traceId: idle.telemetry?.traceId || null,
+    actionVersion: Number(idle.actionVersion) || 0,
+    reason,
+  }).catch(() => {});
+}
+
+function motherIdleSyncFromInteraction({ userInteraction = false, semantic = true, proposalLiveRefresh = false } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  if (idle.commitMutationInFlight) return;
+  if (!motherIdleHasArmedCanvas()) {
+    clearMotherIdleTimers({ first: true, takeover: true });
+    motherV2ResetInteractionState();
+    motherV2ClearIntentAndDrafts({ removeFiles: true });
+    if (idle.phase !== MOTHER_IDLE_STATES.OBSERVING) {
+      motherIdleTransitionTo(MOTHER_IDLE_EVENTS.DISQUALIFY);
+    }
+    renderMotherReadout();
+    return;
+  }
+  if (userInteraction) {
+    if (!semantic) {
+      // Non-semantic interactions (viewport motion, focus-only selection changes) should not
+      // invalidate Mother state or arm the idle-watch timers.
+      return;
+    }
+    if (idle.blockedUntilUserInteraction) {
+      idle.blockedUntilUserInteraction = false;
+      appendMotherTraceLog({
+        kind: "post_commit_resumed_on_user_interaction",
+        traceId: idle.telemetry?.traceId || null,
+        actionVersion: Number(idle.actionVersion) || 0,
+      }).catch(() => {});
+    }
+    idle.hasGeneratedSinceInteraction = false;
+    idle.generatedImageId = null;
+    idle.generatedVersionId = null;
+    idle.suppressFailureUntil = 0;
+    idle.multiUploadIdleBoostUntil = 0;
+    const shouldPreserveLiveProposal = Boolean(
+      proposalLiveRefresh &&
+      motherV2CanUseLiveProposalRefresh(idle) &&
+      (
+        idle.phase === MOTHER_IDLE_STATES.OFFERING ||
+        idle.phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING ||
+        idle.phase === MOTHER_IDLE_STATES.WATCHING ||
+        idle.phase === MOTHER_IDLE_STATES.OBSERVING
+      )
+    );
+    idle.actionVersion = (Number(idle.actionVersion) || 0) + 1;
+    closeMotherWheelMenu({ immediate: false });
+    clearMotherIdleTimers({ first: true, takeover: true });
+    motherV2CancelInFlight({ reason: "user_interaction" });
+    if (shouldPreserveLiveProposal) {
+      motherV2ClearDraftsOnly({ removeFiles: true });
+      idle.liveProposalUpdating = true;
+      const refreshDelay = state.pointer.active ? MOTHER_V2_LIVE_PROPOSAL_REFRESH_DEBOUNCE_MS : 120;
+      motherV2ScheduleLiveProposalRefresh({
+        reason: "canvas_structure_edit",
+        delayMs: refreshDelay,
+      });
+    } else if (idle.phase === MOTHER_IDLE_STATES.OFFERING || idle.phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+      motherV2ClearIntentAndDrafts({ removeFiles: true });
+    }
+    motherIdleTransitionTo(MOTHER_IDLE_EVENTS.USER_INTERACTION);
+    renderMotherReadout();
+  }
+  if (idle.phase === MOTHER_IDLE_STATES.OBSERVING && !state.pointer.active) {
+    motherIdleArmFirstTimer();
+  }
+}
+
+function bumpInteraction({ motherHot = true, semantic = true, proposalLiveRefresh = false } = {}) {
   state.lastInteractionAt = Date.now();
+  if (motherHot) state.lastMotherHotAt = state.lastInteractionAt;
+  // Keep the Mother realtime pulse/video responsive while the user is working.
+  const now = state.lastInteractionAt;
+  const last = Number(state.mother?.hotSyncAt) || 0;
+  if (now - last > 120) {
+    state.mother.hotSyncAt = now;
+    syncMotherPortrait();
+  }
+  motherIdleSyncFromInteraction({ userInteraction: true, semantic, proposalLiveRefresh });
 }
 
 const USER_EVENT_MAX = 72;
@@ -17021,7 +28182,17 @@ function runtimeChromeState() {
 }
 
 function runtimeChromeAssistantForcedVisible() {
-  return false;
+  if (state.mother?.running) return true;
+  if (state.motherResultDetailsOpenId || state.motherIdle?.offerDetailsOpen) return true;
+  if (state.motherIdle?.advancedOpen || state.motherIdle?.optionReveal) return true;
+  if (motherMoodMenuIsOpen()) return true;
+  const phase = String(state.motherIdle?.phase || motherIdleInitialState()).trim();
+  return (
+    phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING ||
+    phase === MOTHER_IDLE_STATES.DRAFTING ||
+    phase === MOTHER_IDLE_STATES.OFFERING ||
+    phase === MOTHER_IDLE_STATES.COMMITTING
+  );
 }
 
 function runtimeChromeVisibilitySnapshot() {
@@ -17089,7 +28260,18 @@ function applyRuntimeChromeVisibility({ source = "runtime" } = {}) {
   ].join(":");
   const changed = signature !== lastRuntimeChromeSignature;
 
+  if (!visibility.assistantVisible) {
+    setMotherMoodMenuOpen(false);
+    closeMotherWheelMenu({ immediate: true });
+    if (state.motherIdle?.offerDetailsOpen || state.motherResultDetailsOpenId) {
+      motherCloseOverlayDetails();
+    }
+  }
+
   if (els.topMetricsRoot) els.topMetricsRoot.classList.toggle("hidden", !visibility.diagnosticsVisible);
+  if (els.motherIntentSourceIndicator) els.motherIntentSourceIndicator.classList.toggle("hidden", !visibility.assistantVisible);
+  if (els.canvasMoodStatus) els.canvasMoodStatus.classList.toggle("hidden", !visibility.assistantVisible);
+  if (els.motherOverlay) els.motherOverlay.classList.toggle("hidden", !visibility.assistantVisible);
   if (els.hud) els.hud.classList.toggle("hidden", !visibility.diagnosticsVisible);
   if (els.fileBrowserDock) els.fileBrowserDock.classList.toggle("hidden", !visibility.diagnosticsVisible);
   syncPortraitDockVisibility();
@@ -18005,6 +29187,7 @@ function pendingExtractionKindForImageId(imageId) {
 
 function shouldAnimateEffectVisuals() {
   if (state.canvasMode !== "multi") return false;
+  if (state.pendingMotherDraft && state.motherIdle?.phase === MOTHER_IDLE_STATES.DRAFTING) return true;
   if (pendingEffectUnresolvedSlots(state.pendingExtractDna).length) return true;
   if (pendingEffectUnresolvedSlots(state.pendingSoulLeech).length) return true;
   for (const token of state.effectTokensById.values()) {
@@ -18156,8 +29339,252 @@ function renderDesignReviewApplyShimmer(octx) {
   });
 }
 
+let motherDraftingKeypointSampleCanvas = null;
+let motherDraftingKeypointSampleCtx = null;
+
+function motherDraftingEnsureKeypointSamplerCanvas() {
+  if (motherDraftingKeypointSampleCanvas && motherDraftingKeypointSampleCtx) {
+    return { canvas: motherDraftingKeypointSampleCanvas, ctx: motherDraftingKeypointSampleCtx };
+  }
+  try {
+    motherDraftingKeypointSampleCanvas = document.createElement("canvas");
+    motherDraftingKeypointSampleCtx = motherDraftingKeypointSampleCanvas.getContext("2d", {
+      alpha: false,
+      willReadFrequently: true,
+    });
+  } catch {
+    motherDraftingKeypointSampleCanvas = null;
+    motherDraftingKeypointSampleCtx = null;
+  }
+  if (!motherDraftingKeypointSampleCanvas || !motherDraftingKeypointSampleCtx) return null;
+  return { canvas: motherDraftingKeypointSampleCanvas, ctx: motherDraftingKeypointSampleCtx };
+}
+
+function motherDraftingPackRgb(r = 0, g = 0, b = 0) {
+  const rr = clamp(Math.round(Number(r) || 0), 0, 255);
+  const gg = clamp(Math.round(Number(g) || 0), 0, 255);
+  const bb = clamp(Math.round(Number(b) || 0), 0, 255);
+  return ((rr & 0xff) << 16) | ((gg & 0xff) << 8) | (bb & 0xff);
+}
+
+function motherDraftingFallbackKeypoints({ imageId = "", seed = 0, count = MOTHER_DRAFTING_KEYPOINT_MAX_POINTS } = {}) {
+  const maxPoints = clamp(Math.round(Number(count) || 0), 6, MOTHER_DRAFTING_KEYPOINT_MAX_POINTS);
+  const base = hash32(`${imageId}:${seed}:fallback`);
+  const points = [];
+  for (let i = 0; i < maxPoints; i += 1) {
+    const a = rand01(base + i * 1.37 + 0.19) * Math.PI * 2;
+    const r = Math.sqrt(rand01(base + i * 2.11 + 0.07)) * 0.44;
+    const jitterX = (rand01(base + i * 3.31 + 0.23) - 0.5) * 0.08;
+    const jitterY = (rand01(base + i * 4.57 + 0.41) - 0.5) * 0.08;
+    const x = clamp(0.5 + Math.cos(a) * r + jitterX, 0.05, 0.95);
+    const y = clamp(0.5 + Math.sin(a) * r + jitterY, 0.05, 0.95);
+    const huePhase = rand01(base + i * 5.19 + 0.63) * Math.PI * 2;
+    const rCh = 164 + 84 * (0.5 + 0.5 * Math.sin(huePhase));
+    const gCh = 164 + 84 * (0.5 + 0.5 * Math.sin(huePhase + 2.09439510239));
+    const bCh = 164 + 84 * (0.5 + 0.5 * Math.sin(huePhase + 4.18879020478));
+    points.push({
+      x,
+      y,
+      weight: clamp(0.34 + rand01(base + i * 1.91 + 0.51) * 0.58, 0.16, 1),
+      color: motherDraftingPackRgb(rCh, gCh, bCh),
+    });
+  }
+  return points;
+}
+
+function motherDraftingExtractImageKeypoints(
+  item = null,
+  { imageId = "", seed = 0, maxPoints = MOTHER_DRAFTING_KEYPOINT_MAX_POINTS } = {}
+) {
+  const img = item?.img || null;
+  const sourceW = Math.max(1, Math.round(Number(img?.naturalWidth || item?.width) || 0));
+  const sourceH = Math.max(1, Math.round(Number(img?.naturalHeight || item?.height) || 0));
+  if (!img || !sourceW || !sourceH) {
+    return motherDraftingFallbackKeypoints({ imageId, seed, count: maxPoints });
+  }
+  const sampler = motherDraftingEnsureKeypointSamplerCanvas();
+  if (!sampler) return motherDraftingFallbackKeypoints({ imageId, seed, count: maxPoints });
+
+  const longest = Math.max(sourceW, sourceH);
+  const sampleScale = Math.min(1, MOTHER_DRAFTING_KEYPOINT_SAMPLE_MAX_DIM / Math.max(1, longest));
+  const sampleW = clamp(Math.round(sourceW * sampleScale), 8, MOTHER_DRAFTING_KEYPOINT_SAMPLE_MAX_DIM);
+  const sampleH = clamp(Math.round(sourceH * sampleScale), 8, MOTHER_DRAFTING_KEYPOINT_SAMPLE_MAX_DIM);
+  const { canvas, ctx } = sampler;
+  canvas.width = sampleW;
+  canvas.height = sampleH;
+
+  try {
+    ctx.clearRect(0, 0, sampleW, sampleH);
+    ctx.drawImage(img, 0, 0, sampleW, sampleH);
+    const imageData = ctx.getImageData(0, 0, sampleW, sampleH);
+    const pixels = imageData.data;
+    const pxCount = sampleW * sampleH;
+    const luminance = new Float32Array(pxCount);
+    const gradient = new Float32Array(pxCount);
+    for (let i = 0, p = 0; i < pxCount; i += 1, p += 4) {
+      const r = pixels[p] || 0;
+      const g = pixels[p + 1] || 0;
+      const b = pixels[p + 2] || 0;
+      luminance[i] = r * 0.299 + g * 0.587 + b * 0.114;
+    }
+    for (let y = 1; y < sampleH - 1; y += 1) {
+      const row = y * sampleW;
+      for (let x = 1; x < sampleW - 1; x += 1) {
+        const idx = row + x;
+        const gx = luminance[idx + 1] - luminance[idx - 1];
+        const gy = luminance[idx + sampleW] - luminance[idx - sampleW];
+        gradient[idx] = Math.abs(gx) + Math.abs(gy);
+      }
+    }
+
+    const candidates = [];
+    const gradientFloor = 18;
+    for (let y = 1; y < sampleH - 1; y += 1) {
+      const row = y * sampleW;
+      for (let x = 1; x < sampleW - 1; x += 1) {
+        const idx = row + x;
+        const score = gradient[idx];
+        if (!Number.isFinite(score) || score < gradientFloor) continue;
+        if (score < gradient[idx - 1]) continue;
+        if (score < gradient[idx + 1]) continue;
+        if (score < gradient[idx - sampleW]) continue;
+        if (score < gradient[idx + sampleW]) continue;
+        const p = idx * 4;
+        candidates.push({
+          x,
+          y,
+          score,
+          color: motherDraftingPackRgb(pixels[p], pixels[p + 1], pixels[p + 2]),
+        });
+      }
+    }
+    if (!candidates.length) return motherDraftingFallbackKeypoints({ imageId, seed, count: maxPoints });
+    candidates.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+
+    const selected = [];
+    const topScore = Math.max(1, Number(candidates[0]?.score) || 1);
+    const minDistance = Math.max(1, Math.min(sampleW, sampleH) / Math.max(3, Math.sqrt(maxPoints) * 1.05));
+    const minDistanceSq = minDistance * minDistance;
+    for (const candidate of candidates) {
+      if (selected.length >= maxPoints) break;
+      let tooClose = false;
+      for (const existing of selected) {
+        const dx = candidate.x - existing._sx;
+        const dy = candidate.y - existing._sy;
+        if (dx * dx + dy * dy < minDistanceSq) {
+          tooClose = true;
+          break;
+        }
+      }
+      if (tooClose && selected.length >= Math.round(maxPoints * 0.34)) continue;
+      selected.push({
+        _sx: candidate.x,
+        _sy: candidate.y,
+        x: clamp((candidate.x + 0.5) / sampleW, 0.03, 0.97),
+        y: clamp((candidate.y + 0.5) / sampleH, 0.03, 0.97),
+        weight: clamp((Number(candidate.score) || 0) / topScore, 0.12, 1),
+        color: candidate.color,
+      });
+    }
+    if (!selected.length) return motherDraftingFallbackKeypoints({ imageId, seed, count: maxPoints });
+    return selected.map((entry) => ({
+      x: entry.x,
+      y: entry.y,
+      weight: entry.weight,
+      color: entry.color,
+    }));
+  } catch {
+    return motherDraftingFallbackKeypoints({ imageId, seed, count: maxPoints });
+  }
+}
+
+function motherDraftingResolveSourceKeypoints(imageId, pendingDraft = null) {
+  const id = String(imageId || "").trim();
+  if (!id) return [];
+  const pending = pendingDraft && typeof pendingDraft === "object" ? pendingDraft : state.pendingMotherDraft;
+  if (!pending || typeof pending !== "object") return [];
+  if (!(pending.keypointCache instanceof Map)) pending.keypointCache = new Map();
+  const item = state.imagesById.get(id) || null;
+  const cacheSignature = [
+    item?.path ? String(item.path) : "",
+    Number(item?.img?.naturalWidth || item?.width) || 0,
+    Number(item?.img?.naturalHeight || item?.height) || 0,
+  ].join("|");
+  const cached = pending.keypointCache.get(id);
+  if (cached && cached.signature === cacheSignature && Array.isArray(cached.keypoints) && cached.keypoints.length) {
+    return cached.keypoints;
+  }
+  const seed = Number(pending.keypointSeed) || hash32(`mother-siphon:${id}:seed`);
+  // Keep drafting startup hitch-free: use deterministic synthetic keypoints only.
+  const fallback = motherDraftingFallbackKeypoints({
+    imageId: id,
+    seed,
+    count: MOTHER_DRAFTING_KEYPOINT_MAX_POINTS,
+  });
+  pending.keypointCache.set(id, {
+    signature: cacheSignature,
+    keypoints: fallback,
+  });
+  return fallback;
+}
+
+function buildMotherDraftingEffectsScene(transform = getMultiViewTransform()) {
+  const pending = state.pendingMotherDraft;
+  const idle = state.motherIdle;
+  if (!pending || !idle || idle.phase !== MOTHER_IDLE_STATES.DRAFTING) return null;
+  if (state.canvasMode !== "multi") return null;
+
+  const previewRectCss = motherDraftingResolvePendingPreviewRectCss(pending);
+  if (!previewRectCss) return null;
+  const targetRect = motherDraftingRectCssToCanvasRectPx(previewRectCss);
+  if (!targetRect) return null;
+
+  const sourceIds = Array.from(
+    new Set(
+      (Array.isArray(pending.sourceIds) ? pending.sourceIds : [])
+        .map((raw) => String(raw || "").trim())
+        .filter(Boolean)
+    )
+  );
+  const sources = [];
+  for (const imageId of sourceIds) {
+    const rect = state.multiRects.get(imageId) || null;
+    const screenRect = rect ? multiRectToScreenRect(rect, transform) : null;
+    if (!screenRect || !(Number(screenRect.w) > 0) || !(Number(screenRect.h) > 0)) continue;
+    const keypoints = motherDraftingResolveSourceKeypoints(imageId, pending);
+    sources.push({
+      imageId: String(imageId || ""),
+      rect: screenRect,
+      keypoints: Array.isArray(keypoints) ? keypoints.slice(0, MOTHER_DRAFTING_KEYPOINT_MAX_POINTS) : [],
+    });
+  }
+  if (!sources.length) return null;
+
+  let seed = Number(pending.keypointSeed) || 0;
+  if (!seed) {
+    seed = hash32(`mother-siphon:${Date.now()}:${sources.map((entry) => entry.imageId).join(",")}`);
+    pending.keypointSeed = seed;
+  }
+  const uncertaintyRaw = motherDraftingComputeUncertaintyEnvelope(pending) || null;
+  const uncertainty = uncertaintyRaw
+    ? {
+        elapsedMs: Math.max(0, Number(uncertaintyRaw.elapsedMs) || 0),
+        lowMs: Math.max(1_000, Number(uncertaintyRaw.lowMs) || 1_000),
+        highMs: Math.max(2_000, Number(uncertaintyRaw.highMs) || 2_000),
+        timeoutCeilingMs: Math.max(2_000, Number(uncertaintyRaw.timeoutCeilingMs) || 2_000),
+        takingLongerThanUsual: Boolean(uncertaintyRaw.takingLongerThanUsual),
+      }
+    : null;
+  return {
+    targetRect,
+    sources,
+    uncertainty,
+    seed,
+  };
+}
+
 function buildEffectsRuntimeScene() {
-  if (state.canvasMode !== "multi") return { extracting: [], tokens: [], drag: null, draftingGuide: null };
+  if (state.canvasMode !== "multi") return { extracting: [], tokens: [], drag: null, motherDrafting: null };
   const transform = getMultiViewTransform();
   const extracting = [];
   const tokens = [];
@@ -18212,7 +29639,8 @@ function buildEffectsRuntimeScene() {
     };
   }
 
-  return { extracting, tokens, drag, draftingGuide: null };
+  const motherDrafting = buildMotherDraftingEffectsScene(transform);
+  return { extracting, tokens, drag, motherDrafting };
 }
 
 function syncEffectsRuntimeScene() {
@@ -18220,7 +29648,7 @@ function syncEffectsRuntimeScene() {
   const suspended = document.hidden || state.canvasMode !== "multi";
   effectsRuntime.setSuspended(suspended);
   if (suspended) {
-    effectsRuntime.syncScene({ extracting: [], tokens: [], drag: null, draftingGuide: null });
+    effectsRuntime.syncScene({ extracting: [], tokens: [], drag: null, motherDrafting: null });
     return;
   }
   effectsRuntime.syncScene(buildEffectsRuntimeScene());
@@ -18300,6 +29728,7 @@ function setCanvasMode(_mode) {
   renderFilmstrip();
   renderSelectionMeta();
   scheduleVisualPromptWrite();
+  motherIdleSyncFromInteraction({ userInteraction: false });
   if (effectsRuntime) effectsRuntime.setSuspended(document.hidden || state.canvasMode !== "multi");
   requestRender();
 }
@@ -19166,6 +30595,11 @@ function getImageFxTargets() {
   const recastId = state.pendingRecast?.sourceId;
   if (recastId) return [recastId];
 
+  const motherSourceIds = state.pendingMotherDraft?.sourceIds;
+  if (Array.isArray(motherSourceIds) && motherSourceIds.length) {
+    return Array.from(new Set(motherSourceIds.map((v) => String(v || "").trim()).filter(Boolean)));
+  }
+
   const activeId = state.activeId;
   if (activeId) return [activeId];
   return [];
@@ -19693,6 +31127,10 @@ function rehydrateForkedTabSessionImageRuntime(session = null, sourceSession = n
     ...(current.imagesById instanceof Map ? Array.from(current.imagesById.values()) : []),
   ];
   applyHandles(targetImages, collectSourceHandles(sourceImages));
+
+  const sourceDrafts = Array.isArray(sourceSession?.motherIdle?.drafts) ? sourceSession.motherIdle.drafts : [];
+  const targetDrafts = Array.isArray(current.motherIdle?.drafts) ? current.motherIdle.drafts : [];
+  applyHandles(targetDrafts, collectSourceHandles(sourceDrafts));
 
   return current;
 }
@@ -24344,6 +35782,10 @@ function renderActionGrid() {
     buttons: railState.buttons,
     onPress: (button) => {
       bumpInteraction();
+      if (state.mother?.running) {
+        showToast("Mother is running. Click Stop to regain control.", "tip", 2200);
+        return;
+      }
       recordUserEvent("action_grid_press", {
         key: button.actionKey || button.toolId || null,
         tool_id: button.toolId || null,
@@ -25587,6 +37029,7 @@ function renderTimeline() {
 function currentTimelineRestoreBlockReason() {
   if (state.pointer?.active || state.gestureZoom?.active) return "manipulating_canvas";
   if (state.designReviewApply?.status === "running") return "review_apply";
+  if (state.motherIdle?.commitMutationInFlight) return "assistant_mutation";
   if (state.pendingReplace) return "visible_mutation";
   return null;
 }
@@ -25672,6 +37115,7 @@ async function jumpToTimelineNode(nodeId) {
   updateEmptyCanvasHint();
   syncIntentModeClass();
   syncJuggernautShellState();
+  renderMotherMoodStatus();
   syncTimelineDockVisibility();
   renderTimeline();
   for (const item of state.images || []) {
@@ -25796,12 +37240,17 @@ function addImage(item, { select = false } = {}) {
   if (select || !state.activeId) {
     setActiveImage(item.id).catch(() => {});
   }
+  motherIdleSyncFromInteraction({ userInteraction: false });
+  syncMotherPortrait();
   requestRender();
 }
 
 async function removeImageFromCanvas(imageId, { recordTimeline = false, action = "Delete Image" } = {}) {
   const id = String(imageId || "");
   if (!id) return false;
+  if (state.motherResultDetailsOpenId === id) {
+    state.motherResultDetailsOpenId = null;
+  }
   const item = state.imagesById.get(id) || null;
   if (!item) return false;
   const removedNodeParentId = item.timelineNodeId ? String(item.timelineNodeId) : null;
@@ -25927,6 +37376,7 @@ async function removeImageFromCanvas(imageId, { recordTimeline = false, action =
     renderFilmstrip();
     renderQuickActions();
     renderHudReadout();
+    motherIdleSyncFromInteraction({ userInteraction: false });
     requestRender();
     if (recordTimeline) {
       recordTimelineNode({
@@ -25952,6 +37402,7 @@ async function removeImageFromCanvas(imageId, { recordTimeline = false, action =
   scheduleIntentStateWrite();
   renderQuickActions();
   renderHudReadout();
+  motherIdleSyncFromInteraction({ userInteraction: false });
   requestRender();
   if (recordTimeline) {
     recordTimelineNode({
@@ -26064,6 +37515,7 @@ async function replaceImageInPlace(
     requestRender();
   }
   scheduleVisualPromptWrite();
+  motherIdleSyncFromInteraction({ userInteraction: false });
   return true;
 }
 
@@ -26662,6 +38114,34 @@ async function importLocalPathsAtCanvasPoint(
     failed_count: failed,
   });
 
+  const motherIdle = state.motherIdle;
+  if (motherIdle) {
+    motherIdle.lastUploadCompletedAt = Date.now();
+    motherIdle.speculativePrefetchReadyMode = null;
+    motherV2ClearSpeculativePrefetchTimer();
+  }
+  motherV2ArmMultiUploadIdleBoost(ok);
+  if (
+    motherIdle &&
+    ok >= MOTHER_V2_MIN_IMAGES_FOR_PROPOSAL &&
+    !state.pointer.active &&
+    !motherV2InCooldown()
+  ) {
+    if (motherIdle.phase === MOTHER_IDLE_STATES.OBSERVING) {
+      motherIdleTransitionTo(MOTHER_IDLE_EVENTS.IDLE_WINDOW_ELAPSED);
+      motherIdleTransitionTo(MOTHER_IDLE_EVENTS.IDLE_WINDOW_ELAPSED);
+    } else if (motherIdle.phase === MOTHER_IDLE_STATES.WATCHING) {
+      motherIdleTransitionTo(MOTHER_IDLE_EVENTS.IDLE_WINDOW_ELAPSED);
+    }
+    if (state.motherIdle?.phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+      motherV2RequestIntentInference({
+        snapshotLoadTimeoutMs: MOTHER_V2_UPLOAD_FAST_INTENT_SNAPSHOT_WAIT_MS,
+        snapshotMaxDimPx: MOTHER_V2_UPLOAD_FAST_INTENT_SNAPSHOT_MAX_DIM_PX,
+        scheduleVisionLabels: false,
+        fastUploadPath: true,
+      }).catch(() => {});
+    }
+  }
   const suffix = failed ? ` (${failed} failed)` : "";
   setStatus(`Engine: imported ${ok} photo${ok === 1 ? "" : "s"}${suffix}`, failed > 0);
 
@@ -28735,6 +40215,7 @@ function paintTabPreviewEntry(entry = null) {
     fxCtx?.clearRect(0, 0, els.effectsCanvas.width, els.effectsCanvas.height);
   }
   octx.clearRect(0, 0, overlay.width, overlay.height);
+  state.motherOverlayUiHits = [];
   state.activeImageTransformUiHits = [];
   hideImageFxOverlays();
   wctx.imageSmoothingEnabled = true;
@@ -29265,6 +40746,8 @@ function createForkedTabSession(session = null, { label = null } = {}) {
     anchorWorld:
       cloned.wheelMenu?.anchorWorld && typeof cloned.wheelMenu.anchorWorld === "object" ? cloned.wheelMenu.anchorWorld : null,
   };
+  next.mother = createTabMotherState();
+  next.motherIdle = createTabMotherIdleState();
   next.intent = createTabIntentState();
   next.intentAmbient = createTabIntentAmbientState();
   next.alwaysOnVision = createTabAlwaysOnVisionState();
@@ -29714,6 +41197,7 @@ async function loadSessionSnapshotFromPath(path = "") {
 function currentTabSwitchBlockReason({ allowReviewApply = false } = {}) {
   if (state.pointer?.active || state.gestureZoom?.active) return "manipulating_canvas";
   if (!allowReviewApply && state.designReviewApply?.status === "running") return "review_apply";
+  if (state.mother?.running || state.motherIdle?.commitMutationInFlight) return "assistant_busy";
   if (state.actionQueueActive || state.actionQueue.length) return "queued_actions";
   if (isEngineBusy({ includeReviewApply: !allowReviewApply })) return "engine_busy";
   return null;
@@ -29723,6 +41207,7 @@ function currentTabSwitchBlockMessage(reason = currentTabSwitchBlockReason()) {
   const normalized = String(reason || "").trim();
   if (normalized === "manipulating_canvas") return "Finish the current canvas gesture before switching tabs.";
   if (normalized === "review_apply") return "Wait for the accepted review edit to finish before switching tabs.";
+  if (normalized === "assistant_busy") return "Wait for the current tab to finish drafting before switching tabs.";
   if (normalized === "queued_actions") return "Wait for queued actions to finish before switching tabs.";
   if (normalized === "engine_busy") return "Wait for the active run to finish before switching tabs.";
   return "The current tab is busy.";
@@ -29826,6 +41311,7 @@ function captureActiveTabSession(session = null) {
     state.tripletRuleAnnotations instanceof Map ? state.tripletRuleAnnotations : new Map();
   next.tripletOddOneOutId = state.tripletOddOneOutId ? String(state.tripletOddOneOutId) : null;
   next.tabPreviewState = normalizeTabPreviewState(state.tabPreviewState);
+  next.motherResultDetailsOpenId = state.motherResultDetailsOpenId ? String(state.motherResultDetailsOpenId) : null;
   next.wheelMenu = {
     open: false,
     hideTimer: null,
@@ -29835,6 +41321,9 @@ function captureActiveTabSession(session = null) {
   next.userEvents = Array.isArray(state.userEvents) ? state.userEvents : [];
   next.userTelemetryEvents = Array.isArray(state.userTelemetryEvents) ? state.userTelemetryEvents : [];
   next.userEventSeq = Math.max(0, Number(state.userEventSeq) || 0);
+  next.mother = state.mother && typeof state.mother === "object" ? state.mother : createTabMotherState();
+  next.motherIdle =
+    state.motherIdle && typeof state.motherIdle === "object" ? state.motherIdle : createTabMotherIdleState();
   next.intent = state.intent && typeof state.intent === "object" ? state.intent : createTabIntentState();
   next.intentAmbient =
     state.intentAmbient && typeof state.intentAmbient === "object"
@@ -29934,6 +41423,7 @@ function bindTabSessionToState(session = null) {
   state.tabPreviewState = normalizeTabPreviewState(current.tabPreviewState);
   state.tabPreviewDirty = !Boolean(state.tabPreviewState.valid);
   state.pendingTabSwitchPreview = null;
+  state.motherResultDetailsOpenId = current.motherResultDetailsOpenId ? String(current.motherResultDetailsOpenId) : null;
   state.wheelMenu =
     current.wheelMenu && typeof current.wheelMenu === "object"
       ? current.wheelMenu
@@ -29941,6 +41431,9 @@ function bindTabSessionToState(session = null) {
   state.userEvents = Array.isArray(current.userEvents) ? current.userEvents : [];
   state.userTelemetryEvents = Array.isArray(current.userTelemetryEvents) ? current.userTelemetryEvents : [];
   state.userEventSeq = Math.max(0, Number(current.userEventSeq) || 0);
+  state.mother = current.mother && typeof current.mother === "object" ? current.mother : createTabMotherState();
+  state.motherIdle =
+    current.motherIdle && typeof current.motherIdle === "object" ? current.motherIdle : createTabMotherIdleState();
   state.intent = current.intent && typeof current.intent === "object" ? current.intent : createTabIntentState();
   state.intentAmbient =
     current.intentAmbient && typeof current.intentAmbient === "object"
@@ -29975,7 +41468,9 @@ function bindTabSessionToState(session = null) {
   state.imageMenuTargetId = null;
   state.promptGenerateHoverCss = null;
   state.effectTokenDrag = null;
+  state.motherOverlayUiHits = [];
   state.activeImageTransformUiHits = [];
+  state.motherRolePreviewHoverImageId = null;
 }
 
 function syncActiveTabRecord({ capture = false, publish = false } = {}) {
@@ -30075,7 +41570,28 @@ function suspendActiveTabRuntimeForSwitch() {
   clearTimeout(intentStateWriteTimer);
   intentStateWriteTimer = null;
   clearAmbientIntentTimers();
+  clearMotherIdleTimers({ first: true, takeover: true });
+  clearMotherIdleDispatchTimeout();
+  if (state.motherIdle) {
+    clearTimeout(state.motherIdle.cooldownTimer);
+    state.motherIdle.cooldownTimer = null;
+    clearTimeout(state.motherIdle.pendingIntentTimeout);
+    state.motherIdle.pendingIntentTimeout = null;
+    clearTimeout(state.motherIdle.pendingPromptCompileTimeout);
+    state.motherIdle.pendingPromptCompileTimeout = null;
+    clearTimeout(state.motherIdle.speculativePrefetchTimer);
+    state.motherIdle.speculativePrefetchTimer = null;
+    clearTimeout(state.motherIdle.liveProposalRefreshTimer);
+    state.motherIdle.liveProposalRefreshTimer = null;
+    clearTimeout(state.motherIdle.intentReplayTimer);
+    state.motherIdle.intentReplayTimer = null;
+    clearTimeout(state.motherIdle.pendingVisionRetryTimer);
+    state.motherIdle.pendingVisionRetryTimer = null;
+    clearTimeout(state.motherIdle.hintFadeTimer);
+    state.motherIdle.hintFadeTimer = null;
+  }
   invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_STOP}\n` }).catch(() => {});
+  invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_MOTHER_STOP}\n` }).catch(() => {});
   hideImageMenu();
   hideAnnotatePanel();
   hidePromptGeneratePanel();
@@ -30084,6 +41600,7 @@ function suspendActiveTabRuntimeForSwitch() {
   if (els.communicationProposalTray) {
     els.communicationProposalTray.classList.add("hidden");
   }
+  closeMotherWheelMenu({ immediate: true });
   if (els.timelineDock) els.timelineDock.classList.add("hidden");
   if (state.wheelMenu) {
     clearTimeout(state.wheelMenu.hideTimer);
@@ -30222,6 +41739,7 @@ async function attachActiveTabRuntime({
   syncIntentModeClass();
   syncJuggernautShellState();
   applyRuntimeChromeVisibility({ source: reason });
+  renderMotherMoodStatus();
   syncTimelineDockVisibility();
   if (state.timelineOpen) {
     renderTimeline();
@@ -30839,6 +42357,10 @@ async function pollEventsFallback(pollToken = activeEventsPollToken) {
   fallbackLineOffset = lines.length;
 }
 
+function handleMotherDesktopEvent(event) {
+  return handleEventLegacy(event);
+}
+
 function handleArtifactDesktopEvent(event) {
   return handleEventLegacy(event);
 }
@@ -30859,6 +42381,7 @@ let desktopEventHandlerMap = null;
 function getDesktopEventHandlerMap() {
   if (desktopEventHandlerMap) return desktopEventHandlerMap;
   desktopEventHandlerMap = createDesktopEventHandlerMap(DESKTOP_EVENT_TYPES, {
+    onMother: handleMotherDesktopEvent,
     onArtifact: handleArtifactDesktopEvent,
     onIntent: handleIntentDesktopEvent,
     onDiagnostics: handleDiagnosticsDesktopEvent,
@@ -30887,7 +42410,94 @@ async function handleEventLegacy(event) {
     return;
   }
   if (eventType === DESKTOP_EVENT_TYPES.VERSION_CREATED) {
-    promptBenchmarkBindVersion(desktopEventVersionId(event));
+    promptBenchmarkBindVersion(motherEventVersionId(event));
+    motherIdleTrackVersionCreated(event);
+    return;
+  }
+  if (eventType === DESKTOP_EVENT_TYPES.MOTHER_INTENT_INFERRED) {
+    appendMotherTraceLog({
+      kind: "intent_inferred_ignored",
+      traceId: state.motherIdle?.telemetry?.traceId || null,
+      actionVersion: Number(state.motherIdle?.actionVersion) || 0,
+      reason: "heuristic_intent_disabled",
+      source: event.source ? String(event.source) : null,
+    }).catch(() => {});
+    return;
+  }
+  if (eventType === DESKTOP_EVENT_TYPES.MOTHER_INTENT_INFER_FAILED) {
+    appendMotherTraceLog({
+      kind: "intent_infer_failed_ignored",
+      traceId: state.motherIdle?.telemetry?.traceId || null,
+      actionVersion: Number(state.motherIdle?.actionVersion) || 0,
+      reason: "heuristic_intent_disabled",
+      source: event.source ? String(event.source) : null,
+    }).catch(() => {});
+    return;
+  }
+  if (eventType === DESKTOP_EVENT_TYPES.MOTHER_PROMPT_COMPILED) {
+    const idle = state.motherIdle;
+    if (!idle) return;
+    const actionVersion = Number(event.action_version) || 0;
+    if (actionVersion !== (Number(idle.actionVersion) || 0)) {
+      motherV2MarkStale({
+        stage: "prompt_compiled",
+        event_action_version: actionVersion,
+      });
+      return;
+    }
+    // Ignore late compile results after local fallback dispatch (prevents duplicate generation requests).
+    if (!idle.pendingPromptCompile || idle.pendingGeneration || Boolean(idle.pendingDispatchToken)) {
+      let dispatchSkipReason = "unknown";
+      if (!idle.pendingPromptCompile) {
+        dispatchSkipReason = "pending_prompt_compile_false";
+      } else if (idle.pendingGeneration) {
+        dispatchSkipReason = "pending_generation_true";
+      } else if (Boolean(idle.pendingDispatchToken)) {
+        dispatchSkipReason = "pending_dispatch_token_active";
+      }
+      appendMotherTraceLog({
+        kind: "prompt_compiled_dispatch_skipped",
+        traceId: idle.telemetry?.traceId || null,
+        actionVersion,
+        reason: dispatchSkipReason,
+        pending_prompt_compile: Boolean(idle.pendingPromptCompile),
+        pending_generation: Boolean(idle.pendingGeneration),
+        pending_dispatch_token: Number(idle.pendingDispatchToken) || 0,
+      }).catch(() => {});
+      return;
+    }
+    await motherV2DispatchCompiledPrompt(event.compiled || {}).catch((err) => {
+      motherIdleHandleGenerationFailed(err?.message || "Mother prompt compile dispatch failed.");
+    });
+    return;
+  }
+  if (eventType === DESKTOP_EVENT_TYPES.MOTHER_PROMPT_COMPILE_FAILED) {
+    const idle = state.motherIdle;
+    if (!idle) return;
+    if (!idle.pendingPromptCompile) return;
+    idle.pendingPromptCompile = false;
+    const compileWasSpeculative = Boolean(idle.pendingPromptCompileSpeculative);
+    idle.pendingPromptCompileSpeculative = false;
+    idle.pendingPromptCompilePath = null;
+    clearTimeout(idle.pendingPromptCompileTimeout);
+    idle.pendingPromptCompileTimeout = null;
+    if ((Number(idle.pendingActionVersion) || 0) !== (Number(idle.actionVersion) || 0)) {
+      motherV2MarkStale({ stage: "prompt_compile_failed" });
+      return;
+    }
+    const compiled = motherV2CompilePromptLocal({
+      action_version: Number(idle.actionVersion) || 0,
+      intent: idle.intent || null,
+      roles: motherV2RoleMapClone(),
+      transformation_mode: motherV2NormalizeTransformationMode(idle.intent?.transformation_mode),
+      intensity: clamp(Number(idle.intensity) || 62, 0, 100),
+      active_id: getVisibleActiveId() || null,
+      images: motherV2PromptCompileImageRows(),
+    });
+    idle.pendingPromptCompileSpeculative = compileWasSpeculative;
+    await motherV2DispatchCompiledPrompt(compiled).catch((err) => {
+      motherIdleHandleGenerationFailed(err?.message || "Mother prompt compile fallback failed.");
+    });
     return;
   }
   if (eventType === DESKTOP_EVENT_TYPES.ARTIFACT_CREATED) {
@@ -30920,9 +42530,168 @@ async function handleEventLegacy(event) {
         return;
       }
     }
-    const eventVersionId = desktopEventVersionId(event);
+    const idleForCancel = state.motherIdle;
+    const noForegroundPendingForCancel =
+      !state.pendingReplace &&
+      !state.pendingBlend &&
+      !state.pendingSwapDna &&
+      !state.pendingBridge &&
+      !state.pendingCreateLayers &&
+      !state.pendingExtractDna &&
+      !state.pendingSoulLeech &&
+      !state.pendingExtractRule &&
+      !state.pendingOddOneOut &&
+      !state.pendingTriforce &&
+      !state.pendingRecast &&
+      !state.pendingPromptGenerate &&
+      !state.pendingRecreate;
+    if (
+      idleForCancel &&
+      Date.now() < (Number(idleForCancel.cancelArtifactUntil) || 0) &&
+      noForegroundPendingForCancel &&
+      String(state.lastAction || "") === "Mother Suggestion"
+    ) {
+      appendMotherTraceLog({
+        kind: "discard_artifact_after_cancel",
+        traceId: idleForCancel.telemetry?.traceId || null,
+        actionVersion: Number(idleForCancel.actionVersion) || 0,
+        image_id: String(id),
+        image_path: String(path),
+        reason: idleForCancel.cancelArtifactReason || "cancel",
+      }).catch(() => {});
+      removeFile(path).catch(() => {});
+      if (event.receipt_path) removeFile(event.receipt_path).catch(() => {});
+      return;
+    }
+    const eventVersionId = motherEventVersionId(event);
     if (eventVersionId) {
       promptBenchmarkMarkSuccessFromArtifactEvent(event);
+    }
+    const motherDispatchInFlight =
+      motherV2DispatchInFlight(state.motherIdle) &&
+      !state.pendingReplace &&
+      !state.pendingBlend &&
+      !state.pendingSwapDna &&
+      !state.pendingBridge &&
+      !state.pendingCreateLayers &&
+      !state.pendingExtractDna &&
+      !state.pendingSoulLeech &&
+      !state.pendingExtractRule &&
+      !state.pendingOddOneOut &&
+      !state.pendingTriforce &&
+      !state.pendingRecast &&
+      !state.pendingPromptGenerate &&
+      !state.pendingRecreate;
+    if (motherDispatchInFlight && !motherIdleDispatchVersionMatches(eventVersionId)) {
+      if (eventVersionId) motherIdleRememberIgnoredVersion(eventVersionId);
+      appendMotherSuggestionLog({
+        stage: "out_of_band_result_ignored",
+        request_id: state.motherIdle?.pendingSuggestionLog?.request_id || null,
+        expected_version_id: state.motherIdle?.pendingVersionId || null,
+        ignored_version_id: eventVersionId,
+        ignored_image_id: String(id),
+        ignored_image_path: String(path),
+        ignored_receipt_path: event.receipt_path ? String(event.receipt_path) : null,
+      }).catch(() => {});
+      console.warn("[mother_suggestion] ignored out-of-band artifact during active dispatch", {
+        expected_version_id: state.motherIdle?.pendingVersionId || null,
+        ignored_version_id: eventVersionId,
+        ignored_image_id: String(id),
+      });
+      removeFile(path).catch(() => {});
+      if (event.receipt_path) removeFile(event.receipt_path).catch(() => {});
+      return;
+    }
+    if (motherDispatchInFlight) {
+      const handled = await motherIdleHandleSuggestionArtifact({
+        id,
+        path,
+        receiptPath: event.receipt_path || null,
+        versionId: eventVersionId,
+      }).catch((err) => {
+        console.error(err);
+        return false;
+      });
+      if (handled) {
+        maybeEmitFirstAbilitySuccess({
+          source: "artifact_created",
+          route: "mother_suggestion",
+          action: String(state.lastAction || "Mother Suggestion"),
+        });
+        state.expectingArtifacts = false;
+        restoreEngineImageModelIfNeeded();
+        setStatus("Engine: ready");
+        updatePortraitIdle();
+        setImageFxActive(false);
+        renderMotherReadout();
+        renderQuickActions();
+        renderHudReadout();
+        processActionQueue().catch(() => {});
+        return;
+      }
+    }
+    if (eventVersionId && motherIdleIsIgnoredVersion(eventVersionId)) {
+      appendMotherSuggestionLog({
+        stage: "late_result_ignored",
+        ignored_version_id: eventVersionId,
+        ignored_image_id: String(id),
+        ignored_image_path: String(path),
+        ignored_receipt_path: event.receipt_path ? String(event.receipt_path) : null,
+      }).catch(() => {});
+      console.warn("[mother_suggestion] ignored late artifact from blocked version", {
+        ignored_version_id: eventVersionId,
+        ignored_image_id: String(id),
+      });
+      removeFile(path).catch(() => {});
+      if (event.receipt_path) removeFile(event.receipt_path).catch(() => {});
+      return;
+    }
+    const motherIdle = state.motherIdle || null;
+    const noForegroundPending =
+      !state.pendingReplace &&
+      !state.pendingBlend &&
+      !state.pendingSwapDna &&
+      !state.pendingBridge &&
+      !state.pendingCreateLayers &&
+      !state.pendingExtractDna &&
+      !state.pendingSoulLeech &&
+      !state.pendingExtractRule &&
+      !state.pendingOddOneOut &&
+      !state.pendingTriforce &&
+      !state.pendingRecast &&
+      !state.pendingPromptGenerate &&
+      !state.pendingRecreate;
+    const motherSingleSuggestionGuard =
+      !motherDispatchInFlight &&
+      motherIdle?.phase === MOTHER_IDLE_STATES.WAITING_FOR_USER &&
+      Boolean(motherIdle?.generatedImageId) &&
+      Boolean(motherIdle?.hasGeneratedSinceInteraction) &&
+      noForegroundPending &&
+      String(state.lastAction || "") === "Mother Suggestion" &&
+      Date.now() <= (Number(motherIdle?.lastSuggestionAt) || 0) + MOTHER_V2_SINGLE_RESULT_GUARD_WINDOW_MS;
+    if (motherSingleSuggestionGuard && String(id) !== String(motherIdle.generatedImageId)) {
+      appendMotherSuggestionLog({
+        stage: "extra_result_ignored",
+        retained_image_id: String(motherIdle.generatedImageId || ""),
+        ignored_image_id: String(id),
+        ignored_image_path: String(path),
+        ignored_receipt_path: event.receipt_path ? String(event.receipt_path) : null,
+      }).catch(() => {});
+      console.info("[mother_suggestion] ignored extra artifact", {
+        retained_image_id: String(motherIdle.generatedImageId || ""),
+        ignored_image_id: String(id),
+      });
+      removeFile(path).catch(() => {});
+      if (event.receipt_path) removeFile(event.receipt_path).catch(() => {});
+      state.expectingArtifacts = false;
+      restoreEngineImageModelIfNeeded();
+      setStatus("Engine: ready");
+      updatePortraitIdle();
+      setImageFxActive(false);
+      renderQuickActions();
+      renderHudReadout();
+      processActionQueue().catch(() => {});
+      return;
     }
     const blend = state.pendingBlend;
     const swapDna = state.pendingSwapDna;
@@ -31146,6 +42915,114 @@ async function handleEventLegacy(event) {
     processActionQueue().catch(() => {});
   } else if (eventType === DESKTOP_EVENT_TYPES.GENERATION_FAILED) {
     promptBenchmarkMarkFailureFromGenerationFailedEvent(event);
+    const idleDrafting = state.motherIdle?.phase === MOTHER_IDLE_STATES.DRAFTING;
+    const idleDispatching = motherV2DispatchInFlight(state.motherIdle);
+    if (idleDrafting && idleDispatching) {
+      const msg = event.error ? `Mother draft failed: ${event.error}` : "Mother draft failed.";
+      setStatus(`Engine: ${msg}`, true);
+      motherIdleHandleGenerationFailed(msg);
+      renderQuickActions();
+      renderHudReadout();
+      processActionQueue().catch(() => {});
+      return;
+    }
+    const eventVersionId = motherEventVersionId(event);
+    const wasMotherDispatch = motherV2DispatchInFlight(state.motherIdle);
+    const hiddenSpeculativeDispatch = Boolean(
+      wasMotherDispatch &&
+      state.motherIdle?.phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING &&
+      state.motherIdle?.pendingDispatchSpeculative
+    );
+    if (wasMotherDispatch) {
+      if (!motherIdleDispatchVersionMatches(eventVersionId)) {
+        if (eventVersionId) motherIdleRememberIgnoredVersion(eventVersionId);
+        appendMotherSuggestionLog({
+          stage: "out_of_band_failed_ignored",
+          request_id: state.motherIdle?.pendingSuggestionLog?.request_id || null,
+          expected_version_id: state.motherIdle?.pendingVersionId || null,
+          ignored_version_id: eventVersionId,
+          error: event.error ? String(event.error) : null,
+        }).catch(() => {});
+        console.warn("[mother_suggestion] ignored out-of-band failure during active dispatch", {
+          expected_version_id: state.motherIdle?.pendingVersionId || null,
+          ignored_version_id: eventVersionId,
+          error: event.error ? String(event.error) : null,
+        });
+        return;
+      }
+      if (hiddenSpeculativeDispatch) {
+        const msg = event.error ? `Mother speculative prefetch failed: ${event.error}` : "Mother speculative prefetch failed.";
+        motherIdleHandleGenerationFailed(msg, { speculative: true });
+        renderMotherReadout();
+        requestRender();
+        return;
+      }
+      clearMotherIdleDispatchTimeout();
+      const idle = state.motherIdle;
+      const retryModel =
+        idle && !idle.retryAttempted
+          ? motherIdlePickRetryModel(idle.lastDispatchModel || idle.pendingSuggestionLog?.model || motherPreferredGenerationModel())
+          : null;
+      if (idle && retryModel) {
+        const failedVersionId = idle.pendingVersionId || eventVersionId || null;
+        idle.retryAttempted = true;
+        idle.pendingDispatchToken = 0;
+        idle.pendingDispatchSpeculative = false;
+        idle.pendingDispatchProposalMode = null;
+        idle.pendingPromptCompileSpeculative = false;
+        idle.dispatchTimeoutExtensions = 0;
+        motherIdleResetDispatchCorrelation({ rememberPendingVersion: true });
+        state.expectingArtifacts = false;
+        restoreEngineImageModelIfNeeded();
+        appendMotherSuggestionLog({
+          stage: "retry_scheduled",
+          request_id: idle.pendingSuggestionLog?.request_id || null,
+          from_model: idle.lastDispatchModel || idle.pendingSuggestionLog?.model || null,
+          to_model: retryModel,
+          version_id: failedVersionId,
+          error: event.error ? String(event.error) : null,
+        }).catch(() => {});
+        setStatus(`Engine: Mother retrying with ${retryModel}…`);
+        const retried = await motherIdleDispatchGeneration().catch(() => false);
+        if (retried) {
+          renderQuickActions();
+          renderHudReadout();
+          processActionQueue().catch(() => {});
+          return;
+        }
+      }
+      const msg = event.error ? `Mother suggestion failed: ${event.error}` : "Mother suggestion failed.";
+      maybeEmitFirstAbilityFail({
+        source: "generation_failed",
+        route: "mother_suggestion",
+        error_code: telemetryClassifyErrorCode(event.error || msg),
+      });
+      setStatus(`Engine: ${msg}`, true);
+      state.expectingArtifacts = false;
+      restoreEngineImageModelIfNeeded();
+      updatePortraitIdle();
+      setImageFxActive(false);
+      motherIdleHandleGenerationFailed(msg);
+      renderQuickActions();
+      renderHudReadout();
+      processActionQueue().catch(() => {});
+      return;
+    }
+    const motherIdle = state.motherIdle || null;
+    if (eventVersionId && motherIdleIsIgnoredVersion(eventVersionId)) {
+      appendMotherSuggestionLog({
+        stage: "late_failed_ignored",
+        ignored_version_id: eventVersionId,
+        error: event.error ? String(event.error) : null,
+        phase: motherIdle?.phase || null,
+      }).catch(() => {});
+      console.warn("[mother_suggestion] ignored late failure from blocked version", {
+        ignored_version_id: eventVersionId,
+        phase: motherIdle?.phase || null,
+        error: event.error ? String(event.error) : null,
+      });
+      return;
+    }
     if (state.pendingCreateLayers) {
       const pending = state.pendingCreateLayers;
       const idx = Math.max(0, Number(pending?.nextIndex) || 0);
@@ -31180,7 +43057,37 @@ async function handleEventLegacy(event) {
       Boolean(state.pendingRecreate) ||
       Boolean(state.pendingPromptGenerate) ||
       Boolean(state.pendingGeneration?.remaining);
+    const motherRecentSuccess =
+      !wasMotherDispatch &&
+      Boolean(motherIdle?.generatedImageId) &&
+      !state.expectingArtifacts &&
+      !anyForegroundPending &&
+      String(state.lastAction || "") === "Mother Suggestion" &&
+      Date.now() <= (Number(motherIdle?.suppressFailureUntil) || 0);
     const looksLikeNoImageError = /no images?|failed to return|no artifacts?|no output/i.test(errLower);
+    if (motherRecentSuccess && looksLikeNoImageError) {
+      appendMotherSuggestionLog({
+        stage: "spurious_failed_after_success",
+        image_id: String(motherIdle.generatedImageId || ""),
+        error: errText || null,
+        phase: motherIdle?.phase || null,
+        last_action: state.lastAction || null,
+      }).catch(() => {});
+      console.warn("[mother_suggestion] ignored spurious failure after successful artifact", {
+        image_id: String(motherIdle.generatedImageId || ""),
+        phase: motherIdle?.phase || null,
+        error: errText || null,
+      });
+      state.expectingArtifacts = false;
+      restoreEngineImageModelIfNeeded();
+      setStatus("Engine: ready");
+      updatePortraitIdle();
+      setImageFxActive(false);
+      renderQuickActions();
+      renderHudReadout();
+      processActionQueue().catch(() => {});
+      return;
+    }
     const msg = event.error ? `Generation failed: ${event.error}` : "Generation failed.";
     maybeEmitFirstAbilityFail({
       source: "generation_failed",
@@ -31241,11 +43148,48 @@ async function handleEventLegacy(event) {
   } else if (event.type === DESKTOP_EVENT_TYPES.INTENT_ICONS) {
     const intent = state.intent;
     const ambient = state.intentAmbient;
+    const motherIdle = state.motherIdle;
+    const motherPhase = String(motherIdle?.phase || "");
+    const motherActionVersion = Number(motherIdle?.actionVersion) || 0;
+    const motherPendingActionVersion = Number(motherIdle?.pendingActionVersion) || 0;
+    const motherVersionMatches = motherPendingActionVersion === motherActionVersion;
+    const motherRealtimePath = String(motherIdle?.pendingIntentRealtimePath || "").trim();
+    const motherRequestId = String(motherIdle?.pendingIntentRequestId || "").trim() || null;
+    const motherHasFallbackIntent = String(motherIdle?.intent?._intent_source_kind || "").trim().toLowerCase() === "fallback";
+    const motherLateRealtimeUpgrade = Boolean(
+      !motherIdle?.pendingIntent &&
+      motherHasFallbackIntent &&
+      motherPhase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING &&
+      motherVersionMatches &&
+      motherRealtimePath &&
+      Date.now() <= (Number(motherIdle?.pendingIntentUpgradeUntil) || 0) &&
+      !motherIdle?.pendingPromptCompile &&
+      !motherIdle?.pendingGeneration
+    );
+    const motherCanAcceptRealtime = Boolean(
+      (motherIdle?.pendingIntent && motherPhase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING && motherVersionMatches) ||
+      motherLateRealtimeUpgrade
+    );
     const isPartial = Boolean(event.partial);
     const path = event.image_path ? String(event.image_path) : "";
     const eventIntentScope = String(event.intent_scope || "").trim().toLowerCase();
+    const eventIsMotherScoped = !eventIntentScope || eventIntentScope === "mother";
     const eventActionVersionRaw = Number(event.action_version);
-    if (!intent && !ambient) return;
+    if (!intent && !ambient && !motherCanAcceptRealtime) {
+      if (!isPartial && motherIdle && eventIsMotherScoped) {
+        appendMotherTraceLog({
+          kind: "intent_icons_ignored",
+          traceId: motherIdle.telemetry?.traceId || null,
+          actionVersion: motherActionVersion,
+          request_id: motherRequestId,
+          reason: "no_pending_route",
+          event_action_version: Number.isFinite(eventActionVersionRaw) ? eventActionVersionRaw : null,
+          snapshot_path: path || null,
+          intent_scope: eventIntentScope || null,
+        }).catch(() => {});
+      }
+      return;
+    }
     if (isOpenAiRealtimeSignal({ source: event.source, model: event.model })) {
       markOpenAiRealtimePortraitActivity();
     }
@@ -31258,11 +43202,42 @@ async function handleEventLegacy(event) {
       path,
       intentPendingPath: intent?.pendingPath,
       ambientPendingPath: ambient?.pendingPath,
+      motherCanAcceptRealtime,
+      motherRealtimePath,
+      motherActionVersion,
       eventActionVersion: eventActionVersionRaw,
       eventIntentScope,
     });
-    const { matchAmbient, matchIntent, ignoreReason } = routing;
-    if (ignoreReason) return;
+    const { matchAmbient, matchIntent, matchMother, ignoreReason } = routing;
+    if (ignoreReason === "scope_mismatch") {
+      return;
+    }
+    if (ignoreReason === "snapshot_path_mismatch" || ignoreReason === "path_mismatch") {
+      if (!isPartial && ignoreReason === "snapshot_path_mismatch") {
+        appendMotherTraceLog({
+          kind: "intent_icons_ignored",
+          traceId: motherIdle?.telemetry?.traceId || null,
+          actionVersion: motherActionVersion,
+          request_id: motherRequestId,
+          reason: ignoreReason,
+          expected_snapshot_path: motherRealtimePath || null,
+          event_snapshot_path: path || null,
+          event_action_version: Number.isFinite(eventActionVersionRaw) ? eventActionVersionRaw : null,
+        }).catch(() => {});
+      }
+      return;
+    }
+    if (ignoreReason === "event_action_version_mismatch") {
+      appendMotherTraceLog({
+        kind: "intent_icons_ignored",
+        traceId: motherIdle?.telemetry?.traceId || null,
+        actionVersion: motherActionVersion,
+        request_id: motherRequestId,
+        reason: ignoreReason,
+        event_action_version: eventActionVersionRaw,
+      }).catch(() => {});
+      return;
+    }
 
     if (isPartial) {
       if (matchIntent && intent) intent.pending = true;
@@ -31281,6 +43256,10 @@ async function handleEventLegacy(event) {
 
     const hasText = typeof text === "string" && text.trim();
     if (hasText) {
+      if (isPartial && matchMother && motherIdle?.pendingIntent) {
+        // Sliding timeout: keep request alive while realtime stream is actively delivering deltas.
+        motherV2ArmRealtimeIntentTimeout({ timeoutMs: MOTHER_V2_INTENT_RT_TIMEOUT_MS });
+      }
       const parsedResult = parseIntentIconsJsonDetailed(text);
       const parsed = parsedResult?.ok ? parsedResult.value : null;
       const parseStrategy = String(parsedResult?.strategy || "none");
@@ -31299,6 +43278,29 @@ async function handleEventLegacy(event) {
             parse_reason: parseReason,
             parse_error: parseError,
             snapshot_path: path ? String(path) : null,
+            request_id: matchMother ? motherRequestId : null,
+            action_version: matchMother ? motherActionVersion : null,
+            source: event.source || null,
+            model: event.model || null,
+            response_status: event.response_status ? String(event.response_status) : null,
+            response_status_reason: event.response_status_reason ? String(event.response_status_reason) : null,
+            text_len: textLen,
+            text_hash: textHash,
+            snippet_head: snippet.head || null,
+            snippet_tail: snippet.tail || null,
+          }).catch(() => {});
+        }
+        if (matchMother && motherIdle) {
+          appendMotherTraceLog({
+            kind: "intent_payload_parse",
+            traceId: motherIdle.telemetry?.traceId || null,
+            actionVersion: Number(motherIdle.actionVersion) || 0,
+            request_id: motherRequestId,
+            snapshot_path: path || null,
+            parse_ok: Boolean(parsed),
+            parse_strategy: parseStrategy,
+            parse_reason: parseReason,
+            parse_error: parseError,
             source: event.source || null,
             model: event.model || null,
             response_status: event.response_status ? String(event.response_status) : null,
@@ -31377,6 +43379,48 @@ async function handleEventLegacy(event) {
           ambient.lastErrorAt = 0;
           if (!isPartial) rebuildAmbientIntentSuggestions(parsed, { reason: "realtime", nowMs: parsedAt });
         }
+        if (matchMother && motherIdle && !isPartial) {
+          const payloadForMother = motherIdle.pendingIntentPayload && typeof motherIdle.pendingIntentPayload === "object"
+            ? motherIdle.pendingIntentPayload
+            : motherV2IntentPayload();
+          const realtimeIntent = motherV2IntentFromRealtimeIcons(parsed, payloadForMother);
+          const hasRealtimeModeSignal = Boolean(
+            motherV2MaybeTransformationMode(realtimeIntent?.transformation_mode) ||
+              (Array.isArray(realtimeIntent?.transformation_mode_candidates) &&
+                realtimeIntent.transformation_mode_candidates.some((entry) =>
+                  Boolean(motherV2MaybeTransformationMode(entry?.mode || entry?.transformation_mode))
+                ))
+          );
+          if (!hasRealtimeModeSignal) {
+            const missingModeMessage = "Mother realtime intent missing transformation mode.";
+            appendMotherTraceLog({
+              kind: "intent_realtime_failed",
+              traceId: motherIdle.telemetry?.traceId || null,
+              actionVersion: Number(motherIdle.actionVersion) || 0,
+              request_id: motherRequestId,
+              source: event.source || "intent_rt_realtime",
+              error: missingModeMessage,
+            }).catch(() => {});
+            motherIdleHandleGenerationFailed(missingModeMessage);
+            return;
+          }
+          const isLateRealtimeUpgrade = !motherIdle.pendingIntent;
+          if (!motherIdle.pendingIntent) {
+            appendMotherTraceLog({
+              kind: "intent_realtime_upgrade",
+              traceId: motherIdle.telemetry?.traceId || null,
+              actionVersion: Number(motherIdle.actionVersion) || 0,
+              request_id: motherRequestId,
+              snapshot_path: path || null,
+            }).catch(() => {});
+          }
+          motherV2ApplyIntent(realtimeIntent, {
+            source: event.source || "intent_rt_realtime",
+            sourceModel: event.model || null,
+            requestId: motherRequestId,
+            preserveMode: isLateRealtimeUpgrade,
+          });
+        }
         // Keep focus stable if possible (unless rejected); otherwise pick the next suggestion.
         const picked = pickSuggestedIntentBranch(parsed);
         if (matchIntent && intent) {
@@ -31446,6 +43490,30 @@ async function handleEventLegacy(event) {
         if (matchAmbient && ambient) {
           applyAmbientIntentFallback("parse_failed", { message: intentParseMessage });
         }
+        if (matchMother && motherIdle) {
+          const fallbackMessage = parseReason === "truncated_json"
+            ? "Mother realtime intent response was truncated."
+            : "Mother realtime intent parse failed.";
+          appendMotherTraceLog({
+            kind: "intent_realtime_failed",
+            traceId: motherIdle.telemetry?.traceId || null,
+            actionVersion: Number(motherIdle.actionVersion) || 0,
+            request_id: motherRequestId,
+            source: "intent_rt_parse_failed",
+            parse_reason: parseReason,
+            parse_strategy: parseStrategy,
+            parse_error: parseError,
+            response_status: event.response_status ? String(event.response_status) : null,
+            response_status_reason: event.response_status_reason ? String(event.response_status_reason) : null,
+            snapshot_path: path || null,
+            text_len: textLen,
+            text_hash: textHash,
+            snippet_head: snippet.head || null,
+            snippet_tail: snippet.tail || null,
+            error: fallbackMessage,
+          }).catch(() => {});
+          motherIdleHandleGenerationFailed(fallbackMessage);
+        }
         if (matchIntent || matchAmbient) {
           appendIntentTrace({
             kind: "model_icons_parse_failed",
@@ -31483,11 +43551,35 @@ async function handleEventLegacy(event) {
   } else if (event.type === DESKTOP_EVENT_TYPES.INTENT_ICONS_FAILED) {
     const intent = state.intent;
     const ambient = state.intentAmbient;
+    let motherIdle = state.motherIdle;
     const path = event.image_path ? String(event.image_path) : "";
     if (!path) return;
+    const eventIntentScope = String(event.intent_scope || "").trim().toLowerCase();
+    const eventIsMotherScoped = !eventIntentScope || eventIntentScope === "mother";
+    if (eventIsMotherScoped) {
+      motherV2ClearIntentRealtimeBusy({
+        path,
+        reason: "intent_icons_failed",
+      });
+    }
+    const resolveActiveMotherRealtimeFailureTarget = () => {
+      const motherIdleLatest = state.motherIdle;
+      const matchMotherLatest = Boolean(
+        eventIsMotherScoped &&
+          motherIdleLatest?.pendingIntent &&
+          String(motherIdleLatest?.phase || "") === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING &&
+          String(motherIdleLatest?.pendingIntentRealtimePath || "") === path &&
+          (Number(motherIdleLatest?.pendingActionVersion) || 0) === (Number(motherIdleLatest?.actionVersion) || 0)
+      );
+      const motherRequestIdLatest = String(motherIdleLatest?.pendingIntentRequestId || "").trim() || null;
+      return { motherIdleLatest, matchMotherLatest, motherRequestIdLatest };
+    };
     const matchAmbient = Boolean(ambient?.pendingPath && String(ambient.pendingPath) === path);
     const matchIntent = Boolean(intent?.pendingPath && String(intent.pendingPath) === path);
-    if (!matchIntent && !matchAmbient) return;
+    let { motherIdleLatest: resolvedMotherIdle, matchMotherLatest: matchMother, motherRequestIdLatest: motherRequestId } =
+      resolveActiveMotherRealtimeFailureTarget();
+    motherIdle = resolvedMotherIdle;
+    if (!matchIntent && !matchAmbient && !matchMother) return;
     if (isOpenAiRealtimeSignal({ source: event.source, model: event.model })) {
       markOpenAiRealtimePortraitActivity();
     }
@@ -31512,20 +43604,57 @@ async function handleEventLegacy(event) {
 
     const errRaw = typeof event.error === "string" ? event.error.trim() : "";
     const msg = errRaw ? `Intent inference failed: ${errRaw}` : "Intent inference failed.";
-    if (matchIntent && intent) {
-      intent.rtState = "failed";
-      intent.lastError = msg;
-      intent.lastErrorAt = Date.now();
-      intent.uiHideSuggestion = false;
+    const retryDecision = nextMotherRealtimeIntentFailureAction({
+      event,
+      matchMother,
+      pendingIntent: Boolean(motherIdle?.pendingIntent),
+      phase: motherIdle?.phase || "",
+      actionVersion: Number(motherIdle?.actionVersion) || 0,
+      pendingActionVersion: Number(motherIdle?.pendingActionVersion) || 0,
+      retryCount: Number(motherIdle?.pendingIntentTransportRetryCount) || 0,
+      maxRetries: MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_MAX,
+    });
+    if (retryDecision.action === "retry") {
+      const retried = await motherV2RetryRealtimeIntentTransport({
+        path,
+        errorMessage: msg,
+      });
+      if (retried) {
+        setStatus("Mother: retrying realtime intent…");
+        renderMotherReadout();
+        requestRender();
+        return;
+      }
+      ({ motherIdleLatest: motherIdle, matchMotherLatest: matchMother, motherRequestIdLatest: motherRequestId } =
+        resolveActiveMotherRealtimeFailureTarget());
+      if (!matchIntent && !matchAmbient && !matchMother) return;
     }
-    if (matchIntent || matchAmbient) {
-      appendIntentTrace({
-        kind: "model_icons_failed",
-        reason: msg,
-        snapshot_path: path ? String(path) : null,
-        rt_state: intent?.rtState || ambient?.rtState || "failed",
+    if (retryDecision.retryable && retryDecision.action === "fail") {
+      appendMotherTraceLog({
+        kind: "intent_realtime_retry_exhausted",
+        traceId: motherIdle?.telemetry?.traceId || null,
+        actionVersion: Number(motherIdle?.actionVersion) || 0,
+        request_id: motherRequestId,
+        retry_count: Number(motherIdle?.pendingIntentTransportRetryCount) || 0,
+        max_retries: MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_MAX,
+        reason: retryDecision.reason || null,
+        error: msg,
       }).catch(() => {});
     }
+		    if (matchIntent && intent) {
+		      intent.rtState = "failed";
+		      intent.lastError = msg;
+	      intent.lastErrorAt = Date.now();
+	      intent.uiHideSuggestion = false;
+	    }
+	    if (matchIntent || matchAmbient) {
+	      appendIntentTrace({
+	        kind: "model_icons_failed",
+	        reason: msg,
+	        snapshot_path: path ? String(path) : null,
+	        rt_state: intent?.rtState || ambient?.rtState || "failed",
+	      }).catch(() => {});
+	    }
 
     const errLower = errRaw.toLowerCase();
     const hardDisable = Boolean(
@@ -31540,8 +43669,11 @@ async function handleEventLegacy(event) {
         errLower.includes("disabled (cue_intent_realtime_disabled=1") ||
         errLower.includes("realtime intent inference is disabled")
     );
+    // Only treat clearly-unrecoverable cases as a "hard" disabled state. Otherwise,
+    // keep retrying opportunistically while the user continues arranging images.
     if (matchIntent && intent) intent.disabledReason = hardDisable ? msg : null;
 
+    // Fall back to a local branch set so the user can still lock an intent.
     if (matchIntent && intent) {
       ensureIntentFallbackIconState("failed");
       if (!intent.focusBranchId) {
@@ -31551,10 +43683,22 @@ async function handleEventLegacy(event) {
     if (matchAmbient && ambient) {
       applyAmbientIntentFallback("failed", { message: msg, hardDisable });
     }
+    if (matchMother && motherIdle) {
+      appendMotherTraceLog({
+        kind: "intent_realtime_failed",
+        traceId: motherIdle.telemetry?.traceId || null,
+        actionVersion: Number(motherIdle.actionVersion) || 0,
+        request_id: motherRequestId,
+        source: "intent_rt_failed",
+        error: msg,
+      }).catch(() => {});
+      motherIdleHandleGenerationFailed(`Mother realtime intent failed. ${msg}`);
+    }
 
     if (matchIntent && intent && !INTENT_FORCE_CHOICE_ENABLED) {
       intent.forceChoice = false;
     } else if (matchIntent && intent) {
+      // Only force choice if time is up or we're already at the final round gate.
       const total = Math.max(1, Number(intent.totalRounds) || 3);
       const round = Math.max(1, Number(intent.round) || 1);
       const remainingMs = intent.startedAt ? intentRemainingMs(Date.now()) : INTENT_DEADLINE_MS;
@@ -31573,7 +43717,7 @@ async function handleEventLegacy(event) {
     if (!hardDisable && matchIntent && intentModeActive() && intent && !intent.forceChoice) {
       scheduleIntentInference({ immediate: false, reason: "retry" });
     }
-  } else if (event.type === DESKTOP_EVENT_TYPES.IMAGE_DESCRIPTION) {
+	  } else if (event.type === DESKTOP_EVENT_TYPES.IMAGE_DESCRIPTION) {
 	    const path = event.image_path;
 	    const desc = event.description;
 	    if (typeof path === "string" && typeof desc === "string" && desc.trim()) {
@@ -31871,6 +44015,7 @@ function hitTestEffectToken(ptCanvas) {
 }
 
 function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
+  state.motherOverlayUiHits = [];
   const items = state.images || [];
   const nowMs = performance.now ? performance.now() : Date.now();
   const dragPerfMode = isFreeformTransformPointerDragActive();
@@ -31883,8 +44028,10 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
   const ms = Number(state.multiView?.scale) || 1;
   const mox = Number(state.multiView?.offsetX) || 0;
   const moy = Number(state.multiView?.offsetY) || 0;
-  const isHiddenOfferSeedId = () => false;
-  const isDimOfferSeedId = () => false;
+  const hiddenOfferSeedIds = motherV2OfferingHiddenSeedIds();
+  const dimOfferSeedIds = motherV2OfferingDimSeedIds();
+  const isHiddenOfferSeedId = (rawId) => hiddenOfferSeedIds.has(String(rawId || "").trim());
+  const isDimOfferSeedId = (rawId) => dimOfferSeedIds.has(String(rawId || "").trim());
 
   const dpr = getDpr();
   wctx.save();
@@ -31953,9 +44100,10 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
     if (!effectToken) {
       // Tile frame.
       wctx.save();
+      const motherGenerated = isMotherGeneratedImageItem(item);
       wctx.lineWidth = Math.max(1, Math.round(1.5 * dpr));
-      wctx.strokeStyle = "rgba(54, 76, 106, 0.58)";
-      wctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+      wctx.strokeStyle = motherGenerated ? "rgba(82, 255, 148, 0.90)" : "rgba(54, 76, 106, 0.58)";
+      wctx.shadowColor = motherGenerated ? "rgba(82, 255, 148, 0.26)" : "rgba(0, 0, 0, 0.6)";
       wctx.shadowBlur = Math.round(10 * dpr);
       if (drawPolygonPath(wctx, framePoints)) wctx.stroke();
       wctx.restore();
@@ -32034,7 +44182,8 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
     if (activeRect) {
       octx.save();
       octx.lineJoin = "round";
-      const palette = selectionChromePalette();
+      const activeMother = isMotherGeneratedImageItem(activeItem);
+      const palette = selectionChromePalette({ motherGenerated: activeMother });
       const outerStroke = palette.outerStroke;
       const mainStroke = palette.mainStroke;
       const mainShadow = palette.mainShadow;
@@ -32137,7 +44286,8 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
       rotateDeg: activeTransform.rotateDeg,
       skewXDeg: activeTransform.skewXDeg,
     });
-    const handleStroke = selectionChromePalette().handleStroke;
+    const activeMother = isMotherGeneratedImageItem(activeItem);
+    const handleStroke = selectionChromePalette({ motherGenerated: activeMother }).handleStroke;
     const showHandles = state.tool === "pan" || intentModeActive();
     if (showHandles) {
       const hs = Math.max(8, Math.round(8 * dpr));
@@ -32176,6 +44326,26 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
       });
     }
   }
+
+  if (activeRect && activeItem && isMotherGeneratedImageItem(activeItem)) {
+    const ax = activeRect.x * ms + mox;
+    const ay = activeRect.y * ms + moy;
+    const aw = activeRect.w * ms;
+    const ah = activeRect.h * ms;
+    const activeId = String(activeItem.id || "").trim();
+    motherRenderDetailsBadgeAndPopover(octx, {
+      anchorRect: { x: ax, y: ay, w: aw, h: ah },
+      dpr,
+      open: Boolean(activeId && state.motherResultDetailsOpenId === activeId),
+      details: motherV2ImageRunDetails(activeItem),
+      toggleKind: "mother_result_details_toggle",
+      panelKind: "mother_result_details_panel",
+      targetId: activeId,
+    });
+  }
+
+  renderMotherRolePreviewLiveTethers(octx, { ms, mox, moy, nowMs });
+  renderMotherRoleGlyphs(octx, { ms, mox, moy });
 
   // Triplet insights overlays (Extract the Rule / Odd One Out).
   const oddId = state.tripletOddOneOutId;
@@ -32263,6 +44433,128 @@ function renderMultiCanvas(wctx, octx, canvasW, canvasH) {
   }
 }
 
+function motherV2RoleImageIds(roleKey) {
+  return motherV2RoleIds(roleKey).filter((id) => state.imagesById.has(id));
+}
+
+function motherV2ReceiptFallbackRunId(receiptPath = "") {
+  const path = String(receiptPath || "").trim();
+  if (!path) return "";
+  const match = path.match(/receipt[^/]*-([a-z0-9_-]+)\.json$/i);
+  return match ? String(match[1] || "").trim() : "";
+}
+
+function motherV2FormatCostDeltaUsd(costUsd = null) {
+  const value = Number(costUsd);
+  if (!Number.isFinite(value)) return "n/a";
+  const abs = Math.abs(value);
+  const precision = abs < 1 ? 3 : 2;
+  return `+$${value.toFixed(precision)}`;
+}
+
+function motherV2ProposalRunDetails(draft = null) {
+  const idle = state.motherIdle || null;
+  const meta = draft?.receiptMeta && typeof draft.receiptMeta === "object" ? draft.receiptMeta : null;
+  const providerKey = String(meta?.provider || "").trim() || providerFromModel(idle?.lastDispatchModel || settings.imageModel);
+  const model = String(meta?.model || idle?.lastDispatchModel || "").trim() || "unknown";
+  const runId = String(
+    draft?.versionId ||
+      idle?.generatedVersionId ||
+      motherV2ReceiptFallbackRunId(draft?.receiptPath)
+  ).trim();
+  const costUsd = Number.isFinite(Number(meta?.cost_total_usd)) ? Number(meta.cost_total_usd) : null;
+  return {
+    provider: providerDisplay(providerKey || "unknown"),
+    model,
+    runId: runId || "n/a",
+    costLabel: motherV2FormatCostDeltaUsd(costUsd),
+  };
+}
+
+function motherV2ImageRunDetails(item = null) {
+  if (!item) return null;
+  if (item.receiptPath && !item.receiptMetaChecked && !item.receiptMetaLoading) {
+    ensureReceiptMeta(item).catch(() => {});
+  }
+  const meta = item.receiptMeta && typeof item.receiptMeta === "object" ? item.receiptMeta : null;
+  const providerKey = String(meta?.provider || "").trim() || providerFromModel(settings.imageModel);
+  const model = String(meta?.model || "").trim() || "unknown";
+  const runId = String(
+    item.motherVersionId ||
+      item.versionId ||
+      motherV2ReceiptFallbackRunId(item.receiptPath)
+  ).trim();
+  const costUsd = Number.isFinite(Number(meta?.cost_total_usd)) ? Number(meta.cost_total_usd) : null;
+  return {
+    provider: providerDisplay(providerKey || "unknown"),
+    model,
+    runId: runId || "n/a",
+    costLabel: motherV2FormatCostDeltaUsd(costUsd),
+    creativeCues: meta?.creative_cues && typeof meta.creative_cues === "object" ? meta.creative_cues : null,
+    promptApiPayload: meta?.prompt_api_payload && typeof meta.prompt_api_payload === "object" ? meta.prompt_api_payload : null,
+  };
+}
+
+function motherV2PromptPayloadDetailRows(promptApiPayload = null, { maxChars = 3200, maxLines = 18, lineChars = 92 } = {}) {
+  if (!promptApiPayload || typeof promptApiPayload !== "object") return [];
+  let text = "";
+  try {
+    text = JSON.stringify(promptApiPayload, null, 2);
+  } catch {
+    text = "";
+  }
+  if (!text) return [];
+  let clipped = false;
+  if (text.length > maxChars) {
+    text = `${text.slice(0, Math.max(0, maxChars - 3))}...`;
+    clipped = true;
+  }
+  const rawRows = [];
+  for (const line of String(text).split("\n")) {
+    const safe = String(line || "");
+    if (safe.length <= lineChars) {
+      rawRows.push(safe);
+      continue;
+    }
+    for (let i = 0; i < safe.length; i += lineChars) {
+      rawRows.push(safe.slice(i, i + lineChars));
+    }
+  }
+  const rows = [];
+  rows.push("Prompt Payload JSON:");
+  for (const row of rawRows) {
+    rows.push(`  ${row}`);
+    if (rows.length >= maxLines) {
+      clipped = true;
+      break;
+    }
+  }
+  if (clipped) rows.push("  ... (truncated)");
+  return rows;
+}
+
+function motherPushOverlayUiHit(hit = null) {
+  if (!hit?.rect) return;
+  if (!Array.isArray(state.motherOverlayUiHits)) state.motherOverlayUiHits = [];
+  state.motherOverlayUiHits.push(hit);
+}
+
+function hitTestMotherOverlayUi(ptCanvas) {
+  if (!ptCanvas) return null;
+  const hits = Array.isArray(state.motherOverlayUiHits) ? state.motherOverlayUiHits : [];
+  for (let i = hits.length - 1; i >= 0; i -= 1) {
+    const hit = hits[i];
+    const rect = hit?.rect;
+    if (!rect) continue;
+    const x0 = Number(rect.x) || 0;
+    const y0 = Number(rect.y) || 0;
+    const w = Number(rect.w) || 0;
+    const h = Number(rect.h) || 0;
+    if (ptCanvas.x >= x0 && ptCanvas.x <= x0 + w && ptCanvas.y >= y0 && ptCanvas.y <= y0 + h) return hit;
+  }
+  return null;
+}
+
 function activeImageTransformPushUiHit(hit = null) {
   if (!hit?.rect) return;
   if (!Array.isArray(state.activeImageTransformUiHits)) state.activeImageTransformUiHits = [];
@@ -32300,7 +44592,16 @@ function ensureFreeformRectForImageId(rawId = "") {
   return rect;
 }
 
-function selectionChromePalette() {
+function selectionChromePalette({ motherGenerated = false } = {}) {
+  if (motherGenerated) {
+    return {
+      outerStroke: "rgba(82, 255, 148, 0.20)",
+      mainStroke: "rgba(82, 255, 148, 0.94)",
+      mainShadow: "rgba(82, 255, 148, 0.28)",
+      innerStroke: "rgba(208, 255, 226, 0.60)",
+      handleStroke: "rgba(82, 255, 148, 0.92)",
+    };
+  }
   return {
     outerStroke: "rgba(118, 223, 255, 0.22)",
     mainStroke: "rgba(88, 201, 255, 0.96)",
@@ -32521,6 +44822,540 @@ function beginActiveImageTransformDrag(event, { ptCanvas = null, ptCss = null, h
   state.pointer.moved = false;
   state.pointer.semanticInteractionEmitted = false;
   return true;
+}
+
+function motherCloseOverlayDetails() {
+  if (state.motherIdle) state.motherIdle.offerDetailsOpen = false;
+  state.motherResultDetailsOpenId = null;
+}
+
+function motherToggleOverlayDetails(hit = null) {
+  const kind = String(hit?.kind || "").trim();
+  const targetId = String(hit?.targetId || "").trim();
+  if (kind === "mother_offer_details_toggle") {
+    if (state.motherIdle) state.motherIdle.offerDetailsOpen = !Boolean(state.motherIdle.offerDetailsOpen);
+    state.motherResultDetailsOpenId = null;
+    return true;
+  }
+  if (kind === "mother_result_details_toggle") {
+    state.motherResultDetailsOpenId = state.motherResultDetailsOpenId === targetId ? null : targetId;
+    if (state.motherIdle) state.motherIdle.offerDetailsOpen = false;
+    return true;
+  }
+  if (kind === "mother_offer_details_panel" || kind === "mother_result_details_panel") {
+    return true;
+  }
+  return false;
+}
+
+function motherRenderDetailsBadgeAndPopover(
+  octx,
+  {
+    anchorRect = null,
+    dpr = 1,
+    open = false,
+    details = null,
+    toggleKind = "mother_offer_details_toggle",
+    panelKind = "mother_offer_details_panel",
+    targetId = null,
+  } = {}
+) {
+  if (!octx || !anchorRect) return;
+  const canvasW = Number(octx.canvas?.width) || 0;
+  const canvasH = Number(octx.canvas?.height) || 0;
+  if (canvasW <= 0 || canvasH <= 0) return;
+
+  const pad = Math.max(6, Math.round(7 * dpr));
+  const badgeSize = Math.max(16, Math.round(18 * dpr));
+  const badgeX = clamp(
+    Math.round((Number(anchorRect.x) || 0) + (Number(anchorRect.w) || 0) - badgeSize - pad),
+    pad,
+    Math.max(pad, canvasW - badgeSize - pad)
+  );
+  const badgeY = clamp(
+    Math.round((Number(anchorRect.y) || 0) + pad),
+    pad,
+    Math.max(pad, canvasH - badgeSize - pad)
+  );
+
+  octx.save();
+  octx.shadowColor = "rgba(0, 0, 0, 0.5)";
+  octx.shadowBlur = Math.round(10 * dpr);
+  _drawRoundedRect(octx, badgeX, badgeY, badgeSize, badgeSize, Math.max(4, Math.round(5 * dpr)));
+  octx.fillStyle = open ? "rgba(10, 32, 24, 0.92)" : "rgba(8, 10, 14, 0.86)";
+  octx.fill();
+  octx.lineWidth = Math.max(1, Math.round(1.2 * dpr));
+  octx.strokeStyle = open ? "rgba(122, 238, 178, 0.88)" : "rgba(160, 188, 220, 0.66)";
+  octx.stroke();
+  octx.fillStyle = open ? "rgba(170, 255, 214, 0.98)" : "rgba(226, 235, 246, 0.96)";
+  octx.font = `${Math.max(9, Math.round(11 * dpr))}px IBM Plex Mono`;
+  octx.textAlign = "center";
+  octx.textBaseline = "middle";
+  octx.fillText("i", badgeX + badgeSize * 0.5, badgeY + badgeSize * 0.55);
+  octx.restore();
+  motherPushOverlayUiHit({
+    kind: toggleKind,
+    targetId: targetId || null,
+    rect: { x: badgeX, y: badgeY, w: badgeSize, h: badgeSize },
+  });
+
+  if (!open) return;
+  const detail = details && typeof details === "object" ? details : null;
+  const rows = [
+    `Provider: ${detail?.provider || "Unknown"}`,
+    `Model: ${clampText(detail?.model || "unknown", 28)}`,
+    `Run ID: ${clampText(detail?.runId || "n/a", 28)}`,
+    `Cost: ${detail?.costLabel || "n/a"}`,
+  ];
+  const cues = detail?.creativeCues && typeof detail.creativeCues === "object" ? detail.creativeCues : null;
+  if (cues?.shot_type) rows.push(`Shot: ${clampText(cues.shot_type, 52)}`);
+  if (cues?.alternate_shot_type) rows.push(`Alt Shot: ${clampText(cues.alternate_shot_type, 52)}`);
+  if (cues?.lighting_profile) rows.push(`Lighting: ${clampText(cues.lighting_profile, 52)}`);
+  if (cues?.alternate_lighting_profile) rows.push(`Alt Light: ${clampText(cues.alternate_lighting_profile, 52)}`);
+  if (cues?.lens_guidance) rows.push(`Lens: ${clampText(cues.lens_guidance, 52)}`);
+  if (cues?.alternate_lens_guidance) rows.push(`Alt Lens: ${clampText(cues.alternate_lens_guidance, 52)}`);
+  const promptPayloadRows = motherV2PromptPayloadDetailRows(detail?.promptApiPayload || null);
+  if (promptPayloadRows.length) rows.push(...promptPayloadRows);
+
+  octx.save();
+  const fontPx = Math.max(8, Math.round(9 * dpr));
+  const lineH = Math.max(11, Math.round(12 * dpr));
+  const rowGap = Math.max(2, Math.round(3 * dpr));
+  const panelPadX = Math.max(7, Math.round(8 * dpr));
+  const panelPadY = Math.max(6, Math.round(7 * dpr));
+  octx.font = `${fontPx}px IBM Plex Mono`;
+  let maxLineW = 0;
+  for (const row of rows) {
+    maxLineW = Math.max(maxLineW, Math.ceil(octx.measureText(String(row)).width));
+  }
+  const panelW = Math.max(Math.round(150 * dpr), maxLineW + panelPadX * 2);
+  const panelH = panelPadY * 2 + rows.length * lineH + Math.max(0, rows.length - 1) * rowGap;
+  let panelX = Math.round(badgeX + badgeSize - panelW);
+  panelX = clamp(panelX, pad, Math.max(pad, canvasW - panelW - pad));
+  let panelY = Math.round(badgeY - panelH - Math.max(5, Math.round(6 * dpr)));
+  if (panelY < pad) {
+    panelY = Math.round(badgeY + badgeSize + Math.max(5, Math.round(6 * dpr)));
+  }
+  panelY = clamp(panelY, pad, Math.max(pad, canvasH - panelH - pad));
+
+  octx.shadowColor = "rgba(0, 0, 0, 0.56)";
+  octx.shadowBlur = Math.round(14 * dpr);
+  _drawRoundedRect(octx, panelX, panelY, panelW, panelH, Math.max(6, Math.round(7 * dpr)));
+  octx.fillStyle = "rgba(6, 10, 14, 0.94)";
+  octx.fill();
+  octx.lineWidth = Math.max(1, Math.round(1.2 * dpr));
+  octx.strokeStyle = "rgba(122, 238, 178, 0.54)";
+  octx.stroke();
+
+  octx.fillStyle = "rgba(214, 255, 232, 0.96)";
+  octx.textAlign = "left";
+  octx.textBaseline = "top";
+  let textY = panelY + panelPadY;
+  for (const row of rows) {
+    octx.fillText(String(row), panelX + panelPadX, textY);
+    textY += lineH + rowGap;
+  }
+  octx.restore();
+  motherPushOverlayUiHit({
+    kind: panelKind,
+    targetId: targetId || null,
+    rect: { x: panelX, y: panelY, w: panelW, h: panelH },
+  });
+}
+
+function hitTestMotherRoleGlyph(ptCanvas) {
+  const idle = state.motherIdle;
+  if (!idle || !ptCanvas) return null;
+  const hits = Array.isArray(idle.roleGlyphHits) ? idle.roleGlyphHits : [];
+  for (let i = hits.length - 1; i >= 0; i -= 1) {
+    const hit = hits[i];
+    const rect = hit?.rect;
+    if (!rect) continue;
+    const x0 = Number(rect.x) || 0;
+    const y0 = Number(rect.y) || 0;
+    const w = Number(rect.w) || 0;
+    const h = Number(rect.h) || 0;
+    if (ptCanvas.x >= x0 && ptCanvas.x <= x0 + w && ptCanvas.y >= y0 && ptCanvas.y <= y0 + h) return hit;
+  }
+  return null;
+}
+
+function motherV2RolePreviewPanelAnchorMapCanvasPx() {
+  const root = els.motherRolePreview;
+  const overlay = els.overlayCanvas;
+  if (!root || !overlay || root.classList.contains("hidden")) return null;
+  const rectEls = root.querySelectorAll(".mother-role-preview-rect[data-image-id]");
+  if (!rectEls.length) return null;
+  const overlayRect = overlay.getBoundingClientRect();
+  const cssW = Number(overlayRect.width) || 0;
+  const cssH = Number(overlayRect.height) || 0;
+  if (!(cssW > 0 && cssH > 0)) return null;
+  const scaleX = (Number(overlay.width) || 0) / cssW;
+  const scaleY = (Number(overlay.height) || 0) / cssH;
+  if (!(scaleX > 0 && scaleY > 0)) return null;
+  const byId = new Map();
+  for (const rectEl of rectEls) {
+    const imageId = String(rectEl?.dataset?.imageId || "").trim();
+    if (!imageId) continue;
+    const rect = rectEl.getBoundingClientRect();
+    const x = (Number(rect.left) + Number(rect.width) * 0.5 - Number(overlayRect.left)) * scaleX;
+    const y = (Number(rect.top) + Number(rect.height) * 0.5 - Number(overlayRect.top)) * scaleY;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    byId.set(imageId, { x, y });
+  }
+  return byId.size ? byId : null;
+}
+
+function renderMotherRolePreviewLiveTethers(octx, { ms = 1, mox = 0, moy = 0, nowMs = 0 } = {}) {
+  if (!octx || state.canvasMode !== "multi") return;
+  const panelAnchors = motherV2RolePreviewPanelAnchorMapCanvasPx();
+  if (!panelAnchors || !panelAnchors.size) return;
+  const pairs = [];
+  for (const [imageId, source] of panelAnchors.entries()) {
+    const rect = state.multiRects.get(imageId) || null;
+    if (!rect) continue;
+    const tx = (Number(rect.x) + Number(rect.w) * 0.5) * ms + mox;
+    const ty = (Number(rect.y) + Number(rect.h) * 0.5) * ms + moy;
+    if (!Number.isFinite(tx) || !Number.isFinite(ty)) continue;
+    pairs.push({
+      imageId,
+      source,
+      target: { x: tx, y: ty },
+      rect,
+    });
+  }
+  if (!pairs.length) {
+    if (state.motherRolePreviewHoverImageId) {
+      setMotherRolePreviewHoverImageId("", { requestFrame: false });
+    }
+    return;
+  }
+  const validIds = new Set(pairs.map((pair) => pair.imageId));
+  const hoveredId = String(state.motherRolePreviewHoverImageId || "").trim();
+  if (hoveredId && !validIds.has(hoveredId)) {
+    setMotherRolePreviewHoverImageId("", { requestFrame: false });
+  }
+  const activeId = String(getVisibleActiveId() || "").trim();
+  const focusImageId = validIds.has(hoveredId)
+    ? hoveredId
+    : validIds.has(activeId)
+      ? activeId
+      : "";
+  const dpr = getDpr();
+
+  octx.save();
+  octx.lineCap = "round";
+  octx.lineJoin = "round";
+  for (const pair of pairs) {
+    const isFocus = Boolean(focusImageId && pair.imageId === focusImageId);
+    const paletteIndex = motherV2PaletteIndexByImageId(pair.imageId);
+    const dx = pair.target.x - pair.source.x;
+    const dy = pair.target.y - pair.source.y;
+    const bend = clamp(Math.abs(dx) * 0.25 + Math.abs(dy) * 0.07, Math.round(12 * dpr), Math.round(180 * dpr));
+    const cx = pair.source.x + dx * 0.5;
+    const cy = pair.source.y + dy * 0.5 - bend;
+    octx.beginPath();
+    octx.moveTo(pair.source.x, pair.source.y);
+    octx.quadraticCurveTo(cx, cy, pair.target.x, pair.target.y);
+    octx.strokeStyle = googleBrandRectColorForIndex(paletteIndex, isFocus ? 0.88 : 0.34);
+    octx.lineWidth = Math.max(1, Math.round((isFocus ? 2.2 : 1.1) * dpr));
+    octx.shadowColor = googleBrandRectColorForIndex(paletteIndex, isFocus ? 0.46 : 0.2);
+    octx.shadowBlur = Math.round((isFocus ? 12 : 6) * dpr);
+    octx.stroke();
+
+    const sourceDotR = Math.max(2, Math.round((isFocus ? 3.4 : 2.3) * dpr));
+    octx.beginPath();
+    octx.arc(pair.source.x, pair.source.y, sourceDotR, 0, Math.PI * 2);
+    octx.shadowBlur = 0;
+    octx.fillStyle = googleBrandRectColorForIndex(paletteIndex, isFocus ? 0.94 : 0.64);
+    octx.fill();
+  }
+  octx.restore();
+
+  if (!focusImageId) return;
+  const focusPair = pairs.find((pair) => pair.imageId === focusImageId);
+  if (!focusPair) return;
+  const pulse = 0.5 + 0.5 * Math.sin((Number(nowMs) || 0) * 0.008);
+  const focusRect = focusPair.rect || null;
+  if (!focusRect) return;
+  const paletteIndex = motherV2PaletteIndexByImageId(focusImageId);
+  const x = Number(focusRect.x) * ms + mox;
+  const y = Number(focusRect.y) * ms + moy;
+  const w = Number(focusRect.w) * ms;
+  const h = Number(focusRect.h) * ms;
+  const transform = readFreeformRectTransform(state.freeformRects.get(focusImageId) || null);
+  const haloPad = Math.max(4, Math.round((6 + pulse * 6) * dpr));
+  const haloPoints = transformedRectPolygonPoints({
+    x: x - haloPad,
+    y: y - haloPad,
+    w: w + haloPad * 2,
+    h: h + haloPad * 2,
+    rotateDeg: transform.rotateDeg,
+    skewXDeg: transform.skewXDeg,
+  });
+
+  octx.save();
+  octx.lineJoin = "round";
+  octx.strokeStyle = googleBrandRectColorForIndex(paletteIndex, 0.78);
+  octx.lineWidth = Math.max(1, Math.round((1.6 + pulse * 1.8) * dpr));
+  octx.shadowColor = googleBrandRectColorForIndex(paletteIndex, 0.48);
+  octx.shadowBlur = Math.round((14 + pulse * 10) * dpr);
+  if (drawPolygonPath(octx, haloPoints)) octx.stroke();
+
+  const targetDotR = Math.max(3, Math.round((4 + pulse * 3) * dpr));
+  octx.beginPath();
+  octx.arc(focusPair.target.x, focusPair.target.y, targetDotR, 0, Math.PI * 2);
+  octx.fillStyle = googleBrandRectColorForIndex(paletteIndex, 0.9);
+  octx.shadowColor = googleBrandRectColorForIndex(paletteIndex, 0.64);
+  octx.shadowBlur = Math.round((10 + pulse * 8) * dpr);
+  octx.fill();
+  octx.restore();
+}
+
+function renderMotherDraftKeyboardHints(octx, rectPx, { dpr = 1, details = null } = {}) {
+  if (!octx || !rectPx || isReelSizeLocked()) return;
+  const hints = [
+    { key: "V", label: "DEPLOY" },
+    { key: "M", label: "DISMISS" },
+    { key: "R", label: "REROLL" },
+  ];
+  if (!hints.length) return;
+  const margin = Math.max(8, Math.round(10 * dpr));
+  const gap = Math.max(4, Math.round(6 * dpr));
+  const chipPadX = Math.max(4, Math.round(6 * dpr));
+  const chipPadY = Math.max(2, Math.round(4 * dpr));
+  const keyW = Math.max(11, Math.round(13 * dpr));
+  const keyH = Math.max(11, Math.round(13 * dpr));
+  const keyGap = Math.max(4, Math.round(5 * dpr));
+  const chipH = Math.max(keyH + chipPadY * 2, Math.round(20 * dpr));
+  const fontPx = Math.max(8, Math.round(9 * dpr));
+  const corner = Math.max(4, Math.round(6 * dpr));
+  const canvasW = Number(octx.canvas?.width) || 0;
+  const canvasH = Number(octx.canvas?.height) || 0;
+  if (canvasW <= 0 || canvasH <= 0) return;
+
+  octx.save();
+  octx.font = `${fontPx}px IBM Plex Mono`;
+  octx.textBaseline = "middle";
+  octx.textAlign = "left";
+
+  const chips = hints.map((hint) => {
+    const label = String(hint.label || "").trim().toUpperCase();
+    const key = String(hint.key || "").trim().toUpperCase();
+    const labelW = Math.ceil(octx.measureText(label).width);
+    const width = chipPadX + keyW + keyGap + labelW + chipPadX;
+    return { key, label, width };
+  });
+  const totalW = chips.reduce((sum, chip) => sum + chip.width, 0) + Math.max(0, chips.length - 1) * gap;
+
+  let x = Math.round((Number(rectPx.x) || 0) + ((Number(rectPx.w) || 0) - totalW) / 2);
+  x = clamp(x, margin, Math.max(margin, canvasW - totalW - margin));
+  let y = Math.round((Number(rectPx.y) || 0) - chipH - margin);
+  if (y < margin) {
+    y = Math.round((Number(rectPx.y) || 0) + (Number(rectPx.h) || 0) + margin);
+  }
+  y = clamp(y, margin, Math.max(margin, canvasH - chipH - margin));
+
+  octx.shadowColor = "rgba(0, 0, 0, 0.52)";
+  octx.shadowBlur = Math.round(10 * dpr);
+  let cx = x;
+  for (const chip of chips) {
+    _drawRoundedRect(octx, cx, y, chip.width, chipH, corner);
+    octx.fillStyle = "rgba(8, 10, 14, 0.84)";
+    octx.fill();
+    octx.lineWidth = Math.max(1, Math.round(1.2 * dpr));
+    octx.strokeStyle = "rgba(82, 255, 148, 0.46)";
+    octx.stroke();
+
+    const keyX = cx + chipPadX;
+    const keyY = y + Math.round((chipH - keyH) / 2);
+    _drawRoundedRect(octx, keyX, keyY, keyW, keyH, Math.max(3, Math.round(3 * dpr)));
+    octx.fillStyle = "rgba(18, 26, 37, 0.96)";
+    octx.fill();
+    octx.strokeStyle = "rgba(160, 188, 220, 0.62)";
+    octx.stroke();
+
+    octx.fillStyle = "rgba(230, 237, 243, 0.96)";
+    octx.textAlign = "center";
+    octx.fillText(chip.key, keyX + keyW * 0.5, y + chipH * 0.54);
+
+    octx.textAlign = "left";
+    octx.fillStyle = "rgba(210, 255, 228, 0.94)";
+    octx.fillText(chip.label, keyX + keyW + keyGap, y + chipH * 0.54);
+
+    cx += chip.width + gap;
+  }
+  octx.restore();
+
+  const idle = state.motherIdle || null;
+  const detailsOpen = Boolean(idle?.offerDetailsOpen);
+  motherRenderDetailsBadgeAndPopover(octx, {
+    anchorRect: { x, y, w: totalW, h: chipH },
+    dpr,
+    open: detailsOpen,
+    details,
+    toggleKind: "mother_offer_details_toggle",
+    panelKind: "mother_offer_details_panel",
+    targetId: "proposal",
+  });
+}
+
+function renderMotherRoleGlyphs(octx, { ms = 1, mox = 0, moy = 0 } = {}) {
+  const idle = state.motherIdle;
+  if (!idle) return;
+  const phase = idle.phase || motherIdleInitialState();
+  if (phase !== MOTHER_IDLE_STATES.OFFERING) {
+    idle.offerDetailsOpen = false;
+  }
+  if (!(phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING || phase === MOTHER_IDLE_STATES.OFFERING)) {
+    idle.roleGlyphHits = [];
+    return;
+  }
+  if (state.canvasMode !== "multi") {
+    idle.roleGlyphHits = [];
+    return;
+  }
+  const showOfferPreview = phase === MOTHER_IDLE_STATES.OFFERING;
+  const advancedVisible = motherV2IsAdvancedVisible();
+  const hintsVisible = motherV2HintsVisible();
+  if (!advancedVisible && !hintsVisible) {
+    if (!showOfferPreview) {
+      idle.roleGlyphHits = [];
+      return;
+    }
+  }
+  const showRoleGlyphs = advancedVisible || hintsVisible;
+  const dpr = getDpr();
+  const hintLevel = Number(idle.hintLevel) || 1;
+  const glyphSize = advancedVisible
+    ? Math.max(24, Math.round(54 * dpr))
+    : Math.max(10, Math.round((hintLevel > 1 ? 15 : 11) * dpr));
+  const gap = Math.max(2, Math.round(4 * dpr));
+  const yInset = Math.max(4, Math.round(8 * dpr));
+  const hits = [];
+  const roleAnchors = new Map();
+  const hiddenOfferSeedIds = motherV2OfferingHiddenSeedIds();
+
+  for (const item of state.images || []) {
+    const imageId = String(item?.id || "").trim();
+    if (!imageId) continue;
+    if (hiddenOfferSeedIds.has(imageId)) continue;
+    const rect = state.multiRects.get(imageId) || null;
+    if (!rect) continue;
+    const roles = showRoleGlyphs ? MOTHER_V2_ROLE_KEYS.filter((key) => motherV2RoleImageIds(key).includes(imageId)) : [];
+    if (!roles.length) continue;
+    const rx = rect.x * ms + mox;
+    const ry = rect.y * ms + moy;
+    const rw = rect.w * ms;
+    const rh = rect.h * ms;
+    const totalW = roles.length * glyphSize + (roles.length - 1) * gap;
+    const x0 = Math.round(rx + (rw - totalW) / 2);
+    const y = Math.round(ry + rh - glyphSize - yInset);
+    for (let i = 0; i < roles.length; i += 1) {
+      const role = roles[i];
+      const x = x0 + i * (glyphSize + gap);
+      const drag = idle.roleGlyphDrag;
+      const hot = Boolean(drag && String(drag.role || "") === role && String(drag.imageId || "") === imageId);
+      octx.save();
+      octx.globalAlpha = advancedVisible ? (hot ? 1 : 0.9) : hintLevel > 1 ? 0.76 : 0.52;
+      octx.fillStyle = advancedVisible ? "rgba(8, 10, 14, 0.88)" : "rgba(8, 10, 14, 0.66)";
+      octx.strokeStyle = advancedVisible ? "rgba(230, 237, 243, 0.92)" : "rgba(230, 237, 243, 0.58)";
+      octx.lineWidth = Math.max(1, Math.round((advancedVisible ? 1.3 : 1.1) * dpr));
+      octx.beginPath();
+      octx.roundRect(Math.round(x), Math.round(y), glyphSize, glyphSize, Math.round((advancedVisible ? 8 : 6) * dpr));
+      octx.fill();
+      octx.stroke();
+      octx.fillStyle = "rgba(230, 237, 243, 0.96)";
+      octx.font = advancedVisible
+        ? `${Math.max(8, Math.round(11 * dpr))}px IBM Plex Mono`
+        : `${Math.max(9, Math.round(10 * dpr))}px IBM Plex Mono`;
+      octx.textAlign = "center";
+      octx.textBaseline = "middle";
+      octx.fillText(
+        advancedVisible ? (MOTHER_V2_ROLE_LABEL[role] || role.toUpperCase()) : (MOTHER_V2_ROLE_GLYPH[role] || "•"),
+        x + glyphSize * 0.5,
+        y + glyphSize * 0.53
+      );
+      octx.restore();
+      if (advancedVisible) {
+        hits.push({
+          kind: "mother_role_glyph",
+          role,
+          imageId,
+          rect: { x, y, w: glyphSize, h: glyphSize },
+        });
+      }
+      if (!roleAnchors.has(role)) {
+        roleAnchors.set(role, {
+          x: x + glyphSize * 0.5,
+          y: y + glyphSize * 0.5,
+        });
+      }
+    }
+  }
+
+  if (showRoleGlyphs && !advancedVisible) {
+    const subjectAnchor = roleAnchors.get("subject");
+    const modelAnchor = roleAnchors.get("model");
+    if (subjectAnchor && modelAnchor) {
+      octx.save();
+      octx.globalAlpha = hintLevel > 1 ? 0.42 : 0.28;
+      octx.strokeStyle = "rgba(230, 237, 243, 0.7)";
+      octx.lineWidth = Math.max(1, Math.round(1.1 * dpr));
+      octx.setLineDash([Math.max(2, Math.round(4 * dpr)), Math.max(2, Math.round(4 * dpr))]);
+      octx.beginPath();
+      octx.moveTo(subjectAnchor.x, subjectAnchor.y);
+      octx.lineTo(modelAnchor.x, modelAnchor.y);
+      octx.stroke();
+      octx.setLineDash([]);
+      octx.restore();
+    }
+  }
+
+  // Offer-stage ghost preview (staged only; no mutation).
+  if (phase === MOTHER_IDLE_STATES.OFFERING) {
+    const draft = motherV2CurrentDraft();
+    const draftImg = readSessionRuntimeImageHandle(draft);
+    const policy = String(idle.intent?.placement_policy || "adjacent");
+    const targets = Array.isArray(idle.intent?.target_ids) ? idle.intent.target_ids : [];
+    const targetId = targets.length ? String(targets[0] || "") : state.activeId ? String(state.activeId) : null;
+    const rectCss = motherV2OfferPreviewRectCss({ policy, targetId, draftIndex: 0 });
+    if (rectCss) {
+      const px = {
+        x: (Number(rectCss.x) || 0) * dpr * ms + mox,
+        y: (Number(rectCss.y) || 0) * dpr * ms + moy,
+        w: (Number(rectCss.w) || 1) * dpr * ms,
+        h: (Number(rectCss.h) || 1) * dpr * ms,
+      };
+      octx.save();
+      octx.globalAlpha = 0.36;
+      if (draftImg) {
+        octx.imageSmoothingEnabled = true;
+        octx.imageSmoothingQuality = "high";
+        octx.drawImage(draftImg, Math.round(px.x), Math.round(px.y), Math.round(px.w), Math.round(px.h));
+      } else {
+        octx.fillStyle = "rgba(82, 255, 148, 0.18)";
+        octx.fillRect(Math.round(px.x), Math.round(px.y), Math.round(px.w), Math.round(px.h));
+      }
+      octx.globalAlpha = 0.92;
+      octx.strokeStyle = "rgba(82, 255, 148, 0.88)";
+      octx.lineWidth = Math.max(1, Math.round(2 * dpr));
+      octx.strokeRect(Math.round(px.x), Math.round(px.y), Math.round(px.w), Math.round(px.h));
+      octx.globalAlpha = 0.42;
+      octx.setLineDash([Math.max(2, Math.round(6 * dpr)), Math.max(2, Math.round(4 * dpr))]);
+      octx.lineWidth = Math.max(1, Math.round(1.2 * dpr));
+      octx.strokeStyle = "rgba(182, 255, 216, 0.84)";
+      octx.strokeRect(Math.round(px.x - 3), Math.round(px.y - 3), Math.round(px.w + 6), Math.round(px.h + 6));
+      octx.setLineDash([]);
+      octx.restore();
+      renderMotherDraftKeyboardHints(octx, px, {
+        dpr,
+        details: motherV2ProposalRunDetails(draft),
+      });
+    }
+  }
+
+  idle.roleGlyphHits = showRoleGlyphs && advancedVisible ? hits : [];
 }
 
 function hitTestIntentUi(ptCanvas) {
@@ -33323,6 +46158,197 @@ function resolvePendingPromptGenerateAnchorCss(pendingPromptGenerate = null) {
   return currentPromptGenerateAnchorCss();
 }
 
+function renderMotherDraftingPlaceholder(octx, canvasW, canvasH) {
+  const pending = state.pendingMotherDraft;
+  if (!pending || !octx) return;
+  const idle = state.motherIdle;
+  if (!idle || idle.phase !== MOTHER_IDLE_STATES.DRAFTING) return;
+
+  const rectCss = motherDraftingResolvePendingPreviewRectCss(pending);
+  if (!rectCss) return;
+  const normalizedRectCss = motherDraftingNormalizeRectCss(rectCss);
+  if (!normalizedRectCss) return;
+  pending.previewRectCss = { ...normalizedRectCss };
+
+  const dpr = getDpr();
+  const px = motherDraftingRectCssToCanvasRectPx(normalizedRectCss);
+  if (!px) return;
+  if (!(px.w > 0 && px.h > 0)) return;
+
+  const nowMs = Date.now();
+  const envelope = motherDraftingComputeUncertaintyEnvelope(pending, { nowMs });
+  const elapsedMs = envelope ? envelope.elapsedMs : Math.max(0, nowMs - (Number(pending.startedAt) || nowMs));
+  const shimmerProgress = (elapsedMs % MOTHER_DRAFTING_SHIMMER_LOOP_MS) / MOTHER_DRAFTING_SHIMMER_LOOP_MS;
+  const pulse = 0.5 + 0.5 * Math.sin((elapsedMs / 1000) * Math.PI * 2 * 0.62);
+  const sweepCenter = px.x + (px.w + px.h * 1.6) * shimmerProgress - px.h * 0.8;
+
+  octx.save();
+  octx.globalCompositeOperation = "source-over";
+  octx.fillStyle = `rgba(112, 118, 130, ${(0.17 + pulse * 0.06).toFixed(3)})`;
+  octx.fillRect(Math.round(px.x), Math.round(px.y), Math.round(px.w), Math.round(px.h));
+  octx.lineWidth = Math.max(1, Math.round(2 * dpr));
+  octx.strokeStyle = `rgba(182, 189, 202, ${(0.58 + pulse * 0.16).toFixed(3)})`;
+  octx.strokeRect(Math.round(px.x), Math.round(px.y), Math.round(px.w), Math.round(px.h));
+  octx.restore();
+
+  octx.save();
+  octx.beginPath();
+  octx.rect(Math.round(px.x), Math.round(px.y), Math.round(px.w), Math.round(px.h));
+  octx.clip();
+  const shimmer = octx.createLinearGradient(
+    sweepCenter - px.h * 0.9,
+    px.y,
+    sweepCenter + px.h * 0.9,
+    px.y + px.h
+  );
+  shimmer.addColorStop(0, "rgba(214, 222, 236, 0)");
+  shimmer.addColorStop(0.45, "rgba(224, 232, 246, 0.1)");
+  shimmer.addColorStop(0.5, "rgba(238, 244, 255, 0.36)");
+  shimmer.addColorStop(0.55, "rgba(224, 232, 246, 0.1)");
+  shimmer.addColorStop(1, "rgba(214, 222, 236, 0)");
+  octx.fillStyle = shimmer;
+  octx.fillRect(Math.round(px.x - px.h), Math.round(px.y), Math.round(px.w + px.h * 2), Math.round(px.h));
+  octx.restore();
+
+  octx.save();
+  octx.strokeStyle = `rgba(212, 220, 234, ${(0.36 + pulse * 0.12).toFixed(3)})`;
+  octx.lineWidth = Math.max(1, Math.round(1.2 * dpr));
+  octx.strokeRect(
+    Math.round(px.x + Math.max(1, Math.round(1 * dpr))),
+    Math.round(px.y + Math.max(1, Math.round(1 * dpr))),
+    Math.round(px.w - Math.max(2, Math.round(2 * dpr))),
+    Math.round(px.h - Math.max(2, Math.round(2 * dpr)))
+  );
+  octx.restore();
+
+  const hasVersionBound = Boolean(String(state.motherIdle?.pendingVersionId || "").trim());
+  const timeoutCeilingMs = Math.max(
+    8_000,
+    Number(envelope?.timeoutCeilingMs) ||
+      Number(pending.timeoutCeilingMs) ||
+      motherDraftingTimeoutCeilingMs({ hasVersionBound })
+  );
+  const lowMs = Math.max(0, Number(envelope?.lowMs) || Math.round(timeoutCeilingMs * 0.22));
+  const highMs = Math.max(lowMs + 1_000, Number(envelope?.highMs) || Math.round(timeoutCeilingMs * 0.5));
+  const takingLongerThanUsual = Boolean(envelope?.takingLongerThanUsual) || elapsedMs > highMs;
+  const metrics = state.topMetrics || null;
+  const renderDurationsS = Array.isArray(metrics?.renderDurationsS) ? metrics.renderDurationsS : [];
+  const samplesMs = renderDurationsS
+    .map((v) => Number(v) * 1000)
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const recentLatencyS = Number(state.lastCostLatency?.latency_per_image_s);
+  const recentLatencyAt = Number(state.lastCostLatency?.at) || 0;
+  if (
+    Number.isFinite(recentLatencyS) &&
+    recentLatencyS > 0 &&
+    recentLatencyAt > 0 &&
+    nowMs - recentLatencyAt <= 12 * 60 * 1000
+  ) {
+    samplesMs.push(recentLatencyS * 1000);
+  }
+  const sortedSamples = samplesMs.slice().sort((a, b) => a - b);
+  const historicalMaxMs = sortedSamples.length
+    ? Math.max(1_000, Math.round(sortedSamples[sortedSamples.length - 1]))
+    : Math.max(1_000, highMs);
+  const p50MsRaw = sortedSamples.length
+    ? motherDraftingQuantile(sortedSamples, 0.5)
+    : Math.round((lowMs + highMs) * 0.5);
+  const p95MsRaw = sortedSamples.length >= 2
+    ? motherDraftingQuantile(sortedSamples, 0.95)
+    : highMs;
+  const p50Ms = clamp(Math.round(Number(p50MsRaw) || 0), 1_000, historicalMaxMs);
+  const p95Ms = clamp(Math.round(Number(p95MsRaw) || 0), p50Ms, historicalMaxMs);
+
+  const dialDurationMs = Math.max(1_000, historicalMaxMs);
+  const progressRatioRaw = elapsedMs / dialDurationMs;
+  const progressRatio = clamp(progressRatioRaw, 0, 1);
+  const p50Ratio = clamp(p50Ms / dialDurationMs, 0, 1);
+  const p95Ratio = clamp(p95Ms / dialDurationMs, p50Ratio, 1);
+
+  const dialInset = Math.max(6, Math.round(10 * dpr));
+  const dialMinR = Math.max(6, Math.round(7 * dpr));
+  const dialRByRect = Math.max(dialMinR, Math.round(Math.min(px.w, px.h) * 0.075));
+  const dialRByCanvas = Math.max(dialMinR, Math.round(Math.min(Number(canvasW) || 0, Number(canvasH) || 0) * 0.06));
+  const dialR = clamp(dialRByRect, dialMinR, dialRByCanvas);
+  const ringTrackW = Math.max(3, Math.round(4.2 * dpr));
+  const ringBandW = Math.max(4, Math.round(5.4 * dpr));
+  const ringProgressW = Math.max(4, Math.round(5.1 * dpr));
+  const dialEdgePad = Math.max(2, Math.round(Math.max(ringTrackW, ringBandW, ringProgressW) * 0.5));
+  let dialCx = Math.round(px.x + px.w - dialInset - dialR);
+  let dialCy = Math.round(px.y + dialInset + dialR);
+  dialCx = clamp(dialCx, Math.round(px.x + dialR + dialEdgePad), Math.round(px.x + px.w - dialR - dialEdgePad));
+  dialCy = clamp(dialCy, Math.round(px.y + dialR + dialEdgePad), Math.round(px.y + px.h - dialR - dialEdgePad));
+  const ringStart = -Math.PI * 0.5;
+  const ringSweep = Math.PI * 2;
+  const p50Angle = ringStart + ringSweep * p50Ratio;
+  const p95Angle = ringStart + ringSweep * p95Ratio;
+  const progressAngle = ringStart + ringSweep * progressRatio;
+  let bandStart = p50Angle;
+  let bandEnd = p95Angle;
+  if (bandEnd - bandStart < 0.04) {
+    const half = 0.02;
+    bandStart = p50Angle - half;
+    bandEnd = p50Angle + half;
+  }
+  const progressDotX = dialCx + Math.cos(progressAngle) * dialR;
+  const progressDotY = dialCy + Math.sin(progressAngle) * dialR;
+
+  octx.save();
+  octx.lineCap = "round";
+  octx.lineJoin = "round";
+  octx.lineWidth = ringTrackW;
+  octx.strokeStyle = "rgba(152, 160, 176, 0.34)";
+  octx.beginPath();
+  octx.arc(dialCx, dialCy, dialR, ringStart, ringStart + ringSweep);
+  octx.stroke();
+
+  octx.lineWidth = ringBandW;
+  octx.strokeStyle = takingLongerThanUsual
+    ? `rgba(255, 202, 146, ${(0.58 + pulse * 0.16).toFixed(3)})`
+    : `rgba(218, 230, 255, ${(0.58 + pulse * 0.14).toFixed(3)})`;
+  octx.beginPath();
+  octx.arc(dialCx, dialCy, dialR, bandStart, bandEnd);
+  octx.stroke();
+
+  octx.lineWidth = ringProgressW;
+  octx.strokeStyle = takingLongerThanUsual
+    ? `rgba(255, 166, 92, ${(0.76 + pulse * 0.16).toFixed(3)})`
+    : `rgba(120, 210, 255, ${(0.76 + pulse * 0.14).toFixed(3)})`;
+  octx.beginPath();
+  octx.arc(dialCx, dialCy, dialR, ringStart, progressAngle);
+  octx.stroke();
+
+  const p50DotX = dialCx + Math.cos(p50Angle) * dialR;
+  const p50DotY = dialCy + Math.sin(p50Angle) * dialR;
+  const p95DotX = dialCx + Math.cos(p95Angle) * dialR;
+  const p95DotY = dialCy + Math.sin(p95Angle) * dialR;
+  const endpointR = Math.max(1, Math.round(1.8 * dpr));
+  octx.fillStyle = takingLongerThanUsual ? "rgba(255, 220, 190, 0.9)" : "rgba(236, 244, 255, 0.86)";
+  octx.beginPath();
+  octx.arc(p50DotX, p50DotY, endpointR, 0, Math.PI * 2);
+  octx.arc(p95DotX, p95DotY, endpointR, 0, Math.PI * 2);
+  octx.fill();
+
+  octx.beginPath();
+  octx.arc(progressDotX, progressDotY, Math.max(2, Math.round(2.9 * dpr)), 0, Math.PI * 2);
+  octx.fillStyle = takingLongerThanUsual
+    ? "rgba(255, 184, 116, 0.98)"
+    : "rgba(126, 218, 255, 0.98)";
+  octx.fill();
+
+  if (takingLongerThanUsual && elapsedMs > dialDurationMs) {
+    const hotR = Math.max(4, Math.round((5 + pulse * 2.4) * dpr));
+    octx.beginPath();
+    octx.arc(progressDotX, progressDotY, hotR, 0, Math.PI * 2);
+    octx.strokeStyle = `rgba(255, 188, 126, ${(0.38 + pulse * 0.22).toFixed(3)})`;
+    octx.lineWidth = Math.max(1, Math.round(1.1 * dpr));
+    octx.stroke();
+  }
+  octx.restore();
+
+  requestRender();
+}
+
 function renderPromptGeneratePlaceholder(octx, canvasW, canvasH) {
   const pending = state.pendingPromptGenerate;
   if (!pending || !octx) return;
@@ -33608,6 +46634,7 @@ function render() {
 
   wctx.clearRect(0, 0, work.width, work.height);
   octx.clearRect(0, 0, overlay.width, overlay.height);
+  state.motherOverlayUiHits = [];
   state.activeImageTransformUiHits = [];
 
   const item = getActiveImage();
@@ -33639,7 +46666,8 @@ function render() {
 
       // Keep single-view active selection clearly visible, matching multi-view behavior.
       const dpr = getDpr();
-      const palette = selectionChromePalette();
+      const motherGenerated = isMotherGeneratedImageItem(item);
+      const palette = selectionChromePalette({ motherGenerated });
       const outerStroke = palette.outerStroke;
       const mainStroke = palette.mainStroke;
       const mainShadow = palette.mainShadow;
@@ -33816,8 +46844,10 @@ function render() {
   renderCommunicationOverlay(octx);
   renderScreenshotPolishCompareOverlay(octx, work.width, work.height);
   renderIntentOverlay(octx, work.width, work.height);
+  renderMotherDraftingPlaceholder(octx, work.width, work.height);
   renderPromptGeneratePlaceholder(octx, work.width, work.height);
   renderReelTouchIndicator(octx, work.width, work.height);
+  renderMotherRolePreview();
   finishPendingTabSwitchFullRender({
     stale: String(state.activeTabId || "").trim() !== String(pendingTabSwitchFullRenderSample?.tabId || "").trim(),
   });
@@ -33878,6 +46908,26 @@ function installCanvasHandlers() {
     requestRender();
   };
 
+  if (els.motherRolePreview && els.motherRolePreview.dataset.liveTetherHoverBound !== "1") {
+    els.motherRolePreview.dataset.liveTetherHoverBound = "1";
+    els.motherRolePreview.addEventListener("pointermove", (event) => {
+      const imageId = motherRolePreviewImageIdFromEvent(event);
+      setMotherRolePreviewHoverImageId(imageId, { requestFrame: true });
+    });
+    els.motherRolePreview.addEventListener("pointerleave", () => {
+      setMotherRolePreviewHoverImageId("", { requestFrame: true });
+    });
+    els.motherRolePreview.addEventListener("pointerdown", (event) => {
+      if (Number(event?.button) !== 0) return;
+      const imageId = motherRolePreviewImageIdFromEvent(event);
+      if (!imageId) return;
+      bumpInteraction({ semantic: false });
+      setMotherRolePreviewHoverImageId(imageId, { requestFrame: false });
+      selectCanvasImage(imageId, { toggle: false }).catch(() => {});
+      requestRender();
+    });
+  }
+
   const handleOverlayKeyDown = (event) => {
     const key = String(event?.key || "");
     if (key !== "Enter" && key !== " ") return;
@@ -33913,6 +46963,7 @@ function installCanvasHandlers() {
 
   const handleContextMenu = (event) => {
     bumpInteraction();
+    closeMotherWheelMenu({ immediate: false });
     if (!getActiveImage()) return;
     event.preventDefault();
 
@@ -33930,6 +46981,7 @@ function installCanvasHandlers() {
   };
 
   const handlePointerDown = (event) => {
+					    closeMotherWheelMenu({ immediate: false });
         state.pointer.wheelOnTap = false;
         state.pointer.semanticInteractionEmitted = false;
 		    if (state.canvasMode === "multi") {
@@ -33948,6 +47000,44 @@ function installCanvasHandlers() {
           rememberPromptGenerateHoverCss(pCss);
           const intentActive = intentModeActive();
           const wheelModifier = Boolean(event.metaKey || event.ctrlKey);
+          const motherOverlayHit = hitTestMotherOverlayUi(p);
+          if (motherOverlayHit && event.button === 0) {
+            bumpInteraction({ semantic: false });
+            if (motherToggleOverlayDetails(motherOverlayHit)) {
+              requestRender();
+              return;
+            }
+          }
+          if (event.button === 0 && (state.motherIdle?.offerDetailsOpen || state.motherResultDetailsOpenId)) {
+            motherCloseOverlayDetails();
+          }
+          const motherRoleHit = motherV2InInteractivePhase() && motherV2IsAdvancedVisible() ? hitTestMotherRoleGlyph(p) : null;
+
+          if (motherRoleHit && event.button === 0) {
+            bumpInteraction({ semantic: false });
+            els.overlayCanvas.setPointerCapture(event.pointerId);
+            state.pointer.active = true;
+            state.pointer.kind = POINTER_KINDS.MOTHER_ROLE_DRAG;
+            state.pointer.imageId = String(motherRoleHit.imageId || "");
+            state.pointer.role = String(motherRoleHit.role || "");
+            state.pointer.startX = p.x;
+            state.pointer.startY = p.y;
+            state.pointer.lastX = p.x;
+            state.pointer.lastY = p.y;
+            state.pointer.startCssX = pCss.x;
+            state.pointer.startCssY = pCss.y;
+            state.pointer.moved = false;
+            if (state.motherIdle) {
+              state.motherIdle.roleGlyphDrag = {
+                role: String(motherRoleHit.role || ""),
+                imageId: String(motherRoleHit.imageId || ""),
+                moved: false,
+                targetImageId: String(motherRoleHit.imageId || ""),
+              };
+            }
+            requestRender();
+            return;
+          }
           const effectTokenHit = hitTestEffectToken(p);
           if (effectTokenHit && event.button === 0) {
             const token = state.effectTokensById.get(String(effectTokenHit.tokenId || "").trim()) || null;
@@ -33985,6 +47075,28 @@ function installCanvasHandlers() {
               requestRender();
               return;
             }
+          }
+          const draftingPreviewHit = state.tool === "pan"
+            ? hitTestMotherDraftingPreviewRect(p, { padPx: Math.round(8 * getDpr()) })
+            : null;
+          if (draftingPreviewHit && event.button === 0) {
+            bumpInteraction({ semantic: false });
+            els.overlayCanvas.setPointerCapture(event.pointerId);
+            state.pointer.active = true;
+            state.pointer.kind = POINTER_KINDS.MOTHER_DRAFT_PREVIEW_DRAG;
+            state.pointer.imageId = null;
+            state.pointer.corner = null;
+            state.pointer.startX = p.x;
+            state.pointer.startY = p.y;
+            state.pointer.lastX = p.x;
+            state.pointer.lastY = p.y;
+            state.pointer.startCssX = pCss.x;
+            state.pointer.startCssY = pCss.y;
+            state.pointer.startRectCss = draftingPreviewHit.rectCss ? { ...draftingPreviewHit.rectCss } : null;
+            state.pointer.wheelOnTap = false;
+            state.pointer.moved = false;
+            requestRender();
+            return;
           }
           if (handleCommunicationCanvasPointerDown(event, p, pCss)) {
             return;
@@ -34346,6 +47458,13 @@ function installCanvasHandlers() {
       });
       requestRender();
     }
+    if (!state.pointer.active && state.motherIdle?.phase === MOTHER_IDLE_STATES.WAITING_FOR_USER) {
+      const now = Date.now();
+      if (now - (Number(state.lastInteractionAt) || 0) > 120) {
+        state.lastInteractionAt = now;
+      }
+    }
+
     if (!state.pointer.active) {
       const communicationTool = communicationToolId();
       const behaviorTool = communicationBehaviorToolId(communicationTool);
@@ -34362,6 +47481,16 @@ function installCanvasHandlers() {
           source: "communication_magic_select",
         });
       }
+      const motherOverlayHit = hitTestMotherOverlayUi(p);
+      if (motherOverlayHit) {
+        setOverlayCursor("pointer");
+        return;
+      }
+      const roleHit = motherV2InInteractivePhase() && motherV2IsAdvancedVisible() ? hitTestMotherRoleGlyph(p) : null;
+      if (roleHit) {
+        setOverlayCursor("pointer");
+        return;
+      }
       const effectTokenHit = hitTestEffectToken(p);
       if (effectTokenHit) {
         setOverlayCursor("grab");
@@ -34370,6 +47499,11 @@ function installCanvasHandlers() {
       const transformUiHit = hitTestActiveImageTransformUi(p);
       if (transformUiHit) {
         setOverlayCursor(String(transformUiHit.cursor || "pointer"));
+        return;
+      }
+      const draftingPreviewHit = hitTestMotherDraftingPreviewRect(p, { padPx: Math.round(8 * getDpr()) });
+      if (draftingPreviewHit) {
+        setOverlayCursor("grab");
         return;
       }
       if (communicationTool) {
@@ -34445,6 +47579,8 @@ function installCanvasHandlers() {
       setOverlayCursor("grabbing");
     } else if (state.pointer.kind === POINTER_KINDS.FREEFORM_SKEW) {
       setOverlayCursor("ew-resize");
+    } else if (state.pointer.kind === POINTER_KINDS.MOTHER_DRAFT_PREVIEW_DRAG) {
+      setOverlayCursor("grabbing");
     } else if (state.pointer.kind === POINTER_KINDS.EFFECT_TOKEN_DRAG) {
       setOverlayCursor("grabbing");
     } else if (state.pointer.kind === COMMUNICATION_POINTER_KINDS.MARKER) {
@@ -34462,6 +47598,19 @@ function installCanvasHandlers() {
 		    state.pointer.lastX = p.x;
 		    state.pointer.lastY = p.y;
 
+    if (state.pointer.kind === POINTER_KINDS.MOTHER_ROLE_DRAG) {
+      bumpInteraction({ semantic: false });
+	      const drag = state.motherIdle?.roleGlyphDrag || null;
+	      const dist = Math.hypot(dx, dy);
+	      if (dist > 4) state.pointer.moved = true;
+      if (drag) {
+        drag.moved = Boolean(state.pointer.moved);
+        const hit = hitTestMulti(p);
+        drag.targetImageId = hit ? String(hit) : "";
+      }
+	      requestRender();
+	      return;
+	    }
     if (state.pointer.kind === POINTER_KINDS.EFFECT_TOKEN_DRAG) {
       bumpInteraction({ semantic: false });
       const drag = state.effectTokenDrag;
@@ -34484,6 +47633,47 @@ function installCanvasHandlers() {
           });
         }
       }
+      requestRender();
+      return;
+    }
+    if (state.pointer.kind === POINTER_KINDS.MOTHER_DRAFT_PREVIEW_DRAG) {
+      bumpInteraction({ semantic: false });
+      const idle = state.motherIdle;
+      const pending = state.pendingMotherDraft;
+      if (!idle || !pending || idle.phase !== MOTHER_IDLE_STATES.DRAFTING) return;
+      const startRect = state.pointer.startRectCss || motherDraftingResolvePendingPreviewRectCss(pending) || null;
+      if (!startRect) return;
+      const wrap = els.canvasWrap;
+      const canvasCssW = Number(wrap?.clientWidth) || 0;
+      const canvasCssH = Number(wrap?.clientHeight) || 0;
+      const clampOpts = freeformWorkspaceClampOptions(canvasCssW, canvasCssH, { minSize: 44 });
+      const ms = state.multiView?.scale || 1;
+      const dxCss = (Number(pCss.x) || 0) - state.pointer.startCssX;
+      const dyCss = (Number(pCss.y) || 0) - state.pointer.startCssY;
+      const dragDistCss = Math.hypot(dxCss, dyCss);
+      if (!state.pointer.moved && dragDistCss <= MOTHER_SELECTION_SEMANTIC_DRAG_PX) return;
+      const dxWorld = dxCss / Math.max(ms, 0.0001);
+      const dyWorld = dyCss / Math.max(ms, 0.0001);
+      const nextRect = clampFreeformRectCss(
+        {
+          x: (Number(startRect.x) || 0) + dxWorld,
+          y: (Number(startRect.y) || 0) + dyWorld,
+          w: Math.max(1, Number(startRect.w) || 1),
+          h: Math.max(1, Number(startRect.h) || 1),
+          autoAspect: false,
+        },
+        canvasCssW,
+        canvasCssH,
+        clampOpts
+      );
+      pending.previewRectCss = {
+        x: Number(nextRect.x) || 0,
+        y: Number(nextRect.y) || 0,
+        w: Math.max(1, Number(nextRect.w) || 1),
+        h: Math.max(1, Number(nextRect.h) || 1),
+      };
+      idle.draftCommitRectCss = { ...pending.previewRectCss };
+      state.pointer.moved = true;
       requestRender();
       return;
     }
@@ -34530,9 +47720,10 @@ function installCanvasHandlers() {
         (Number(pCss.y) || 0) - state.pointer.startCssY
       );
       const hasSemanticDrag =
-        Boolean(state.pointer.moved) || dragDistCss > CANVAS_SEMANTIC_DRAG_PX;
+        Boolean(state.pointer.moved) || dragDistCss > MOTHER_SELECTION_SEMANTIC_DRAG_PX;
       const emitSemanticInteraction = hasSemanticDrag && !Boolean(state.pointer.semanticInteractionEmitted);
       bumpInteraction({
+        motherHot: false,
         semantic: emitSemanticInteraction,
         proposalLiveRefresh: emitSemanticInteraction,
       });
@@ -34559,7 +47750,7 @@ function installCanvasHandlers() {
       const dxCss = (Number(pCss.x) || 0) - state.pointer.startCssX;
       const dyCss = (Number(pCss.y) || 0) - state.pointer.startCssY;
       const dragDistCss = Math.hypot(dxCss, dyCss);
-      if (!state.pointer.moved && dragDistCss <= CANVAS_SEMANTIC_DRAG_PX) return;
+      if (!state.pointer.moved && dragDistCss <= MOTHER_SELECTION_SEMANTIC_DRAG_PX) return;
       const dxWorld = dxCss / Math.max(ms, 0.0001);
       const dyWorld = dyCss / Math.max(ms, 0.0001);
       const next = clampFreeformRectCss(
@@ -34597,7 +47788,7 @@ function installCanvasHandlers() {
       const dxCss = (Number(pCss.x) || 0) - state.pointer.startCssX;
       const dyCss = (Number(pCss.y) || 0) - state.pointer.startCssY;
       const dragDistCss = Math.hypot(dxCss, dyCss);
-      if (!state.pointer.moved && dragDistCss <= CANVAS_SEMANTIC_DRAG_PX) return;
+      if (!state.pointer.moved && dragDistCss <= MOTHER_SELECTION_SEMANTIC_DRAG_PX) return;
       const worldPointerCss = {
         x: ((Number(pCss.x) || 0) - mxCss) / Math.max(ms, 0.0001),
         y: ((Number(pCss.y) || 0) - myCss) / Math.max(ms, 0.0001),
@@ -34803,8 +47994,11 @@ function installCanvasHandlers() {
           }
           requestRender();
         }
+        // Arm Mother idle timers against the settled interaction state (pointer no longer active).
+        const motherRoleDrag = isMotherRolePath(kind);
         const effectTokenDrag = isEffectTokenPath(kind);
-        if (!effectTokenDrag) {
+        const motherDraftPreviewDrag = kind === POINTER_KINDS.MOTHER_DRAFT_PREVIEW_DRAG;
+        if (!motherRoleDrag && !effectTokenDrag && !motherDraftPreviewDrag) {
           const selectionOnly =
             (kind === POINTER_KINDS.FREEFORM_MOVE ||
               kind === POINTER_KINDS.FREEFORM_RESIZE ||
@@ -34890,8 +48084,63 @@ function installCanvasHandlers() {
 			        importPhotosAtCanvasPoint(worldPt).catch((err) => console.error(err));
 			      }
 			    }
+			    if (kind === POINTER_KINDS.FREEFORM_WHEEL) {
+			      if (!moved && importPt) {
+              const opened = openMotherWheelMenuAt(importPt);
+              if (opened) {
+                recordUserEvent("mother_wheel_open", {
+                  x: Math.round(Number(importPt.x) || 0),
+                  y: Math.round(Number(importPt.y) || 0),
+                });
+              }
+			      }
+			    }
+          if (kind === POINTER_KINDS.SINGLE_PAN && wheelOnTap) {
+            if (!moved && importPt) {
+              const opened = openMotherWheelMenuAt(importPt);
+              if (opened) {
+                recordUserEvent("mother_wheel_open", {
+                  x: Math.round(Number(importPt.x) || 0),
+                  y: Math.round(Number(importPt.y) || 0),
+                });
+              }
+            }
+          }
           if (moved && kind === POINTER_KINDS.SINGLE_PAN) {
             invalidateActiveTabPreview("viewport_pan");
+          }
+          if (isMotherRolePath(kind)) {
+            bumpInteraction({ semantic: false });
+            const idle = state.motherIdle;
+            const role = String(roleKey || idle?.roleGlyphDrag?.role || "").trim();
+            const fromImageId = String(imageId || idle?.roleGlyphDrag?.imageId || "").trim();
+            const dropHit = hitTestMulti(canvasPointFromEvent(event));
+            const toImageId = dropHit ? String(dropHit) : "";
+            if (role && MOTHER_V2_ROLE_KEYS.includes(role)) {
+              let nextIds = motherV2RoleIds(role);
+              // Drag to another image reassigns. Click/tap toggles off.
+              if ((moved && toImageId && toImageId !== fromImageId) || (!moved && toImageId && toImageId !== fromImageId)) {
+                nextIds = [toImageId];
+              } else {
+                nextIds = nextIds.filter((id) => id !== fromImageId);
+              }
+              motherV2SetRoleIds(role, nextIds);
+              if (idle?.intent && typeof idle.intent === "object") {
+                idle.intent.roles = motherV2RoleMapClone();
+              }
+              motherV2InvalidateOfferingForStructureEdit("glyph_edit");
+              appendMotherTraceLog({
+                kind: "glyph_edit",
+                traceId: idle?.telemetry?.traceId || null,
+                actionVersion: Number(idle?.actionVersion) || 0,
+                role,
+                from_image_id: fromImageId || null,
+                to_image_id: toImageId || null,
+              }).catch(() => {});
+            }
+            if (idle) idle.roleGlyphDrag = null;
+            renderMotherReadout();
+            requestRender();
           }
           if (isEffectTokenPath(kind)) {
             bumpInteraction({ semantic: false });
@@ -35133,7 +48382,7 @@ function installCanvasHandlers() {
   });
 
   const handleOverlayWheel = (event) => {
-      bumpInteraction({ semantic: false });
+      bumpInteraction({ motherHot: false, semantic: false });
       if (!state.images || state.images.length === 0) return;
 		      event.preventDefault();
 	
@@ -35236,7 +48485,7 @@ function installCanvasHandlers() {
     const onGestureStart = (event) => {
       if (!shouldHandleGesture(event)) return;
       if (!state.images || state.images.length === 0) return;
-      bumpInteraction({ semantic: false });
+      bumpInteraction({ motherHot: false, semantic: false });
       event.preventDefault();
       state.gestureZoom.active = true;
       const s = Number(event?.scale);
@@ -35246,7 +48495,7 @@ function installCanvasHandlers() {
       if (!state.gestureZoom?.active) return;
       if (!shouldHandleGesture(event)) return;
       if (!state.images || state.images.length === 0) return;
-      bumpInteraction({ semantic: false });
+      bumpInteraction({ motherHot: false, semantic: false });
       event.preventDefault();
 
       const scaleEvent = Number(event?.scale);
@@ -35280,7 +48529,7 @@ function installCanvasHandlers() {
     const onGestureEnd = (event) => {
       if (!state.gestureZoom?.active) return;
       if (!shouldHandleGesture(event)) return;
-      bumpInteraction({ semantic: false });
+      bumpInteraction({ motherHot: false, semantic: false });
       event.preventDefault();
       state.gestureZoom.active = false;
       state.gestureZoom.lastScale = 1;
@@ -35954,7 +49203,7 @@ function ensureRuntimeChromeMenu() {
       menuKey: "pin_assistant",
       label: "GUIDE",
       ariaLabel: "Keep guide chrome visible",
-      title: "Keep guide chrome visible even while idle.",
+      title: "Keep the Mother guide chrome visible even while idle.",
     });
     const debug = buildRuntimeChromeMenuToggle({
       id: "runtime-diagnostics-toggle",
@@ -36082,6 +49331,37 @@ function installUi() {
         retryHint: "Check permissions and try again.",
       });
     });
+  if (els.motherWheelMenu) {
+    els.motherWheelMenu.addEventListener("click", (event) => {
+      event?.stopPropagation?.();
+      const btn = event?.target?.closest ? event.target.closest("button[data-action]") : null;
+      if (!btn || !els.motherWheelMenu.contains(btn)) return;
+      bumpInteraction();
+      const action = String(btn.dataset?.action || "").trim();
+      if (!action) return;
+      dispatchMotherWheelAction(action).catch((err) => {
+        console.error(err);
+        showToast(err?.message || "Mother wheel action failed.", "error", 2400);
+      });
+    });
+
+    window.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (!isMotherWheelOpen()) return;
+        const target = event?.target;
+        if (target && els.motherWheelMenu.contains(target)) return;
+        closeMotherWheelMenu({ immediate: false });
+      },
+      { capture: true }
+    );
+
+    window.addEventListener("keydown", (event) => {
+      if (!isMotherWheelOpen()) return;
+      const key = String(event?.key || "");
+      if (key === "Escape") closeMotherWheelMenu({ immediate: false });
+    });
+  }
   if (els.openRun)
     els.openRun.addEventListener("click", () => {
       bumpInteraction();
@@ -36101,6 +49381,132 @@ function installUi() {
       bumpInteraction();
       openJuggernautExportMenu({ focusFirst: true });
     });
+
+  if (els.motherAbilityIcon) {
+    if (!els.motherAbilityIcon.textContent) {
+      els.motherAbilityIcon.textContent = "→";
+    }
+    els.motherAbilityIcon.addEventListener("click", () => {
+      // Cycling proposals should not invalidate intent hypothesis state.
+      bumpInteraction({ semantic: false });
+      const beforeMode = motherV2NormalizeTransformationMode(state.motherIdle?.intent?.transformation_mode);
+      const cycled = motherV2CycleProposal(1);
+      if (cycled) {
+        recordUserEvent("mother_next_proposal", {});
+        const idle = state.motherIdle;
+        appendMotherTraceLog({
+          kind: "proposal_next",
+          traceId: idle?.telemetry?.traceId || null,
+          actionVersion: Number(idle?.actionVersion) || 0,
+          optimization_target: motherCurrentOptimizationTarget(),
+          from_mode: beforeMode || null,
+          to_mode: motherV2NormalizeTransformationMode(idle?.intent?.transformation_mode),
+          proposal_candidates: motherV2ProposalCandidateSummary(idle?.intent || null, { limit: MOTHER_V2_MAX_RANKED_PROPOSALS }),
+        }).catch(() => {});
+      } else {
+        const phase = state.motherIdle?.phase || motherIdleInitialState();
+        if (phase !== MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING) {
+          showToast("Next proposal appears during intent hypothesis.", "tip", 1800);
+        } else {
+          showToast("No additional proposals available.", "tip", 1600);
+        }
+        return;
+      }
+    });
+  }
+  if (els.motherConfirm) {
+    els.motherConfirm.addEventListener("click", () => {
+      startMotherTakeover().catch(() => {});
+    });
+  }
+  if (els.motherStop) {
+    els.motherStop.addEventListener("click", () => {
+      stopMotherTakeover();
+    });
+  }
+  if (els.motherMoodToggle) {
+    els.motherMoodToggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setMotherMoodMenuOpen(!motherMoodMenuIsOpen());
+    });
+  }
+  if (els.motherMoodMenu) {
+    els.motherMoodMenu.addEventListener("click", (event) => {
+      const btn = event?.target?.closest ? event.target.closest("button[data-mood]") : null;
+      if (!btn || !els.motherMoodMenu.contains(btn)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setMotherMood(btn.dataset?.mood || "");
+      setMotherMoodMenuOpen(false);
+      requestRender();
+    });
+  }
+  if (els.motherPanel) {
+    els.motherPanel.addEventListener("pointerenter", () => {
+      motherV2RevealHints({ engaged: false, ms: 1700 });
+    });
+    els.motherPanel.addEventListener("pointerleave", () => {
+      if (!state.motherIdle?.advancedOpen && !state.motherIdle?.optionReveal) {
+        motherV2HideHints();
+      }
+    });
+    els.motherPanel.addEventListener("focusin", () => {
+      motherV2RevealHints({ engaged: true, ms: 2100 });
+    });
+    els.motherPanel.addEventListener("focusout", () => {
+      if (!state.motherIdle?.advancedOpen && !state.motherIdle?.optionReveal) {
+        motherV2HideHints();
+      }
+    });
+  }
+  if (els.motherRefineToggle) {
+    els.motherRefineToggle.addEventListener("click", () => {
+      bumpInteraction();
+      motherV2SetAdvancedOpen(!Boolean(state.motherIdle?.advancedOpen));
+    });
+  }
+
+  const onAdvancedRoleChange = (roleKey, value) => {
+    const idle = state.motherIdle;
+    if (!idle || !MOTHER_V2_ROLE_KEYS.includes(roleKey)) return;
+    const imageId = String(value || "").trim();
+    const nextIds = imageId && state.imagesById.has(imageId) ? [imageId] : [];
+    motherV2SetRoleIds(roleKey, nextIds);
+    if (idle.intent && typeof idle.intent === "object") {
+      idle.intent.roles = motherV2RoleMapClone();
+    }
+    motherV2InvalidateOfferingForStructureEdit("advanced_role_edit");
+    motherV2RevealHints({ engaged: true, ms: 1800 });
+    renderMotherReadout();
+    requestRender();
+  };
+
+  if (els.motherRoleSubject) {
+    els.motherRoleSubject.addEventListener("change", () => onAdvancedRoleChange("subject", els.motherRoleSubject.value));
+  }
+  if (els.motherRoleModel) {
+    els.motherRoleModel.addEventListener("change", () => onAdvancedRoleChange("model", els.motherRoleModel.value));
+  }
+  if (els.motherRoleMediator) {
+    els.motherRoleMediator.addEventListener("change", () => onAdvancedRoleChange("mediator", els.motherRoleMediator.value));
+  }
+  if (els.motherRoleObject) {
+    els.motherRoleObject.addEventListener("change", () => onAdvancedRoleChange("object", els.motherRoleObject.value));
+  }
+  if (els.motherTransformationMode) {
+    els.motherTransformationMode.addEventListener("change", () => {
+      const idle = state.motherIdle;
+      if (!idle || !idle.intent || typeof idle.intent !== "object") return;
+      const mode = motherV2NormalizeTransformationMode(els.motherTransformationMode.value);
+      idle.intent.transformation_mode = mode;
+      idle.intent.summary = motherV2ProposalSentence(idle.intent);
+      motherV2InvalidateOfferingForStructureEdit("advanced_mode_edit");
+      motherV2RevealHints({ engaged: true, ms: 1800 });
+      renderMotherReadout();
+      requestRender();
+    });
+  }
   window.addEventListener("keydown", (event) => {
     if (String(event?.key || "") !== "Alt") return;
     if (event.metaKey || event.ctrlKey) return;
@@ -36120,8 +49526,48 @@ function installUi() {
     if (String(event?.key || "") !== "Alt") return;
     wheelForcePanHeld = false;
   });
+  window.addEventListener("keydown", (event) => {
+    const key = String(event?.key || "").toLowerCase();
+    if (key !== MOTHER_OPTION_REVEAL_HOLD_KEY) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const target = event?.target;
+    const tag = target?.tagName ? String(target.tagName).toLowerCase() : "";
+    const isEditable = Boolean(
+      target &&
+        (target.isContentEditable ||
+          tag === "input" ||
+          tag === "textarea" ||
+          tag === "select")
+    );
+    if (isEditable) return;
+    const idle = state.motherIdle;
+    if (!idle) return;
+    if (idle.optionReveal) return;
+    idle.optionReveal = true;
+    motherV2RevealHints({ engaged: true, ms: 1800 });
+    renderMotherReadout();
+    requestRender();
+  });
+  window.addEventListener("keyup", (event) => {
+    const key = String(event?.key || "").toLowerCase();
+    if (key !== MOTHER_OPTION_REVEAL_HOLD_KEY) return;
+    const idle = state.motherIdle;
+    if (!idle) return;
+    idle.optionReveal = false;
+    if (!idle.advancedOpen) {
+      motherV2HideHints({ immediate: true });
+    }
+    renderMotherReadout();
+    requestRender();
+  });
   window.addEventListener("blur", () => {
     wheelForcePanHeld = false;
+    const idle = state.motherIdle;
+    if (!idle) return;
+    idle.optionReveal = false;
+    if (!idle.advancedOpen) {
+      motherV2HideHints({ immediate: true });
+    }
   });
 
   if (els.settingsToggle && els.settingsDrawer) {
@@ -36950,6 +50396,13 @@ function installUi() {
     hideAgentRunnerPanel();
   });
 
+  document.addEventListener("pointerdown", (event) => {
+    if (!motherMoodMenuIsOpen()) return;
+    const hit = event?.target?.closest ? event.target.closest("#canvas-mood-status") : null;
+    if (hit) return;
+    setMotherMoodMenuOpen(false);
+  });
+
   if (els.filmstrip) {
     els.filmstrip.addEventListener("click", (event) => {
       const thumb = event?.target?.closest ? event.target.closest(".thumb") : null;
@@ -36964,6 +50417,10 @@ function installUi() {
   document.addEventListener("keydown", (event) => {
     const rawKey = String(event?.key || "");
     const key = rawKey.toLowerCase();
+    if (key === "escape" && motherMoodMenuIsOpen()) {
+      setMotherMoodMenuOpen(false);
+      return;
+    }
     const target = event?.target;
     const tag = target?.tagName ? String(target.tagName).toLowerCase() : "";
     const isEditable = Boolean(
@@ -36976,8 +50433,17 @@ function installUi() {
     const hasModifier = Boolean(event?.metaKey || event?.ctrlKey || event?.altKey);
 
 		    if (key === "escape") {
+		      if (state.motherIdle?.offerDetailsOpen || state.motherResultDetailsOpenId) {
+		        motherCloseOverlayDetails();
+		        requestRender();
+		        return;
+		      }
 		      if (aestheticOnboardingState.open) {
 		        skipAestheticOnboarding();
+		        return;
+		      }
+		      if (isMotherWheelOpen()) {
+		        closeMotherWheelMenu({ immediate: false });
 		        return;
 		      }
 		      if (els.settingsDrawer && !els.settingsDrawer.classList.contains("hidden")) {
@@ -37057,6 +50523,68 @@ function installUi() {
         }
         renderHudReadout();
         requestRender();
+        return;
+      }
+
+      if (state.mother?.running) {
+        const motherBlockedShortcut =
+          key === "backspace" ||
+          key === "delete" ||
+          key === "l" ||
+          key === "v" ||
+          key === "b" ||
+          key === "r" ||
+          key === "m" ||
+          key === "f" ||
+          key === "x" ||
+          key === "j" ||
+          /^[1-9]$/.test(rawKey);
+        if (motherBlockedShortcut) {
+          showToast("Mother is running. Click Stop to regain control.", "tip", 2200);
+        }
+        return;
+      }
+
+      const motherPhase = state.motherIdle?.phase || motherIdleInitialState();
+      const motherUndoAvailable = motherV2CommitUndoAvailable();
+      if (key === "v") {
+        if (
+          motherPhase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING ||
+          motherPhase === MOTHER_IDLE_STATES.OFFERING
+        ) {
+          event.preventDefault();
+          startMotherTakeover().catch(() => {});
+          return;
+        }
+      }
+      if (key === "m") {
+        if (
+          motherUndoAvailable ||
+          motherPhase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING ||
+          motherPhase === MOTHER_IDLE_STATES.OFFERING ||
+          motherPhase === MOTHER_IDLE_STATES.DRAFTING
+        ) {
+          event.preventDefault();
+          stopMotherTakeover();
+          return;
+        }
+      }
+      if (key === "r" && motherPhase === MOTHER_IDLE_STATES.OFFERING) {
+        event.preventDefault();
+        const idle = state.motherIdle;
+        if (idle) {
+          for (const draft of Array.isArray(idle.drafts) ? idle.drafts : []) {
+            if (draft?.path) removeFile(String(draft.path)).catch(() => {});
+            if (draft?.receiptPath) removeFile(String(draft.receiptPath)).catch(() => {});
+          }
+          idle.drafts = [];
+          idle.selectedDraftId = null;
+          idle.hoverDraftId = null;
+          motherV2ForcePhase(MOTHER_IDLE_STATES.DRAFTING, "reroll");
+          motherIdleDispatchGeneration().catch((err) => {
+            motherIdleHandleGenerationFailed(err?.message || "Mother reroll failed.");
+          });
+        }
         return;
       }
 
@@ -37238,8 +50766,10 @@ async function boot() {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       stopLarvaAnimator();
+      stopMotherGlitchLoop();
     } else {
       ensureLarvaAnimator();
+      startMotherGlitchLoop();
     }
     if (effectsRuntime) {
       effectsRuntime.setSuspended(document.hidden || state.canvasMode !== "multi");
@@ -37258,9 +50788,12 @@ async function boot() {
   installUi();
   installJuggernautShellUi();
   renderCommunicationChrome();
+  renderMotherMoodStatus();
+  setMotherMoodMenuOpen(false);
   if (ENABLE_FILE_BROWSER_DOCK) {
     await initializeFileBrowserDock();
   }
+  startMotherGlitchLoop();
   startSpawnTimer();
 
   const handleEnginePtyExit = async () => {
