@@ -4,17 +4,17 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use crate::IntentIconsVisionInference;
+use crate::lib_impl::IntentIconsVisionInference;
 
 pub(crate) fn intent_icons_instruction(mother: bool) -> String {
-    crate::intent_icons_instruction(mother)
+    crate::lib_impl::intent_icons_instruction(mother)
 }
 
 pub(crate) fn normalize_intent_icons_payload(
     payload: Map<String, Value>,
     frame_id: &str,
 ) -> Map<String, Value> {
-    crate::normalize_intent_icons_payload(payload, frame_id)
+    crate::lib_impl::normalize_intent_icons_payload(payload, frame_id)
 }
 
 pub(crate) fn vision_infer_intent_icons_payload(
@@ -22,5 +22,5 @@ pub(crate) fn vision_infer_intent_icons_payload(
     mother: bool,
     model_hint: &str,
 ) -> Option<IntentIconsVisionInference> {
-    crate::vision_infer_intent_icons_payload(path, mother, model_hint)
+    crate::lib_impl::vision_infer_intent_icons_payload(path, mother, model_hint)
 }

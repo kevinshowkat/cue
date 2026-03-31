@@ -43,7 +43,8 @@ fn realtime_canvas_config_prefers_explicit_provider_and_normalizes_model() {
         gemini_api_key: true,
     };
 
-    let config = RealtimeSessionConfig::resolve(RealtimeSessionKind::CanvasContext, &env, credentials);
+    let config =
+        RealtimeSessionConfig::resolve(RealtimeSessionKind::CanvasContext, &env, credentials);
 
     assert_eq!(config.provider, RealtimeProvider::OpenAiRealtime);
     assert_eq!(config.model, "gpt-realtime");
@@ -80,8 +81,11 @@ fn realtime_default_provider_uses_available_credentials() {
         gemini_api_key: false,
     };
 
-    let config =
-        RealtimeSessionConfig::resolve(RealtimeSessionKind::IntentIcons { mother: false }, &env, credentials);
+    let config = RealtimeSessionConfig::resolve(
+        RealtimeSessionKind::IntentIcons { mother: false },
+        &env,
+        credentials,
+    );
 
     assert_eq!(config.provider, RealtimeProvider::GeminiFlash);
     assert_eq!(config.model, "gemini-3-flash-preview");

@@ -10,14 +10,13 @@ pub use config::{
 };
 pub use errors::{
     error_chain_message, is_anyhow_realtime_transport_error, is_reqwest_realtime_transport_error,
-    is_transport_io_error_kind, is_tungstenite_transport_error, RealtimeError,
-    RealtimeErrorKind,
+    is_transport_io_error_kind, is_tungstenite_transport_error, RealtimeError, RealtimeErrorKind,
 };
 pub use retry::RealtimeRetryPolicy;
 pub use sessions::{
     RealtimeCommand, RealtimeSessionDescriptor, RealtimeSessionKind, RealtimeSnapshotJob,
 };
 pub use transport::{
-    build_realtime_websocket_request, openai_realtime_ws_url,
-    OpenAiRealtimeWebSocketRequest, REALTIME_BETA_HEADER_VALUE,
+    build_realtime_websocket_request, openai_realtime_ws_url, OpenAiRealtimeWebSocketRequest,
+    REALTIME_BETA_HEADER_VALUE,
 };
