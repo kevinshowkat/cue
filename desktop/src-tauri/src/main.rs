@@ -2542,10 +2542,8 @@ fn magic_select_run_local_warm_click_impl(
         created_at: created_at.to_rfc3339(),
         warnings: warnings.clone(),
     };
-    let receipt_artifacts =
-        build_magic_select_warm_click_receipt_artifacts(&receipt_persistence);
-    if let Some(warning) =
-        schedule_magic_select_warm_click_receipt_persistence(receipt_persistence)
+    let receipt_artifacts = build_magic_select_warm_click_receipt_artifacts(&receipt_persistence);
+    if let Some(warning) = schedule_magic_select_warm_click_receipt_persistence(receipt_persistence)
     {
         warnings.push(warning);
     }
@@ -3885,44 +3883,90 @@ fn magic_select_worker_error_payload(
     )
 }
 
-fn magic_select_resolve_runtime_config() -> Result<MagicSelectRuntimeConfig, String> {
-    let python_bin = std::env::var("JUGGERNAUT_MAGIC_SELECT_PYTHON")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| MAGIC_SELECT_LOCAL_DEFAULT_PYTHON.to_string());
-
-    let helper_path = if let Ok(path) = std::env::var("JUGGERNAUT_MAGIC_SELECT_HELPER") {
-        let trimmed = path.trim();
-        if trimmed.is_empty() {
-            return Err(
-                "JUGGERNAUT_MAGIC_SELECT_HELPER is set but empty; point it at the local MobileSAM helper."
-                    .to_string(),
-            );
+fn magic_select_default_python_candidates(home_dir: Option<&Path>) -> Vec<String> {
+    let mut candidates = Vec::new();
+    if let Some(home) = home_dir {
+        for relative in [
+            ".venvs/cue-magic-select/bin/python",
+            ".venvs/juggernaut-magic-select/bin/python",
+        ] {
+            let candidate = home.join(relative);
+            if candidate.is_file() {
+                candidates.push(candidate.to_string_lossy().to_string());
+            }
         }
-        PathBuf::from(trimmed)
+    }
+    candidates.push(MAGIC_SELECT_LOCAL_DEFAULT_PYTHON.to_string());
+    candidates
+}
+
+fn magic_select_default_model_candidates(home_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(home) = home_dir {
+        for relative in [
+            "Models/Cue/mobile_sam.pt",
+            "Models/Juggernaut/mobile_sam.pt",
+        ] {
+            let candidate = home.join(relative);
+            if candidate.is_file() {
+                candidates.push(candidate);
+            }
+        }
+    }
+    candidates
+}
+
+fn magic_select_resolve_runtime_config_from(
+    vars: &HashMap<String, String>,
+    home_dir: Option<&Path>,
+    repo_root: Option<&Path>,
+) -> Result<MagicSelectRuntimeConfig, String> {
+    let python_bin = review_first_non_empty(
+        vars,
+        &["CUE_MAGIC_SELECT_PYTHON", "JUGGERNAUT_MAGIC_SELECT_PYTHON"],
+    )
+    .unwrap_or_else(|| {
+        magic_select_default_python_candidates(home_dir)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| MAGIC_SELECT_LOCAL_DEFAULT_PYTHON.to_string())
+    });
+
+    let helper_path = if let Some(path) = review_first_non_empty(
+        vars,
+        &["CUE_MAGIC_SELECT_HELPER", "JUGGERNAUT_MAGIC_SELECT_HELPER"],
+    ) {
+        PathBuf::from(path)
     } else {
-        let repo_root = find_repo_root_best_effort().ok_or_else(|| {
+        let repo_root = repo_root.ok_or_else(|| {
             "repo root not found while resolving the Magic Select helper".to_string()
         })?;
         repo_root.join(MAGIC_SELECT_LOCAL_DEFAULT_HELPER_SCRIPT)
     };
     if !helper_path.is_file() {
         return Err(format!(
-            "Local Magic Select helper not found at {}. Set JUGGERNAUT_MAGIC_SELECT_HELPER to the MobileSAM helper script.",
+            "Local Magic Select helper not found at {}. Set CUE_MAGIC_SELECT_HELPER or JUGGERNAUT_MAGIC_SELECT_HELPER to the MobileSAM helper script.",
             helper_path.to_string_lossy()
         ));
     }
 
-    let model_path = std::env::var("JUGGERNAUT_MAGIC_SELECT_MODEL_PATH")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .ok_or_else(|| {
-            "JUGGERNAUT_MAGIC_SELECT_MODEL_PATH is required for local Magic Select. Install MobileSAM weights locally and set that path."
-                .to_string()
-        })?;
+    let model_path = if let Some(path) = review_first_non_empty(
+        vars,
+        &[
+            "CUE_MAGIC_SELECT_MODEL_PATH",
+            "JUGGERNAUT_MAGIC_SELECT_MODEL_PATH",
+        ],
+    ) {
+        PathBuf::from(path)
+    } else {
+        magic_select_default_model_candidates(home_dir)
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                "Local Magic Select model weights were not found. Set CUE_MAGIC_SELECT_MODEL_PATH or JUGGERNAUT_MAGIC_SELECT_MODEL_PATH, or install mobile_sam.pt at ~/Models/Cue/mobile_sam.pt (preferred) or ~/Models/Juggernaut/mobile_sam.pt."
+                    .to_string()
+            })?
+    };
     if !model_path.is_file() {
         return Err(format!(
             "Local Magic Select model weights not found at {}.",
@@ -3930,17 +3974,23 @@ fn magic_select_resolve_runtime_config() -> Result<MagicSelectRuntimeConfig, Str
         ));
     }
 
-    let model_id = std::env::var("JUGGERNAUT_MAGIC_SELECT_MODEL_ID")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| MAGIC_SELECT_LOCAL_DEFAULT_MODEL_ID.to_string());
-    let model_revision = std::env::var("JUGGERNAUT_MAGIC_SELECT_MODEL_REVISION")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .map(Ok)
-        .unwrap_or_else(|| magic_select_default_model_revision(&model_path))?;
+    let model_id = review_first_non_empty(
+        vars,
+        &[
+            "CUE_MAGIC_SELECT_MODEL_ID",
+            "JUGGERNAUT_MAGIC_SELECT_MODEL_ID",
+        ],
+    )
+    .unwrap_or_else(|| MAGIC_SELECT_LOCAL_DEFAULT_MODEL_ID.to_string());
+    let model_revision = review_first_non_empty(
+        vars,
+        &[
+            "CUE_MAGIC_SELECT_MODEL_REVISION",
+            "JUGGERNAUT_MAGIC_SELECT_MODEL_REVISION",
+        ],
+    )
+    .map(Ok)
+    .unwrap_or_else(|| magic_select_default_model_revision(&model_path))?;
 
     Ok(MagicSelectRuntimeConfig {
         python_bin,
@@ -3950,6 +4000,15 @@ fn magic_select_resolve_runtime_config() -> Result<MagicSelectRuntimeConfig, Str
         model_revision,
         runtime_id: "tauri_mobile_sam_python_worker_cpu".to_string(),
     })
+}
+
+fn magic_select_resolve_runtime_config() -> Result<MagicSelectRuntimeConfig, String> {
+    let vars = collect_cue_env_snapshot();
+    magic_select_resolve_runtime_config_from(
+        &vars,
+        tauri::api::path::home_dir().as_deref(),
+        find_repo_root_best_effort().as_deref(),
+    )
 }
 
 fn magic_select_resolve_artifact_root(run_dir: Option<&str>) -> Result<PathBuf, String> {
@@ -8176,22 +8235,23 @@ mod tests {
         build_export_receipt_payload, encode_flattened_export, encode_flattened_psd_rgba,
         flatten_rgba_for_opaque_export, is_native_engine_placeholder,
         magic_select_prepare_worker_image, magic_select_read_mask_summary,
-        magic_select_release_worker_image, magic_select_run_worker_warm_click,
-        magic_select_sha256_file_cached, normalize_export_out_path, parse_export_format, sha256_file,
-        spawn_magic_select_warm_click_receipt_persistence,
-        push_native_path_candidate, resolve_existing_env_binary_path,
-        review_build_google_apply_parts, review_build_openai_planner_payload,
-        review_build_openai_planner_ws_event, review_choose_apply_aspect_ratio,
-        review_choose_apply_image_size, review_format_planner_http_error,
-        review_format_planner_http_error_for_transport, review_format_planner_remote_failure,
-        review_format_planner_transport_timeout, review_normalize_apply_model,
-        review_normalize_planner_model, review_resolve_apply_image_config,
-        review_should_fallback_openai_ws_error, run_design_review_apply_request,
-        EngineProgramCandidate, MagicSelectCandidateBounds, MagicSelectContourPoint,
-        MagicSelectPointPayload, MagicSelectPreparedImageState, MagicSelectRuntimeConfig,
-        MagicSelectWarmClickReceiptPersistence, MagicSelectWorkerSession,
-        NativeExportFormat, NormalizedMagicSelectSettings, ResolvedExportRunRequest,
-        ReviewPlannerRequestError, ScreenshotPolishExportPayload, DESIGN_REVIEW_APPLY_MODEL,
+        magic_select_release_worker_image, magic_select_resolve_runtime_config_from,
+        magic_select_run_worker_warm_click, magic_select_sha256_file_cached,
+        normalize_export_out_path, parse_export_format, push_native_path_candidate,
+        resolve_existing_env_binary_path, review_build_google_apply_parts,
+        review_build_openai_planner_payload, review_build_openai_planner_ws_event,
+        review_choose_apply_aspect_ratio, review_choose_apply_image_size,
+        review_format_planner_http_error, review_format_planner_http_error_for_transport,
+        review_format_planner_remote_failure, review_format_planner_transport_timeout,
+        review_normalize_apply_model, review_normalize_planner_model,
+        review_resolve_apply_image_config, review_should_fallback_openai_ws_error,
+        run_design_review_apply_request, sha256_file,
+        spawn_magic_select_warm_click_receipt_persistence, EngineProgramCandidate,
+        MagicSelectCandidateBounds, MagicSelectContourPoint, MagicSelectPointPayload,
+        MagicSelectPreparedImageState, MagicSelectRuntimeConfig,
+        MagicSelectWarmClickReceiptPersistence, MagicSelectWorkerSession, NativeExportFormat,
+        NormalizedMagicSelectSettings, ResolvedExportRunRequest, ReviewPlannerRequestError,
+        ScreenshotPolishExportPayload, DESIGN_REVIEW_APPLY_MODEL,
         DESIGN_REVIEW_OPENROUTER_PLANNER_MODEL, DESIGN_REVIEW_PLANNER_MODEL,
         MAGIC_SELECT_LOCAL_CONTRACT, MAGIC_SELECT_LOCAL_WARM_CLICK_ACTION,
         REVIEW_GOOGLE_GENERATE_CONTENT_TRANSPORT, REVIEW_OPENAI_RESPONSES_WS_COMPLETION_TIMEOUT,
@@ -8455,6 +8515,184 @@ mod tests {
         assert_ne!(first, third);
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn magic_select_runtime_config_auto_discovers_preferred_home_defaults() {
+        let home = temp_file_path("magic-select-home");
+        let repo_root = temp_file_path("magic-select-repo");
+        let python_path = home.join(".venvs/cue-magic-select/bin/python");
+        let model_path = home.join("Models/Cue/mobile_sam.pt");
+        let helper_path = repo_root.join("scripts/magic_select_mobile_sam.py");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&repo_root);
+        std::fs::create_dir_all(python_path.parent().expect("python parent should exist"))
+            .expect("create python parent");
+        std::fs::create_dir_all(model_path.parent().expect("model parent should exist"))
+            .expect("create model parent");
+        std::fs::create_dir_all(helper_path.parent().expect("helper parent should exist"))
+            .expect("create helper parent");
+        std::fs::write(&python_path, "#!/usr/bin/env python3\n").expect("write python stub");
+        std::fs::write(&model_path, b"cue-model-bytes").expect("write model");
+        std::fs::write(&helper_path, "#!/usr/bin/env python3\n").expect("write helper");
+
+        let vars = HashMap::new();
+        let runtime = magic_select_resolve_runtime_config_from(
+            &vars,
+            Some(home.as_path()),
+            Some(repo_root.as_path()),
+        )
+        .expect("resolve runtime config");
+
+        assert_eq!(runtime.python_bin, python_path.to_string_lossy());
+        assert_eq!(runtime.helper_path, helper_path);
+        assert_eq!(runtime.model_path, model_path);
+        assert_eq!(runtime.model_id, "mobile_sam_vit_t");
+        assert!(
+            runtime.model_revision.starts_with("sha256:"),
+            "expected sha256-derived revision, got {}",
+            runtime.model_revision
+        );
+
+        let _ = std::fs::remove_dir_all(home);
+        let _ = std::fs::remove_dir_all(repo_root);
+    }
+
+    #[test]
+    fn magic_select_runtime_config_falls_back_to_legacy_home_defaults() {
+        let home = temp_file_path("magic-select-legacy-home");
+        let repo_root = temp_file_path("magic-select-legacy-repo");
+        let python_path = home.join(".venvs/juggernaut-magic-select/bin/python");
+        let model_path = home.join("Models/Juggernaut/mobile_sam.pt");
+        let helper_path = repo_root.join("scripts/magic_select_mobile_sam.py");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&repo_root);
+        std::fs::create_dir_all(python_path.parent().expect("python parent should exist"))
+            .expect("create python parent");
+        std::fs::create_dir_all(model_path.parent().expect("model parent should exist"))
+            .expect("create model parent");
+        std::fs::create_dir_all(helper_path.parent().expect("helper parent should exist"))
+            .expect("create helper parent");
+        std::fs::write(&python_path, "#!/usr/bin/env python3\n").expect("write python stub");
+        std::fs::write(&model_path, b"legacy-model-bytes").expect("write model");
+        std::fs::write(&helper_path, "#!/usr/bin/env python3\n").expect("write helper");
+
+        let vars = HashMap::new();
+        let runtime = magic_select_resolve_runtime_config_from(
+            &vars,
+            Some(home.as_path()),
+            Some(repo_root.as_path()),
+        )
+        .expect("resolve runtime config");
+
+        assert_eq!(runtime.python_bin, python_path.to_string_lossy());
+        assert_eq!(runtime.model_path, model_path);
+
+        let _ = std::fs::remove_dir_all(home);
+        let _ = std::fs::remove_dir_all(repo_root);
+    }
+
+    #[test]
+    fn magic_select_runtime_config_prefers_cue_env_over_legacy_env_and_defaults() {
+        let home = temp_file_path("magic-select-env-home");
+        let repo_root = temp_file_path("magic-select-env-repo");
+        let env_python_path = temp_file_path("magic-select-env-python");
+        let env_model_path = temp_file_path("magic-select-env-model.pt");
+        let env_helper_path = temp_file_path("magic-select-env-helper.py");
+        let default_python_path = home.join(".venvs/juggernaut-magic-select/bin/python");
+        let default_model_path = home.join("Models/Juggernaut/mobile_sam.pt");
+        let repo_helper_path = repo_root.join("scripts/magic_select_mobile_sam.py");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&repo_root);
+        let _ = std::fs::remove_file(&env_python_path);
+        let _ = std::fs::remove_file(&env_model_path);
+        let _ = std::fs::remove_file(&env_helper_path);
+        std::fs::create_dir_all(
+            default_python_path
+                .parent()
+                .expect("python parent should exist"),
+        )
+        .expect("create default python parent");
+        std::fs::create_dir_all(
+            default_model_path
+                .parent()
+                .expect("model parent should exist"),
+        )
+        .expect("create default model parent");
+        std::fs::create_dir_all(
+            repo_helper_path
+                .parent()
+                .expect("helper parent should exist"),
+        )
+        .expect("create helper parent");
+        std::fs::write(&default_python_path, "#!/usr/bin/env python3\n")
+            .expect("write default python");
+        std::fs::write(&default_model_path, b"default-model-bytes").expect("write default model");
+        std::fs::write(&repo_helper_path, "#!/usr/bin/env python3\n").expect("write repo helper");
+        std::fs::write(&env_python_path, "#!/usr/bin/env python3\n").expect("write env python");
+        std::fs::write(&env_model_path, b"env-model-bytes").expect("write env model");
+        std::fs::write(&env_helper_path, "#!/usr/bin/env python3\n").expect("write env helper");
+
+        let vars = HashMap::from([
+            (
+                "JUGGERNAUT_MAGIC_SELECT_PYTHON".to_string(),
+                "/tmp/legacy-python".to_string(),
+            ),
+            (
+                "CUE_MAGIC_SELECT_PYTHON".to_string(),
+                env_python_path.to_string_lossy().to_string(),
+            ),
+            (
+                "JUGGERNAUT_MAGIC_SELECT_HELPER".to_string(),
+                "/tmp/legacy-helper.py".to_string(),
+            ),
+            (
+                "CUE_MAGIC_SELECT_HELPER".to_string(),
+                env_helper_path.to_string_lossy().to_string(),
+            ),
+            (
+                "JUGGERNAUT_MAGIC_SELECT_MODEL_PATH".to_string(),
+                "/tmp/legacy-model.pt".to_string(),
+            ),
+            (
+                "CUE_MAGIC_SELECT_MODEL_PATH".to_string(),
+                env_model_path.to_string_lossy().to_string(),
+            ),
+            (
+                "JUGGERNAUT_MAGIC_SELECT_MODEL_ID".to_string(),
+                "legacy_model".to_string(),
+            ),
+            (
+                "CUE_MAGIC_SELECT_MODEL_ID".to_string(),
+                "cue_model".to_string(),
+            ),
+            (
+                "JUGGERNAUT_MAGIC_SELECT_MODEL_REVISION".to_string(),
+                "legacy-revision".to_string(),
+            ),
+            (
+                "CUE_MAGIC_SELECT_MODEL_REVISION".to_string(),
+                "cue-revision".to_string(),
+            ),
+        ]);
+        let runtime = magic_select_resolve_runtime_config_from(
+            &vars,
+            Some(home.as_path()),
+            Some(repo_root.as_path()),
+        )
+        .expect("resolve runtime config");
+
+        assert_eq!(runtime.python_bin, env_python_path.to_string_lossy());
+        assert_eq!(runtime.helper_path, env_helper_path);
+        assert_eq!(runtime.model_path, env_model_path);
+        assert_eq!(runtime.model_id, "cue_model");
+        assert_eq!(runtime.model_revision, "cue-revision");
+
+        let _ = std::fs::remove_dir_all(home);
+        let _ = std::fs::remove_dir_all(repo_root);
+        let _ = std::fs::remove_file(env_python_path);
+        let _ = std::fs::remove_file(env_model_path);
+        let _ = std::fs::remove_file(env_helper_path);
     }
 
     #[cfg(target_family = "unix")]

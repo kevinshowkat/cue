@@ -1,0 +1,7763 @@
+use crate::{export, observe, planning, realtime};
+
+use std::collections::{HashMap, HashSet};
+use std::env;
+use std::fs;
+use std::hash::{Hash, Hasher};
+use std::io::{self, ErrorKind, Write};
+use std::net::TcpStream;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use anyhow::{bail, Context, Result};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
+use clap::{Parser, Subcommand};
+use cue_contracts::chat::{parse_intent, CHAT_HELP_COMMANDS};
+use cue_contracts::events::EventWriter;
+use cue_engine::NativeEngine;
+use image::imageops::FilterType;
+use reqwest::blocking::Client as HttpClient;
+use reqwest::header::CONTENT_TYPE;
+use serde_json::{json, Map, Value};
+use tungstenite::http::Request;
+use tungstenite::stream::MaybeTlsStream;
+use tungstenite::{connect as websocket_connect, Message as WsMessage, WebSocket};
+
+#[derive(Debug, Parser)]
+#[command(name = "cue-rs", version, about = "Cue Rust CLI scaffold")]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    Chat(ChatArgs),
+    Run(RunArgs),
+    Recreate(RecreateArgs),
+    Export(ExportArgs),
+}
+
+#[derive(Debug, Parser)]
+struct ChatArgs {
+    #[arg(long)]
+    out: PathBuf,
+    #[arg(long)]
+    events: Option<PathBuf>,
+    #[arg(long, default_value = "gpt-5.2")]
+    text_model: String,
+    #[arg(long)]
+    image_model: Option<String>,
+}
+
+#[derive(Debug, Parser)]
+struct RunArgs {
+    #[arg(long)]
+    prompt: String,
+    #[arg(long)]
+    out: PathBuf,
+    #[arg(long)]
+    events: Option<PathBuf>,
+    #[arg(long, default_value = "gpt-5.2")]
+    text_model: String,
+    #[arg(long)]
+    image_model: Option<String>,
+}
+
+#[derive(Debug, Parser)]
+struct RecreateArgs {
+    #[arg(long)]
+    reference: PathBuf,
+    #[arg(long)]
+    out: PathBuf,
+    #[arg(long)]
+    events: Option<PathBuf>,
+    #[arg(long, default_value = "gpt-5.2")]
+    text_model: String,
+    #[arg(long)]
+    image_model: Option<String>,
+}
+
+#[derive(Debug, Parser)]
+struct ExportArgs {
+    #[arg(long)]
+    run: PathBuf,
+    #[arg(long)]
+    out: PathBuf,
+}
+
+pub fn main_entry() -> i32 {
+    match run() {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("cue-rs error: {err:#}");
+            1
+        }
+    }
+}
+
+fn run() -> Result<i32> {
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Chat(args) => {
+            run_chat_native(args)?;
+            Ok(0)
+        }
+        Command::Run(args) => run_run_native(args),
+        Command::Recreate(args) => run_recreate_native(args),
+        Command::Export(args) => run_export_native(args),
+    }
+}
+
+fn run_chat_native(args: ChatArgs) -> Result<()> {
+    let run_out_dir = args.out.clone();
+    let events_path = args
+        .events
+        .clone()
+        .unwrap_or_else(|| args.out.join("events.jsonl"));
+    let mut engine = NativeEngine::new(
+        &args.out,
+        &events_path,
+        Some(args.text_model.clone()),
+        args.image_model.clone(),
+    )?;
+
+    let stdin = io::stdin();
+    let mut line = String::new();
+    let mut profile = "default".to_string();
+    let mut quality_preset = "quality".to_string();
+    let mut last_prompt: Option<String> = None;
+    let mut last_artifact_path: Option<String> = None;
+    let shared_events = engine.event_writer();
+    let mut canvas_context_rt: Option<CanvasContextRealtimeSession> = None;
+    let mut intent_rt: Option<IntentIconsRealtimeSession> = None;
+    let mut mother_intent_rt: Option<IntentIconsRealtimeSession> = None;
+    let canvas_rt_source = || canvas_context_realtime_provider().as_str().to_string();
+    let intent_rt_source = |mother: bool| intent_realtime_provider(mother).as_str().to_string();
+
+    println!("Cue chat started. Type /help for commands.");
+
+    loop {
+        print!("> ");
+        io::stdout().flush()?;
+
+        line.clear();
+        let read = match stdin.read_line(&mut line) {
+            Ok(read) => read,
+            Err(err) if err.kind() == ErrorKind::Interrupted => continue,
+            Err(err) => return Err(err.into()),
+        };
+        if read == 0 {
+            break;
+        }
+
+        let input = line.trim_end_matches(['\n', '\r']);
+        let intent = parse_intent(input);
+        if intent.action == "noop" {
+            continue;
+        }
+
+        match intent.action.as_str() {
+            "help" => {
+                println!("Commands: {}", CHAT_HELP_COMMANDS.join(" "));
+            }
+            "set_profile" => {
+                profile = value_as_non_empty_string(intent.command_args.get("profile"))
+                    .unwrap_or_else(|| "default".to_string());
+                println!("Profile set to {profile}");
+            }
+            "set_text_model" => {
+                let current = engine.text_model().unwrap_or("gpt-5.2").to_string();
+                let model =
+                    value_as_non_empty_string(intent.command_args.get("model")).unwrap_or(current);
+                engine.set_text_model(Some(model.clone()));
+                println!("Text model set to {model}");
+            }
+            "set_image_model" => {
+                let current = engine.image_model().unwrap_or("dryrun-image-1").to_string();
+                let model =
+                    value_as_non_empty_string(intent.command_args.get("model")).unwrap_or(current);
+                engine.set_image_model(Some(model.clone()));
+                println!("Image model set to {model}");
+            }
+            "set_active_image" => {
+                if let Some(path) = value_as_non_empty_string(intent.command_args.get("path")) {
+                    last_artifact_path = Some(path.clone());
+                    println!("Active image set to {path}");
+                } else {
+                    println!("/use requires a path");
+                }
+            }
+            "set_quality" => {
+                if let Some(preset) =
+                    value_as_non_empty_string(intent.settings_update.get("quality_preset"))
+                {
+                    quality_preset = preset;
+                }
+                println!("Quality preset: {quality_preset}");
+            }
+            "describe" => {
+                let requested_path = value_as_non_empty_string(intent.command_args.get("path"));
+                let path_text = requested_path.or_else(|| last_artifact_path.clone());
+                let Some(path_text) = path_text else {
+                    println!("/describe requires a path (or set an active image with /use)");
+                    continue;
+                };
+
+                let path = PathBuf::from(path_text);
+                if !path.exists() {
+                    println!("Describe failed: file not found ({})", path.display());
+                    continue;
+                }
+
+                let max_chars = observe::vision::REALTIME_DESCRIPTION_MAX_CHARS;
+                if let Some(inference) = observe::vision::vision_infer_description(&path, max_chars)
+                {
+                    engine.emit_event(
+                        "image_description",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "description": inference.description,
+                            "source": inference.source,
+                            "model": inference.model,
+                            "max_chars": max_chars,
+                            "input_tokens": inference
+                                .input_tokens
+                                .map(|value| Value::Number(value.into()))
+                                .unwrap_or(Value::Null),
+                            "output_tokens": inference
+                                .output_tokens
+                                .map(|value| Value::Number(value.into()))
+                                .unwrap_or(Value::Null),
+                        })),
+                    )?;
+                    let mut suffix = Vec::new();
+                    if !inference.source.trim().is_empty() {
+                        suffix.push(inference.source.trim().to_string());
+                    }
+                    if let Some(model) = inference.model.as_deref() {
+                        if !model.trim().is_empty() {
+                            suffix.push(model.trim().to_string());
+                        }
+                    }
+                    if suffix.is_empty() {
+                        println!("Description: {}", inference.description);
+                    } else {
+                        println!(
+                            "Description ({}): {}",
+                            suffix.join(", "),
+                            inference.description
+                        );
+                    }
+                } else {
+                    let description = describe_local_image(&path, max_chars);
+                    engine.emit_event(
+                        "image_description",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "description": description,
+                            "source": "native_fallback",
+                            "model": "local",
+                            "max_chars": max_chars,
+                            "input_tokens": Value::Null,
+                            "output_tokens": Value::Null,
+                        })),
+                    )?;
+                    println!("Description (native_fallback, local): {description}");
+                }
+            }
+            "canvas_context" => {
+                let requested_path = value_as_non_empty_string(intent.command_args.get("path"));
+                let path_text = requested_path.or_else(|| last_artifact_path.clone());
+                let Some(path_text) = path_text else {
+                    println!("/canvas_context requires a path (or set an active image with /use)");
+                    continue;
+                };
+                let path = PathBuf::from(path_text);
+                if !path.exists() {
+                    println!("Canvas context failed: file not found ({})", path.display());
+                    continue;
+                }
+                if let Some(inference) = observe::vision::vision_infer_canvas_context(&path, None) {
+                    engine.emit_event(
+                        "canvas_context",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "text": inference.text,
+                            "source": inference.source,
+                            "model": inference.model,
+                            "input_tokens": inference
+                                .input_tokens
+                                .map(|value| Value::Number(value.into()))
+                                .unwrap_or(Value::Null),
+                            "output_tokens": inference
+                                .output_tokens
+                                .map(|value| Value::Number(value.into()))
+                                .unwrap_or(Value::Null),
+                        })),
+                    )?;
+                    println!("{}", inference.text);
+                } else {
+                    let text = infer_canvas_context_text(&path);
+                    engine.emit_event(
+                        "canvas_context",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "text": text,
+                            "source": "native_heuristic",
+                            "model": "local",
+                            "input_tokens": Value::Null,
+                            "output_tokens": Value::Null,
+                        })),
+                    )?;
+                    println!("{text}");
+                }
+            }
+            "intent_infer" => {
+                let raw_path = value_as_non_empty_string(intent.command_args.get("path"));
+                let Some(path_text) = raw_path else {
+                    let msg = "/intent_infer requires a JSON payload path";
+                    engine.emit_event(
+                        "mother_intent_infer_failed",
+                        json_object(json!({
+                            "error": msg,
+                            "payload_path": Value::Null,
+                        })),
+                    )?;
+                    println!("{msg}");
+                    continue;
+                };
+
+                let payload_path = PathBuf::from(path_text);
+                if !payload_path.exists() {
+                    let msg = format!(
+                        "Intent infer failed: file not found ({})",
+                        payload_path.display()
+                    );
+                    engine.emit_event(
+                        "mother_intent_infer_failed",
+                        json_object(json!({
+                            "error": msg,
+                            "payload_path": payload_path.to_string_lossy().to_string(),
+                        })),
+                    )?;
+                    println!("{msg}");
+                    continue;
+                }
+
+                let payload = match read_json_object(&payload_path) {
+                    Some(payload) => payload,
+                    None => {
+                        let msg = format!(
+                            "Intent infer failed: invalid JSON ({})",
+                            payload_path.display()
+                        );
+                        engine.emit_event(
+                            "mother_intent_infer_failed",
+                            json_object(json!({
+                                "error": msg,
+                                "payload_path": payload_path.to_string_lossy().to_string(),
+                            })),
+                        )?;
+                        println!("{msg}");
+                        continue;
+                    }
+                };
+
+                let (intent_payload, source, model) =
+                    infer_structured_intent_payload_provider_first(
+                        &payload,
+                        engine.text_model(),
+                        "cue_intent_infer",
+                    );
+                let action_version = payload
+                    .get("action_version")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0);
+                engine.emit_event(
+                    "mother_intent_inferred",
+                    json_object(json!({
+                        "payload_path": payload_path.to_string_lossy().to_string(),
+                        "action_version": action_version,
+                        "intent": intent_payload,
+                        "source": source,
+                        "model": model,
+                    })),
+                )?;
+                println!("{}", serde_json::to_string(&intent_payload)?);
+            }
+            "prompt_compile" => {
+                let raw_path = value_as_non_empty_string(intent.command_args.get("path"));
+                let Some(path_text) = raw_path else {
+                    let msg = "/prompt_compile requires a JSON payload path";
+                    engine.emit_event(
+                        "mother_prompt_compile_failed",
+                        json_object(json!({
+                            "error": msg,
+                            "payload_path": Value::Null,
+                        })),
+                    )?;
+                    println!("{msg}");
+                    continue;
+                };
+
+                let payload_path = PathBuf::from(path_text);
+                if !payload_path.exists() {
+                    let msg = format!(
+                        "Prompt compile failed: file not found ({})",
+                        payload_path.display()
+                    );
+                    engine.emit_event(
+                        "mother_prompt_compile_failed",
+                        json_object(json!({
+                            "error": msg,
+                            "payload_path": payload_path.to_string_lossy().to_string(),
+                        })),
+                    )?;
+                    println!("{msg}");
+                    continue;
+                }
+
+                let payload = match read_json_object(&payload_path) {
+                    Some(payload) => payload,
+                    None => {
+                        let msg = format!(
+                            "Prompt compile failed: invalid JSON ({})",
+                            payload_path.display()
+                        );
+                        engine.emit_event(
+                            "mother_prompt_compile_failed",
+                            json_object(json!({
+                                "error": msg,
+                                "payload_path": payload_path.to_string_lossy().to_string(),
+                            })),
+                        )?;
+                        println!("{msg}");
+                        continue;
+                    }
+                };
+
+                let (compiled, source, model) = compile_mother_prompt_payload_provider_first(
+                    &payload,
+                    engine.text_model(),
+                    "cue_prompt_compile",
+                );
+                let action_version = payload
+                    .get("action_version")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0);
+                engine.emit_event(
+                    "mother_prompt_compiled",
+                    json_object(json!({
+                        "payload_path": payload_path.to_string_lossy().to_string(),
+                        "action_version": action_version,
+                        "compiled": compiled,
+                        "source": source,
+                        "model": model,
+                    })),
+                )?;
+                if let Some(positive) = compiled
+                    .get("positive_prompt")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    println!("{positive}");
+                }
+            }
+            "mother_generate" => {
+                let raw_path = value_as_non_empty_string(intent.command_args.get("path"));
+                let image_model = engine.image_model().unwrap_or("auto").to_string();
+                let Some(path_text) = raw_path else {
+                    let msg = "/mother_generate requires a JSON payload path";
+                    engine.emit_event(
+                        "generation_failed",
+                        json_object(json!({
+                            "version_id": Value::Null,
+                            "provider": "mother",
+                            "model": image_model,
+                            "error": msg,
+                        })),
+                    )?;
+                    println!("{msg}");
+                    continue;
+                };
+
+                let payload_path = PathBuf::from(path_text);
+                if !payload_path.exists() {
+                    let msg = format!(
+                        "Mother generate failed: file not found ({})",
+                        payload_path.display()
+                    );
+                    engine.emit_event(
+                        "generation_failed",
+                        json_object(json!({
+                            "version_id": Value::Null,
+                            "provider": "mother",
+                            "model": image_model,
+                            "error": msg,
+                        })),
+                    )?;
+                    println!("{msg}");
+                    continue;
+                }
+
+                let payload = match read_json_object(&payload_path) {
+                    Some(payload) => payload,
+                    None => {
+                        let msg = format!(
+                            "Mother generate failed: invalid JSON ({})",
+                            payload_path.display()
+                        );
+                        engine.emit_event(
+                            "generation_failed",
+                            json_object(json!({
+                                "version_id": Value::Null,
+                                "provider": "mother",
+                                "model": image_model,
+                                "error": msg,
+                            })),
+                        )?;
+                        println!("{msg}");
+                        continue;
+                    }
+                };
+
+                let provider_hint =
+                    provider_from_model_name(engine.image_model().unwrap_or("dryrun-image-1"));
+                let request = match planning::mother_generate_request_from_payload(
+                    &payload,
+                    &quality_preset,
+                    provider_hint.as_deref(),
+                ) {
+                    Ok(request) => request,
+                    Err(err) => {
+                        let msg = format!("Mother generate failed: {err}");
+                        engine.emit_event(
+                            "generation_failed",
+                            json_object(json!({
+                                "version_id": Value::Null,
+                                "provider": "mother",
+                                "model": image_model,
+                                "error": msg,
+                            })),
+                        )?;
+                        println!("{msg}");
+                        continue;
+                    }
+                };
+
+                let plan =
+                    engine.preview_plan(&request.prompt, &request.settings, &request.intent)?;
+                println!(
+                    "Mother plan: {} image via {}:{} size={} cached={} refs={}",
+                    plan.images,
+                    plan.provider,
+                    plan.model,
+                    plan.size,
+                    plan.cached,
+                    request.source_images.len()
+                );
+
+                let (artifacts, error_message) =
+                    match engine.generate(&request.prompt, request.settings, request.intent) {
+                        Ok(artifacts) => (artifacts, None),
+                        Err(err) => (Vec::new(), Some(err.to_string())),
+                    };
+                update_last_artifact_path(&artifacts, &mut last_artifact_path);
+                if let Some(reason) = engine.last_fallback_reason() {
+                    println!("Model fallback: {reason}");
+                }
+                print_generation_cost_latency(&engine);
+                if let Some(error) = error_message {
+                    println!("Mother generate failed: {error}");
+                } else {
+                    println!("Mother generate complete.");
+                }
+            }
+            "canvas_context_rt_start" => {
+                if canvas_context_rt.is_none() {
+                    canvas_context_rt =
+                        Some(CanvasContextRealtimeSession::new(shared_events.clone()));
+                }
+                let Some(session) = canvas_context_rt.as_mut() else {
+                    continue;
+                };
+                let (ok, err) = session.start();
+                if !ok {
+                    let error = err.unwrap_or_else(|| "Realtime start failed.".to_string());
+                    engine.emit_event(
+                        "canvas_context_failed",
+                        json_object(json!({
+                            "image_path": Value::Null,
+                            "error": error,
+                            "source": session.source(),
+                            "model": session.model(),
+                            "fatal": true,
+                        })),
+                    )?;
+                    println!("Canvas context realtime start failed: {error}");
+                    canvas_context_rt = None;
+                    continue;
+                }
+                println!("Canvas context realtime started.");
+            }
+            "canvas_context_rt_stop" => {
+                if let Some(session) = canvas_context_rt.as_mut() {
+                    session.stop();
+                }
+                canvas_context_rt = None;
+                println!("Canvas context realtime stopped.");
+            }
+            "canvas_context_rt" => {
+                let requested_path = value_as_non_empty_string(intent.command_args.get("path"));
+                let path_text = requested_path.or_else(|| last_artifact_path.clone());
+                let Some(path_text) = path_text else {
+                    let model = canvas_context_rt
+                        .as_ref()
+                        .map(|session| session.model().to_string())
+                        .unwrap_or_else(canvas_context_realtime_model);
+                    let msg =
+                        "/canvas_context_rt requires a path (or set an active image with /use)";
+                    engine.emit_event(
+                        "canvas_context_failed",
+                        json_object(json!({
+                            "image_path": Value::Null,
+                            "error": msg,
+                            "source": canvas_context_rt
+                                .as_ref()
+                                .map(|session| session.source().to_string())
+                                .unwrap_or_else(|| canvas_rt_source()),
+                            "model": model,
+                            "fatal": true,
+                        })),
+                    )?;
+                    println!("{msg}");
+                    continue;
+                };
+                let path = PathBuf::from(path_text);
+                if !path.exists() {
+                    let model = canvas_context_rt
+                        .as_ref()
+                        .map(|session| session.model().to_string())
+                        .unwrap_or_else(canvas_context_realtime_model);
+                    let msg = format!(
+                        "Canvas context realtime failed: file not found ({})",
+                        path.display()
+                    );
+                    engine.emit_event(
+                        "canvas_context_failed",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "error": msg,
+                            "source": canvas_context_rt
+                                .as_ref()
+                                .map(|session| session.source().to_string())
+                                .unwrap_or_else(|| canvas_rt_source()),
+                            "model": model,
+                            "fatal": true,
+                        })),
+                    )?;
+                    println!("{msg}");
+                    continue;
+                }
+                if canvas_context_rt.is_none() {
+                    canvas_context_rt =
+                        Some(CanvasContextRealtimeSession::new(shared_events.clone()));
+                }
+                let Some(session) = canvas_context_rt.as_mut() else {
+                    continue;
+                };
+                let (ok, err) = session.submit_snapshot(&path);
+                if !ok {
+                    let error = err.unwrap_or_else(|| "Realtime submit failed.".to_string());
+                    engine.emit_event(
+                        "canvas_context_failed",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "error": error,
+                            "source": session.source(),
+                            "model": session.model(),
+                            "fatal": true,
+                        })),
+                    )?;
+                    println!("Canvas context realtime submit failed: {error}");
+                    session.stop();
+                    canvas_context_rt = None;
+                }
+            }
+            "intent_rt_start" => {
+                if intent_rt.is_none() {
+                    intent_rt = Some(IntentIconsRealtimeSession::new(
+                        shared_events.clone(),
+                        false,
+                    ));
+                }
+                let Some(session) = intent_rt.as_mut() else {
+                    continue;
+                };
+                let (ok, err) = session.start();
+                if !ok {
+                    let error = err.unwrap_or_else(|| "Realtime start failed.".to_string());
+                    engine.emit_event(
+                        "intent_icons_failed",
+                        json_object(json!({
+                            "image_path": Value::Null,
+                            "error": error,
+                            "source": session.source(),
+                            "model": session.model(),
+                            "fatal": true,
+                        })),
+                    )?;
+                    println!("Intent realtime start failed: {error}");
+                    intent_rt = None;
+                    continue;
+                }
+                println!("Intent realtime started.");
+            }
+            "intent_rt_stop" => {
+                if let Some(session) = intent_rt.as_mut() {
+                    session.stop();
+                }
+                intent_rt = None;
+                println!("Intent realtime stopped.");
+            }
+            "intent_rt" => {
+                let requested_path = value_as_non_empty_string(intent.command_args.get("path"));
+                let path_text = requested_path.or_else(|| last_artifact_path.clone());
+                let Some(path_text) = path_text else {
+                    let model = intent_rt
+                        .as_ref()
+                        .map(|session| session.model().to_string())
+                        .unwrap_or_else(|| intent_realtime_model(false));
+                    let msg = "/intent_rt requires a path (or set an active image with /use)";
+                    engine.emit_event(
+                        "intent_icons_failed",
+                        json_object(json!({
+                            "image_path": Value::Null,
+                            "error": msg,
+                            "source": intent_rt
+                                .as_ref()
+                                .map(|session| session.source().to_string())
+                                .unwrap_or_else(|| intent_rt_source(false)),
+                            "model": model,
+                            "fatal": true,
+                        })),
+                    )?;
+                    println!("{msg}");
+                    continue;
+                };
+                let path = PathBuf::from(path_text);
+                if !path.exists() {
+                    let model = intent_rt
+                        .as_ref()
+                        .map(|session| session.model().to_string())
+                        .unwrap_or_else(|| intent_realtime_model(false));
+                    let msg = format!(
+                        "Intent realtime failed: file not found ({})",
+                        path.display()
+                    );
+                    engine.emit_event(
+                        "intent_icons_failed",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "error": msg,
+                            "source": intent_rt
+                                .as_ref()
+                                .map(|session| session.source().to_string())
+                                .unwrap_or_else(|| intent_rt_source(false)),
+                            "model": model,
+                            "fatal": true,
+                        })),
+                    )?;
+                    println!("{msg}");
+                    continue;
+                }
+                if intent_rt.is_none() {
+                    intent_rt = Some(IntentIconsRealtimeSession::new(
+                        shared_events.clone(),
+                        false,
+                    ));
+                }
+                let Some(session) = intent_rt.as_mut() else {
+                    continue;
+                };
+                let (ok, err) = session.submit_snapshot(&path);
+                if !ok {
+                    let error = err.unwrap_or_else(|| "Realtime submit failed.".to_string());
+                    engine.emit_event(
+                        "intent_icons_failed",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "error": error,
+                            "source": session.source(),
+                            "model": session.model(),
+                            "fatal": true,
+                        })),
+                    )?;
+                    println!("Intent realtime submit failed: {error}");
+                    session.stop();
+                    intent_rt = None;
+                }
+            }
+            "intent_rt_mother_start" => {
+                if mother_intent_rt.is_none() {
+                    mother_intent_rt =
+                        Some(IntentIconsRealtimeSession::new(shared_events.clone(), true));
+                }
+                let Some(session) = mother_intent_rt.as_mut() else {
+                    continue;
+                };
+                let (ok, err) = session.start();
+                if !ok {
+                    let error = err.unwrap_or_else(|| "Realtime start failed.".to_string());
+                    engine.emit_event(
+                        "intent_icons_failed",
+                        json_object(json!({
+                            "image_path": Value::Null,
+                            "error": error,
+                            "source": session.source(),
+                            "model": session.model(),
+                            "fatal": true,
+                        })),
+                    )?;
+                    println!("Mother intent realtime start failed: {error}");
+                    mother_intent_rt = None;
+                    continue;
+                }
+                println!("Mother intent realtime started.");
+            }
+            "intent_rt_mother_stop" => {
+                if let Some(session) = mother_intent_rt.as_mut() {
+                    session.stop();
+                }
+                mother_intent_rt = None;
+                println!("Mother intent realtime stopped.");
+            }
+            "intent_rt_mother" => {
+                let requested_path = value_as_non_empty_string(intent.command_args.get("path"));
+                let path_text = requested_path.or_else(|| last_artifact_path.clone());
+                let Some(path_text) = path_text else {
+                    let model = mother_intent_rt
+                        .as_ref()
+                        .map(|session| session.model().to_string())
+                        .unwrap_or_else(|| intent_realtime_model(true));
+                    let msg =
+                        "/intent_rt_mother requires a path (or set an active image with /use)";
+                    engine.emit_event(
+                        "intent_icons_failed",
+                        json_object(json!({
+                            "image_path": Value::Null,
+                            "error": msg,
+                            "source": mother_intent_rt
+                                .as_ref()
+                                .map(|session| session.source().to_string())
+                                .unwrap_or_else(|| intent_rt_source(true)),
+                            "model": model,
+                            "fatal": true,
+                        })),
+                    )?;
+                    println!("{msg}");
+                    continue;
+                };
+                let path = PathBuf::from(path_text);
+                if !path.exists() {
+                    let model = mother_intent_rt
+                        .as_ref()
+                        .map(|session| session.model().to_string())
+                        .unwrap_or_else(|| intent_realtime_model(true));
+                    let msg = format!(
+                        "Mother intent realtime failed: file not found ({})",
+                        path.display()
+                    );
+                    engine.emit_event(
+                        "intent_icons_failed",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "error": msg,
+                            "source": mother_intent_rt
+                                .as_ref()
+                                .map(|session| session.source().to_string())
+                                .unwrap_or_else(|| intent_rt_source(true)),
+                            "model": model,
+                            "fatal": true,
+                        })),
+                    )?;
+                    println!("{msg}");
+                    continue;
+                }
+                if mother_intent_rt.is_none() {
+                    mother_intent_rt =
+                        Some(IntentIconsRealtimeSession::new(shared_events.clone(), true));
+                }
+                let Some(session) = mother_intent_rt.as_mut() else {
+                    continue;
+                };
+                let (ok, err) = session.submit_snapshot(&path);
+                if !ok {
+                    let error = err.unwrap_or_else(|| "Realtime submit failed.".to_string());
+                    let mut payload = json_object(json!({
+                        "image_path": path.to_string_lossy().to_string(),
+                        "error": error,
+                        "source": session.source(),
+                        "model": session.model(),
+                        "fatal": true,
+                    }));
+                    if let Some(action_version) = extract_action_version_from_path(&path) {
+                        payload.insert(
+                            "action_version".to_string(),
+                            Value::Number(action_version.into()),
+                        );
+                    }
+                    engine.emit_event("intent_icons_failed", payload)?;
+                    println!("Mother intent realtime submit failed: {error}");
+                    session.stop();
+                    mother_intent_rt = None;
+                }
+            }
+            "diagnose" => {
+                let requested_path = value_as_non_empty_string(intent.command_args.get("path"));
+                let path_text = requested_path.or_else(|| last_artifact_path.clone());
+                let Some(path_text) = path_text else {
+                    println!("/diagnose requires a path (or set an active image with /use)");
+                    continue;
+                };
+                let path = PathBuf::from(path_text);
+                if !path.exists() {
+                    println!("Diagnose failed: file not found ({})", path.display());
+                    continue;
+                }
+                if let Some(inference) = observe::vision::vision_infer_diagnosis(&path) {
+                    engine.emit_event(
+                        "image_diagnosis",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "text": inference.text,
+                            "source": inference.source,
+                            "model": inference.model,
+                            "input_tokens": inference
+                                .input_tokens
+                                .map(|value| Value::Number(value.into()))
+                                .unwrap_or(Value::Null),
+                            "output_tokens": inference
+                                .output_tokens
+                                .map(|value| Value::Number(value.into()))
+                                .unwrap_or(Value::Null),
+                        })),
+                    )?;
+                    println!("{}", inference.text);
+                } else {
+                    let text = infer_diagnosis_text(&path);
+                    engine.emit_event(
+                        "image_diagnosis",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "text": text,
+                            "source": "native_heuristic",
+                            "model": "local",
+                            "input_tokens": Value::Null,
+                            "output_tokens": Value::Null,
+                        })),
+                    )?;
+                    println!("{text}");
+                }
+            }
+            "recast" => {
+                let requested_path = value_as_non_empty_string(intent.command_args.get("path"));
+                let path_text = requested_path.or_else(|| last_artifact_path.clone());
+                let Some(path_text) = path_text else {
+                    println!("/recast requires a path (or set an active image with /use)");
+                    continue;
+                };
+                let path = PathBuf::from(path_text);
+                if !path.exists() {
+                    println!("Recast failed: file not found ({})", path.display());
+                    continue;
+                }
+                let prompt = "Recast the provided image into a completely different medium and context. This is a lateral creative leap (not a minor style tweak). Preserve the core idea/subject identity, but change the form factor, materials, and world. Output ONE coherent image. No split-screen or collage. No text overlays.";
+                let mut settings = chat_settings(&quality_preset);
+                settings.insert(
+                    "init_image".to_string(),
+                    Value::String(path.to_string_lossy().to_string()),
+                );
+                let mut generation_intent = Map::new();
+                generation_intent.insert("action".to_string(), Value::String("recast".to_string()));
+                generation_intent.insert(
+                    "source_images".to_string(),
+                    Value::Array(vec![Value::String(path.to_string_lossy().to_string())]),
+                );
+                generation_intent.insert("profile".to_string(), Value::String(profile.clone()));
+                let plan = engine.preview_plan(prompt, &settings, &generation_intent)?;
+                println!(
+                    "Plan: {} images via {}:{} size={} cached={}",
+                    plan.images, plan.provider, plan.model, plan.size, plan.cached
+                );
+                let (artifacts, error_message) =
+                    match engine.generate(prompt, settings, generation_intent) {
+                        Ok(artifacts) => (artifacts, None),
+                        Err(err) => (Vec::new(), Some(err.to_string())),
+                    };
+                update_last_artifact_path(&artifacts, &mut last_artifact_path);
+                if let Some(reason) = engine.last_fallback_reason() {
+                    println!("Model fallback: {reason}");
+                }
+                print_generation_cost_latency(&engine);
+                if let Some(error) = error_message {
+                    println!("Recast failed: {error}");
+                } else {
+                    println!("Recast complete.");
+                }
+            }
+            "blend" => {
+                let paths = value_as_string_list(intent.command_args.get("paths"));
+                if paths.len() < 2 {
+                    println!("Usage: /blend <image_a> <image_b>");
+                    continue;
+                }
+                let path_a = PathBuf::from(paths[0].clone());
+                let path_b = PathBuf::from(paths[1].clone());
+                if !path_a.exists() {
+                    println!("Blend failed: file not found ({})", path_a.display());
+                    continue;
+                }
+                if !path_b.exists() {
+                    println!("Blend failed: file not found ({})", path_b.display());
+                    continue;
+                }
+                let prompt = "Combine the two provided photos into a single coherent blended photo. Do not make a split-screen or side-by-side collage; integrate them into one scene. Keep it photorealistic and preserve key details from both images.";
+                let mut settings = chat_settings(&quality_preset);
+                settings.insert(
+                    "init_image".to_string(),
+                    Value::String(path_a.to_string_lossy().to_string()),
+                );
+                settings.insert(
+                    "reference_images".to_string(),
+                    Value::Array(vec![Value::String(path_b.to_string_lossy().to_string())]),
+                );
+                let mut generation_intent = Map::new();
+                generation_intent.insert("action".to_string(), Value::String("blend".to_string()));
+                generation_intent.insert(
+                    "source_images".to_string(),
+                    Value::Array(vec![
+                        Value::String(path_a.to_string_lossy().to_string()),
+                        Value::String(path_b.to_string_lossy().to_string()),
+                    ]),
+                );
+                generation_intent.insert("profile".to_string(), Value::String(profile.clone()));
+                let plan = engine.preview_plan(prompt, &settings, &generation_intent)?;
+                println!(
+                    "Plan: {} images via {}:{} size={} cached={}",
+                    plan.images, plan.provider, plan.model, plan.size, plan.cached
+                );
+                let (artifacts, error_message) =
+                    match engine.generate(prompt, settings, generation_intent) {
+                        Ok(artifacts) => (artifacts, None),
+                        Err(err) => (Vec::new(), Some(err.to_string())),
+                    };
+                update_last_artifact_path(&artifacts, &mut last_artifact_path);
+                if let Some(reason) = engine.last_fallback_reason() {
+                    println!("Model fallback: {reason}");
+                }
+                print_generation_cost_latency(&engine);
+                if let Some(error) = error_message {
+                    println!("Blend failed: {error}");
+                } else {
+                    println!("Blend complete.");
+                }
+            }
+            "argue" => {
+                let paths = value_as_string_list(intent.command_args.get("paths"));
+                if paths.len() < 2 {
+                    println!("Usage: /argue <image_a> <image_b>");
+                    continue;
+                }
+                let path_a = PathBuf::from(paths[0].clone());
+                let path_b = PathBuf::from(paths[1].clone());
+                if !path_a.exists() {
+                    println!("Argue failed: file not found ({})", path_a.display());
+                    continue;
+                }
+                if !path_b.exists() {
+                    println!("Argue failed: file not found ({})", path_b.display());
+                    continue;
+                }
+                if let Some(inference) = observe::vision::vision_infer_argument(&path_a, &path_b) {
+                    engine.emit_event(
+                        "image_argument",
+                        json_object(json!({
+                            "image_paths": [
+                                path_a.to_string_lossy().to_string(),
+                                path_b.to_string_lossy().to_string(),
+                            ],
+                            "text": inference.text,
+                            "source": inference.source,
+                            "model": inference.model,
+                            "input_tokens": inference
+                                .input_tokens
+                                .map(|value| Value::Number(value.into()))
+                                .unwrap_or(Value::Null),
+                            "output_tokens": inference
+                                .output_tokens
+                                .map(|value| Value::Number(value.into()))
+                                .unwrap_or(Value::Null),
+                        })),
+                    )?;
+                    println!("{}", inference.text);
+                } else {
+                    let text = infer_argument_text(&path_a, &path_b);
+                    engine.emit_event(
+                        "image_argument",
+                        json_object(json!({
+                            "image_paths": [
+                                path_a.to_string_lossy().to_string(),
+                                path_b.to_string_lossy().to_string(),
+                            ],
+                            "text": text,
+                            "source": "native_heuristic",
+                            "model": "local",
+                            "input_tokens": Value::Null,
+                            "output_tokens": Value::Null,
+                        })),
+                    )?;
+                    println!("{text}");
+                }
+            }
+            "bridge" => {
+                let paths = value_as_string_list(intent.command_args.get("paths"));
+                if paths.len() < 2 {
+                    println!("Usage: /bridge <image_a> <image_b>");
+                    continue;
+                }
+                let path_a = PathBuf::from(paths[0].clone());
+                let path_b = PathBuf::from(paths[1].clone());
+                if !path_a.exists() {
+                    println!("Bridge failed: file not found ({})", path_a.display());
+                    continue;
+                }
+                if !path_b.exists() {
+                    println!("Bridge failed: file not found ({})", path_b.display());
+                    continue;
+                }
+                let prompt = "Bridge the two provided images by generating a single new image that lives in the aesthetic midpoint. This is NOT a collage and NOT a literal mash-up. Find the shared design language: composition, lighting logic, color story, material palette, and mood. Output one coherent image that could plausibly sit between both references.";
+                let mut settings = chat_settings(&quality_preset);
+                settings.insert(
+                    "init_image".to_string(),
+                    Value::String(path_a.to_string_lossy().to_string()),
+                );
+                settings.insert(
+                    "reference_images".to_string(),
+                    Value::Array(vec![Value::String(path_b.to_string_lossy().to_string())]),
+                );
+                let mut generation_intent = Map::new();
+                generation_intent.insert("action".to_string(), Value::String("bridge".to_string()));
+                generation_intent.insert(
+                    "source_images".to_string(),
+                    Value::Array(vec![
+                        Value::String(path_a.to_string_lossy().to_string()),
+                        Value::String(path_b.to_string_lossy().to_string()),
+                    ]),
+                );
+                generation_intent.insert("profile".to_string(), Value::String(profile.clone()));
+                let plan = engine.preview_plan(prompt, &settings, &generation_intent)?;
+                println!(
+                    "Plan: {} images via {}:{} size={} cached={}",
+                    plan.images, plan.provider, plan.model, plan.size, plan.cached
+                );
+                let (artifacts, error_message) =
+                    match engine.generate(prompt, settings, generation_intent) {
+                        Ok(artifacts) => (artifacts, None),
+                        Err(err) => (Vec::new(), Some(err.to_string())),
+                    };
+                update_last_artifact_path(&artifacts, &mut last_artifact_path);
+                if let Some(reason) = engine.last_fallback_reason() {
+                    println!("Model fallback: {reason}");
+                }
+                print_generation_cost_latency(&engine);
+                if let Some(error) = error_message {
+                    println!("Bridge failed: {error}");
+                } else {
+                    println!("Bridge complete.");
+                }
+            }
+            "swap_dna" => {
+                let paths = value_as_string_list(intent.command_args.get("paths"));
+                if paths.len() < 2 {
+                    println!("Usage: /swap_dna <image_a> <image_b>");
+                    continue;
+                }
+                let path_a = PathBuf::from(paths[0].clone());
+                let path_b = PathBuf::from(paths[1].clone());
+                if !path_a.exists() {
+                    println!("Swap DNA failed: file not found ({})", path_a.display());
+                    continue;
+                }
+                if !path_b.exists() {
+                    println!("Swap DNA failed: file not found ({})", path_b.display());
+                    continue;
+                }
+                let prompt = "Swap DNA between the two provided photos. Image A is the STRUCTURE source: framing/crop, geometry, pose, perspective, composition, object count, and spatial layout. Image B is the SURFACE source: color palette, materials/textures, lighting, mood, and finish. Preserve Image A structure decisions exactly while transferring Image B surface treatment. Resolve conflicts by prioritizing A for structure and B for surface. Output one coherent image only. Never output split-screen, collage, side-by-side, or double-exposure blends.";
+                let mut settings = chat_settings(&quality_preset);
+                settings.insert(
+                    "init_image".to_string(),
+                    Value::String(path_a.to_string_lossy().to_string()),
+                );
+                settings.insert(
+                    "reference_images".to_string(),
+                    Value::Array(vec![Value::String(path_b.to_string_lossy().to_string())]),
+                );
+                let mut generation_intent = Map::new();
+                generation_intent
+                    .insert("action".to_string(), Value::String("swap_dna".to_string()));
+                generation_intent.insert(
+                    "source_images".to_string(),
+                    Value::Array(vec![
+                        Value::String(path_a.to_string_lossy().to_string()),
+                        Value::String(path_b.to_string_lossy().to_string()),
+                    ]),
+                );
+                generation_intent.insert("profile".to_string(), Value::String(profile.clone()));
+                let plan = engine.preview_plan(prompt, &settings, &generation_intent)?;
+                println!(
+                    "Plan: {} images via {}:{} size={} cached={}",
+                    plan.images, plan.provider, plan.model, plan.size, plan.cached
+                );
+                let (artifacts, error_message) =
+                    match engine.generate(prompt, settings, generation_intent) {
+                        Ok(artifacts) => (artifacts, None),
+                        Err(err) => (Vec::new(), Some(err.to_string())),
+                    };
+                update_last_artifact_path(&artifacts, &mut last_artifact_path);
+                if let Some(reason) = engine.last_fallback_reason() {
+                    println!("Model fallback: {reason}");
+                }
+                print_generation_cost_latency(&engine);
+                if let Some(error) = error_message {
+                    println!("Swap DNA failed: {error}");
+                } else {
+                    println!("Swap DNA complete.");
+                }
+            }
+            "triforce" => {
+                let paths = value_as_string_list(intent.command_args.get("paths"));
+                if paths.len() < 3 {
+                    println!("Usage: /triforce <image_a> <image_b> <image_c>");
+                    continue;
+                }
+                let path_a = PathBuf::from(paths[0].clone());
+                let path_b = PathBuf::from(paths[1].clone());
+                let path_c = PathBuf::from(paths[2].clone());
+                if !path_a.exists() {
+                    println!("Triforce failed: file not found ({})", path_a.display());
+                    continue;
+                }
+                if !path_b.exists() {
+                    println!("Triforce failed: file not found ({})", path_b.display());
+                    continue;
+                }
+                if !path_c.exists() {
+                    println!("Triforce failed: file not found ({})", path_c.display());
+                    continue;
+                }
+                let prompt = "Take the three provided images as vertices of a creative space and generate the centroid: ONE new image that sits equidistant from all three references. This is mood board distillation, not a collage. Find the shared design language (composition, lighting logic, color story, material palette, and mood), then output one coherent image that could plausibly sit between all three.";
+                let mut settings = chat_settings(&quality_preset);
+                settings.insert("n".to_string(), json!(1));
+                settings.insert(
+                    "init_image".to_string(),
+                    Value::String(path_a.to_string_lossy().to_string()),
+                );
+                settings.insert(
+                    "reference_images".to_string(),
+                    Value::Array(vec![
+                        Value::String(path_b.to_string_lossy().to_string()),
+                        Value::String(path_c.to_string_lossy().to_string()),
+                    ]),
+                );
+                let mut generation_intent = Map::new();
+                generation_intent
+                    .insert("action".to_string(), Value::String("triforce".to_string()));
+                generation_intent.insert(
+                    "source_images".to_string(),
+                    Value::Array(vec![
+                        Value::String(path_a.to_string_lossy().to_string()),
+                        Value::String(path_b.to_string_lossy().to_string()),
+                        Value::String(path_c.to_string_lossy().to_string()),
+                    ]),
+                );
+                generation_intent.insert("profile".to_string(), Value::String(profile.clone()));
+                let plan = engine.preview_plan(prompt, &settings, &generation_intent)?;
+                println!(
+                    "Plan: {} images via {}:{} size={} cached={}",
+                    plan.images, plan.provider, plan.model, plan.size, plan.cached
+                );
+                let (artifacts, error_message) =
+                    match engine.generate(prompt, settings, generation_intent) {
+                        Ok(artifacts) => (artifacts, None),
+                        Err(err) => (Vec::new(), Some(err.to_string())),
+                    };
+                update_last_artifact_path(&artifacts, &mut last_artifact_path);
+                if let Some(reason) = engine.last_fallback_reason() {
+                    println!("Model fallback: {reason}");
+                }
+                print_generation_cost_latency(&engine);
+                if let Some(error) = error_message {
+                    println!("Triforce failed: {error}");
+                } else {
+                    println!("Triforce complete.");
+                }
+            }
+            "extract_dna" => {
+                let paths = value_as_string_list(intent.command_args.get("paths"));
+                if paths.is_empty() {
+                    println!("Usage: /extract_dna <image_a> [image_b ...]");
+                    continue;
+                }
+                for path_text in paths {
+                    let path = PathBuf::from(path_text);
+                    if !path.exists() {
+                        let msg =
+                            format!("Extract DNA failed: file not found ({})", path.display());
+                        engine.emit_event(
+                            "image_dna_extracted_failed",
+                            json_object(json!({
+                                "image_path": path.to_string_lossy().to_string(),
+                                "error": msg,
+                            })),
+                        )?;
+                        println!("{msg}");
+                        continue;
+                    }
+                    let inference = observe::vision::vision_infer_dna_signature(&path);
+                    let dna = inference
+                        .as_ref()
+                        .map(|value| DnaSignature {
+                            palette: value.palette.clone(),
+                            colors: value.colors.clone(),
+                            materials: value.materials.clone(),
+                            summary: value.summary.clone(),
+                        })
+                        .unwrap_or_else(|| extract_dna_signature(&path));
+                    let source = inference
+                        .as_ref()
+                        .map(|value| value.source.clone())
+                        .unwrap_or_else(|| "native_heuristic".to_string());
+                    let model_name = inference
+                        .as_ref()
+                        .and_then(|value| value.model.clone())
+                        .unwrap_or_else(|| "local".to_string());
+                    let input_tokens = inference
+                        .as_ref()
+                        .and_then(|value| value.input_tokens)
+                        .map(|value| Value::Number(value.into()))
+                        .unwrap_or(Value::Null);
+                    let output_tokens = inference
+                        .as_ref()
+                        .and_then(|value| value.output_tokens)
+                        .map(|value| Value::Number(value.into()))
+                        .unwrap_or(Value::Null);
+                    engine.emit_event(
+                        "image_dna_extracted",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "palette": dna.palette,
+                            "colors": dna.colors,
+                            "materials": dna.materials,
+                            "summary": dna.summary,
+                            "source": source,
+                            "model": model_name,
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                        })),
+                    )?;
+                    println!(
+                        "DNA extracted ({})",
+                        path.file_name().and_then(|v| v.to_str()).unwrap_or("image")
+                    );
+                    if !dna.summary.trim().is_empty() {
+                        println!("- {}", dna.summary.trim());
+                    }
+                }
+            }
+            "soul_leech" => {
+                let paths = value_as_string_list(intent.command_args.get("paths"));
+                if paths.is_empty() {
+                    println!("Usage: /soul_leech <image_a> [image_b ...]");
+                    continue;
+                }
+                for path_text in paths {
+                    let path = PathBuf::from(path_text);
+                    if !path.exists() {
+                        let msg = format!("Soul Leech failed: file not found ({})", path.display());
+                        engine.emit_event(
+                            "image_soul_extracted_failed",
+                            json_object(json!({
+                                "image_path": path.to_string_lossy().to_string(),
+                                "error": msg,
+                            })),
+                        )?;
+                        println!("{msg}");
+                        continue;
+                    }
+                    let inference = observe::vision::vision_infer_soul_signature(&path);
+                    let soul = inference
+                        .as_ref()
+                        .map(|value| SoulSignature {
+                            emotion: value.emotion.clone(),
+                            summary: value.summary.clone(),
+                        })
+                        .unwrap_or_else(|| extract_soul_signature(&path));
+                    let source = inference
+                        .as_ref()
+                        .map(|value| value.source.clone())
+                        .unwrap_or_else(|| "native_heuristic".to_string());
+                    let model_name = inference
+                        .as_ref()
+                        .and_then(|value| value.model.clone())
+                        .unwrap_or_else(|| "local".to_string());
+                    let input_tokens = inference
+                        .as_ref()
+                        .and_then(|value| value.input_tokens)
+                        .map(|value| Value::Number(value.into()))
+                        .unwrap_or(Value::Null);
+                    let output_tokens = inference
+                        .as_ref()
+                        .and_then(|value| value.output_tokens)
+                        .map(|value| Value::Number(value.into()))
+                        .unwrap_or(Value::Null);
+                    engine.emit_event(
+                        "image_soul_extracted",
+                        json_object(json!({
+                            "image_path": path.to_string_lossy().to_string(),
+                            "emotion": soul.emotion,
+                            "summary": soul.summary,
+                            "source": source,
+                            "model": model_name,
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                        })),
+                    )?;
+                    println!(
+                        "Soul extracted ({})",
+                        path.file_name().and_then(|v| v.to_str()).unwrap_or("image")
+                    );
+                    if !soul.summary.trim().is_empty() {
+                        println!("- {}", soul.summary.trim());
+                    }
+                }
+            }
+            "extract_rule" => {
+                let paths = value_as_string_list(intent.command_args.get("paths"));
+                if paths.len() < 3 {
+                    println!("Usage: /extract_rule <image_a> <image_b> <image_c>");
+                    continue;
+                }
+                let path_a = PathBuf::from(paths[0].clone());
+                let path_b = PathBuf::from(paths[1].clone());
+                let path_c = PathBuf::from(paths[2].clone());
+                if !path_a.exists() {
+                    println!(
+                        "Extract the Rule failed: file not found ({})",
+                        path_a.display()
+                    );
+                    continue;
+                }
+                if !path_b.exists() {
+                    println!(
+                        "Extract the Rule failed: file not found ({})",
+                        path_b.display()
+                    );
+                    continue;
+                }
+                if !path_c.exists() {
+                    println!(
+                        "Extract the Rule failed: file not found ({})",
+                        path_c.display()
+                    );
+                    continue;
+                }
+                let inference =
+                    observe::vision::vision_infer_triplet_rule(&path_a, &path_b, &path_c);
+                let rule = inference
+                    .as_ref()
+                    .map(|value| TripletRuleOutput {
+                        principle: value.principle.clone(),
+                        evidence: value.evidence.clone(),
+                        annotations: value.annotations.clone(),
+                        confidence: value.confidence,
+                    })
+                    .unwrap_or_else(|| infer_triplet_rule(&path_a, &path_b, &path_c));
+                let source = inference
+                    .as_ref()
+                    .map(|value| value.source.clone())
+                    .unwrap_or_else(|| "native_heuristic".to_string());
+                let model_name = inference
+                    .as_ref()
+                    .and_then(|value| value.model.clone())
+                    .unwrap_or_else(|| "local".to_string());
+                let input_tokens = inference
+                    .as_ref()
+                    .and_then(|value| value.input_tokens)
+                    .map(|value| Value::Number(value.into()))
+                    .unwrap_or(Value::Null);
+                let output_tokens = inference
+                    .as_ref()
+                    .and_then(|value| value.output_tokens)
+                    .map(|value| Value::Number(value.into()))
+                    .unwrap_or(Value::Null);
+                engine.emit_event(
+                    "triplet_rule",
+                    json_object(json!({
+                        "image_paths": [
+                            path_a.to_string_lossy().to_string(),
+                            path_b.to_string_lossy().to_string(),
+                            path_c.to_string_lossy().to_string(),
+                        ],
+                        "principle": rule.principle,
+                        "evidence": rule.evidence,
+                        "annotations": rule.annotations,
+                        "source": source,
+                        "model": model_name,
+                        "confidence": rule.confidence,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                    })),
+                )?;
+                println!("RULE:\n{}", rule.principle);
+                if !rule.evidence.is_empty() {
+                    println!("\nEVIDENCE:");
+                    for row in &rule.evidence {
+                        let image = row
+                            .get("image")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string();
+                        let note = row
+                            .get("note")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string();
+                        println!("- {}: {}", image, note);
+                    }
+                }
+            }
+            "odd_one_out" => {
+                let paths = value_as_string_list(intent.command_args.get("paths"));
+                if paths.len() < 3 {
+                    println!("Usage: /odd_one_out <image_a> <image_b> <image_c>");
+                    continue;
+                }
+                let path_a = PathBuf::from(paths[0].clone());
+                let path_b = PathBuf::from(paths[1].clone());
+                let path_c = PathBuf::from(paths[2].clone());
+                if !path_a.exists() {
+                    println!("Odd One Out failed: file not found ({})", path_a.display());
+                    continue;
+                }
+                if !path_b.exists() {
+                    println!("Odd One Out failed: file not found ({})", path_b.display());
+                    continue;
+                }
+                if !path_c.exists() {
+                    println!("Odd One Out failed: file not found ({})", path_c.display());
+                    continue;
+                }
+                let inference =
+                    observe::vision::vision_infer_triplet_odd_one_out(&path_a, &path_b, &path_c);
+                let odd = inference
+                    .as_ref()
+                    .map(|value| TripletOddOneOutOutput {
+                        odd_image: value.odd_image.clone(),
+                        odd_index: value.odd_index,
+                        pattern: value.pattern.clone(),
+                        explanation: value.explanation.clone(),
+                        confidence: value.confidence,
+                    })
+                    .unwrap_or_else(|| infer_triplet_odd_one_out(&path_a, &path_b, &path_c));
+                let source = inference
+                    .as_ref()
+                    .map(|value| value.source.clone())
+                    .unwrap_or_else(|| "native_heuristic".to_string());
+                let model_name = inference
+                    .as_ref()
+                    .and_then(|value| value.model.clone())
+                    .unwrap_or_else(|| "local".to_string());
+                let input_tokens = inference
+                    .as_ref()
+                    .and_then(|value| value.input_tokens)
+                    .map(|value| Value::Number(value.into()))
+                    .unwrap_or(Value::Null);
+                let output_tokens = inference
+                    .as_ref()
+                    .and_then(|value| value.output_tokens)
+                    .map(|value| Value::Number(value.into()))
+                    .unwrap_or(Value::Null);
+                engine.emit_event(
+                    "triplet_odd_one_out",
+                    json_object(json!({
+                        "image_paths": [
+                            path_a.to_string_lossy().to_string(),
+                            path_b.to_string_lossy().to_string(),
+                            path_c.to_string_lossy().to_string(),
+                        ],
+                        "odd_image": odd.odd_image,
+                        "odd_index": odd.odd_index,
+                        "pattern": odd.pattern,
+                        "explanation": odd.explanation,
+                        "source": source,
+                        "model": model_name,
+                        "confidence": odd.confidence,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                    })),
+                )?;
+                println!("ODD ONE OUT: {}", odd.odd_image);
+                if !odd.pattern.trim().is_empty() {
+                    println!("\nPATTERN:\n{}", odd.pattern.trim());
+                }
+                if !odd.explanation.trim().is_empty() {
+                    println!("\nWHY:\n{}", odd.explanation.trim());
+                }
+            }
+            "recreate" => {
+                let path = value_as_non_empty_string(intent.command_args.get("path"));
+                let Some(path_text) = path else {
+                    println!("/recreate requires a path");
+                    continue;
+                };
+                let reference = PathBuf::from(path_text);
+                if !reference.exists() {
+                    println!("Recreate failed: file not found ({})", reference.display());
+                    continue;
+                }
+                let result =
+                    planning::run_native_recreate_loop(&mut engine, &reference, &quality_preset, 1);
+                match result {
+                    Ok(result) => {
+                        if let Some(inferred) =
+                            result.get("inferred_prompt").and_then(Value::as_str)
+                        {
+                            if !inferred.trim().is_empty() {
+                                let mut suffix: Vec<String> = Vec::new();
+                                if let Some(source) =
+                                    result.get("prompt_source").and_then(Value::as_str)
+                                {
+                                    if !source.trim().is_empty() {
+                                        suffix.push(source.to_string());
+                                    }
+                                }
+                                if let Some(model) =
+                                    result.get("caption_model").and_then(Value::as_str)
+                                {
+                                    if !model.trim().is_empty() {
+                                        suffix.push(model.to_string());
+                                    }
+                                }
+                                if suffix.is_empty() {
+                                    println!("Inferred prompt: {}", inferred.trim());
+                                } else {
+                                    println!(
+                                        "Inferred prompt ({}): {}",
+                                        suffix.join(", "),
+                                        inferred.trim()
+                                    );
+                                }
+                            }
+                        }
+                        println!("Recreate loop completed.");
+                    }
+                    Err(err) => {
+                        println!("Recreate failed: {err}");
+                    }
+                }
+            }
+            "export" => {
+                let format = value_as_non_empty_string(intent.command_args.get("format"))
+                    .unwrap_or_else(|| "html".to_string());
+                if format.to_ascii_lowercase() != "html" {
+                    println!("Export format '{format}' is not supported in native mode.");
+                    continue;
+                }
+                let out_path = run_out_dir.join(format!("export-{}.html", compact_timestamp()));
+                export::export_html_native(&run_out_dir, &out_path)?;
+                println!("Exported report to {}", out_path.display());
+            }
+            "optimize" => {
+                let goals = value_as_string_list(intent.command_args.get("goals"));
+                let mut mode = value_as_non_empty_string(intent.command_args.get("mode"))
+                    .unwrap_or_else(|| "auto".to_string())
+                    .to_ascii_lowercase();
+                if mode != "auto" && mode != "review" {
+                    mode = "auto".to_string();
+                }
+                if goals.is_empty() {
+                    println!(
+                        "No goals provided. Use /optimize [review] quality,cost,time,retrieval"
+                    );
+                    continue;
+                }
+
+                println!("Optimizing for: {} ({mode})", goals.join(", "));
+                let max_rounds = 3u64;
+
+                if mode == "review" {
+                    let Some(receipt_path) = latest_receipt_path(&run_out_dir) else {
+                        println!("No receipt available to analyze.");
+                        continue;
+                    };
+                    let analysis_started = Instant::now();
+                    let (analysis_excerpt, recommendations) =
+                        build_optimize_analysis(&receipt_path, &goals, None);
+                    let analysis_elapsed_s = analysis_started.elapsed().as_secs_f64();
+
+                    engine.emit_event(
+                        "analysis_ready",
+                        json_object(json!({
+                            "analysis_excerpt": analysis_excerpt,
+                            "recommendations": recommendations
+                                .iter()
+                                .cloned()
+                                .map(Value::Object)
+                                .collect::<Vec<Value>>(),
+                            "analysis_elapsed_s": analysis_elapsed_s,
+                            "goals": goals.iter().cloned().map(Value::String).collect::<Vec<Value>>(),
+                            "mode": mode,
+                        })),
+                    )?;
+
+                    if !analysis_excerpt.trim().is_empty() {
+                        println!("Analysis: {analysis_excerpt}");
+                    }
+                    if !recommendations.is_empty() {
+                        println!("Recommendations:");
+                        for rec in &recommendations {
+                            println!("- {}", format_optimize_recommendation(rec));
+                        }
+                    }
+                    println!("Optimize analysis in {:.1}s", analysis_elapsed_s);
+                    println!("Review mode: no changes applied.");
+                    continue;
+                }
+
+                for round in 2..=max_rounds {
+                    let Some(receipt_path) = latest_receipt_path(&run_out_dir) else {
+                        println!("No receipt available to analyze.");
+                        break;
+                    };
+                    let analysis_started = Instant::now();
+                    let (analysis_excerpt, recommendations) =
+                        build_optimize_analysis(&receipt_path, &goals, Some((round, max_rounds)));
+                    let analysis_elapsed_s = analysis_started.elapsed().as_secs_f64();
+
+                    engine.emit_event(
+                        "analysis_ready",
+                        json_object(json!({
+                            "analysis_excerpt": analysis_excerpt,
+                            "recommendations": recommendations
+                                .iter()
+                                .cloned()
+                                .map(Value::Object)
+                                .collect::<Vec<Value>>(),
+                            "analysis_elapsed_s": analysis_elapsed_s,
+                            "goals": goals.iter().cloned().map(Value::String).collect::<Vec<Value>>(),
+                            "round": round,
+                            "round_total": max_rounds,
+                            "mode": mode,
+                        })),
+                    )?;
+
+                    if !analysis_excerpt.trim().is_empty() {
+                        println!("Analysis: {analysis_excerpt}");
+                    }
+                    if recommendations.is_empty() {
+                        println!("No recommendations; stopping optimize loop.");
+                        break;
+                    }
+                    println!("Recommendations:");
+                    for rec in &recommendations {
+                        println!("- {}", format_optimize_recommendation(rec));
+                    }
+
+                    let mut settings = latest_thread_settings(&run_out_dir)
+                        .unwrap_or_else(|| chat_settings(&quality_preset));
+                    let (applied, skipped) =
+                        apply_optimize_recommendations(&mut settings, &recommendations);
+                    if !applied.is_empty() {
+                        println!("Applying: {}", applied.join(", "));
+                    }
+                    if !skipped.is_empty() {
+                        println!("Skipped: {}", skipped.join(", "));
+                    }
+                    if applied.is_empty() {
+                        println!("No parameter changes to apply; stopping optimize loop.");
+                        break;
+                    }
+
+                    println!("Optimize analysis in {:.1}s", analysis_elapsed_s);
+                    let Some(prompt) = last_prompt
+                        .clone()
+                        .or_else(|| latest_thread_prompt(&run_out_dir))
+                    else {
+                        println!("No receipt available to analyze.");
+                        break;
+                    };
+
+                    let mut generation_intent = Map::new();
+                    generation_intent
+                        .insert("action".to_string(), Value::String("optimize".to_string()));
+                    if let Some(parent_version_id) = latest_thread_version_id(&run_out_dir) {
+                        generation_intent.insert(
+                            "parent_version_id".to_string(),
+                            Value::String(parent_version_id),
+                        );
+                    }
+                    generation_intent.insert(
+                        "goals".to_string(),
+                        Value::Array(goals.iter().cloned().map(Value::String).collect()),
+                    );
+                    generation_intent.insert("round".to_string(), Value::Number(round.into()));
+
+                    let gen_started = Instant::now();
+                    let (artifacts, error_message) =
+                        match engine.generate(&prompt, settings, generation_intent) {
+                            Ok(artifacts) => (artifacts, None),
+                            Err(err) => (Vec::new(), Some(err.to_string())),
+                        };
+                    let elapsed_s = gen_started.elapsed().as_secs_f64();
+                    let success = error_message.is_none();
+                    let error_for_event = error_message.clone();
+                    engine.emit_event(
+                        "optimize_generation_done",
+                        json_object(json!({
+                            "round": round,
+                            "round_total": max_rounds,
+                            "elapsed_s": elapsed_s,
+                            "goals": goals.iter().cloned().map(Value::String).collect::<Vec<Value>>(),
+                            "success": success,
+                            "error": error_for_event,
+                        })),
+                    )?;
+
+                    if success && !artifacts.is_empty() {
+                        update_last_artifact_path(&artifacts, &mut last_artifact_path);
+                        last_prompt = Some(prompt);
+                    }
+                    if let Some(error) = error_message {
+                        println!("Generation failed: {error}");
+                        break;
+                    }
+                }
+
+                println!("Optimize loop complete.");
+            }
+            "unknown" => {
+                let command = value_as_non_empty_string(intent.command_args.get("command"))
+                    .unwrap_or_else(|| "unknown".to_string());
+                println!("Unknown command: {command}");
+            }
+            "generate" => {
+                let mut prompt = intent.prompt.clone().unwrap_or_default();
+                if prompt.trim().is_empty() {
+                    if let Some(previous) = &last_prompt {
+                        prompt = previous.clone();
+                    }
+                }
+                if prompt.trim().is_empty() {
+                    continue;
+                }
+                last_prompt = Some(prompt.clone());
+
+                let usage = engine.track_context(&prompt, "")?;
+                let pct = (usage.pct * 100.0).round() as i64;
+                if usage.alert_level != "none" {
+                    println!("Context usage: {pct}% (alert {})", usage.alert_level);
+                } else {
+                    println!("Context usage: {pct}%");
+                }
+
+                let mut settings = chat_settings(&quality_preset);
+                let mut generation_intent = Map::new();
+                generation_intent
+                    .insert("action".to_string(), Value::String("generate".to_string()));
+                generation_intent.insert("profile".to_string(), Value::String(profile.clone()));
+                if let Some(init_image) =
+                    active_image_for_edit_prompt(&prompt, last_artifact_path.as_deref())
+                {
+                    settings.insert("init_image".to_string(), Value::String(init_image.clone()));
+                    generation_intent.insert(
+                        "source_images".to_string(),
+                        Value::Array(vec![Value::String(init_image)]),
+                    );
+                }
+
+                let plan = engine.preview_plan(&prompt, &settings, &generation_intent)?;
+                println!(
+                    "Plan: {} images via {}:{} size={} cached={}",
+                    plan.images, plan.provider, plan.model, plan.size, plan.cached
+                );
+
+                let (artifacts, error_message) =
+                    match engine.generate(&prompt, settings, generation_intent) {
+                        Ok(artifacts) => (artifacts, None),
+                        Err(err) => (Vec::new(), Some(err.to_string())),
+                    };
+                update_last_artifact_path(&artifacts, &mut last_artifact_path);
+
+                if let Some(reason) = engine.last_fallback_reason() {
+                    println!("Model fallback: {reason}");
+                }
+                print_generation_cost_latency(&engine);
+
+                if let Some(error) = error_message {
+                    println!("Generation failed: {error}");
+                } else {
+                    println!("Generation complete.");
+                }
+            }
+            _ => {
+                println!(
+                    "Unknown command: {}",
+                    action_to_command_name(&intent.action).unwrap_or_else(|| intent.action.clone())
+                );
+            }
+        }
+    }
+
+    if let Some(session) = intent_rt.as_mut() {
+        session.stop();
+    }
+    if let Some(session) = mother_intent_rt.as_mut() {
+        session.stop();
+    }
+    if let Some(session) = canvas_context_rt.as_mut() {
+        session.stop();
+    }
+    engine.finish()?;
+    Ok(())
+}
+
+fn run_run_native(args: RunArgs) -> Result<i32> {
+    let events_path = args
+        .events
+        .clone()
+        .unwrap_or_else(|| args.out.join("events.jsonl"));
+    let mut engine = NativeEngine::new(
+        &args.out,
+        &events_path,
+        Some(args.text_model.clone()),
+        args.image_model.clone(),
+    )?;
+    let mut settings = Map::new();
+    settings.insert("size".to_string(), Value::String("1024x1024".to_string()));
+    settings.insert("n".to_string(), json!(1));
+    settings.insert(
+        "quality_preset".to_string(),
+        Value::String("quality".to_string()),
+    );
+    let mut intent = Map::new();
+    intent.insert("action".to_string(), Value::String("generate".to_string()));
+    engine.generate(&args.prompt, settings, intent)?;
+    engine.finish()?;
+    Ok(0)
+}
+
+fn run_recreate_native(args: RecreateArgs) -> Result<i32> {
+    let events_path = args
+        .events
+        .clone()
+        .unwrap_or_else(|| args.out.join("events.jsonl"));
+    let mut engine = NativeEngine::new(
+        &args.out,
+        &events_path,
+        Some(args.text_model.clone()),
+        args.image_model.clone(),
+    )?;
+    let result = planning::run_native_recreate_loop(&mut engine, &args.reference, "quality", 2);
+    engine.finish()?;
+    result?;
+    Ok(0)
+}
+
+fn run_export_native(args: ExportArgs) -> Result<i32> {
+    export::export_html_native(&args.run, &args.out)?;
+    println!("Exported to {}", args.out.display());
+    Ok(0)
+}
+
+fn chat_settings(quality_preset: &str) -> Map<String, Value> {
+    let mut settings = Map::new();
+    settings.insert("size".to_string(), Value::String("1024x1024".to_string()));
+    settings.insert("n".to_string(), json!(1));
+    settings.insert(
+        "output_format".to_string(),
+        Value::String("png".to_string()),
+    );
+    settings.insert(
+        "quality_preset".to_string(),
+        Value::String(quality_preset.to_string()),
+    );
+    settings
+}
+
+fn describe_local_image(path: &Path, max_chars: usize) -> String {
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("image")
+        .replace('_', " ")
+        .replace('-', " ");
+    let base = if stem.trim().is_empty() {
+        "image".to_string()
+    } else {
+        stem
+    };
+    let raw = format!("{} image", base.trim());
+    truncate_for_describe(raw, max_chars)
+}
+
+fn truncate_for_describe(text: String, max_chars: usize) -> String {
+    let trimmed = text.trim().to_string();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed;
+    }
+    let mut out = String::new();
+    for ch in trimmed.chars().take(max_chars.saturating_sub(1)) {
+        out.push(ch);
+    }
+    out.push('…');
+    out
+}
+
+fn format_cost(value: Option<f64>) -> String {
+    match value {
+        Some(raw) => format!("${raw:.4}"),
+        None => "N/A".to_string(),
+    }
+}
+
+fn format_latency(value: Option<f64>) -> String {
+    match value {
+        Some(raw) => format!("{raw:.2}s"),
+        None => "N/A".to_string(),
+    }
+}
+
+fn print_generation_cost_latency(engine: &NativeEngine) {
+    let cost = engine
+        .last_cost_latency()
+        .map(|metrics| metrics.cost_total_usd);
+    let latency = engine
+        .last_cost_latency()
+        .map(|metrics| metrics.latency_per_image_s);
+    println!(
+        "Cost of generation: {} | Latency per image: {}",
+        format_cost(cost),
+        format_latency(latency)
+    );
+}
+
+fn update_last_artifact_path(
+    artifacts: &[Map<String, Value>],
+    last_artifact_path: &mut Option<String>,
+) {
+    if let Some(path) = artifacts
+        .last()
+        .and_then(|artifact| artifact.get("image_path"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+    {
+        *last_artifact_path = Some(path);
+    }
+}
+
+fn active_image_for_edit_prompt(prompt: &str, active_image_path: Option<&str>) -> Option<String> {
+    if !is_edit_style_prompt(prompt) {
+        return None;
+    }
+    let path = active_image_path
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let candidate = PathBuf::from(path);
+    if candidate.exists() && candidate.is_file() {
+        Some(path.to_string())
+    } else {
+        None
+    }
+}
+
+fn is_edit_style_prompt(prompt: &str) -> bool {
+    let mut tokens = prompt.split_whitespace();
+    let head = tokens.next().unwrap_or("").trim().to_ascii_lowercase();
+    matches!(head.as_str(), "edit" | "replace")
+}
+
+fn value_as_string_list(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|item| item.as_str().map(str::trim).map(str::to_string))
+        .filter(|item| !item.is_empty())
+        .collect()
+}
+
+fn latest_thread_version(run_dir: &Path) -> Option<Map<String, Value>> {
+    let thread_path = run_dir.join("thread.json");
+    let payload = read_json_object(&thread_path)?;
+    payload
+        .get("versions")
+        .and_then(Value::as_array)
+        .and_then(|rows| rows.last())
+        .and_then(Value::as_object)
+        .cloned()
+}
+
+fn latest_thread_prompt(run_dir: &Path) -> Option<String> {
+    latest_thread_version(run_dir)?
+        .get("prompt")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|row| !row.is_empty())
+        .map(str::to_string)
+}
+
+fn latest_thread_version_id(run_dir: &Path) -> Option<String> {
+    latest_thread_version(run_dir)?
+        .get("version_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|row| !row.is_empty())
+        .map(str::to_string)
+}
+
+fn latest_thread_settings(run_dir: &Path) -> Option<Map<String, Value>> {
+    latest_thread_version(run_dir)?
+        .get("settings")
+        .and_then(Value::as_object)
+        .cloned()
+}
+
+fn latest_receipt_path(run_dir: &Path) -> Option<PathBuf> {
+    if let Some(version) = latest_thread_version(run_dir) {
+        if let Some(receipt) = version
+            .get("artifacts")
+            .and_then(Value::as_array)
+            .and_then(|rows| rows.last())
+            .and_then(Value::as_object)
+            .and_then(|artifact| artifact.get("receipt_path"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|row| !row.is_empty())
+        {
+            let path = PathBuf::from(receipt);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
+
+    let mut newest: Option<(SystemTime, PathBuf)> = None;
+    let entries = fs::read_dir(run_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path
+            .file_name()
+            .and_then(|row| row.to_str())
+            .unwrap_or_default();
+        if !(name.starts_with("receipt-") && name.ends_with(".json")) {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .unwrap_or(UNIX_EPOCH);
+        match &newest {
+            Some((best, _)) if modified <= *best => {}
+            _ => newest = Some((modified, path)),
+        }
+    }
+    newest.map(|(_, path)| path)
+}
+
+fn optimize_goal_present(goals: &[String], token: &str) -> bool {
+    let needle = token.to_ascii_lowercase();
+    goals
+        .iter()
+        .map(|goal| goal.to_ascii_lowercase())
+        .any(|goal| goal.contains(&needle))
+}
+
+fn push_optimize_recommendation(
+    recommendations: &mut Vec<Map<String, Value>>,
+    seen: &mut Vec<String>,
+    setting_name: &str,
+    setting_value: Value,
+    setting_target: &str,
+    rationale: &str,
+) {
+    let key = format!("{setting_target}:{setting_name}");
+    if seen.iter().any(|row| row == &key) {
+        return;
+    }
+    seen.push(key);
+    recommendations.push(json_object(json!({
+        "setting_name": setting_name,
+        "setting_value": setting_value,
+        "setting_target": setting_target,
+        "rationale": rationale,
+    })));
+}
+
+fn build_optimize_analysis(
+    receipt_path: &Path,
+    goals: &[String],
+    round: Option<(u64, u64)>,
+) -> (String, Vec<Map<String, Value>>) {
+    let receipt = read_json_object(receipt_path).unwrap_or_default();
+    let resolved = receipt
+        .get("resolved")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let result_metadata = receipt
+        .get("result_metadata")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+
+    let provider = resolved
+        .get("provider")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let model = resolved
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let size = resolved
+        .get("size")
+        .and_then(Value::as_str)
+        .unwrap_or("1024x1024");
+    let cost = result_metadata
+        .get("cost_total_usd")
+        .and_then(Value::as_f64)
+        .map(|value| format!("${value:.4}"))
+        .unwrap_or_else(|| "N/A".to_string());
+    let latency = result_metadata
+        .get("latency_per_image_s")
+        .and_then(Value::as_f64)
+        .map(|value| format!("{value:.2}s"))
+        .unwrap_or_else(|| "N/A".to_string());
+
+    let mut recommendations: Vec<Map<String, Value>> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+
+    if optimize_goal_present(goals, "quality") {
+        push_optimize_recommendation(
+            &mut recommendations,
+            &mut seen,
+            "steps",
+            json!(40),
+            "provider_options",
+            "Increase iterative refinement for higher detail fidelity.",
+        );
+        push_optimize_recommendation(
+            &mut recommendations,
+            &mut seen,
+            "guidance_scale",
+            json!(7.5),
+            "provider_options",
+            "Strengthen prompt adherence for tighter composition.",
+        );
+    }
+    if optimize_goal_present(goals, "cost") {
+        push_optimize_recommendation(
+            &mut recommendations,
+            &mut seen,
+            "size",
+            Value::String("768x768".to_string()),
+            "top_level",
+            "Reduce resolution to lower per-image spend.",
+        );
+        push_optimize_recommendation(
+            &mut recommendations,
+            &mut seen,
+            "n",
+            json!(1),
+            "top_level",
+            "Keep a single sample per round to control spend.",
+        );
+    }
+    if optimize_goal_present(goals, "time") {
+        push_optimize_recommendation(
+            &mut recommendations,
+            &mut seen,
+            "steps",
+            json!(22),
+            "provider_options",
+            "Cut iteration depth to improve turnaround latency.",
+        );
+        push_optimize_recommendation(
+            &mut recommendations,
+            &mut seen,
+            "size",
+            Value::String("768x768".to_string()),
+            "top_level",
+            "Smaller dimensions reduce generation time.",
+        );
+    }
+    if optimize_goal_present(goals, "retrieval") {
+        push_optimize_recommendation(
+            &mut recommendations,
+            &mut seen,
+            "style_strength",
+            json!(0.35),
+            "provider_options",
+            "Bias toward structural clarity for stronger model retrieval signals.",
+        );
+    }
+
+    if recommendations.is_empty() {
+        recommendations.push(json_object(json!({
+            "setting_name": "note",
+            "setting_value": "No actionable recommendations found.",
+            "setting_target": "comment",
+            "rationale": "Goals did not map to mutable generation settings.",
+        })));
+    }
+
+    let phase = round
+        .map(|(idx, total)| format!("round {idx}/{total}"))
+        .unwrap_or_else(|| "review".to_string());
+    let analysis_excerpt = format!(
+        "Optimize {phase}: baseline {provider}:{model} size={size} cost={cost} latency={latency}.",
+    );
+
+    (analysis_excerpt, recommendations)
+}
+
+fn format_optimize_recommendation(rec: &Map<String, Value>) -> String {
+    let setting_name = rec
+        .get("setting_name")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let setting_target = rec
+        .get("setting_target")
+        .and_then(Value::as_str)
+        .unwrap_or("provider_options")
+        .to_string();
+    let setting_value = rec
+        .get("setting_value")
+        .map(|value| match value {
+            Value::String(text) => text.clone(),
+            Value::Null => "null".to_string(),
+            _ => value.to_string(),
+        })
+        .unwrap_or_default();
+
+    if setting_target == "comment" {
+        return setting_value;
+    }
+    if setting_target == "request" || setting_target == "top_level" {
+        return format!("{setting_name}={setting_value}");
+    }
+    format!("provider_options.{setting_name}={setting_value}")
+}
+
+fn apply_optimize_recommendations(
+    settings: &mut Map<String, Value>,
+    recommendations: &[Map<String, Value>],
+) -> (Vec<String>, Vec<String>) {
+    let mut applied: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+
+    for rec in recommendations {
+        let Some(setting_name) = rec
+            .get("setting_name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|row| !row.is_empty())
+            .map(str::to_string)
+        else {
+            skipped.push("missing setting_name".to_string());
+            continue;
+        };
+        let setting_target = rec
+            .get("setting_target")
+            .and_then(Value::as_str)
+            .unwrap_or("provider_options")
+            .to_ascii_lowercase();
+        let setting_value = rec.get("setting_value").cloned().unwrap_or(Value::Null);
+        let summary = format_optimize_recommendation(rec);
+
+        if setting_target == "comment" {
+            skipped.push(summary);
+            continue;
+        }
+
+        if setting_target == "request" || setting_target == "top_level" {
+            if settings.get(&setting_name) == Some(&setting_value) {
+                skipped.push(summary);
+                continue;
+            }
+            settings.insert(setting_name, setting_value);
+            applied.push(summary);
+            continue;
+        }
+
+        let provider_options = settings
+            .entry("provider_options".to_string())
+            .or_insert_with(|| Value::Object(Map::new()));
+        if !provider_options.is_object() {
+            *provider_options = Value::Object(Map::new());
+        }
+        let provider_options = provider_options
+            .as_object_mut()
+            .expect("provider options object");
+        if provider_options.get(&setting_name) == Some(&setting_value) {
+            skipped.push(summary);
+            continue;
+        }
+        provider_options.insert(setting_name, setting_value);
+        applied.push(summary);
+    }
+
+    (applied, skipped)
+}
+
+fn ids_list(value: Option<&Value>) -> Vec<String> {
+    value_as_string_list(value)
+}
+
+fn compact_timestamp() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().to_string())
+        .unwrap_or_else(|_| "0".to_string())
+}
+
+fn read_json_object(path: &Path) -> Option<Map<String, Value>> {
+    let raw = fs::read_to_string(path).ok()?;
+    let parsed: Value = serde_json::from_str(&raw).ok()?;
+    parsed.as_object().cloned()
+}
+
+fn read_json_value(path: &Path) -> Option<Value> {
+    let raw = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+fn write_json_value(path: &Path, value: &Value) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let encoded = serde_json::to_string_pretty(value)?;
+    fs::write(path, encoded)?;
+    Ok(())
+}
+
+fn snapshot_sidecar_path(snapshot_path: &Path) -> PathBuf {
+    let mut out = snapshot_path.to_path_buf();
+    if let Some(stem) = snapshot_path.file_stem().and_then(|value| value.to_str()) {
+        out.set_file_name(format!("{stem}.ctx.json"));
+    } else {
+        out.set_extension("ctx.json");
+    }
+    out
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+struct SnapshotImageHint {
+    id: String,
+    file: String,
+    vision_desc: String,
+}
+
+fn snapshot_image_hints(snapshot_path: &Path) -> Vec<SnapshotImageHint> {
+    let sidecar = snapshot_sidecar_path(snapshot_path);
+    let payload = match read_json_object(&sidecar) {
+        Some(payload) => payload,
+        None => return Vec::new(),
+    };
+    let images = payload
+        .get("images")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for row in images {
+        let Some(obj) = row.as_object() else {
+            continue;
+        };
+        let id = obj
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_string();
+        let file = obj
+            .get("file")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_string();
+        let vision_desc = obj
+            .get("vision_desc")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_string();
+        if id.is_empty() && file.is_empty() && vision_desc.is_empty() {
+            continue;
+        }
+        out.push(SnapshotImageHint {
+            id,
+            file,
+            vision_desc,
+        });
+    }
+    out
+}
+
+fn infer_canvas_context_text(path: &Path) -> String {
+    let hints = snapshot_image_hints(path);
+    let image_count = hints.len().max(1);
+    let mut phrases: Vec<String> = hints
+        .iter()
+        .map(|hint| {
+            if !hint.vision_desc.trim().is_empty() {
+                hint.vision_desc.clone()
+            } else {
+                humanize_file_name(&hint.file)
+            }
+        })
+        .filter(|item| !item.trim().is_empty())
+        .collect();
+    if phrases.is_empty() {
+        phrases.push(describe_local_image(path, 48));
+    }
+
+    let haystack = phrases.join(" ").to_ascii_lowercase();
+    let use_case = if contains_any(
+        &haystack,
+        &[
+            "product",
+            "listing",
+            "marketplace",
+            "catalog",
+            "merch",
+            "ecommerce",
+        ],
+    ) {
+        "product listing / ecommerce"
+    } else if contains_any(
+        &haystack,
+        &["ui", "ux", "dashboard", "wireframe", "prototype", "screen"],
+    ) {
+        "ui/ux prototyping"
+    } else if contains_any(
+        &haystack,
+        &[
+            "stream",
+            "thumbnail",
+            "social",
+            "poster",
+            "hero",
+            "campaign",
+        ],
+    ) {
+        "social/marketing creative"
+    } else {
+        "visual concept iteration"
+    };
+
+    let actions: Vec<(&str, &str)> = if image_count >= 3 {
+        vec![
+            (
+                "Triforce",
+                "distill three references into one centroid composition",
+            ),
+            (
+                "Extract the Rule",
+                "surface a shared principle across the triplet",
+            ),
+            ("Odd One Out", "identify which reference breaks the pattern"),
+            ("Argue", "compare the strongest pairwise direction"),
+            ("Variations", "branch quickly from current composition"),
+        ]
+    } else if image_count == 2 {
+        vec![
+            (
+                "Bridge",
+                "generate an aesthetic midpoint between both images",
+            ),
+            (
+                "Swap DNA",
+                "transfer style surface while preserving structure",
+            ),
+            ("Combine", "fuse both photos into one coherent scene"),
+            ("Argue", "decide which direction should lead"),
+            ("Variations", "expand the stronger direction"),
+        ]
+    } else {
+        vec![
+            ("Variations", "explore quick zero-prompt branches"),
+            ("Recast", "take a lateral leap while keeping core identity"),
+            ("Diagnose", "pinpoint the highest-impact correction"),
+            ("Background: White", "prepare clean product-style output"),
+            ("Annotate", "mark one targeted local edit"),
+        ]
+    };
+
+    let subject_lines: Vec<String> = phrases
+        .iter()
+        .take(6)
+        .map(|line| format!("- {}", clamp_text(line, 80)))
+        .collect();
+    let style_tags = infer_style_tags(&haystack, image_count);
+    let style_lines: Vec<String> = style_tags
+        .iter()
+        .map(|tag| format!("- {}", clamp_text(tag, 40)))
+        .collect();
+    let action_lines: Vec<String> = actions
+        .into_iter()
+        .take(5)
+        .map(|(action, why)| format!("- {action}: {why}"))
+        .collect();
+
+    let summary = if image_count == 1 {
+        format!(
+            "Single-image workspace focused on {}.",
+            clamp_text(&phrases[0], 72)
+        )
+    } else {
+        format!(
+            "{image_count} images staged for synthesis and comparison across a shared visual language."
+        )
+    };
+
+    [
+        "CANVAS:".to_string(),
+        summary,
+        "".to_string(),
+        "USE CASE (guess):".to_string(),
+        use_case.to_string(),
+        "".to_string(),
+        "SUBJECTS:".to_string(),
+        subject_lines.join("\n"),
+        "".to_string(),
+        "STYLE:".to_string(),
+        style_lines.join("\n"),
+        "".to_string(),
+        "NEXT ACTIONS:".to_string(),
+        action_lines.join("\n"),
+    ]
+    .join("\n")
+}
+
+fn infer_style_tags(haystack: &str, image_count: usize) -> Vec<String> {
+    let mut tags: Vec<String> = Vec::new();
+    if contains_any(haystack, &["portrait", "face", "person", "human"]) {
+        tags.push("subject-centric".to_string());
+    }
+    if contains_any(haystack, &["interior", "room", "architecture", "space"]) {
+        tags.push("spatial composition".to_string());
+    }
+    if contains_any(haystack, &["product", "object", "device", "packaging"]) {
+        tags.push("product-forward".to_string());
+    }
+    if contains_any(haystack, &["dramatic", "cinematic", "noir"]) {
+        tags.push("cinematic lighting".to_string());
+    }
+    if contains_any(haystack, &["minimal", "clean", "white", "neutral"]) {
+        tags.push("minimal palette".to_string());
+    }
+    if image_count >= 2 {
+        tags.push("multi-reference fusion".to_string());
+    }
+    if tags.is_empty() {
+        tags.extend([
+            "cohesive composition".to_string(),
+            "readable focal hierarchy".to_string(),
+            "production-ready polish".to_string(),
+        ]);
+    }
+    tags.truncate(7);
+    tags
+}
+
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles
+        .iter()
+        .any(|needle| !needle.is_empty() && haystack.contains(needle))
+}
+
+fn clamp_text(text: &str, max_chars: usize) -> String {
+    let trimmed = text.trim();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed.to_string();
+    }
+    trimmed
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect::<String>()
+        + "…"
+}
+
+fn humanize_file_name(file: &str) -> String {
+    let stem = Path::new(file)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or(file)
+        .replace('_', " ")
+        .replace('-', " ");
+    let cleaned = stem
+        .split_whitespace()
+        .collect::<Vec<&str>>()
+        .join(" ")
+        .trim()
+        .to_string();
+    if cleaned.is_empty() {
+        "image".to_string()
+    } else {
+        cleaned
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RealtimeProvider {
+    OpenAiRealtime,
+    GeminiFlash,
+}
+
+impl RealtimeProvider {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::OpenAiRealtime => "openai_realtime",
+            Self::GeminiFlash => "gemini_flash",
+        }
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "openai" | "openai_realtime" => Some(Self::OpenAiRealtime),
+            "gemini" | "gemini_flash" => Some(Self::GeminiFlash),
+            _ => None,
+        }
+    }
+}
+
+pub(crate) fn canvas_context_realtime_provider() -> RealtimeProvider {
+    match realtime::RealtimeSessionConfig::from_current_env(
+        realtime::RealtimeSessionKind::CanvasContext,
+    )
+    .provider
+    {
+        realtime::RealtimeProvider::OpenAiRealtime => RealtimeProvider::OpenAiRealtime,
+        realtime::RealtimeProvider::GeminiFlash => RealtimeProvider::GeminiFlash,
+    }
+}
+
+fn intent_realtime_provider(mother: bool) -> RealtimeProvider {
+    match realtime::RealtimeSessionConfig::from_current_env(
+        realtime::RealtimeSessionKind::IntentIcons { mother },
+    )
+    .provider
+    {
+        realtime::RealtimeProvider::OpenAiRealtime => RealtimeProvider::OpenAiRealtime,
+        realtime::RealtimeProvider::GeminiFlash => RealtimeProvider::GeminiFlash,
+    }
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn default_realtime_model(provider: RealtimeProvider, _mother: bool) -> &'static str {
+    match provider {
+        RealtimeProvider::OpenAiRealtime => realtime::config::default_realtime_model(
+            realtime::RealtimeProvider::OpenAiRealtime,
+            false,
+        ),
+        RealtimeProvider::GeminiFlash => {
+            realtime::config::default_realtime_model(realtime::RealtimeProvider::GeminiFlash, false)
+        }
+    }
+}
+
+fn canvas_context_realtime_model() -> String {
+    realtime::RealtimeSessionConfig::from_current_env(realtime::RealtimeSessionKind::CanvasContext)
+        .model
+}
+
+fn intent_realtime_model(mother: bool) -> String {
+    realtime::RealtimeSessionConfig::from_current_env(realtime::RealtimeSessionKind::IntentIcons {
+        mother,
+    })
+    .model
+}
+
+fn extract_action_version_from_path(path: &Path) -> Option<i64> {
+    let name = path.file_name()?.to_string_lossy().to_string();
+    extract_action_version_from_text(&name)
+}
+
+fn extract_action_version_from_text(raw: &str) -> Option<i64> {
+    for token in raw.split(|ch: char| !ch.is_ascii_alphanumeric()) {
+        if token.len() < 2 {
+            continue;
+        }
+        let lowered = token.to_ascii_lowercase();
+        if let Some(rest) = lowered.strip_prefix('a') {
+            if !rest.is_empty() && rest.chars().all(|ch| ch.is_ascii_digit()) {
+                if let Ok(value) = rest.parse::<i64>() {
+                    return Some(value);
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+const REALTIME_BETA_HEADER_VALUE: &str = "realtime=v1";
+const REALTIME_TIMEOUT_SECONDS: f64 = 42.0;
+const REALTIME_MAX_PARTIAL_HZ_MS: u64 = 250;
+#[cfg_attr(not(test), allow(dead_code))]
+const REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_MAX: usize = 8;
+
+fn unix_epoch_millis() -> i64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    i64::try_from(now.as_millis()).unwrap_or(i64::MAX)
+}
+
+#[derive(Clone, Copy, Debug)]
+enum RealtimeSessionKind {
+    CanvasContext,
+    IntentIcons { mother: bool },
+}
+
+impl RealtimeSessionKind {
+    fn provider(self) -> RealtimeProvider {
+        match self {
+            Self::CanvasContext => canvas_context_realtime_provider(),
+            Self::IntentIcons { mother } => intent_realtime_provider(mother),
+        }
+    }
+
+    fn provider_env_key(self) -> &'static str {
+        match self {
+            Self::CanvasContext => "CUE_CANVAS_CONTEXT_REALTIME_PROVIDER",
+            Self::IntentIcons { mother: true } => "CUE_MOTHER_INTENT_REALTIME_PROVIDER",
+            Self::IntentIcons { mother: false } => "CUE_INTENT_REALTIME_PROVIDER",
+        }
+    }
+
+    fn event_type(self) -> &'static str {
+        match self {
+            Self::CanvasContext => "canvas_context",
+            Self::IntentIcons { .. } => "intent_icons",
+        }
+    }
+
+    fn failed_event_type(self) -> &'static str {
+        match self {
+            Self::CanvasContext => "canvas_context_failed",
+            Self::IntentIcons { .. } => "intent_icons_failed",
+        }
+    }
+
+    fn instruction(self) -> String {
+        match self {
+            Self::CanvasContext => canvas_context_realtime_instruction().to_string(),
+            Self::IntentIcons { mother } => observe::vision::intent_icons_instruction(mother),
+        }
+    }
+
+    fn per_request_input_text(self) -> Option<&'static str> {
+        match self {
+            Self::CanvasContext => None,
+            Self::IntentIcons { .. } => Some(
+                "For image_descriptions labels, use concise computer-vision caption style and keep each label <= 40 characters. Prefer the most specific identifiable subject. If a person/character is confidently recognizable, use the proper name. Avoid generic role labels like 'basketball player' when identity is recognizable. If SOURCE_IMAGE_REFERENCE inputs are present, prioritize them for identity/detail over low-res canvas cues. Do not infer sports team/franchise from jersey colors alone; only mention a team when text/logo is clearly readable. Do not mirror generic vision_desc hints from CONTEXT_ENVELOPE_JSON. Return strict JSON only.",
+            ),
+        }
+    }
+
+    fn temperature(self) -> f64 {
+        match self {
+            Self::CanvasContext => 0.6,
+            Self::IntentIcons { .. } => 0.6,
+        }
+    }
+
+    fn max_output_tokens(self) -> u64 {
+        match self {
+            Self::CanvasContext => 520,
+            Self::IntentIcons { .. } => 2200,
+        }
+    }
+
+    fn timeout_message(self) -> &'static str {
+        match self {
+            Self::CanvasContext => "Realtime canvas context timed out.",
+            Self::IntentIcons { .. } => "Realtime intent inference timed out.",
+        }
+    }
+
+    fn empty_response_message(self, response: &Value) -> String {
+        let suffix = summarize_realtime_response(response);
+        match self {
+            Self::CanvasContext => format!("Empty realtime canvas context response.{suffix}"),
+            Self::IntentIcons { .. } => {
+                format!("Empty realtime intent inference response.{suffix}")
+            }
+        }
+    }
+
+    fn disabled_message(self) -> &'static str {
+        match self {
+            Self::CanvasContext => {
+                "Realtime canvas context is disabled (CUE_CANVAS_CONTEXT_REALTIME_DISABLED=1)."
+            }
+            Self::IntentIcons { .. } => {
+                "Realtime intent inference is disabled (CUE_INTENT_REALTIME_DISABLED=1)."
+            }
+        }
+    }
+
+    fn thread_name(self) -> &'static str {
+        match self {
+            Self::CanvasContext => "cue-aov-realtime",
+            Self::IntentIcons { mother: true } => "cue-intent-realtime-mother",
+            Self::IntentIcons { mother: false } => "cue-intent-realtime",
+        }
+    }
+
+    fn select_job(self, jobs: &[RealtimeSnapshotJob]) -> Option<RealtimeSnapshotJob> {
+        if jobs.is_empty() {
+            return None;
+        }
+        match self {
+            Self::IntentIcons { .. } => jobs
+                .iter()
+                .rfind(|job| is_mother_intent_snapshot_path(&job.image_path))
+                .cloned()
+                .or_else(|| jobs.last().cloned()),
+            Self::CanvasContext => jobs.last().cloned(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RealtimeSnapshotJob {
+    image_path: String,
+    submitted_at_ms: i64,
+}
+
+enum RealtimeCommand {
+    Snapshot(RealtimeSnapshotJob),
+    Stop,
+}
+
+struct RealtimeSnapshotSession {
+    events: EventWriter,
+    model: String,
+    provider: RealtimeProvider,
+    disabled: bool,
+    kind: RealtimeSessionKind,
+    sender: Option<mpsc::Sender<RealtimeCommand>>,
+    handle: Option<thread::JoinHandle<()>>,
+    fatal_error: Arc<Mutex<Option<String>>>,
+    stop_flag: Option<Arc<AtomicBool>>,
+}
+
+impl RealtimeSnapshotSession {
+    fn new(events: EventWriter, model: String, kind: RealtimeSessionKind, disabled: bool) -> Self {
+        Self {
+            events,
+            model,
+            provider: kind.provider(),
+            disabled,
+            kind,
+            sender: None,
+            handle: None,
+            fatal_error: Arc::new(Mutex::new(None)),
+            stop_flag: None,
+        }
+    }
+
+    fn model(&self) -> &str {
+        &self.model
+    }
+
+    fn source(&self) -> &'static str {
+        self.provider.as_str()
+    }
+
+    fn missing_api_key_message(&self) -> String {
+        match self.provider {
+            RealtimeProvider::OpenAiRealtime => {
+                if openrouter_api_key().is_some() {
+                    format!(
+                        "Realtime provider '{}' requires OPENAI_API_KEY (or OPENAI_API_KEY_BACKUP). OpenRouter does not support OpenAI realtime websocket for this flow. Set {}=gemini_flash and configure OPENROUTER_API_KEY or GEMINI_API_KEY (or GOOGLE_API_KEY), or provide OpenAI realtime credentials.",
+                        self.provider.as_str(),
+                        self.kind.provider_env_key()
+                    )
+                } else {
+                    "Missing OPENAI_API_KEY (or OPENAI_API_KEY_BACKUP).".to_string()
+                }
+            }
+            RealtimeProvider::GeminiFlash => "Missing GEMINI_API_KEY (or GOOGLE_API_KEY) or OPENROUTER_API_KEY for realtime provider gemini_flash.".to_string(),
+        }
+    }
+
+    fn start(&mut self) -> (bool, Option<String>) {
+        if self.disabled {
+            return (false, Some(self.kind.disabled_message().to_string()));
+        }
+        let (api_key, gemini_via_openrouter) = match self.provider {
+            RealtimeProvider::OpenAiRealtime => (openai_api_key(), false),
+            RealtimeProvider::GeminiFlash => resolve_gemini_flash_credentials(),
+        };
+        let Some(api_key) = api_key else {
+            return (false, Some(self.missing_api_key_message()));
+        };
+        if self.provider == RealtimeProvider::GeminiFlash {
+            match resolve_realtime_gemini_model_for_transport(&self.model, gemini_via_openrouter) {
+                Ok(model) => self.model = model,
+                Err(message) => return (false, Some(message)),
+            }
+        }
+
+        self.cleanup_finished_worker();
+        if self.worker_alive() {
+            return (true, None);
+        }
+
+        if let Ok(mut fatal) = self.fatal_error.lock() {
+            *fatal = None;
+        }
+
+        let (tx, rx) = mpsc::channel();
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let worker = RealtimeWorker {
+            events: self.events.clone(),
+            model: self.model.clone(),
+            provider: self.provider,
+            kind: self.kind,
+            api_key,
+            gemini_via_openrouter,
+            fatal_error: Arc::clone(&self.fatal_error),
+            stop_flag: Arc::clone(&stop_flag),
+        };
+        let handle = match thread::Builder::new()
+            .name(self.kind.thread_name().to_string())
+            .spawn(move || worker.run(rx))
+        {
+            Ok(handle) => handle,
+            Err(err) => return (false, Some(format!("Realtime thread spawn failed: {err}"))),
+        };
+
+        self.sender = Some(tx);
+        self.handle = Some(handle);
+        self.stop_flag = Some(stop_flag);
+        (true, None)
+    }
+
+    fn stop(&mut self) {
+        if let Some(flag) = self.stop_flag.as_ref() {
+            flag.store(true, Ordering::SeqCst);
+        }
+        if let Some(tx) = self.sender.take() {
+            let _ = tx.send(RealtimeCommand::Stop);
+        }
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+        self.stop_flag = None;
+    }
+
+    fn submit_snapshot(&mut self, snapshot_path: &Path) -> (bool, Option<String>) {
+        if self.disabled {
+            return (false, Some(self.kind.disabled_message().to_string()));
+        }
+        if !snapshot_path.exists() {
+            return (
+                false,
+                Some(format!("Snapshot not found: {}", snapshot_path.display())),
+            );
+        }
+        if let Ok(fatal) = self.fatal_error.lock() {
+            if let Some(message) = fatal.clone() {
+                return (false, Some(message));
+            }
+        }
+
+        self.cleanup_finished_worker();
+        if !self.worker_alive() {
+            let (ok, err) = self.start();
+            if !ok {
+                return (ok, err);
+            }
+            if let Ok(fatal) = self.fatal_error.lock() {
+                if let Some(message) = fatal.clone() {
+                    return (false, Some(message));
+                }
+            }
+        }
+
+        let Some(tx) = self.sender.as_ref() else {
+            return (
+                false,
+                Some("Realtime session channel unavailable.".to_string()),
+            );
+        };
+        let job = RealtimeSnapshotJob {
+            image_path: snapshot_path.to_string_lossy().to_string(),
+            submitted_at_ms: unix_epoch_millis(),
+        };
+        if tx.send(RealtimeCommand::Snapshot(job)).is_err() {
+            return (false, Some("Realtime session is not running.".to_string()));
+        }
+        (true, None)
+    }
+
+    fn worker_alive(&self) -> bool {
+        self.handle
+            .as_ref()
+            .map(|handle| !handle.is_finished())
+            .unwrap_or(false)
+    }
+
+    fn cleanup_finished_worker(&mut self) {
+        let finished = self
+            .handle
+            .as_ref()
+            .map(|handle| handle.is_finished())
+            .unwrap_or(false);
+        if !finished {
+            return;
+        }
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+        self.sender = None;
+        self.stop_flag = None;
+    }
+}
+
+fn resolve_gemini_flash_credentials() -> (Option<String>, bool) {
+    if let Some(key) = openrouter_api_key() {
+        return (Some(key), true);
+    }
+    if let Some(key) = gemini_api_key() {
+        return (Some(key), false);
+    }
+    (None, false)
+}
+
+fn resolve_realtime_gemini_model_for_transport(
+    raw: &str,
+    via_openrouter: bool,
+) -> std::result::Result<String, String> {
+    realtime::resolve_realtime_gemini_model_for_transport(raw, via_openrouter)
+}
+
+fn sanitize_gemini_generate_content_model(raw: &str, default_model: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return default_model.to_string();
+    }
+
+    let mut cleaned = trimmed
+        .strip_prefix("models/")
+        .unwrap_or(trimmed)
+        .trim()
+        .to_string();
+    if let Some(stripped) = cleaned.strip_prefix("google/") {
+        cleaned = stripped.trim().to_string();
+    }
+    if cleaned.is_empty() {
+        return default_model.to_string();
+    }
+
+    match cleaned.to_ascii_lowercase().as_str() {
+        "gemini-3.0-flash" | "gemini-3-flash" => "gemini-3-flash-preview".to_string(),
+        "gemini-3.0-pro" | "gemini-3-pro" => "gemini-3-pro-preview".to_string(),
+        "gemini-2.0-flash" => "gemini-2.0-flash-001".to_string(),
+        "gemini-2.0-flash-lite" => "gemini-2.0-flash-lite-001".to_string(),
+        _ => cleaned,
+    }
+}
+
+fn sanitize_openrouter_gemini_model(raw: &str, default_model: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return default_model.to_string();
+    }
+    let source = trimmed
+        .strip_prefix("google/")
+        .map(str::trim)
+        .unwrap_or(trimmed);
+    let cleaned = sanitize_gemini_generate_content_model(source, "gemini-3-flash-preview");
+    let lowered = cleaned.to_ascii_lowercase();
+    if cleaned.starts_with("google/") {
+        cleaned
+    } else if lowered.starts_with("gemini-") {
+        format!("google/{cleaned}")
+    } else {
+        trimmed.to_string()
+    }
+}
+
+pub(crate) fn sanitize_openrouter_model(raw: &str, default_model: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return default_model.to_string();
+    }
+    let lowered = trimmed.to_ascii_lowercase();
+    if trimmed.contains('/') {
+        if lowered.starts_with("google/gemini") {
+            return sanitize_openrouter_gemini_model(trimmed, "google/gemini-3-flash-preview");
+        }
+        return trimmed.to_string();
+    }
+    if lowered.starts_with("gemini") {
+        return sanitize_openrouter_gemini_model(trimmed, "google/gemini-3-flash-preview");
+    }
+    if lowered.starts_with("gpt-")
+        || lowered.starts_with("o1")
+        || lowered.starts_with("o3")
+        || lowered.starts_with("o4")
+    {
+        return format!("openai/{trimmed}");
+    }
+    if lowered.starts_with("claude") {
+        return format!("anthropic/{trimmed}");
+    }
+    trimmed.to_string()
+}
+
+struct CanvasContextRealtimeSession {
+    inner: RealtimeSnapshotSession,
+}
+
+impl CanvasContextRealtimeSession {
+    fn new(events: EventWriter) -> Self {
+        Self {
+            inner: RealtimeSnapshotSession::new(
+                events,
+                canvas_context_realtime_model(),
+                RealtimeSessionKind::CanvasContext,
+                compat_env_var("CUE_CANVAS_CONTEXT_REALTIME_DISABLED")
+                    .map(|value| value.trim() == "1")
+                    .unwrap_or(false),
+            ),
+        }
+    }
+
+    fn model(&self) -> &str {
+        self.inner.model()
+    }
+
+    fn source(&self) -> &'static str {
+        self.inner.source()
+    }
+
+    fn start(&mut self) -> (bool, Option<String>) {
+        self.inner.start()
+    }
+
+    fn stop(&mut self) {
+        self.inner.stop();
+    }
+
+    fn submit_snapshot(&mut self, snapshot_path: &Path) -> (bool, Option<String>) {
+        self.inner.submit_snapshot(snapshot_path)
+    }
+}
+
+struct IntentIconsRealtimeSession {
+    inner: RealtimeSnapshotSession,
+}
+
+impl IntentIconsRealtimeSession {
+    fn new(events: EventWriter, mother: bool) -> Self {
+        Self {
+            inner: RealtimeSnapshotSession::new(
+                events,
+                intent_realtime_model(mother),
+                RealtimeSessionKind::IntentIcons { mother },
+                compat_env_var("CUE_INTENT_REALTIME_DISABLED")
+                    .map(|value| value.trim() == "1")
+                    .unwrap_or(false),
+            ),
+        }
+    }
+
+    fn model(&self) -> &str {
+        self.inner.model()
+    }
+
+    fn source(&self) -> &'static str {
+        self.inner.source()
+    }
+
+    fn start(&mut self) -> (bool, Option<String>) {
+        self.inner.start()
+    }
+
+    fn stop(&mut self) {
+        self.inner.stop();
+    }
+
+    fn submit_snapshot(&mut self, snapshot_path: &Path) -> (bool, Option<String>) {
+        self.inner.submit_snapshot(snapshot_path)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RealtimeJobErrorKind {
+    Transport,
+    Terminal,
+}
+
+#[derive(Debug)]
+struct RealtimeJobError {
+    kind: RealtimeJobErrorKind,
+    message: String,
+}
+
+impl RealtimeJobError {
+    fn transport(message: impl Into<String>) -> Self {
+        Self {
+            kind: RealtimeJobErrorKind::Transport,
+            message: message.into(),
+        }
+    }
+
+    fn terminal(message: impl Into<String>) -> Self {
+        Self {
+            kind: RealtimeJobErrorKind::Terminal,
+            message: message.into(),
+        }
+    }
+
+    fn from_anyhow(err: anyhow::Error) -> Self {
+        let message = error_chain_message(&err);
+        if is_anyhow_realtime_transport_error(&err) {
+            Self::transport(message)
+        } else {
+            Self::terminal(message)
+        }
+    }
+
+    fn from_tungstenite(prefix: &str, err: tungstenite::Error) -> Self {
+        let message = format!("{prefix}: {err}");
+        if is_tungstenite_transport_error(&err) {
+            Self::transport(message)
+        } else {
+            Self::terminal(message)
+        }
+    }
+
+    fn is_transport(&self) -> bool {
+        self.kind == RealtimeJobErrorKind::Transport
+    }
+}
+
+impl std::fmt::Display for RealtimeJobError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+struct RealtimeWorker {
+    events: EventWriter,
+    model: String,
+    provider: RealtimeProvider,
+    kind: RealtimeSessionKind,
+    api_key: String,
+    gemini_via_openrouter: bool,
+    fatal_error: Arc<Mutex<Option<String>>>,
+    stop_flag: Arc<AtomicBool>,
+}
+
+impl RealtimeWorker {
+    fn run(self, rx: mpsc::Receiver<RealtimeCommand>) {
+        if let Err(err) = self.run_inner(rx) {
+            self.fail_fatal(None, format!("Realtime connection failed: {err}"));
+        }
+    }
+
+    fn run_inner(&self, rx: mpsc::Receiver<RealtimeCommand>) -> Result<()> {
+        match self.provider {
+            RealtimeProvider::OpenAiRealtime => self.run_inner_openai(rx),
+            RealtimeProvider::GeminiFlash => self.run_inner_gemini(rx),
+        }
+    }
+
+    fn open_openai_session(&self) -> Result<WebSocket<MaybeTlsStream<TcpStream>>> {
+        let mut ws = open_realtime_websocket(&self.model, &self.api_key)?;
+        let session_update = json!({
+            "type": "session.update",
+            "session": {
+                "instructions": self.kind.instruction(),
+                "modalities": ["text"],
+                "temperature": self.kind.temperature(),
+                "max_response_output_tokens": self.kind.max_output_tokens(),
+            },
+        });
+        websocket_send_json(&mut ws, &session_update)?;
+        Ok(ws)
+    }
+
+    fn run_inner_openai(&self, rx: mpsc::Receiver<RealtimeCommand>) -> Result<()> {
+        let max_retries = realtime_transport_retry_limit();
+        let mut ws = self.open_openai_session()?;
+
+        while !self.stop_flag.load(Ordering::SeqCst) {
+            let command = match rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(command) => command,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            };
+
+            let mut jobs: Vec<RealtimeSnapshotJob> = Vec::new();
+            match command {
+                RealtimeCommand::Snapshot(job) => jobs.push(job),
+                RealtimeCommand::Stop => break,
+            }
+
+            while let Ok(next) = rx.try_recv() {
+                match next {
+                    RealtimeCommand::Snapshot(job) => jobs.push(job),
+                    RealtimeCommand::Stop => {
+                        self.stop_flag.store(true, Ordering::SeqCst);
+                        break;
+                    }
+                }
+            }
+            if self.stop_flag.load(Ordering::SeqCst) {
+                break;
+            }
+
+            let Some(job) = self.kind.select_job(&jobs) else {
+                continue;
+            };
+            let mut attempt: usize = 0;
+            loop {
+                match self.run_openai_job(&mut ws, &job) {
+                    Ok(()) => break,
+                    Err(err) => {
+                        if !err.is_transport()
+                            || attempt >= max_retries
+                            || self.stop_flag.load(Ordering::SeqCst)
+                        {
+                            self.fail_fatal(Some(&job.image_path), err.to_string());
+                            return Ok(());
+                        }
+                        attempt += 1;
+                        let _ = ws.close(None);
+                        let backoff = realtime_transport_retry_backoff(attempt);
+                        if !backoff.is_zero() {
+                            thread::sleep(backoff);
+                        }
+                        let reconnect = self.open_openai_session().with_context(|| {
+                            format!(
+                                "failed to reconnect realtime session after transient transport error (attempt {attempt}/{max_retries})"
+                            )
+                        });
+                        match reconnect {
+                            Ok(new_ws) => ws = new_ws,
+                            Err(reconnect_err) => {
+                                if attempt < max_retries
+                                    && is_anyhow_realtime_transport_error(&reconnect_err)
+                                {
+                                    continue;
+                                }
+                                self.fail_fatal(Some(&job.image_path), reconnect_err.to_string());
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let _ = ws.close(None);
+        Ok(())
+    }
+
+    fn run_openai_job(
+        &self,
+        ws: &mut WebSocket<MaybeTlsStream<TcpStream>>,
+        job: &RealtimeSnapshotJob,
+    ) -> std::result::Result<(), RealtimeJobError> {
+        let _submitted_at_ms = job.submitted_at_ms;
+        let image_path = PathBuf::from(&job.image_path);
+        let data_url = read_image_as_data_url(&image_path).ok_or_else(|| {
+            RealtimeJobError::terminal("failed to read image for realtime request")
+        })?;
+        let mut content: Vec<Value> = Vec::new();
+        if let Some(inline_instruction) = self.kind.per_request_input_text() {
+            content.push(json!({"type": "input_text", "text": inline_instruction}));
+        }
+        if let Some(context_text) = read_canvas_context_envelope(&image_path) {
+            content.push(json!({"type": "input_text", "text": context_text}));
+        }
+        let context_refs = read_canvas_context_image_references(&image_path, 12);
+        if !context_refs.is_empty() {
+            let image_id_order = context_refs
+                .iter()
+                .map(|row| row.id.clone())
+                .collect::<Vec<String>>()
+                .join(", ");
+            content.push(json!({
+                "type": "input_text",
+                "text": format!("IMAGE_ID_ORDER: {image_id_order}"),
+            }));
+            content.push(json!({
+                "type": "input_text",
+                "text": "For image_descriptions, emit exactly one row per IMAGE_ID_ORDER id, preserve that order, and never swap labels across ids.",
+            }));
+        }
+        let reference_limit = match self.kind {
+            RealtimeSessionKind::IntentIcons { .. } => intent_realtime_reference_image_limit(),
+            RealtimeSessionKind::CanvasContext => 2,
+        };
+        for image_ref in context_refs.iter().take(reference_limit) {
+            if let Some(reference_data_url) =
+                observe::vision::prepare_vision_image_data_url(&image_ref.path, 1024)
+            {
+                content.push(json!({
+                    "type": "input_text",
+                    "text": format!("SOURCE_IMAGE_REFERENCE {} (high-res):", image_ref.id),
+                }));
+                content.push(json!({
+                    "type": "input_image",
+                    "image_url": reference_data_url,
+                }));
+            }
+        }
+        content.push(json!({"type": "input_image", "image_url": data_url}));
+        let request = json!({
+            "type": "response.create",
+            "response": {
+                "conversation": "none",
+                "modalities": ["text"],
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": content,
+                }],
+                "max_output_tokens": self.kind.max_output_tokens(),
+            },
+        });
+        websocket_send_json(ws, &request).map_err(RealtimeJobError::from_anyhow)?;
+
+        let mut buffer = String::new();
+        let mut response_id: Option<String> = None;
+        let mut last_emit = Instant::now();
+        let started = Instant::now();
+
+        while !self.stop_flag.load(Ordering::SeqCst) {
+            if started.elapsed().as_secs_f64() > REALTIME_TIMEOUT_SECONDS {
+                return Err(RealtimeJobError::terminal(self.kind.timeout_message()));
+            }
+
+            let message = match ws.read() {
+                Ok(message) => message,
+                Err(tungstenite::Error::Io(err))
+                    if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>
+                {
+                    continue;
+                }
+                Err(err) => {
+                    return Err(RealtimeJobError::from_tungstenite(
+                        "realtime read failed",
+                        err,
+                    ))
+                }
+            };
+
+            let raw = match message {
+                WsMessage::Text(text) => text.to_string(),
+                WsMessage::Binary(bytes) => String::from_utf8_lossy(&bytes).to_string(),
+                WsMessage::Ping(_) | WsMessage::Pong(_) => continue,
+                WsMessage::Close(_) => {
+                    return Err(RealtimeJobError::transport("realtime socket closed"))
+                }
+                _ => continue,
+            };
+
+            let parsed: Value = match serde_json::from_str(&raw) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let event_type = parsed
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+
+            if event_type == "error" {
+                return Err(RealtimeJobError::terminal(format_realtime_error(&parsed)));
+            }
+
+            if event_type == "response.created" {
+                if let Some(id) = parsed
+                    .get("response")
+                    .and_then(Value::as_object)
+                    .and_then(|row| row.get("id"))
+                    .and_then(Value::as_str)
+                {
+                    response_id = Some(id.to_string());
+                }
+                continue;
+            }
+
+            if event_type == "response.output_text.delta" {
+                let delta = parsed
+                    .get("delta")
+                    .and_then(Value::as_str)
+                    .or_else(|| parsed.get("text").and_then(Value::as_str))
+                    .unwrap_or_default();
+                if !delta.is_empty() {
+                    buffer = append_stream_delta(&buffer, delta);
+                }
+                if !buffer.trim().is_empty()
+                    && last_emit.elapsed() >= Duration::from_millis(REALTIME_MAX_PARTIAL_HZ_MS)
+                {
+                    last_emit = Instant::now();
+                    self.emit_stream_payload(&job.image_path, &buffer, true, None);
+                }
+                continue;
+            }
+
+            if event_type == "response.output_text.done" {
+                if let Some(text) = parsed
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .or_else(|| parsed.get("output_text").and_then(Value::as_str))
+                {
+                    if !text.is_empty() {
+                        buffer = merge_stream_text(&buffer, text);
+                    }
+                }
+                continue;
+            }
+
+            if event_type == "response.done" {
+                let response = parsed.get("response").cloned().unwrap_or(Value::Null);
+                if let Some(expected) = response_id.as_ref() {
+                    let actual = response
+                        .as_object()
+                        .and_then(|row| row.get("id"))
+                        .and_then(Value::as_str);
+                    if actual.is_some() && actual != Some(expected.as_str()) {
+                        continue;
+                    }
+                }
+                let (cleaned, response_meta) = resolve_streamed_response_text(&buffer, &response);
+                if cleaned.trim().is_empty() {
+                    return Err(RealtimeJobError::terminal(
+                        self.kind.empty_response_message(&response),
+                    ));
+                }
+                self.emit_stream_payload(&job.image_path, &cleaned, false, Some(response_meta));
+                return Ok(());
+            }
+        }
+
+        Ok(())
+    }
+
+    fn run_inner_gemini(&self, rx: mpsc::Receiver<RealtimeCommand>) -> Result<()> {
+        let max_retries = realtime_transport_retry_limit();
+
+        while !self.stop_flag.load(Ordering::SeqCst) {
+            let command = match rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(command) => command,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            };
+
+            let mut jobs: Vec<RealtimeSnapshotJob> = Vec::new();
+            match command {
+                RealtimeCommand::Snapshot(job) => jobs.push(job),
+                RealtimeCommand::Stop => break,
+            }
+
+            while let Ok(next) = rx.try_recv() {
+                match next {
+                    RealtimeCommand::Snapshot(job) => jobs.push(job),
+                    RealtimeCommand::Stop => {
+                        self.stop_flag.store(true, Ordering::SeqCst);
+                        break;
+                    }
+                }
+            }
+            if self.stop_flag.load(Ordering::SeqCst) {
+                break;
+            }
+
+            let Some(job) = self.kind.select_job(&jobs) else {
+                continue;
+            };
+            let mut attempt: usize = 0;
+            loop {
+                match self.run_gemini_job(&job) {
+                    Ok(()) => break,
+                    Err(err) => {
+                        if !err.is_transport()
+                            || attempt >= max_retries
+                            || self.stop_flag.load(Ordering::SeqCst)
+                        {
+                            self.fail_fatal(Some(&job.image_path), err.to_string());
+                            return Ok(());
+                        }
+                        attempt += 1;
+                        let backoff = realtime_transport_retry_backoff(attempt);
+                        if !backoff.is_zero() {
+                            thread::sleep(backoff);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn run_gemini_job(
+        &self,
+        job: &RealtimeSnapshotJob,
+    ) -> std::result::Result<(), RealtimeJobError> {
+        if self.gemini_via_openrouter {
+            return self.run_openrouter_gemini_job(job);
+        }
+        let _submitted_at_ms = job.submitted_at_ms;
+        let image_path = PathBuf::from(&job.image_path);
+        let main_image_part = read_image_as_gemini_inline_part(&image_path).ok_or_else(|| {
+            RealtimeJobError::terminal("failed to read image for realtime request")
+        })?;
+
+        let mut parts: Vec<Value> = Vec::new();
+        if let Some(context_text) = read_canvas_context_envelope(&image_path) {
+            parts.push(json!({ "text": context_text }));
+        }
+        if let Some(inline_instruction) = self.kind.per_request_input_text() {
+            parts.push(json!({ "text": inline_instruction }));
+        }
+
+        let context_refs = read_canvas_context_image_references(&image_path, 12);
+        if !context_refs.is_empty() {
+            let image_id_order = context_refs
+                .iter()
+                .map(|row| row.id.clone())
+                .collect::<Vec<String>>()
+                .join(", ");
+            parts.push(json!({
+                "text": format!("IMAGE_ID_ORDER: {image_id_order}"),
+            }));
+            parts.push(json!({
+                "text": "For image_descriptions, emit exactly one row per IMAGE_ID_ORDER id, preserve that order, and never swap labels across ids.",
+            }));
+        }
+        let reference_limit = match self.kind {
+            RealtimeSessionKind::IntentIcons { .. } => intent_realtime_reference_image_limit(),
+            RealtimeSessionKind::CanvasContext => 2,
+        };
+        for image_ref in context_refs.iter().take(reference_limit) {
+            if let Some((bytes, mime)) =
+                observe::vision::prepare_vision_image(&image_ref.path, 1024)
+            {
+                parts.push(json!({
+                    "text": format!("SOURCE_IMAGE_REFERENCE {} (high-res):", image_ref.id),
+                }));
+                parts.push(json!({
+                    "inlineData": {
+                        "mimeType": mime,
+                        "data": BASE64.encode(bytes),
+                    }
+                }));
+            }
+        }
+        parts.push(main_image_part);
+
+        let mut generation_config = Map::new();
+        generation_config.insert("temperature".to_string(), json!(self.kind.temperature()));
+        generation_config.insert(
+            "maxOutputTokens".to_string(),
+            Value::Number(self.kind.max_output_tokens().into()),
+        );
+        if let RealtimeSessionKind::IntentIcons { .. } = self.kind {
+            generation_config.insert(
+                "responseMimeType".to_string(),
+                Value::String("application/json".to_string()),
+            );
+        }
+        let payload = json!({
+            "systemInstruction": {
+                "parts": [{
+                    "text": self.kind.instruction()
+                }]
+            },
+            "contents": [{
+                "role": "user",
+                "parts": parts,
+            }],
+            "generationConfig": Value::Object(generation_config),
+        });
+        let endpoint = gemini_generate_content_endpoint(&self.model);
+        let client = HttpClient::builder()
+            .timeout(Duration::from_secs_f64(REALTIME_TIMEOUT_SECONDS))
+            .build()
+            .map_err(|err| {
+                RealtimeJobError::terminal(format!("failed to build realtime http client: {err}"))
+            })?;
+        let response = client
+            .post(&endpoint)
+            .query(&[("key", self.api_key.as_str())])
+            .header(CONTENT_TYPE, "application/json")
+            .json(&payload)
+            .send()
+            .map_err(|err| {
+                if is_reqwest_realtime_transport_error(&err) {
+                    RealtimeJobError::transport(format!("Gemini realtime request failed: {err}"))
+                } else {
+                    RealtimeJobError::terminal(format!("Gemini realtime request failed: {err}"))
+                }
+            })?;
+        if !response.status().is_success() {
+            let code = response.status().as_u16();
+            let body = response.text().unwrap_or_default();
+            return Err(RealtimeJobError::terminal(format!(
+                "Gemini realtime request failed ({code}): {}",
+                truncate_chars(&body, 420, 360)
+            )));
+        }
+        let parsed: Value = response.json().map_err(|err| {
+            RealtimeJobError::terminal(format!("Gemini realtime decode failed: {err}"))
+        })?;
+        let cleaned = extract_gemini_output_text(&parsed).trim().to_string();
+        if cleaned.is_empty() {
+            return Err(RealtimeJobError::terminal(
+                self.kind.empty_response_message(&parsed),
+            ));
+        }
+
+        let mut response_meta = Map::new();
+        if let Some((input_tokens, output_tokens)) = extract_gemini_token_usage_pair(&parsed) {
+            if let Some(value) = input_tokens {
+                response_meta.insert("input_tokens".to_string(), Value::Number(value.into()));
+            }
+            if let Some(value) = output_tokens {
+                response_meta.insert("output_tokens".to_string(), Value::Number(value.into()));
+            }
+        }
+        response_meta.insert(
+            "response_status".to_string(),
+            Value::String("completed".to_string()),
+        );
+        if let Some(reason) = extract_gemini_finish_reason(&parsed) {
+            response_meta.insert("response_status_reason".to_string(), Value::String(reason));
+        }
+
+        self.emit_stream_payload(&job.image_path, &cleaned, false, Some(response_meta));
+        Ok(())
+    }
+
+    fn run_openrouter_gemini_job(
+        &self,
+        job: &RealtimeSnapshotJob,
+    ) -> std::result::Result<(), RealtimeJobError> {
+        let _submitted_at_ms = job.submitted_at_ms;
+        let image_path = PathBuf::from(&job.image_path);
+        let data_url = read_image_as_data_url(&image_path).ok_or_else(|| {
+            RealtimeJobError::terminal("failed to read image for realtime request")
+        })?;
+
+        let mut chat_content: Vec<Value> = Vec::new();
+        if let Some(context_text) = read_canvas_context_envelope(&image_path) {
+            chat_content.push(json!({ "type": "text", "text": context_text }));
+        }
+        if let Some(inline_instruction) = self.kind.per_request_input_text() {
+            chat_content.push(json!({ "type": "text", "text": inline_instruction }));
+        }
+
+        let context_refs = read_canvas_context_image_references(&image_path, 12);
+        if !context_refs.is_empty() {
+            let image_id_order = context_refs
+                .iter()
+                .map(|row| row.id.clone())
+                .collect::<Vec<String>>()
+                .join(", ");
+            chat_content.push(json!({
+                "type": "text",
+                "text": format!("IMAGE_ID_ORDER: {image_id_order}"),
+            }));
+            chat_content.push(json!({
+                "type": "text",
+                "text": "For image_descriptions, emit exactly one row per IMAGE_ID_ORDER id, preserve that order, and never swap labels across ids.",
+            }));
+        }
+        let reference_limit = match self.kind {
+            RealtimeSessionKind::IntentIcons { .. } => intent_realtime_reference_image_limit(),
+            RealtimeSessionKind::CanvasContext => 2,
+        };
+        for image_ref in context_refs.iter().take(reference_limit) {
+            if let Some(reference_data_url) =
+                observe::vision::prepare_vision_image_data_url(&image_ref.path, 1024)
+            {
+                chat_content.push(json!({
+                    "type": "text",
+                    "text": format!("SOURCE_IMAGE_REFERENCE {} (high-res):", image_ref.id),
+                }));
+                chat_content.push(json!({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": reference_data_url,
+                    }
+                }));
+            }
+        }
+        chat_content.push(json!({
+            "type": "image_url",
+            "image_url": {
+                "url": data_url,
+            }
+        }));
+
+        let (response, cleaned, response_meta) =
+            self.request_openrouter_gemini_realtime(&chat_content)?;
+        if cleaned.trim().is_empty() {
+            return Err(RealtimeJobError::terminal(
+                self.kind.empty_response_message(&response),
+            ));
+        }
+        self.emit_stream_payload(&job.image_path, &cleaned, false, Some(response_meta));
+        Ok(())
+    }
+
+    fn request_openrouter_gemini_realtime(
+        &self,
+        chat_content: &[Value],
+    ) -> std::result::Result<(Value, String, Map<String, Value>), RealtimeJobError> {
+        if let Some(responses_result) = self.try_openrouter_responses_realtime(chat_content)? {
+            return Ok(responses_result);
+        }
+        self.request_openrouter_chat_completion_realtime(chat_content)
+    }
+
+    fn try_openrouter_responses_realtime(
+        &self,
+        chat_content: &[Value],
+    ) -> std::result::Result<Option<(Value, String, Map<String, Value>)>, RealtimeJobError> {
+        let endpoint = format!("{}/responses", openrouter_api_base());
+        let input_content =
+            observe::vision::openrouter_chat_content_to_responses_input(chat_content);
+        let request_model = sanitize_openrouter_model(&self.model, "google/gemini-3-flash-preview");
+        let payload = json!({
+            "model": request_model,
+            "instructions": self.kind.instruction(),
+            "input": [{
+                "role": "user",
+                "content": input_content,
+            }],
+            "modalities": ["text"],
+            "temperature": self.kind.temperature(),
+            "max_output_tokens": self.kind.max_output_tokens(),
+            "stream": false,
+        });
+        let client = HttpClient::builder()
+            .timeout(Duration::from_secs_f64(REALTIME_TIMEOUT_SECONDS))
+            .build()
+            .map_err(|err| {
+                RealtimeJobError::terminal(format!("failed to build realtime http client: {err}"))
+            })?;
+        let request = client
+            .post(&endpoint)
+            .bearer_auth(&self.api_key)
+            .header(CONTENT_TYPE, "application/json");
+        let response = apply_openrouter_request_headers(request)
+            .json(&payload)
+            .send()
+            .map_err(|err| {
+                if is_reqwest_realtime_transport_error(&err) {
+                    RealtimeJobError::transport(format!(
+                        "OpenRouter responses realtime request failed: {err}"
+                    ))
+                } else {
+                    RealtimeJobError::terminal(format!(
+                        "OpenRouter responses realtime request failed: {err}"
+                    ))
+                }
+            })?;
+        if !response.status().is_success() {
+            let code = response.status().as_u16();
+            let body = response.text().unwrap_or_default();
+            if observe::vision::should_fallback_openrouter_responses(code, &body) {
+                return Ok(None);
+            }
+            return Err(RealtimeJobError::terminal(format!(
+                "OpenRouter responses realtime request failed ({code}): {}",
+                truncate_chars(&body, 420, 360)
+            )));
+        }
+        let parsed: Value = response.json().map_err(|err| {
+            RealtimeJobError::terminal(format!(
+                "OpenRouter responses realtime decode failed: {err}"
+            ))
+        })?;
+        let (cleaned, mut response_meta) = resolve_streamed_response_text("", &parsed);
+        if cleaned.trim().is_empty() {
+            return Ok(None);
+        }
+        response_meta.insert(
+            "provider_transport".to_string(),
+            Value::String("openrouter_responses".to_string()),
+        );
+        if !response_meta.contains_key("response_status") {
+            response_meta.insert(
+                "response_status".to_string(),
+                Value::String("completed".to_string()),
+            );
+        }
+        response_meta.insert("provider_model".to_string(), Value::String(request_model));
+        Ok(Some((parsed, cleaned, response_meta)))
+    }
+
+    fn request_openrouter_chat_completion_realtime(
+        &self,
+        chat_content: &[Value],
+    ) -> std::result::Result<(Value, String, Map<String, Value>), RealtimeJobError> {
+        let endpoint = format!("{}/chat/completions", openrouter_api_base());
+        let request_model = sanitize_openrouter_model(&self.model, "google/gemini-3-flash-preview");
+        let payload = json!({
+            "model": request_model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": self.kind.instruction(),
+                },
+                {
+                    "role": "user",
+                    "content": chat_content,
+                }
+            ],
+            "modalities": ["text"],
+            "temperature": self.kind.temperature(),
+            "max_tokens": self.kind.max_output_tokens(),
+            "stream": false,
+        });
+        let client = HttpClient::builder()
+            .timeout(Duration::from_secs_f64(REALTIME_TIMEOUT_SECONDS))
+            .build()
+            .map_err(|err| {
+                RealtimeJobError::terminal(format!("failed to build realtime http client: {err}"))
+            })?;
+        let request = client
+            .post(&endpoint)
+            .bearer_auth(&self.api_key)
+            .header(CONTENT_TYPE, "application/json");
+        let response = apply_openrouter_request_headers(request)
+            .json(&payload)
+            .send()
+            .map_err(|err| {
+                if is_reqwest_realtime_transport_error(&err) {
+                    RealtimeJobError::transport(format!(
+                        "OpenRouter chat realtime request failed: {err}"
+                    ))
+                } else {
+                    RealtimeJobError::terminal(format!(
+                        "OpenRouter chat realtime request failed: {err}"
+                    ))
+                }
+            })?;
+        if !response.status().is_success() {
+            let code = response.status().as_u16();
+            let body = response.text().unwrap_or_default();
+            return Err(RealtimeJobError::terminal(format!(
+                "OpenRouter chat realtime request failed ({code}): {}",
+                truncate_chars(&body, 420, 360)
+            )));
+        }
+        let parsed: Value = response.json().map_err(|err| {
+            RealtimeJobError::terminal(format!("OpenRouter chat realtime decode failed: {err}"))
+        })?;
+        let cleaned = observe::vision::extract_openrouter_chat_output_text(&parsed)
+            .trim()
+            .to_string();
+        if cleaned.trim().is_empty() {
+            return Err(RealtimeJobError::terminal(
+                self.kind.empty_response_message(&parsed),
+            ));
+        }
+
+        let mut response_meta = Map::new();
+        let (input_tokens, output_tokens) = observe::vision::extract_token_usage_pair(&parsed);
+        if let Some(value) = input_tokens {
+            response_meta.insert("input_tokens".to_string(), Value::Number(value.into()));
+        }
+        if let Some(value) = output_tokens {
+            response_meta.insert("output_tokens".to_string(), Value::Number(value.into()));
+        }
+        if let Some(value) = parsed
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            response_meta.insert("response_id".to_string(), Value::String(value.to_string()));
+        }
+        response_meta.insert(
+            "response_status".to_string(),
+            Value::String("completed".to_string()),
+        );
+        if let Some(reason) = observe::vision::extract_openrouter_chat_finish_reason(&parsed) {
+            response_meta.insert("response_status_reason".to_string(), Value::String(reason));
+        }
+        response_meta.insert(
+            "provider_transport".to_string(),
+            Value::String("openrouter_chat_completions".to_string()),
+        );
+        response_meta.insert("provider_model".to_string(), Value::String(request_model));
+        Ok((parsed, cleaned, response_meta))
+    }
+
+    fn fail_fatal(&self, image_path: Option<&str>, message: String) {
+        if let Ok(mut fatal) = self.fatal_error.lock() {
+            *fatal = Some(if message.trim().is_empty() {
+                "Unknown realtime error.".to_string()
+            } else {
+                message.clone()
+            });
+        }
+        self.emit_failed_payload(image_path, &message, true, None);
+    }
+
+    fn emit_stream_payload(
+        &self,
+        image_path: &str,
+        text: &str,
+        partial: bool,
+        response_meta: Option<Map<String, Value>>,
+    ) {
+        let mut payload = Map::new();
+        payload.insert(
+            "image_path".to_string(),
+            Value::String(image_path.to_string()),
+        );
+        payload.insert("text".to_string(), Value::String(text.to_string()));
+        payload.insert(
+            "source".to_string(),
+            Value::String(self.provider.as_str().to_string()),
+        );
+        payload.insert(
+            "provider".to_string(),
+            Value::String(self.provider.as_str().to_string()),
+        );
+        payload.insert("model".to_string(), Value::String(self.model.clone()));
+        if partial {
+            payload.insert("partial".to_string(), Value::Bool(true));
+        }
+        if let RealtimeSessionKind::IntentIcons { .. } = self.kind {
+            for (key, value) in intent_snapshot_metadata(image_path) {
+                payload.insert(key, value);
+            }
+        }
+        if let Some(meta) = response_meta {
+            for (key, value) in meta {
+                payload.insert(key, value);
+            }
+        }
+        let _ = self.events.emit(self.kind.event_type(), payload);
+    }
+
+    fn emit_failed_payload(
+        &self,
+        image_path: Option<&str>,
+        error: &str,
+        fatal: bool,
+        extra: Option<Map<String, Value>>,
+    ) {
+        let mut payload = Map::new();
+        payload.insert(
+            "image_path".to_string(),
+            image_path
+                .map(|value| Value::String(value.to_string()))
+                .unwrap_or(Value::Null),
+        );
+        payload.insert("error".to_string(), Value::String(error.to_string()));
+        payload.insert(
+            "source".to_string(),
+            Value::String(self.provider.as_str().to_string()),
+        );
+        payload.insert(
+            "provider".to_string(),
+            Value::String(self.provider.as_str().to_string()),
+        );
+        payload.insert("model".to_string(), Value::String(self.model.clone()));
+        if let RealtimeSessionKind::IntentIcons { .. } = self.kind {
+            if let Some(path) = image_path {
+                for (key, value) in intent_snapshot_metadata(path) {
+                    payload.insert(key, value);
+                }
+            }
+        }
+        if fatal {
+            payload.insert("fatal".to_string(), Value::Bool(true));
+        }
+        if let Some(extra_meta) = extra {
+            for (key, value) in extra_meta {
+                payload.insert(key, value);
+            }
+        }
+        let _ = self.events.emit(self.kind.failed_event_type(), payload);
+    }
+}
+
+fn open_realtime_websocket(
+    model: &str,
+    api_key: &str,
+) -> Result<WebSocket<MaybeTlsStream<TcpStream>>> {
+    let request = build_realtime_websocket_request(model, api_key)?;
+    let (mut ws, _) = websocket_connect(request).context("failed to connect realtime websocket")?;
+    set_realtime_socket_read_timeout(&mut ws, Some(Duration::from_millis(500)));
+    Ok(ws)
+}
+
+fn realtime_transport_retry_limit() -> usize {
+    realtime::RealtimeRetryPolicy::from_env(&realtime::RealtimeEnv::from_current()).max_retries
+}
+
+fn realtime_transport_retry_backoff(attempt: usize) -> Duration {
+    realtime::RealtimeRetryPolicy::from_env(&realtime::RealtimeEnv::from_current())
+        .backoff_for_attempt(attempt)
+}
+
+fn intent_realtime_reference_image_limit() -> usize {
+    realtime::RealtimeSessionConfig::from_current_env(realtime::RealtimeSessionKind::IntentIcons {
+        mother: false,
+    })
+    .reference_image_limit
+}
+
+fn is_anyhow_realtime_transport_error(err: &anyhow::Error) -> bool {
+    realtime::is_anyhow_realtime_transport_error(err)
+}
+
+fn is_reqwest_realtime_transport_error(err: &reqwest::Error) -> bool {
+    realtime::is_reqwest_realtime_transport_error(err)
+}
+
+fn is_tungstenite_transport_error(err: &tungstenite::Error) -> bool {
+    realtime::is_tungstenite_transport_error(err)
+}
+
+fn error_chain_message(err: &anyhow::Error) -> String {
+    realtime::error_chain_message(err)
+}
+
+fn build_realtime_websocket_request(model: &str, api_key: &str) -> Result<Request<()>> {
+    realtime::build_realtime_websocket_request(&openai_api_base(), model, api_key)
+}
+
+fn websocket_send_json(ws: &mut WebSocket<MaybeTlsStream<TcpStream>>, value: &Value) -> Result<()> {
+    let raw = serde_json::to_string(value).context("failed to serialize realtime payload")?;
+    ws.send(WsMessage::Text(raw.into()))
+        .context("failed to send realtime payload")
+}
+
+fn set_realtime_socket_read_timeout(
+    ws: &mut WebSocket<MaybeTlsStream<TcpStream>>,
+    timeout: Option<Duration>,
+) {
+    match ws.get_mut() {
+        MaybeTlsStream::Plain(stream) => {
+            let _ = stream.set_read_timeout(timeout);
+        }
+        MaybeTlsStream::Rustls(stream) => {
+            let _ = stream.get_mut().set_read_timeout(timeout);
+        }
+        _ => {}
+    }
+}
+
+fn gemini_generate_content_endpoint(model: &str) -> String {
+    let base = gemini_api_base();
+    let trimmed = model.trim();
+    let model_path = if trimmed.starts_with("models/") {
+        trimmed.to_string()
+    } else {
+        format!("models/{trimmed}")
+    };
+    format!("{}/{}:generateContent", base, model_path)
+}
+
+fn read_image_as_gemini_inline_part(path: &Path) -> Option<Value> {
+    let bytes = fs::read(path).ok()?;
+    Some(json!({
+            "inlineData": {
+            "mimeType": observe::vision::guess_image_mime(path),
+            "data": BASE64.encode(bytes),
+        }
+    }))
+}
+
+fn extract_gemini_output_text(response: &Value) -> String {
+    let mut chunks: Vec<String> = Vec::new();
+    if let Some(candidates) = response.get("candidates").and_then(Value::as_array) {
+        for candidate in candidates {
+            let Some(parts) = candidate
+                .get("content")
+                .and_then(Value::as_object)
+                .and_then(|content| content.get("parts"))
+                .and_then(Value::as_array)
+            else {
+                continue;
+            };
+            for part in parts {
+                let text = part
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .unwrap_or_default();
+                if !text.is_empty() {
+                    chunks.push(text.to_string());
+                }
+            }
+        }
+    }
+    chunks.join("\n")
+}
+
+fn extract_gemini_token_usage_pair(response: &Value) -> Option<(Option<i64>, Option<i64>)> {
+    let usage = response
+        .get("usageMetadata")
+        .or_else(|| response.get("usage_metadata"))
+        .and_then(Value::as_object)?;
+    let input_tokens = usage
+        .get("promptTokenCount")
+        .or_else(|| usage.get("prompt_token_count"))
+        .and_then(Value::as_i64);
+    let output_tokens = usage
+        .get("candidatesTokenCount")
+        .or_else(|| usage.get("candidates_token_count"))
+        .or_else(|| usage.get("outputTokenCount"))
+        .or_else(|| usage.get("output_token_count"))
+        .and_then(Value::as_i64);
+    if input_tokens.is_none() && output_tokens.is_none() {
+        return None;
+    }
+    Some((input_tokens, output_tokens))
+}
+
+fn extract_gemini_finish_reason(response: &Value) -> Option<String> {
+    response
+        .get("candidates")
+        .and_then(Value::as_array)
+        .and_then(|rows| rows.first())
+        .and_then(Value::as_object)
+        .and_then(|row| {
+            row.get("finishReason")
+                .or_else(|| row.get("finish_reason"))
+                .and_then(Value::as_str)
+        })
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn read_image_as_data_url(path: &Path) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    let encoded = BASE64.encode(bytes);
+    Some(format!(
+        "data:{};base64,{}",
+        observe::vision::guess_image_mime(path),
+        encoded
+    ))
+}
+
+fn read_canvas_context_envelope(image_path: &Path) -> Option<String> {
+    let sidecar = image_path.with_extension("ctx.json");
+    if !sidecar.exists() {
+        return None;
+    }
+    let raw = fs::read_to_string(sidecar).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let truncated = truncate_chars(trimmed, 12_000, 11_800);
+    Some(format!("CONTEXT_ENVELOPE_JSON:\n{truncated}"))
+}
+
+#[derive(Debug, Clone)]
+struct ContextImageReference {
+    id: String,
+    path: PathBuf,
+}
+
+fn read_canvas_context_image_references(
+    snapshot_path: &Path,
+    limit: usize,
+) -> Vec<ContextImageReference> {
+    let max_refs = limit.max(1);
+    let sidecar = snapshot_path.with_extension("ctx.json");
+    if !sidecar.exists() {
+        return Vec::new();
+    }
+
+    let raw = match fs::read_to_string(&sidecar) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let parsed = match serde_json::from_str::<Value>(&raw) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let rows = parsed
+        .as_object()
+        .and_then(|obj| obj.get("images"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    let snapshot_abs =
+        fs::canonicalize(snapshot_path).unwrap_or_else(|_| snapshot_path.to_path_buf());
+    let mut out: Vec<ContextImageReference> = Vec::new();
+    let mut seen: HashSet<PathBuf> = HashSet::new();
+    for row in rows {
+        let Some(obj) = row.as_object() else {
+            continue;
+        };
+        let id = obj
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                obj.get("file")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| "image".to_string());
+        let path_text = obj
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_default();
+        if path_text.is_empty() {
+            continue;
+        }
+
+        let mut path = PathBuf::from(path_text);
+        if path.is_relative() {
+            if let Some(parent) = sidecar.parent() {
+                path = parent.join(path);
+            }
+        }
+        if !path.exists() {
+            continue;
+        }
+        let path_abs = fs::canonicalize(&path).unwrap_or(path.clone());
+        if path_abs == snapshot_abs {
+            continue;
+        }
+        if !seen.insert(path_abs.clone()) {
+            continue;
+        }
+        out.push(ContextImageReference { id, path: path_abs });
+    }
+    if out.len() > max_refs {
+        out.truncate(max_refs);
+    }
+    out
+}
+
+fn truncate_chars(text: &str, max_len: usize, keep_len: usize) -> String {
+    if text.chars().count() <= max_len {
+        return text.to_string();
+    }
+    let head = text.chars().take(keep_len).collect::<String>();
+    format!("{}...", head.trim_end())
+}
+
+fn is_mother_intent_snapshot_path(image_path: &str) -> bool {
+    Path::new(image_path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase().starts_with("mother-intent-"))
+        .unwrap_or(false)
+}
+
+fn intent_snapshot_metadata(image_path: &str) -> Map<String, Value> {
+    let mut out = Map::new();
+    let path_text = image_path.trim();
+    if path_text.is_empty() {
+        return out;
+    }
+    let path = PathBuf::from(path_text);
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if name.starts_with("mother-intent-") {
+        out.insert(
+            "intent_scope".to_string(),
+            Value::String("mother".to_string()),
+        );
+    } else if name.starts_with("intent-ambient-") {
+        out.insert(
+            "intent_scope".to_string(),
+            Value::String("ambient".to_string()),
+        );
+    }
+
+    let mut action_version = extract_action_version_from_path(&path);
+    let mut frame_id: Option<String> = None;
+
+    let sidecar = path.with_extension("ctx.json");
+    if sidecar.exists() {
+        if let Ok(raw) = fs::read_to_string(sidecar) {
+            if let Ok(parsed) = serde_json::from_str::<Value>(&raw) {
+                if let Some(value) = parsed
+                    .as_object()
+                    .and_then(|row| row.get("frame_id"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    frame_id = Some(value.to_string());
+                    action_version = extract_action_version_from_text(value).or(action_version);
+                }
+            }
+        }
+    }
+
+    if let Some(frame) = frame_id {
+        out.insert("frame_id".to_string(), Value::String(frame));
+    }
+    if let Some(version) = action_version {
+        out.insert("action_version".to_string(), Value::Number(version.into()));
+    }
+    out
+}
+
+fn format_realtime_error(event: &Value) -> String {
+    let Some(error) = event.get("error").and_then(Value::as_object) else {
+        return "Realtime API error.".to_string();
+    };
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Realtime API error.");
+    let kind = error
+        .get("type")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default();
+    let code = error
+        .get("code")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default();
+    let prefix = [kind, code]
+        .iter()
+        .filter(|value| !value.is_empty())
+        .cloned()
+        .collect::<Vec<&str>>()
+        .join(" ");
+    if prefix.is_empty() {
+        message.to_string()
+    } else {
+        format!("{prefix}: {message}")
+    }
+}
+
+fn merge_stream_text(left: &str, right: &str) -> String {
+    if right.is_empty() {
+        return left.to_string();
+    }
+    if left.is_empty() {
+        return right.to_string();
+    }
+    if right.starts_with(left) {
+        return right.to_string();
+    }
+    let left_chars: Vec<char> = left.chars().collect();
+    let right_chars: Vec<char> = right.chars().collect();
+    let max_overlap = left_chars.len().min(right_chars.len());
+    for size in (1..=max_overlap).rev() {
+        if left_chars[left_chars.len() - size..] == right_chars[..size] {
+            if size == right_chars.len() {
+                break;
+            }
+            let suffix = right_chars[size..].iter().collect::<String>();
+            return format!("{left}{suffix}");
+        }
+    }
+    format!("{left}{right}")
+}
+
+fn append_stream_delta(left: &str, right: &str) -> String {
+    if right.is_empty() {
+        left.to_string()
+    } else {
+        format!("{left}{right}")
+    }
+}
+
+fn response_status_reason(response: &Map<String, Value>) -> Option<String> {
+    let details = response.get("status_details")?;
+    if let Some(object) = details.as_object() {
+        for key in ["reason", "type", "code", "message"] {
+            if let Some(value) = object
+                .get(key)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                return Some(value.to_string());
+            }
+        }
+        return serde_json::to_string(details).ok();
+    }
+    details
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn response_looks_truncated(status: Option<&str>, reason: Option<&str>, text: &str) -> bool {
+    let status = status.unwrap_or_default().trim().to_ascii_lowercase();
+    let reason = reason.unwrap_or_default().trim().to_ascii_lowercase();
+    if status == "incomplete" || status == "truncated" {
+        return true;
+    }
+    if reason.contains("max_output_tokens") || reason.contains("max_output") {
+        return true;
+    }
+    let body = text.trim();
+    if body.is_empty() {
+        return false;
+    }
+    (body.starts_with('{') && !body.ends_with('}'))
+        || (body.starts_with('[') && !body.ends_with(']'))
+}
+
+fn resolve_streamed_response_text(buffer: &str, response: &Value) -> (String, Map<String, Value>) {
+    let buffered = buffer.trim().to_string();
+    let extracted = extract_realtime_output_text(response).trim().to_string();
+    let cleaned = if !buffered.is_empty() && !extracted.is_empty() {
+        merge_stream_text(&buffered, &extracted).trim().to_string()
+    } else if !extracted.is_empty() {
+        extracted
+    } else {
+        buffered
+    };
+
+    let mut meta = Map::new();
+    if let Some(object) = response.as_object() {
+        let (input_tokens, output_tokens) = observe::vision::extract_token_usage_pair(response);
+        if let Some(value) = input_tokens {
+            meta.insert("input_tokens".to_string(), Value::Number(value.into()));
+        }
+        if let Some(value) = output_tokens {
+            meta.insert("output_tokens".to_string(), Value::Number(value.into()));
+        }
+        if let Some(value) = object
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            meta.insert("response_id".to_string(), Value::String(value.to_string()));
+        }
+        let status = object
+            .get("status")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        if let Some(value) = status.as_ref() {
+            meta.insert("response_status".to_string(), Value::String(value.clone()));
+        }
+        let reason = response_status_reason(object);
+        if let Some(value) = reason.as_ref() {
+            meta.insert(
+                "response_status_reason".to_string(),
+                Value::String(value.clone()),
+            );
+        }
+        if response_looks_truncated(status.as_deref(), reason.as_deref(), &cleaned) {
+            meta.insert("response_truncated".to_string(), Value::Bool(true));
+        }
+    }
+    (cleaned, meta)
+}
+
+fn extract_realtime_output_text(response: &Value) -> String {
+    if let Some(text) = response
+        .get("output_text")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return text.to_string();
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+    let rows = response
+        .get("output")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for row in rows {
+        let Some(obj) = row.as_object() else {
+            continue;
+        };
+        if let Some(text) = obj
+            .get("text")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let kind = obj.get("type").and_then(Value::as_str).unwrap_or_default();
+            if kind == "output_text" || kind == "text" {
+                parts.push(text.to_string());
+            }
+        }
+        if let Some(refusal) = obj
+            .get("refusal")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            parts.push(refusal.to_string());
+        }
+        let content = obj
+            .get("content")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        for chunk in content {
+            let Some(chunk_obj) = chunk.as_object() else {
+                continue;
+            };
+            let kind = chunk_obj
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if matches!(kind, "output_text" | "text") {
+                if let Some(text) = chunk_obj
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    parts.push(text.to_string());
+                }
+            }
+            if let Some(refusal) = chunk_obj
+                .get("refusal")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                parts.push(refusal.to_string());
+            }
+        }
+    }
+
+    let joined = parts.join("\n").trim().to_string();
+    if !joined.is_empty() {
+        joined
+    } else {
+        observe::vision::extract_openai_output_text(response)
+    }
+}
+
+fn summarize_realtime_response(response: &Value) -> String {
+    let Some(object) = response.as_object() else {
+        return String::new();
+    };
+    let status = object
+        .get("status")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let response_id = object
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let details = object.get("status_details").cloned();
+    let out_count = object
+        .get("output")
+        .and_then(Value::as_array)
+        .map(|rows| rows.len())
+        .unwrap_or(0);
+
+    let mut bits: Vec<String> = Vec::new();
+    if let Some(value) = status {
+        bits.push(format!("status={value}"));
+    }
+    if let Some(value) = response_id {
+        bits.push(format!("id={value}"));
+    }
+    if let Some(value) = details {
+        bits.push(format!("details={value}"));
+    }
+    bits.push(format!("output_items={out_count}"));
+    if bits.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", bits.join(", "))
+    }
+}
+
+pub(crate) fn canvas_context_realtime_instruction() -> &'static str {
+    "You are Cue's always-on background vision.\nAnalyze the attached CANVAS SNAPSHOT (it may contain multiple photos arranged in a grid).\nYou may also receive a CONTEXT ENVELOPE (JSON) describing the current UI state, available actions,\nand recent timeline. Use it to ground NEXT ACTIONS and avoid recommending unavailable abilities.\nOutput compact, machine-readable notes we can use for future action recommendations.\n\nFormat (keep under ~210 words):\nCANVAS:\n<one sentence summary>\n\nUSE CASE (guess):\n<one short line: what the user is likely trying to do (e.g., product listing, ad creative, editorial still, UI screenshot, moodboard)>\n\nSUBJECTS:\n- <2-6 bullets>\n\nSTYLE:\n- <3-7 short tags>\n\nNEXT ACTIONS:\n- <Action>: <why>  (max 5)\n\nActions must be chosen from CONTEXT_ENVELOPE_JSON.abilities[].label (prefer enabled=true).\nIf CONTEXT_ENVELOPE_JSON is missing, choose from: Multi view, Single view, Combine, Bridge, Swap DNA, Argue, Extract the Rule, Odd One Out, Triforce, Diagnose, Recast, Variations, Background: White, Background: Sweep, Crop: Square, Annotate.\nRules: infer the use case from both the image and CONTEXT_ENVELOPE_JSON.timeline_recent (edits). No fluff, no marketing language. Be specific about composition, lighting, color, materials. NEXT ACTIONS should serve the hypothesized use case."
+}
+
+#[allow(dead_code)]
+fn infer_branch_from_text(haystack: &str) -> String {
+    if contains_any(haystack, &["game", "sprite", "texture", "character"]) {
+        "game_dev_assets".to_string()
+    } else if contains_any(haystack, &["ui", "ux", "wireframe", "prototype", "screen"]) {
+        "uiux_prototyping".to_string()
+    } else if contains_any(
+        haystack,
+        &["product", "listing", "marketplace", "merch", "shop"],
+    ) {
+        "ecommerce_pod".to_string()
+    } else if contains_any(haystack, &["pipeline", "system", "workflow", "automation"]) {
+        "content_engine".to_string()
+    } else {
+        "streaming_content".to_string()
+    }
+}
+
+#[allow(dead_code)]
+fn infer_transformation_mode_from_text(haystack: &str) -> String {
+    if contains_any(haystack, &["dramatic", "cinematic", "hero", "bold"]) {
+        "amplify".to_string()
+    } else if contains_any(haystack, &["clean", "minimal", "pure", "simple"]) {
+        "purify".to_string()
+    } else if contains_any(haystack, &["surreal", "fracture", "chaos", "glitch"]) {
+        "fracture".to_string()
+    } else if contains_any(haystack, &["romantic", "warm", "intimate"]) {
+        "romanticize".to_string()
+    } else {
+        "hybridize".to_string()
+    }
+}
+
+#[allow(dead_code)]
+fn fallback_intent_branches(preferred_branch: &str, evidence_ids: &[String]) -> Vec<Value> {
+    let templates: Vec<(&str, Vec<&str>)> = vec![
+        (
+            "game_dev_assets",
+            vec![
+                "GAME_DEV_ASSETS",
+                "CONCEPT_ART",
+                "SPRITES",
+                "TEXTURES",
+                "CHARACTER_SHEETS",
+                "ITERATION",
+            ],
+        ),
+        (
+            "streaming_content",
+            vec![
+                "STREAMING_CONTENT",
+                "THUMBNAILS",
+                "OVERLAYS",
+                "EMOTES",
+                "SOCIAL_GRAPHICS",
+                "OUTPUTS",
+            ],
+        ),
+        (
+            "uiux_prototyping",
+            vec![
+                "UI_UX_PROTOTYPING",
+                "SCREENS",
+                "WIREFRAMES",
+                "MOCKUPS",
+                "USER_FLOWS",
+                "PIPELINE",
+            ],
+        ),
+        (
+            "ecommerce_pod",
+            vec![
+                "ECOMMERCE_POD",
+                "MERCH_DESIGN",
+                "PRODUCT_PHOTOS",
+                "MARKETPLACE_LISTINGS",
+                "OUTPUTS",
+            ],
+        ),
+        (
+            "content_engine",
+            vec![
+                "CONTENT_ENGINE",
+                "BRAND_SYSTEM",
+                "MULTI_CHANNEL",
+                "PROCESS",
+                "AUTOMATION",
+                "PIPELINE",
+            ],
+        ),
+    ];
+    let mut ordered: Vec<(&str, Vec<&str>)> = Vec::new();
+    if let Some(idx) = templates
+        .iter()
+        .position(|(branch_id, _)| *branch_id == preferred_branch)
+    {
+        ordered.push(templates[idx].clone());
+    }
+    for row in templates {
+        if ordered.iter().any(|(branch_id, _)| *branch_id == row.0) {
+            continue;
+        }
+        ordered.push(row);
+    }
+
+    ordered
+        .into_iter()
+        .enumerate()
+        .map(|(idx, (branch_id, icons))| {
+            let confidence = (0.84 - (idx as f64 * 0.06)).max(0.52);
+            json!({
+                "branch_id": branch_id,
+                "confidence": confidence,
+                "evidence_image_ids": evidence_ids,
+                "icons": icons,
+                "lane_position": if idx % 2 == 0 { "left" } else { "right" },
+            })
+        })
+        .collect()
+}
+
+#[allow(dead_code)]
+fn build_intent_icons_payload(snapshot_path: &Path, mother: bool) -> Value {
+    let sidecar_path = snapshot_sidecar_path(snapshot_path);
+    let sidecar = read_json_object(&sidecar_path).unwrap_or_default();
+    let frame_id = sidecar
+        .get("frame_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            snapshot_path
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .unwrap_or("frame")
+                .to_string()
+        });
+
+    let hints = snapshot_image_hints(snapshot_path);
+    let mut image_descriptions: Vec<Value> = Vec::new();
+    for hint in &hints {
+        let image_id = if !hint.id.trim().is_empty() {
+            hint.id.trim().to_string()
+        } else {
+            humanize_file_name(&hint.file)
+                .replace(' ', "_")
+                .to_ascii_lowercase()
+        };
+        let label = if !hint.vision_desc.trim().is_empty() {
+            clamp_text(
+                hint.vision_desc.trim(),
+                observe::vision::REALTIME_DESCRIPTION_MAX_CHARS,
+            )
+        } else {
+            clamp_text(
+                &humanize_file_name(&hint.file),
+                observe::vision::REALTIME_DESCRIPTION_MAX_CHARS,
+            )
+        };
+        if image_id.is_empty() || label.is_empty() {
+            continue;
+        }
+        image_descriptions.push(json!({
+            "image_id": image_id,
+            "label": label,
+            "confidence": 0.62,
+        }));
+    }
+
+    let evidence_ids: Vec<String> = image_descriptions
+        .iter()
+        .filter_map(|row| {
+            row.get("image_id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .take(3)
+        .collect();
+    let haystack = image_descriptions
+        .iter()
+        .filter_map(|row| row.get("label").and_then(Value::as_str).map(str::to_string))
+        .collect::<Vec<String>>()
+        .join(" ")
+        .to_ascii_lowercase();
+    let preferred_branch = infer_branch_from_text(&haystack);
+    let transformation_mode = infer_transformation_mode_from_text(&haystack);
+    let all_transformation_modes = [
+        "amplify",
+        "transcend",
+        "destabilize",
+        "purify",
+        "hybridize",
+        "mythologize",
+        "monumentalize",
+        "fracture",
+        "romanticize",
+        "alienate",
+    ];
+    let mut ordered_modes: Vec<String> = Vec::new();
+    ordered_modes.push(transformation_mode.clone());
+    for mode in all_transformation_modes {
+        if ordered_modes.iter().any(|existing| existing == mode) {
+            continue;
+        }
+        ordered_modes.push(mode.to_string());
+    }
+    let mut transformation_mode_candidates: Vec<Value> = Vec::new();
+    for (idx, mode) in ordered_modes.iter().enumerate() {
+        if !mother && idx >= 3 {
+            break;
+        }
+        let awe_joy_score = (74.0 - (idx as f64 * 4.5)).max(30.0);
+        let confidence = ((awe_joy_score / 100.0) * 0.95).clamp(0.2, 0.95);
+        transformation_mode_candidates.push(json!({
+            "mode": mode,
+            "awe_joy_score": ((awe_joy_score * 10.0).round() / 10.0),
+            "confidence": ((confidence * 100.0).round() / 100.0),
+        }));
+    }
+    let branches = fallback_intent_branches(&preferred_branch, &evidence_ids);
+    let checkpoint_branch = branches
+        .first()
+        .and_then(|row| row.get("branch_id"))
+        .and_then(Value::as_str)
+        .unwrap_or("streaming_content")
+        .to_string();
+
+    json!({
+        "frame_id": frame_id,
+        "schema": "cue.intent_icons",
+        "schema_version": 1,
+        "intent_icons": [
+            { "icon_id": "IMAGE_GENERATION", "confidence": if mother { 0.84 } else { 0.74 }, "position_hint": "primary" },
+            { "icon_id": "ITERATION", "confidence": 0.66, "position_hint": "primary" },
+            { "icon_id": "OUTPUTS", "confidence": 0.52, "position_hint": "secondary" },
+            { "icon_id": "PIPELINE", "confidence": 0.46, "position_hint": "emerging" },
+        ],
+        "relations": [
+            { "from_icon": "ITERATION", "to_icon": "IMAGE_GENERATION", "relation_type": "DEPENDENCY" },
+            { "from_icon": "IMAGE_GENERATION", "to_icon": "OUTPUTS", "relation_type": "FLOW" },
+        ],
+        "branches": branches,
+        "checkpoint": {
+            "icons": ["YES_TOKEN", "NO_TOKEN", "MAYBE_TOKEN"],
+            "applies_to": checkpoint_branch,
+        },
+        "transformation_mode": transformation_mode,
+        "transformation_mode_candidates": transformation_mode_candidates,
+        "image_descriptions": image_descriptions,
+    })
+}
+
+fn normalize_transformation_mode(value: Option<&Value>) -> String {
+    let raw = value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match raw.as_str() {
+        "amplify" | "transcend" | "destabilize" | "purify" | "hybridize" | "mythologize"
+        | "monumentalize" | "fracture" | "romanticize" | "alienate" => raw,
+        _ => "hybridize".to_string(),
+    }
+}
+
+fn intent_summary_for_mode(mode: &str, hints: &[String]) -> String {
+    let primary_hint = hints
+        .iter()
+        .find(|value| !value.trim().is_empty())
+        .map(|value| clamp_text(value, 64))
+        .unwrap_or_default();
+    let suffix = if primary_hint.is_empty() {
+        String::new()
+    } else {
+        format!(" from {primary_hint}")
+    };
+    match mode {
+        "amplify" => format!("Push the composition into a cinematic crescendo{suffix}."),
+        "transcend" => format!("Lift the scene into a transcendent visual world{suffix}."),
+        "destabilize" => {
+            format!("Shift the composition toward controlled visual instability{suffix}.")
+        }
+        "purify" => format!("Simplify geometry and light into a calm sculptural image{suffix}."),
+        "mythologize" => format!("Recast the scene as mythic visual storytelling{suffix}."),
+        "monumentalize" => {
+            format!("Turn the scene into a monumental hero composition{suffix}.")
+        }
+        "fracture" => format!("Introduce deliberate fracture while preserving coherence{suffix}."),
+        "romanticize" => format!("Infuse the scene with intimate emotional warmth{suffix}."),
+        "alienate" => format!("Reframe the scene with uncanny distance{suffix}."),
+        _ => format!("Fuse current references into one coherent composition{suffix}."),
+    }
+}
+
+fn mother_payload_image_ids(payload: &Map<String, Value>) -> Vec<String> {
+    let mut ids: Vec<String> = payload
+        .get("images")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|row| {
+            row.get("id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .map(str::to_string)
+        })
+        .filter(|id| !id.is_empty())
+        .collect();
+    ids.dedup();
+    ids
+}
+
+fn normalize_id_list_from_value(
+    value: Option<&Value>,
+    allowed_ids: &[String],
+    max_items: usize,
+) -> Vec<String> {
+    if max_items == 0 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut raw_items: Vec<String> = Vec::new();
+    match value {
+        Some(Value::Array(rows)) => {
+            for row in rows {
+                if let Some(text) = row.as_str() {
+                    raw_items.push(text.to_string());
+                }
+            }
+        }
+        Some(Value::String(text)) => {
+            raw_items.extend(
+                text.split(',')
+                    .map(str::trim)
+                    .map(str::to_string)
+                    .filter(|item| !item.is_empty()),
+            );
+        }
+        _ => {}
+    }
+
+    for id in raw_items {
+        let key = id.trim();
+        if key.is_empty() {
+            continue;
+        }
+        if !allowed_ids.is_empty() && !allowed_ids.iter().any(|known| known == key) {
+            continue;
+        }
+        let normalized = key.to_string();
+        if out.iter().any(|existing| existing == &normalized) {
+            continue;
+        }
+        out.push(normalized);
+        if out.len() >= max_items {
+            break;
+        }
+    }
+    out
+}
+
+fn normalize_mother_placement_policy(value: Option<&Value>) -> Option<String> {
+    let raw = value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match raw.as_str() {
+        "adjacent" | "grid" | "replace" => Some(raw),
+        _ => None,
+    }
+}
+
+fn normalize_mother_confidence(value: Option<&Value>) -> Option<f64> {
+    let parsed = match value {
+        Some(Value::Number(number)) => number.as_f64(),
+        Some(Value::String(text)) => text.trim().parse::<f64>().ok(),
+        _ => None,
+    }?;
+    if !parsed.is_finite() {
+        return None;
+    }
+    Some(parsed.clamp(0.2, 0.99))
+}
+
+fn normalize_intent_roles(
+    candidate_roles: Option<&Map<String, Value>>,
+    fallback_roles: &Map<String, Value>,
+    allowed_ids: &[String],
+) -> Map<String, Value> {
+    let mut out = Map::new();
+    for key in ["subject", "model", "mediator", "object"] {
+        let fallback = normalize_id_list_from_value(fallback_roles.get(key), allowed_ids, 2);
+        let provider = candidate_roles
+            .and_then(|roles| roles.get(key))
+            .map(|value| normalize_id_list_from_value(Some(value), allowed_ids, 2))
+            .unwrap_or_default();
+        let resolved = if provider.is_empty() {
+            fallback
+        } else {
+            provider
+        };
+        out.insert(
+            key.to_string(),
+            Value::Array(resolved.into_iter().map(Value::String).collect()),
+        );
+    }
+    out
+}
+
+fn provider_json_object_inference<F>(
+    payload: &Map<String, Value>,
+    model_hint: Option<&str>,
+    max_output_tokens: u64,
+    timeout: Duration,
+    build_instruction: F,
+) -> Option<(Map<String, Value>, String)>
+where
+    F: FnOnce(&str) -> String,
+{
+    let payload_json = serde_json::to_string(payload).ok()?;
+    observe::vision::openai_json_object_inference(
+        model_hint,
+        build_instruction(&payload_json),
+        max_output_tokens,
+        timeout,
+    )
+}
+
+fn provider_first_json_payload<Fallback, Provider, Normalize>(
+    payload: &Map<String, Value>,
+    model_hint: Option<&str>,
+    source_label: &str,
+    fallback: Fallback,
+    provider: Provider,
+    normalize: Normalize,
+) -> (Value, String, String)
+where
+    Fallback: FnOnce(&Map<String, Value>) -> Value,
+    Provider: FnOnce(&Map<String, Value>, Option<&str>) -> Option<(Map<String, Value>, String)>,
+    Normalize: FnOnce(&Map<String, Value>, &Value, &Map<String, Value>) -> Value,
+{
+    let fallback = fallback(payload);
+    if let Some((candidate, model_name)) = provider(payload, model_hint) {
+        return (
+            normalize(&candidate, &fallback, payload),
+            source_label.to_string(),
+            model_name,
+        );
+    }
+    (
+        fallback,
+        source_label.to_string(),
+        "heuristic-v1".to_string(),
+    )
+}
+
+fn infer_structured_intent_payload_via_provider(
+    payload: &Map<String, Value>,
+    model_hint: Option<&str>,
+) -> Option<(Map<String, Value>, String)> {
+    let image_ids = mother_payload_image_ids(payload);
+    provider_json_object_inference(
+        payload,
+        model_hint,
+        1000,
+        Duration::from_secs_f64(32.0),
+        |payload_json| {
+            format!(
+                "You are Cue's Mother intent inference engine.\nReturn JSON only (no markdown).\n\
+Given PAYLOAD_JSON, infer one intent object with this exact schema:\n\
+{{\n  \"intent_id\": \"string\",\n  \"summary\": \"string\",\n  \"creative_directive\": \"stunningly awe-inspiring and tearfully joyous\",\n  \"transformation_mode\": \"amplify|transcend|destabilize|purify|hybridize|mythologize|monumentalize|fracture|romanticize|alienate\",\n  \"target_ids\": [\"id\"],\n  \"reference_ids\": [\"id\"],\n  \"placement_policy\": \"adjacent|grid|replace\",\n  \"confidence\": 0.0,\n  \"roles\": {{ \"subject\": [\"id\"], \"model\": [\"id\"], \"mediator\": [\"id\"], \"object\": [\"id\"] }},\n  \"alternatives\": [{{\"placement_policy\":\"adjacent\"}}, {{\"placement_policy\":\"grid\"}}]\n}}\n\
+Rules:\n- Use only image IDs from this allowlist: [{}].\n\
+- Keep confidence between 0.2 and 0.99.\n\
+- Prefer concise summary language.\n\
+PAYLOAD_JSON:\n{}",
+                image_ids.join(", "),
+                payload_json
+            )
+        },
+    )
+}
+
+fn normalize_provider_intent_payload(
+    candidate: &Map<String, Value>,
+    fallback: &Value,
+    payload: &Map<String, Value>,
+) -> Value {
+    let fallback_obj = fallback.as_object().cloned().unwrap_or_default();
+    let allowed_ids = mother_payload_image_ids(payload);
+    let fallback_roles = fallback_obj
+        .get("roles")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+
+    let summary = value_as_non_empty_string(candidate.get("summary"))
+        .map(|value| clamp_text(&value, 360))
+        .or_else(|| value_as_non_empty_string(fallback_obj.get("summary")))
+        .unwrap_or_else(|| "Fuse references into one coherent composition.".to_string());
+    let creative_directive = value_as_non_empty_string(candidate.get("creative_directive"))
+        .or_else(|| value_as_non_empty_string(fallback_obj.get("creative_directive")))
+        .unwrap_or_else(|| "stunningly awe-inspiring and tearfully joyous".to_string());
+    let transformation_mode = normalize_transformation_mode(
+        candidate
+            .get("transformation_mode")
+            .or_else(|| fallback_obj.get("transformation_mode")),
+    );
+    let target_ids = {
+        let provider = normalize_id_list_from_value(candidate.get("target_ids"), &allowed_ids, 3);
+        if provider.is_empty() {
+            normalize_id_list_from_value(fallback_obj.get("target_ids"), &allowed_ids, 3)
+        } else {
+            provider
+        }
+    };
+    let reference_ids = {
+        let provider =
+            normalize_id_list_from_value(candidate.get("reference_ids"), &allowed_ids, 3);
+        if provider.is_empty() {
+            normalize_id_list_from_value(fallback_obj.get("reference_ids"), &allowed_ids, 3)
+        } else {
+            provider
+        }
+    };
+    let placement_policy = normalize_mother_placement_policy(candidate.get("placement_policy"))
+        .or_else(|| normalize_mother_placement_policy(fallback_obj.get("placement_policy")))
+        .unwrap_or_else(|| "adjacent".to_string());
+    let confidence = normalize_mother_confidence(candidate.get("confidence"))
+        .or_else(|| normalize_mother_confidence(fallback_obj.get("confidence")))
+        .unwrap_or(0.64);
+    let intent_id = value_as_non_empty_string(candidate.get("intent_id"))
+        .or_else(|| value_as_non_empty_string(fallback_obj.get("intent_id")))
+        .unwrap_or_else(|| {
+            format!(
+                "intent-{}",
+                payload
+                    .get("action_version")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0)
+            )
+        });
+
+    let candidate_roles = candidate.get("roles").and_then(Value::as_object);
+    let roles = normalize_intent_roles(candidate_roles, &fallback_roles, &allowed_ids);
+    let alternatives = candidate
+        .get("alternatives")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|row| row.as_object().cloned())
+        .filter_map(|row| {
+            normalize_mother_placement_policy(row.get("placement_policy")).map(|placement| {
+                json!({
+                    "placement_policy": placement,
+                })
+            })
+        })
+        .take(3)
+        .collect::<Vec<Value>>();
+    let alternatives = if alternatives.is_empty() {
+        fallback_obj
+            .get("alternatives")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_else(|| {
+                vec![
+                    json!({"placement_policy": "adjacent"}),
+                    json!({"placement_policy": "grid"}),
+                ]
+            })
+    } else {
+        alternatives
+    };
+
+    json!({
+        "intent_id": intent_id,
+        "summary": summary,
+        "creative_directive": creative_directive,
+        "transformation_mode": transformation_mode,
+        "target_ids": target_ids,
+        "reference_ids": reference_ids,
+        "placement_policy": placement_policy,
+        "confidence": confidence,
+        "roles": roles,
+        "alternatives": alternatives,
+    })
+}
+
+fn infer_structured_intent_payload_provider_first(
+    payload: &Map<String, Value>,
+    model_hint: Option<&str>,
+    source_label: &str,
+) -> (Value, String, String) {
+    provider_first_json_payload(
+        payload,
+        model_hint,
+        source_label,
+        infer_structured_intent_payload,
+        infer_structured_intent_payload_via_provider,
+        normalize_provider_intent_payload,
+    )
+}
+
+fn infer_structured_intent_payload(payload: &Map<String, Value>) -> Value {
+    let action_version = payload
+        .get("action_version")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let mut image_ids: Vec<String> = payload
+        .get("images")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|row| row.get("id").and_then(Value::as_str).map(str::to_string))
+        .filter(|id| !id.trim().is_empty())
+        .collect();
+    image_ids.dedup();
+    let image_set: HashMap<String, ()> = image_ids.iter().cloned().map(|key| (key, ())).collect();
+
+    let mut selected_ids: Vec<String> = ids_list(payload.get("selected_ids"));
+    selected_ids.retain(|id| image_set.contains_key(id));
+    let active_id = payload
+        .get("active_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
+
+    let ranked_ids = rank_payload_image_ids(payload.get("images").and_then(Value::as_array));
+    let mut target_ids = if !selected_ids.is_empty() {
+        selected_ids.clone()
+    } else if !active_id.is_empty() && image_set.contains_key(&active_id) {
+        vec![active_id.clone()]
+    } else if !ranked_ids.is_empty() {
+        vec![ranked_ids[0].clone()]
+    } else if !image_ids.is_empty() {
+        vec![image_ids[0].clone()]
+    } else {
+        Vec::new()
+    };
+    target_ids.truncate(3);
+
+    let mut reference_ids: Vec<String> = ranked_ids
+        .into_iter()
+        .filter(|id| !target_ids.contains(id))
+        .take(3)
+        .collect();
+    if reference_ids.is_empty() {
+        reference_ids = image_ids
+            .iter()
+            .filter(|id| !target_ids.contains(id))
+            .take(3)
+            .cloned()
+            .collect();
+    }
+
+    let hints: Vec<String> = payload
+        .get("images")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|row| row.as_object().cloned())
+        .flat_map(|row| {
+            let mut values = Vec::new();
+            if let Some(desc) = row.get("vision_desc").and_then(Value::as_str) {
+                values.push(desc.trim().to_string());
+            }
+            if let Some(file) = row.get("file").and_then(Value::as_str) {
+                values.push(humanize_file_name(file));
+            }
+            values
+        })
+        .filter(|value| !value.trim().is_empty())
+        .collect();
+
+    let transformation_mode =
+        normalize_transformation_mode(payload.get("preferred_transformation_mode"));
+    let summary = intent_summary_for_mode(&transformation_mode, &hints);
+    let placement_policy = if image_ids.len() >= 4 {
+        "grid"
+    } else if !target_ids.is_empty() && !reference_ids.is_empty() {
+        "adjacent"
+    } else if !target_ids.is_empty() {
+        "replace"
+    } else {
+        "adjacent"
+    };
+
+    let subject = if !target_ids.is_empty() {
+        vec![target_ids[0].clone()]
+    } else {
+        Vec::new()
+    };
+    let model = if !reference_ids.is_empty() {
+        vec![reference_ids[0].clone()]
+    } else {
+        subject.clone()
+    };
+    let mediator = if reference_ids.len() > 1 {
+        vec![reference_ids[1].clone()]
+    } else {
+        model.clone()
+    };
+    let object_role = subject.clone();
+
+    let mut confidence = 0.64f64;
+    if !selected_ids.is_empty() {
+        confidence += 0.08;
+    }
+    if image_ids.len() >= 3 {
+        confidence += 0.04;
+    }
+    confidence = confidence.clamp(0.2, 0.99);
+
+    json!({
+        "intent_id": format!("intent-{action_version}"),
+        "summary": summary,
+        "creative_directive": "stunningly awe-inspiring and tearfully joyous",
+        "transformation_mode": transformation_mode,
+        "target_ids": target_ids,
+        "reference_ids": reference_ids,
+        "placement_policy": placement_policy,
+        "confidence": (confidence * 100.0).round() / 100.0,
+        "roles": {
+            "subject": subject,
+            "model": model,
+            "mediator": mediator,
+            "object": object_role,
+        },
+        "alternatives": [
+            {"placement_policy": "adjacent"},
+            {"placement_policy": "grid"},
+        ],
+    })
+}
+
+fn rank_payload_image_ids(images: Option<&Vec<Value>>) -> Vec<String> {
+    let mut ranked: Vec<(String, f64, usize)> = Vec::new();
+    if let Some(images) = images {
+        for (idx, row) in images.iter().enumerate() {
+            let Some(obj) = row.as_object() else {
+                continue;
+            };
+            let id = obj
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string();
+            if id.is_empty() {
+                continue;
+            }
+            let rect = obj
+                .get("rect")
+                .and_then(Value::as_object)
+                .or_else(|| obj.get("rect_norm").and_then(Value::as_object));
+            let area = rect
+                .and_then(|shape| {
+                    let w = shape.get("w").and_then(Value::as_f64)?;
+                    let h = shape.get("h").and_then(Value::as_f64)?;
+                    Some((w.max(0.0)) * (h.max(0.0)))
+                })
+                .unwrap_or(0.0);
+            ranked.push((id, area, idx));
+        }
+    }
+    if ranked.is_empty() {
+        return Vec::new();
+    }
+    ranked.sort_by(|left, right| {
+        right
+            .1
+            .partial_cmp(&left.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.2.cmp(&right.2))
+    });
+    ranked.into_iter().map(|row| row.0).collect()
+}
+
+fn compile_mother_prompt_payload(payload: &Map<String, Value>) -> Value {
+    let action_version = payload
+        .get("action_version")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let intent = payload
+        .get("intent")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let roles = intent
+        .get("roles")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+
+    let summary = value_as_non_empty_string(intent.get("summary"))
+        .or_else(|| value_as_non_empty_string(intent.get("label")))
+        .unwrap_or_else(|| "Fuse references into one coherent composition.".to_string());
+    let creative_directive = value_as_non_empty_string(payload.get("creative_directive"))
+        .or_else(|| value_as_non_empty_string(intent.get("creative_directive")))
+        .unwrap_or_else(|| "stunningly awe-inspiring and tearfully joyous".to_string());
+    let transformation_mode = normalize_transformation_mode(
+        payload
+            .get("transformation_mode")
+            .or_else(|| intent.get("transformation_mode")),
+    );
+    let placement = value_as_non_empty_string(intent.get("placement_policy"))
+        .unwrap_or_else(|| "adjacent".to_string());
+
+    let subject_ids = ids_list(roles.get("subject"));
+    let model_ids = ids_list(roles.get("model"));
+    let mediator_ids = ids_list(roles.get("mediator"));
+    let object_ids = ids_list(roles.get("object"));
+    let target_ids = ids_list(intent.get("target_ids"));
+    let reference_ids = ids_list(intent.get("reference_ids"));
+
+    let mut context_ids = Vec::new();
+    for id in target_ids.iter().chain(reference_ids.iter()) {
+        if !context_ids.contains(id) {
+            context_ids.push(id.clone());
+        }
+    }
+    let multi_image = context_ids.len() > 1;
+
+    let image_hints: Vec<String> = payload
+        .get("images")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|row| row.as_object().cloned())
+        .flat_map(|row| {
+            let mut out = Vec::new();
+            if let Some(value) = row.get("vision_desc").and_then(Value::as_str) {
+                out.push(value.trim().to_ascii_lowercase());
+            }
+            if let Some(value) = row.get("file").and_then(Value::as_str) {
+                out.push(value.trim().to_ascii_lowercase());
+            }
+            out
+        })
+        .collect();
+    let human_inputs = image_hints.iter().any(|value| {
+        contains_any(
+            value,
+            &["person", "people", "human", "face", "portrait", "selfie"],
+        )
+    });
+    let allow_double_exposure = matches!(
+        transformation_mode.as_str(),
+        "destabilize" | "fracture" | "alienate"
+    );
+
+    let mut constraints = vec![
+        "No unintended ghosted human overlays.".to_string(),
+        if allow_double_exposure {
+            "Allow intentional double-exposure only when it clearly supports the chosen transformation mode."
+                .to_string()
+        } else {
+            "No accidental double-exposure artifacts.".to_string()
+        },
+        "No icon-overpaint artifacts.".to_string(),
+        "Preserve source-object integrity where role anchors imply continuity.".to_string(),
+    ];
+    if !human_inputs {
+        constraints.push(
+            "No extra humans or faces unless clearly present in the input references.".to_string(),
+        );
+    }
+
+    let mut positive_lines = vec![
+        format!("Intent summary: {summary}."),
+        "Role anchors:".to_string(),
+        format!(
+            "- SUBJECT: {}",
+            if subject_ids.is_empty() {
+                "primary subject".to_string()
+            } else {
+                subject_ids.join(", ")
+            }
+        ),
+        format!(
+            "- MODEL: {}",
+            if model_ids.is_empty() {
+                "reference model".to_string()
+            } else {
+                model_ids.join(", ")
+            }
+        ),
+        format!(
+            "- MEDIATOR: {}",
+            if mediator_ids.is_empty() {
+                "layout mediator".to_string()
+            } else {
+                mediator_ids.join(", ")
+            }
+        ),
+        format!(
+            "- OBJECT: {}",
+            if object_ids.is_empty() {
+                "desired outcome".to_string()
+            } else {
+                object_ids.join(", ")
+            }
+        ),
+        format!("Placement policy target: {placement}."),
+    ];
+    if multi_image {
+        positive_lines.extend([
+            "Multi-image fusion rules:".to_string(),
+            "- Integrate all references into a single coherent scene (not a collage).".to_string(),
+            "- Match perspective, scale, and lighting direction across fused elements.".to_string(),
+            "- Keep one coherent camera framing and focal hierarchy.".to_string(),
+        ]);
+    }
+    positive_lines.push("Anti-overlay constraints:".to_string());
+    for item in &constraints {
+        positive_lines.push(format!("- {item}"));
+    }
+    positive_lines.extend([
+        "No visible text, logos-as-text, captions, or watermarks.".to_string(),
+        "Create one production-ready concept image.".to_string(),
+        format!("Creative directive: {creative_directive}."),
+        format!("Transformation mode: {transformation_mode}."),
+    ]);
+
+    let negative_prompt = if human_inputs {
+        "No collage split-screen. No text overlays. No watermark. No ghosted human overlays. No icon-overpaint artifacts. No low-detail artifacts. No unintended extra faces."
+    } else {
+        "No collage split-screen. No text overlays. No watermark. No ghosted human overlays. No icon-overpaint artifacts. No low-detail artifacts. No extra humans/faces unless present in inputs."
+    };
+
+    json!({
+        "action_version": action_version,
+        "creative_directive": creative_directive,
+        "transformation_mode": transformation_mode,
+        "positive_prompt": positive_lines.join("\n"),
+        "negative_prompt": negative_prompt,
+        "compile_constraints": constraints,
+        "generation_params": {
+            "guidance_scale": 7.0,
+            "layout_hint": placement,
+            "seed_strategy": "random",
+            "transformation_mode": transformation_mode,
+        },
+    })
+}
+
+fn compile_mother_prompt_payload_via_provider(
+    payload: &Map<String, Value>,
+    model_hint: Option<&str>,
+) -> Option<(Map<String, Value>, String)> {
+    provider_json_object_inference(
+        payload,
+        model_hint,
+        1300,
+        Duration::from_secs_f64(38.0),
+        |payload_json| {
+            format!(
+                "You are Cue's Mother prompt compiler.\nReturn JSON only (no markdown).\n\
+Given PAYLOAD_JSON, produce one object with this exact schema:\n\
+{{\n  \"action_version\": 0,\n  \"creative_directive\": \"string\",\n  \"transformation_mode\": \"amplify|transcend|destabilize|purify|hybridize|mythologize|monumentalize|fracture|romanticize|alienate\",\n  \"positive_prompt\": \"string\",\n  \"negative_prompt\": \"string\",\n  \"compile_constraints\": [\"string\"],\n  \"generation_params\": {{\n    \"guidance_scale\": 7.0,\n    \"layout_hint\": \"adjacent|grid|replace\",\n    \"seed_strategy\": \"random\",\n    \"transformation_mode\": \"same as top-level\"\n  }}\n}}\n\
+Rules:\n- Prompts must be production-ready for image generation.\n\
+- Keep anti-artifact constraints explicit.\n\
+- Keep generation_params.transformation_mode aligned with top-level transformation_mode.\n\
+PAYLOAD_JSON:\n{}",
+                payload_json
+            )
+        },
+    )
+}
+
+fn normalize_compile_constraints(value: Option<&Value>) -> Vec<String> {
+    observe::vision::coerce_text_list(value, 14, 220)
+}
+
+fn normalize_generation_params(
+    candidate: Option<&Map<String, Value>>,
+    fallback: &Map<String, Value>,
+    transformation_mode: &str,
+) -> Map<String, Value> {
+    let mut out = fallback.clone();
+    if let Some(candidate) = candidate {
+        if let Some(guidance_scale) = candidate
+            .get("guidance_scale")
+            .and_then(|value| match value {
+                Value::Number(number) => number.as_f64(),
+                Value::String(text) => text.trim().parse::<f64>().ok(),
+                _ => None,
+            })
+            .filter(|value| value.is_finite())
+        {
+            out.insert(
+                "guidance_scale".to_string(),
+                Value::Number(
+                    serde_json::Number::from_f64(guidance_scale.clamp(0.1, 30.0))
+                        .unwrap_or_else(|| serde_json::Number::from(7)),
+                ),
+            );
+        }
+        if let Some(layout_hint) = normalize_mother_placement_policy(candidate.get("layout_hint")) {
+            out.insert("layout_hint".to_string(), Value::String(layout_hint));
+        }
+        if let Some(seed_strategy) = value_as_non_empty_string(candidate.get("seed_strategy")) {
+            out.insert(
+                "seed_strategy".to_string(),
+                Value::String(clamp_text(&seed_strategy, 48)),
+            );
+        }
+    }
+    out.insert(
+        "transformation_mode".to_string(),
+        Value::String(transformation_mode.to_string()),
+    );
+    out
+}
+
+fn normalize_provider_compiled_payload(
+    candidate: &Map<String, Value>,
+    fallback: &Value,
+    payload: &Map<String, Value>,
+) -> Value {
+    let fallback_obj = fallback.as_object().cloned().unwrap_or_default();
+    let action_version = payload
+        .get("action_version")
+        .and_then(Value::as_i64)
+        .or_else(|| fallback_obj.get("action_version").and_then(Value::as_i64))
+        .unwrap_or(0);
+    let creative_directive = value_as_non_empty_string(candidate.get("creative_directive"))
+        .map(|value| clamp_text(&value, 220))
+        .or_else(|| value_as_non_empty_string(fallback_obj.get("creative_directive")))
+        .unwrap_or_else(|| "stunningly awe-inspiring and tearfully joyous".to_string());
+    let transformation_mode = normalize_transformation_mode(
+        candidate
+            .get("transformation_mode")
+            .or_else(|| fallback_obj.get("transformation_mode")),
+    );
+    let positive_prompt = value_as_non_empty_string(candidate.get("positive_prompt"))
+        .map(|value| clamp_text(&value, 12000))
+        .or_else(|| value_as_non_empty_string(fallback_obj.get("positive_prompt")))
+        .unwrap_or_default();
+    let negative_prompt = value_as_non_empty_string(candidate.get("negative_prompt"))
+        .map(|value| clamp_text(&value, 3000))
+        .or_else(|| value_as_non_empty_string(fallback_obj.get("negative_prompt")))
+        .unwrap_or_default();
+
+    let constraints = {
+        let provider = normalize_compile_constraints(candidate.get("compile_constraints"));
+        if provider.is_empty() {
+            normalize_compile_constraints(fallback_obj.get("compile_constraints"))
+        } else {
+            provider
+        }
+    };
+
+    let fallback_generation = fallback_obj
+        .get("generation_params")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_else(|| {
+            json_object(json!({
+                "guidance_scale": 7.0,
+                "layout_hint": "adjacent",
+                "seed_strategy": "random",
+                "transformation_mode": transformation_mode,
+            }))
+        });
+    let generation_params = normalize_generation_params(
+        candidate
+            .get("generation_params")
+            .and_then(Value::as_object),
+        &fallback_generation,
+        &transformation_mode,
+    );
+
+    json!({
+        "action_version": action_version,
+        "creative_directive": creative_directive,
+        "transformation_mode": transformation_mode,
+        "positive_prompt": positive_prompt,
+        "negative_prompt": negative_prompt,
+        "compile_constraints": constraints,
+        "generation_params": generation_params,
+    })
+}
+
+fn compile_mother_prompt_payload_provider_first(
+    payload: &Map<String, Value>,
+    model_hint: Option<&str>,
+    source_label: &str,
+) -> (Value, String, String) {
+    provider_first_json_payload(
+        payload,
+        model_hint,
+        source_label,
+        compile_mother_prompt_payload,
+        compile_mother_prompt_payload_via_provider,
+        normalize_provider_compiled_payload,
+    )
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct MotherGenerateRequest {
+    prompt: String,
+    settings: Map<String, Value>,
+    intent: Map<String, Value>,
+    source_images: Vec<String>,
+}
+
+fn provider_from_model_name(model: &str) -> Option<String> {
+    let normalized = model.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        return None;
+    }
+    if normalized.starts_with("gemini") {
+        return Some("gemini".to_string());
+    }
+    if normalized.starts_with("imagen") {
+        return Some("imagen".to_string());
+    }
+    if normalized.starts_with("gpt-") {
+        return Some("openai".to_string());
+    }
+    if normalized.starts_with("flux") {
+        return Some("flux".to_string());
+    }
+    if normalized.starts_with("sdxl") {
+        return Some("replicate".to_string());
+    }
+    if normalized.starts_with("dryrun") {
+        return Some("dryrun".to_string());
+    }
+    None
+}
+
+pub(crate) fn mother_generate_request_from_payload(
+    payload: &Map<String, Value>,
+    quality_preset: &str,
+    target_provider: Option<&str>,
+) -> Result<MotherGenerateRequest> {
+    let mut prompt = value_as_non_empty_string(payload.get("prompt"))
+        .or_else(|| value_as_non_empty_string(payload.get("positive_prompt")))
+        .unwrap_or_default();
+    if prompt.trim().is_empty() {
+        bail!("Mother generate payload missing prompt.");
+    }
+    if let Some(negative) = value_as_non_empty_string(payload.get("negative_prompt")) {
+        if !negative.trim().is_empty() && !prompt.to_ascii_lowercase().contains("avoid:") {
+            prompt = format!("{prompt}\nAvoid: {}", negative.trim());
+        }
+    }
+
+    let mut settings = chat_settings(quality_preset);
+    let n = payload
+        .get("n")
+        .and_then(Value::as_u64)
+        .filter(|value| *value > 0)
+        .unwrap_or(1);
+    settings.insert("n".to_string(), Value::Number(n.into()));
+
+    let generation_params = payload
+        .get("generation_params")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let seed_strategy = value_as_non_empty_string(generation_params.get("seed_strategy"))
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if seed_strategy == "random" {
+        settings.insert(
+            "seed".to_string(),
+            Value::Number(serde_json::Number::from(pseudo_random_seed())),
+        );
+    } else if let Some(seed) = generation_params.get("seed").and_then(Value::as_i64) {
+        settings.insert("seed".to_string(), Value::Number(seed.into()));
+    }
+
+    let mut provider_options = settings
+        .get("provider_options")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let provider = target_provider
+        .map(|value| value.trim().to_ascii_lowercase())
+        .unwrap_or_default();
+    if provider == "gemini" || provider == "imagen" {
+        if let Some(aspect_ratio) = value_as_non_empty_string(generation_params.get("aspect_ratio"))
+        {
+            provider_options.insert("aspect_ratio".to_string(), Value::String(aspect_ratio));
+        }
+        if let Some(image_size) = value_as_non_empty_string(generation_params.get("image_size")) {
+            provider_options.insert("image_size".to_string(), Value::String(image_size));
+        }
+    }
+    if provider == "gemini" {
+        if let Some(safety_settings) = generation_params
+            .get("safety_settings")
+            .and_then(Value::as_array)
+            .cloned()
+        {
+            provider_options.insert("safety_settings".to_string(), Value::Array(safety_settings));
+        }
+    }
+    if provider == "imagen" {
+        if let Some(add_watermark) = generation_params
+            .get("add_watermark")
+            .and_then(Value::as_bool)
+        {
+            provider_options.insert("add_watermark".to_string(), Value::Bool(add_watermark));
+        }
+        if let Some(person_generation) = generation_params.get("person_generation").cloned() {
+            provider_options.insert("person_generation".to_string(), person_generation);
+        }
+    }
+    if let Some(transport_retries) = generation_params
+        .get("transport_retries")
+        .and_then(Value::as_u64)
+    {
+        provider_options.insert(
+            "transport_retries".to_string(),
+            Value::Number(transport_retries.into()),
+        );
+    }
+    if let Some(request_retries) = generation_params
+        .get("request_retries")
+        .and_then(Value::as_u64)
+    {
+        provider_options.insert(
+            "request_retries".to_string(),
+            Value::Number(request_retries.into()),
+        );
+    }
+    if let Some(retry_backoff) = generation_params
+        .get("retry_backoff")
+        .and_then(Value::as_f64)
+        .and_then(serde_json::Number::from_f64)
+    {
+        provider_options.insert("retry_backoff".to_string(), Value::Number(retry_backoff));
+    }
+    if provider_options.is_empty() {
+        settings.remove("provider_options");
+    } else {
+        settings.insert(
+            "provider_options".to_string(),
+            Value::Object(provider_options),
+        );
+    }
+
+    let init_image = value_as_non_empty_string(payload.get("init_image"));
+    let reference_images = value_as_string_list(payload.get("reference_images"));
+    if let Some(init_image) = &init_image {
+        settings.insert("init_image".to_string(), Value::String(init_image.clone()));
+    }
+    if !reference_images.is_empty() {
+        settings.insert(
+            "reference_images".to_string(),
+            Value::Array(
+                reference_images
+                    .iter()
+                    .map(|value| Value::String(value.clone()))
+                    .collect(),
+            ),
+        );
+    }
+
+    let mut source_images = value_as_string_list(payload.get("source_images"));
+    if source_images.is_empty() {
+        if let Some(init_image) = &init_image {
+            source_images.push(init_image.clone());
+        }
+        for image in &reference_images {
+            source_images.push(image.clone());
+        }
+    }
+    source_images.retain(|value| !value.trim().is_empty());
+
+    let intent_meta = payload
+        .get("intent")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let schema = value_as_non_empty_string(payload.get("schema")).unwrap_or_default();
+    let schema_norm = schema.trim().to_ascii_lowercase();
+    let is_v2 = matches!(
+        schema_norm.as_str(),
+        "cue.mother.generate.v2" | "brood.mother.generate.v2"
+    );
+    let intent_id = if is_v2 {
+        payload.get("intent_id").cloned().unwrap_or(Value::Null)
+    } else {
+        payload
+            .get("intent_id")
+            .cloned()
+            .or_else(|| intent_meta.get("intent_id").cloned())
+            .unwrap_or(Value::Null)
+    };
+    let transformation_mode = payload
+        .get("transformation_mode")
+        .cloned()
+        .or_else(|| intent_meta.get("transformation_mode").cloned())
+        .or_else(|| generation_params.get("transformation_mode").cloned())
+        .unwrap_or(Value::Null);
+
+    let mut action_meta = Map::new();
+    action_meta.insert(
+        "action".to_string(),
+        Value::String("mother_generate".to_string()),
+    );
+    action_meta.insert("intent_id".to_string(), intent_id);
+    action_meta.insert(
+        "mother_action_version".to_string(),
+        Value::Number(
+            payload
+                .get("action_version")
+                .and_then(Value::as_i64)
+                .unwrap_or(0)
+                .into(),
+        ),
+    );
+    action_meta.insert("transformation_mode".to_string(), transformation_mode);
+    action_meta.insert(
+        "source_images".to_string(),
+        Value::Array(
+            source_images
+                .iter()
+                .map(|value| Value::String(value.clone()))
+                .collect(),
+        ),
+    );
+
+    if let Some(packet) = payload
+        .get("gemini_context_packet")
+        .and_then(Value::as_object)
+        .cloned()
+    {
+        action_meta.insert("gemini_context_packet".to_string(), Value::Object(packet));
+    }
+
+    if provider != "gemini" {
+        if let Some(envelopes) = payload
+            .get("model_context_envelopes")
+            .and_then(Value::as_object)
+            .cloned()
+        {
+            if let Some(envelope) = envelopes.get(&provider).cloned() {
+                action_meta.insert("model_context_envelope".to_string(), envelope);
+            } else if let Some((_, envelope)) = envelopes.into_iter().next() {
+                action_meta.insert("model_context_envelope".to_string(), envelope);
+            }
+        }
+    }
+
+    Ok(MotherGenerateRequest {
+        prompt,
+        settings,
+        intent: action_meta,
+        source_images,
+    })
+}
+
+fn pseudo_random_seed() -> i64 {
+    const MAX_SEED: u64 = 2_147_483_647;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let now_nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    now_nanos.hash(&mut hasher);
+    let raw = hasher.finish();
+    ((raw % MAX_SEED) + 1) as i64
+}
+
+#[derive(Debug, Clone)]
+struct BasicImageStats {
+    width: u32,
+    height: u32,
+    mean_r: f64,
+    mean_g: f64,
+    mean_b: f64,
+    brightness: f64,
+    saturation: f64,
+    palette: Vec<String>,
+}
+
+fn read_basic_image_stats(path: &Path) -> Option<BasicImageStats> {
+    let image = image::open(path).ok()?;
+    let resized = image.resize_exact(96, 96, FilterType::Triangle).to_rgb8();
+    let mut total_r = 0f64;
+    let mut total_g = 0f64;
+    let mut total_b = 0f64;
+    let mut total_brightness = 0f64;
+    let mut total_saturation = 0f64;
+    let mut bins: HashMap<(u8, u8, u8), u64> = HashMap::new();
+    let mut count = 0f64;
+
+    for pixel in resized.pixels() {
+        let r = pixel[0] as f64;
+        let g = pixel[1] as f64;
+        let b = pixel[2] as f64;
+        total_r += r;
+        total_g += g;
+        total_b += b;
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        total_brightness += (r + g + b) / (255.0 * 3.0);
+        let sat = if max <= 0.0 { 0.0 } else { (max - min) / max };
+        total_saturation += sat;
+        count += 1.0;
+
+        let qr = ((pixel[0] as u16 / 32) * 32).min(255) as u8;
+        let qg = ((pixel[1] as u16 / 32) * 32).min(255) as u8;
+        let qb = ((pixel[2] as u16 / 32) * 32).min(255) as u8;
+        *bins.entry((qr, qg, qb)).or_insert(0) += 1;
+    }
+
+    if count <= 0.0 {
+        return None;
+    }
+
+    let mut dominant: Vec<((u8, u8, u8), u64)> = bins.into_iter().collect();
+    dominant.sort_by(|left, right| right.1.cmp(&left.1));
+    let mut palette: Vec<String> = dominant
+        .into_iter()
+        .take(6)
+        .map(|(rgb, _)| rgb_hex(rgb.0, rgb.1, rgb.2))
+        .collect();
+    if palette.is_empty() {
+        palette.push(rgb_hex(
+            (total_r / count) as u8,
+            (total_g / count) as u8,
+            (total_b / count) as u8,
+        ));
+    }
+
+    Some(BasicImageStats {
+        width: image.width(),
+        height: image.height(),
+        mean_r: total_r / count,
+        mean_g: total_g / count,
+        mean_b: total_b / count,
+        brightness: (total_brightness / count).clamp(0.0, 1.0),
+        saturation: (total_saturation / count).clamp(0.0, 1.0),
+        palette,
+    })
+}
+
+fn rgb_hex(r: u8, g: u8, b: u8) -> String {
+    format!("#{r:02X}{g:02X}{b:02X}")
+}
+
+fn color_name(r: f64, g: f64, b: f64) -> String {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let brightness = ((r + g + b) / (255.0 * 3.0)).clamp(0.0, 1.0);
+    if max - min < 18.0 {
+        if brightness > 0.78 {
+            return "soft neutral".to_string();
+        }
+        if brightness < 0.22 {
+            return "deep neutral".to_string();
+        }
+        return "muted neutral".to_string();
+    }
+    if max == r && g > b {
+        "warm orange".to_string()
+    } else if max == r {
+        "crimson red".to_string()
+    } else if max == g && b > r {
+        "teal green".to_string()
+    } else if max == g {
+        "organic green".to_string()
+    } else if max == b && r > g {
+        "violet blue".to_string()
+    } else {
+        "cool blue".to_string()
+    }
+}
+
+fn infer_diagnosis_text(path: &Path) -> String {
+    let stats = read_basic_image_stats(path);
+    let fallback_hex = "#808080".to_string();
+    let palette = stats
+        .as_ref()
+        .and_then(|row| row.palette.first().cloned())
+        .unwrap_or(fallback_hex);
+    let dimensions = stats
+        .as_ref()
+        .map(|row| format!("{}x{}", row.width, row.height))
+        .unwrap_or_else(|| "unknown size".to_string());
+    let brightness = stats.as_ref().map(|row| row.brightness).unwrap_or(0.5);
+    let saturation = stats.as_ref().map(|row| row.saturation).unwrap_or(0.45);
+    let top_issue = if brightness < 0.25 {
+        "The frame is under-exposed; key details are getting buried."
+    } else if brightness > 0.82 {
+        "Highlights are overpowering the subject hierarchy."
+    } else if saturation < 0.22 {
+        "Color energy is low, so the focal point feels flat."
+    } else if saturation > 0.78 {
+        "Color intensity is competing with structural clarity."
+    } else {
+        "Subject hierarchy can be made clearer with stronger separation."
+    };
+
+    format!(
+        "USE CASE (guess): visual concept\n\nTOP ISSUE:\n{top_issue}\n\nWHAT'S WORKING:\n- Strong base palette ({palette}).\n- Solid source resolution ({dimensions}).\n- Readable global composition.\n\nWHAT TO FIX NEXT:\n- Increase contrast around the primary subject.\n- Reduce secondary detail that competes for attention.\n- Align lighting direction across major forms.\n- Keep one dominant focal plane.\n\nNEXT TEST:\n- Generate one tighter crop centered on the hero subject.\n- Generate one variation with cleaner negative space."
+    )
+}
+
+fn infer_argument_text(path_a: &Path, path_b: &Path) -> String {
+    let stats_a = read_basic_image_stats(path_a);
+    let stats_b = read_basic_image_stats(path_b);
+    let label_a = path_a
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("A");
+    let label_b = path_b
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("B");
+    let sat_a = stats_a.as_ref().map(|row| row.saturation).unwrap_or(0.5);
+    let sat_b = stats_b.as_ref().map(|row| row.saturation).unwrap_or(0.5);
+    let bright_a = stats_a.as_ref().map(|row| row.brightness).unwrap_or(0.5);
+    let bright_b = stats_b.as_ref().map(|row| row.brightness).unwrap_or(0.5);
+
+    let pick_a = (sat_a + bright_a * 0.5) >= (sat_b + bright_b * 0.5);
+    let winner = if pick_a { "A" } else { "B" };
+    let winner_label = if pick_a { label_a } else { label_b };
+
+    format!(
+        "IMAGE A WINS IF:\n- You want stronger immediacy and punch.\n- You prefer bolder color separation.\n- You need faster thumbnail readability.\n\nIMAGE B WINS IF:\n- You want calmer tonal control.\n- You need a softer, more editorial mood.\n- You want more room for downstream refinements.\n\nMY PICK:\n{winner} — {winner_label}\n\nWHY:\nThe winning frame currently gives the clearest hierarchy for a single hero read. It needs fewer corrections before shipping.\n\nNEXT TEST:\n- Run one controlled variation from the winner.\n- Borrow one lighting/composition trait from the losing frame."
+    )
+}
+
+#[derive(Debug, Clone)]
+struct DnaSignature {
+    palette: Vec<String>,
+    colors: Vec<String>,
+    materials: Vec<String>,
+    summary: String,
+}
+
+fn extract_dna_signature(path: &Path) -> DnaSignature {
+    let stats = read_basic_image_stats(path);
+    let palette = stats
+        .as_ref()
+        .map(|row| row.palette.clone())
+        .unwrap_or_else(|| vec!["#808080".to_string()]);
+    let mut colors: Vec<String> = Vec::new();
+    if let Some(row) = &stats {
+        colors.push(color_name(row.mean_r, row.mean_g, row.mean_b));
+    }
+    for hex in palette.iter().take(3) {
+        let label = format!("{hex} accent");
+        if !colors.contains(&label) {
+            colors.push(label);
+        }
+    }
+    if colors.is_empty() {
+        colors.push("balanced neutral palette".to_string());
+    }
+    colors.truncate(6);
+
+    let file_hint = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let mut materials = Vec::new();
+    if contains_any(&file_hint, &["metal", "chrome", "steel"]) {
+        materials.push("brushed metal".to_string());
+    }
+    if contains_any(&file_hint, &["wood", "timber"]) {
+        materials.push("natural wood".to_string());
+    }
+    if contains_any(&file_hint, &["glass", "window"]) {
+        materials.push("clean glass".to_string());
+    }
+    if contains_any(&file_hint, &["fabric", "cloth", "textile"]) {
+        materials.push("woven textile".to_string());
+    }
+    if materials.is_empty() {
+        materials.extend([
+            "matte composite".to_string(),
+            "soft diffuse surfaces".to_string(),
+            "structured hard edges".to_string(),
+        ]);
+    }
+    materials.truncate(5);
+
+    let summary = format!(
+        "Transfer {} with {} highlights.",
+        colors
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "core palette".to_string()),
+        materials
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "material".to_string())
+    );
+
+    DnaSignature {
+        palette,
+        colors,
+        materials,
+        summary: clamp_text(&summary, 120),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SoulSignature {
+    emotion: String,
+    summary: String,
+}
+
+fn extract_soul_signature(path: &Path) -> SoulSignature {
+    let stats = read_basic_image_stats(path);
+    let brightness = stats.as_ref().map(|row| row.brightness).unwrap_or(0.5);
+    let saturation = stats.as_ref().map(|row| row.saturation).unwrap_or(0.45);
+    let emotion = if brightness < 0.22 {
+        "moody tension"
+    } else if brightness > 0.8 && saturation < 0.28 {
+        "quiet serenity"
+    } else if saturation > 0.75 {
+        "electric momentum"
+    } else if saturation < 0.2 {
+        "calm restraint"
+    } else {
+        "balanced confidence"
+    };
+    let summary = format!(
+        "Carry forward a {} while preserving structural clarity.",
+        emotion
+    );
+    SoulSignature {
+        emotion: emotion.to_string(),
+        summary: clamp_text(&summary, 120),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TripletRuleOutput {
+    principle: String,
+    evidence: Vec<Value>,
+    annotations: Vec<Value>,
+    confidence: f64,
+}
+
+fn infer_triplet_rule(path_a: &Path, path_b: &Path, path_c: &Path) -> TripletRuleOutput {
+    let stats_a = read_basic_image_stats(path_a);
+    let stats_b = read_basic_image_stats(path_b);
+    let stats_c = read_basic_image_stats(path_c);
+    let avg_brightness = ((stats_a.as_ref().map(|row| row.brightness).unwrap_or(0.5)
+        + stats_b.as_ref().map(|row| row.brightness).unwrap_or(0.5)
+        + stats_c.as_ref().map(|row| row.brightness).unwrap_or(0.5))
+        / 3.0)
+        .clamp(0.0, 1.0);
+    let principle = if avg_brightness > 0.65 {
+        "Shared rule: bright, clean compositions with forward focal hierarchy."
+    } else if avg_brightness < 0.35 {
+        "Shared rule: low-key lighting and moody contrast define the visual language."
+    } else {
+        "Shared rule: balanced mid-tone lighting with controlled subject emphasis."
+    }
+    .to_string();
+    let evidence = vec![
+        json!({"image": "A", "note": "Primary subject remains visually dominant."}),
+        json!({"image": "B", "note": "Composition keeps a readable center of gravity."}),
+        json!({"image": "C", "note": "Lighting and color cadence reinforce the same mood."}),
+    ];
+    let annotations = vec![
+        json!({"image": "A", "x": 0.50, "y": 0.46, "label": "dominant focal zone"}),
+        json!({"image": "B", "x": 0.52, "y": 0.48, "label": "shared lighting cue"}),
+        json!({"image": "C", "x": 0.49, "y": 0.45, "label": "composition anchor"}),
+    ];
+    TripletRuleOutput {
+        principle,
+        evidence,
+        annotations,
+        confidence: 0.71,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TripletOddOneOutOutput {
+    odd_image: String,
+    odd_index: i64,
+    pattern: String,
+    explanation: String,
+    confidence: f64,
+}
+
+fn infer_triplet_odd_one_out(
+    path_a: &Path,
+    path_b: &Path,
+    path_c: &Path,
+) -> TripletOddOneOutOutput {
+    let stats = vec![
+        read_basic_image_stats(path_a),
+        read_basic_image_stats(path_b),
+        read_basic_image_stats(path_c),
+    ];
+    let means: Vec<(f64, f64, f64)> = stats
+        .iter()
+        .map(|row| {
+            (
+                row.as_ref().map(|v| v.mean_r).unwrap_or(128.0),
+                row.as_ref().map(|v| v.mean_g).unwrap_or(128.0),
+                row.as_ref().map(|v| v.mean_b).unwrap_or(128.0),
+            )
+        })
+        .collect();
+    let mut distances = [0.0f64; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            if i == j {
+                continue;
+            }
+            distances[i] += rgb_distance(means[i], means[j]);
+        }
+    }
+    let mut odd_index = 0usize;
+    let mut odd_value = distances[0];
+    for (idx, value) in distances.iter().enumerate().skip(1) {
+        if *value > odd_value {
+            odd_value = *value;
+            odd_index = idx;
+        }
+    }
+    let odd_image = match odd_index {
+        0 => "A",
+        1 => "B",
+        _ => "C",
+    }
+    .to_string();
+    TripletOddOneOutOutput {
+        odd_image,
+        odd_index: odd_index as i64,
+        pattern: "Two images share a closer color/lighting cadence and composition rhythm."
+            .to_string(),
+        explanation: "The odd frame deviates most in overall tonal signature, making it the outlier for the current set."
+            .to_string(),
+        confidence: 0.69,
+    }
+}
+
+fn rgb_distance(a: (f64, f64, f64), b: (f64, f64, f64)) -> f64 {
+    let dr = a.0 - b.0;
+    let dg = a.1 - b.1;
+    let db = a.2 - b.2;
+    (dr * dr + dg * dg + db * db).sqrt()
+}
+
+pub(crate) fn first_non_empty_env(keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(value) = compat_env_var(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn compat_env_var(key: &str) -> Option<String> {
+    let mut candidates = vec![key.to_string()];
+    if let Some(rest) = key.strip_prefix("CUE_") {
+        candidates.push(format!("BROOD_{rest}"));
+    }
+    for candidate in candidates {
+        if let Ok(value) = env::var(&candidate) {
+            let trimmed = value.trim().to_string();
+            if !trimmed.is_empty() {
+                return Some(trimmed);
+            }
+        }
+    }
+    None
+}
+
+pub(crate) fn openai_api_key() -> Option<String> {
+    first_non_empty_env(&["OPENAI_API_KEY", "OPENAI_API_KEY_BACKUP"])
+}
+
+pub(crate) fn openrouter_api_key() -> Option<String> {
+    first_non_empty_env(&["OPENROUTER_API_KEY"])
+}
+
+fn gemini_api_key() -> Option<String> {
+    first_non_empty_env(&["GEMINI_API_KEY", "GOOGLE_API_KEY"])
+}
+
+pub(crate) fn openai_api_base() -> String {
+    let raw = first_non_empty_env(&["OPENAI_API_BASE", "OPENAI_BASE_URL"])
+        .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+    let mut base = raw.trim().trim_end_matches('/').to_string();
+    if let Ok(parsed) = reqwest::Url::parse(&base) {
+        if parsed.path().trim().is_empty() || parsed.path() == "/" {
+            base = format!("{base}/v1");
+        }
+    }
+    base.trim_end_matches('/').to_string()
+}
+
+fn gemini_api_base() -> String {
+    first_non_empty_env(&["GEMINI_API_BASE"])
+        .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string())
+        .trim()
+        .trim_end_matches('/')
+        .to_string()
+}
+
+pub(crate) fn openrouter_api_base() -> String {
+    let raw = first_non_empty_env(&["OPENROUTER_API_BASE", "OPENROUTER_BASE_URL"])
+        .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string());
+    let mut base = raw.trim().trim_end_matches('/').to_string();
+    if let Ok(parsed) = reqwest::Url::parse(&base) {
+        if parsed.path().trim().is_empty() || parsed.path() == "/" {
+            base = format!("{base}/api/v1");
+        }
+    }
+    base.trim_end_matches('/').to_string()
+}
+
+pub(crate) fn apply_openrouter_request_headers(
+    mut request: reqwest::blocking::RequestBuilder,
+) -> reqwest::blocking::RequestBuilder {
+    if let Some(referer) =
+        first_non_empty_env(&["OPENROUTER_HTTP_REFERER", "CUE_OPENROUTER_HTTP_REFERER"])
+    {
+        request = request.header("HTTP-Referer", referer);
+    }
+    if let Some(title) = first_non_empty_env(&["OPENROUTER_X_TITLE", "CUE_OPENROUTER_X_TITLE"]) {
+        request = request.header("X-Title", title);
+    }
+    request
+}
+
+pub(crate) fn vision_infer_description_realtime(
+    path: &Path,
+    max_chars: usize,
+) -> Option<observe::vision::DescriptionVisionInference> {
+    let api_key = openai_api_key()?;
+    let model = observe::vision::vision_description_realtime_model();
+    if model.trim().is_empty() {
+        return None;
+    }
+    let data_url = read_image_as_data_url(path)?;
+    let mut ws = open_realtime_websocket(&model, &api_key).ok()?;
+    let _ = websocket_send_json(
+        &mut ws,
+        &json!({
+            "type": "session.update",
+            "session": {
+                "modalities": ["text"],
+            },
+        }),
+    );
+    let request = json!({
+        "type": "response.create",
+        "response": {
+            "conversation": "none",
+            "modalities": ["text"],
+            "input": [{
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": observe::vision::description_realtime_instruction()
+                    },
+                    {"type": "input_image", "image_url": data_url},
+                ],
+            }],
+            "max_output_tokens": 120,
+        },
+    });
+    if websocket_send_json(&mut ws, &request).is_err() {
+        let _ = ws.close(None);
+        return None;
+    }
+
+    let mut buffer = String::new();
+    let mut response_id: Option<String> = None;
+    let started = Instant::now();
+    while started.elapsed().as_secs_f64() <= 60.0 {
+        let message = match ws.read() {
+            Ok(message) => message,
+            Err(tungstenite::Error::Io(err))
+                if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>
+            {
+                continue;
+            }
+            Err(_) => {
+                let _ = ws.close(None);
+                return None;
+            }
+        };
+        let raw = match message {
+            WsMessage::Text(text) => text.to_string(),
+            WsMessage::Binary(bytes) => String::from_utf8_lossy(&bytes).to_string(),
+            WsMessage::Ping(_) | WsMessage::Pong(_) => continue,
+            WsMessage::Close(_) => {
+                let _ = ws.close(None);
+                return None;
+            }
+            _ => continue,
+        };
+        let parsed: Value = match serde_json::from_str(&raw) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let event_type = parsed
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if event_type == "error" {
+            let _ = ws.close(None);
+            return None;
+        }
+        if event_type == "response.created" {
+            if let Some(id) = parsed
+                .get("response")
+                .and_then(Value::as_object)
+                .and_then(|row| row.get("id"))
+                .and_then(Value::as_str)
+            {
+                response_id = Some(id.to_string());
+            }
+            continue;
+        }
+        if event_type == "response.output_text.delta" {
+            let delta = parsed
+                .get("delta")
+                .and_then(Value::as_str)
+                .or_else(|| parsed.get("text").and_then(Value::as_str))
+                .unwrap_or_default();
+            if !delta.is_empty() {
+                buffer = append_stream_delta(&buffer, delta);
+            }
+            continue;
+        }
+        if event_type == "response.output_text.done" {
+            if let Some(text) = parsed
+                .get("text")
+                .and_then(Value::as_str)
+                .or_else(|| parsed.get("output_text").and_then(Value::as_str))
+            {
+                if !text.is_empty() {
+                    buffer = merge_stream_text(&buffer, text);
+                }
+            }
+            continue;
+        }
+        if event_type == "response.done" {
+            let response = parsed.get("response").cloned().unwrap_or(Value::Null);
+            if let Some(expected) = response_id.as_ref() {
+                let actual = response
+                    .as_object()
+                    .and_then(|row| row.get("id"))
+                    .and_then(Value::as_str);
+                if actual.is_some() && actual != Some(expected.as_str()) {
+                    continue;
+                }
+            }
+            let (text, _) = resolve_streamed_response_text(&buffer, &response);
+            let cleaned = observe::vision::clean_description(&text, max_chars);
+            if cleaned.trim().is_empty() {
+                let _ = ws.close(None);
+                return None;
+            }
+            let (input_tokens, output_tokens) =
+                observe::vision::extract_token_usage_pair(&response);
+            let model_name = response
+                .as_object()
+                .and_then(|row| row.get("model"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .or_else(|| Some(model.clone()));
+            let _ = ws.close(None);
+            return Some(observe::vision::DescriptionVisionInference {
+                description: cleaned,
+                source: "openai_realtime_describe".to_string(),
+                model: model_name,
+                input_tokens,
+                output_tokens,
+            });
+        }
+    }
+    let _ = ws.close(None);
+    None
+}
+
+pub(crate) fn run_native_recreate_loop(
+    engine: &mut NativeEngine,
+    reference_path: &Path,
+    quality_preset: &str,
+    images_per_iteration: u64,
+) -> Result<Map<String, Value>> {
+    if !reference_path.exists() {
+        bail!("reference file not found ({})", reference_path.display());
+    }
+
+    let (base_prompt, prompt_source, caption_model) = infer_recreate_prompt(reference_path);
+    engine.emit_event(
+        "recreate_prompt_inferred",
+        json_object(json!({
+            "reference": reference_path.to_string_lossy().to_string(),
+            "prompt": base_prompt,
+            "source": prompt_source,
+            "model": caption_model,
+        })),
+    )?;
+
+    let mut prompt = base_prompt.clone();
+    let mut best_artifact: Option<Map<String, Value>> = None;
+    let mut best_score = 0.0f64;
+    let mut iterations_run = 0i64;
+    let mut failure: Option<String> = None;
+
+    for iteration in 1..=3 {
+        iterations_run = iteration;
+        let mut settings = chat_settings(quality_preset);
+        settings.insert(
+            "n".to_string(),
+            Value::Number(images_per_iteration.max(1).into()),
+        );
+        settings.insert(
+            "reference_images".to_string(),
+            Value::Array(vec![Value::String(
+                reference_path.to_string_lossy().to_string(),
+            )]),
+        );
+
+        let mut recreate_intent = Map::new();
+        recreate_intent.insert("action".to_string(), Value::String("recreate".to_string()));
+        recreate_intent.insert(
+            "reference".to_string(),
+            Value::String(reference_path.to_string_lossy().to_string()),
+        );
+        recreate_intent.insert("iteration".to_string(), Value::Number(iteration.into()));
+        recreate_intent.insert(
+            "base_prompt".to_string(),
+            Value::String(base_prompt.clone()),
+        );
+        recreate_intent.insert(
+            "prompt_source".to_string(),
+            Value::String(prompt_source.clone()),
+        );
+        recreate_intent.insert(
+            "caption_model".to_string(),
+            caption_model
+                .as_ref()
+                .map(|value| Value::String(value.clone()))
+                .unwrap_or(Value::Null),
+        );
+
+        let artifacts = match engine.generate(&prompt, settings, recreate_intent) {
+            Ok(artifacts) => artifacts,
+            Err(err) => {
+                failure = Some(err.to_string());
+                break;
+            }
+        };
+
+        for artifact in artifacts {
+            let image_path = artifact
+                .get("image_path")
+                .and_then(Value::as_str)
+                .map(PathBuf::from);
+            let receipt_path = artifact
+                .get("receipt_path")
+                .and_then(Value::as_str)
+                .map(PathBuf::from);
+            let Some(image_path) = image_path else {
+                continue;
+            };
+
+            let similarity = match compare_similarity(reference_path, &image_path) {
+                Ok(similarity) => similarity,
+                Err(err) => {
+                    failure = Some(err.to_string());
+                    break;
+                }
+            };
+
+            if let Some(receipt_path) = receipt_path {
+                if let Err(err) = write_similarity_to_receipt(&receipt_path, &similarity) {
+                    failure = Some(err.to_string());
+                    break;
+                }
+            }
+
+            let overall = similarity
+                .get("overall")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
+            let mut enriched = artifact.clone();
+            enriched.insert("similarity".to_string(), Value::Object(similarity));
+            if best_artifact.is_none() || overall > best_score {
+                best_score = overall;
+                best_artifact = Some(enriched);
+            }
+        }
+
+        if failure.is_some() {
+            break;
+        }
+
+        let best_artifact_id = best_artifact
+            .as_ref()
+            .and_then(|artifact| artifact.get("artifact_id"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        engine.emit_event(
+            "recreate_iteration_update",
+            json_object(json!({
+                "iteration": iteration,
+                "similarity": best_score,
+                "best_artifact_id": best_artifact_id,
+            })),
+        )?;
+
+        if best_score >= 0.8 {
+            break;
+        }
+        prompt = format!("{prompt} Refine to better match the reference image.")
+            .trim()
+            .to_string();
+    }
+
+    let best_artifact_id = best_artifact
+        .as_ref()
+        .and_then(|artifact| artifact.get("artifact_id"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    engine.emit_event(
+        "recreate_done",
+        json_object(json!({
+            "reference": reference_path.to_string_lossy().to_string(),
+            "best_artifact_id": best_artifact_id,
+            "best_score": best_score,
+            "iterations": iterations_run,
+            "success": failure.is_none(),
+            "error": failure,
+        })),
+    )?;
+
+    if let Some(err) = failure {
+        bail!(err);
+    }
+
+    let mut out = Map::new();
+    out.insert(
+        "best".to_string(),
+        best_artifact.map(Value::Object).unwrap_or(Value::Null),
+    );
+    out.insert("best_score".to_string(), json!(best_score));
+    out.insert("inferred_prompt".to_string(), Value::String(base_prompt));
+    out.insert("prompt_source".to_string(), Value::String(prompt_source));
+    out.insert(
+        "caption_model".to_string(),
+        caption_model.map(Value::String).unwrap_or(Value::Null),
+    );
+    Ok(out)
+}
+
+pub(crate) fn infer_recreate_prompt(reference_path: &Path) -> (String, String, Option<String>) {
+    if let Some((prompt, model)) = infer_prompt_from_receipts(reference_path) {
+        return (prompt, "receipt".to_string(), model);
+    }
+    let file_name = reference_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("reference image")
+        .to_string();
+    (
+        format!("Recreate an image similar to {file_name}."),
+        "fallback".to_string(),
+        None,
+    )
+}
+
+pub(crate) fn infer_prompt_from_receipts(
+    reference_path: &Path,
+) -> Option<(String, Option<String>)> {
+    let parent = reference_path.parent()?;
+    let target = reference_path.to_string_lossy().to_string();
+    let canonical_target = fs::canonicalize(reference_path).ok();
+
+    let entries = fs::read_dir(parent).ok()?;
+    for entry in entries {
+        let entry = entry.ok()?;
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let file_name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        if !file_name.starts_with("receipt-") {
+            continue;
+        }
+        let payload = read_json_object(&path)?;
+        let image_path = payload
+            .get("artifacts")
+            .and_then(Value::as_object)
+            .and_then(|row| row.get("image_path"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let same_path = if image_path == target {
+            true
+        } else if let (Some(expected), Ok(actual)) =
+            (canonical_target.as_ref(), fs::canonicalize(&image_path))
+        {
+            actual == *expected
+        } else {
+            false
+        };
+        if !same_path {
+            continue;
+        }
+        let prompt = payload
+            .get("request")
+            .and_then(Value::as_object)
+            .and_then(|row| row.get("prompt"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)?;
+        let model = payload
+            .get("resolved")
+            .and_then(Value::as_object)
+            .and_then(|row| row.get("model"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        return Some((prompt, model));
+    }
+    None
+}
+
+pub(crate) fn compare_similarity(reference: &Path, candidate: &Path) -> Result<Map<String, Value>> {
+    let dh_ref = dhash64(reference)?;
+    let dh_can = dhash64(candidate)?;
+    let dh_score = score_hash(dh_ref, dh_can, 64);
+
+    let ph_ref = ahash64(reference)?;
+    let ph_can = ahash64(candidate)?;
+    let ph_score = score_hash(ph_ref, ph_can, 64);
+
+    let overall = ((dh_score + ph_score) / 2.0).clamp(0.0, 1.0);
+    Ok(json_object(json!({
+        "dhash": dh_score,
+        "phash": ph_score,
+        "overall": overall,
+    })))
+}
+
+fn dhash64(path: &Path) -> Result<u64> {
+    let resized = image::open(path)
+        .with_context(|| format!("failed to read image for dhash ({})", path.display()))?
+        .resize_exact(9, 8, FilterType::Triangle)
+        .to_luma8();
+    let mut value = 0u64;
+    for y in 0..8u32 {
+        for x in 0..8u32 {
+            let left = resized.get_pixel(x, y)[0];
+            let right = resized.get_pixel(x + 1, y)[0];
+            value = (value << 1) | if left > right { 1 } else { 0 };
+        }
+    }
+    Ok(value)
+}
+
+fn ahash64(path: &Path) -> Result<u64> {
+    let resized = image::open(path)
+        .with_context(|| format!("failed to read image for ahash ({})", path.display()))?
+        .resize_exact(8, 8, FilterType::Triangle)
+        .to_luma8();
+    let mut sum = 0u64;
+    for pixel in resized.pixels() {
+        sum += pixel[0] as u64;
+    }
+    let avg = (sum as f64 / 64.0).clamp(0.0, 255.0);
+    let mut value = 0u64;
+    for y in 0..8u32 {
+        for x in 0..8u32 {
+            let sample = resized.get_pixel(x, y)[0] as f64;
+            value = (value << 1) | if sample > avg { 1 } else { 0 };
+        }
+    }
+    Ok(value)
+}
+
+fn score_hash(left: u64, right: u64, bits: u32) -> f64 {
+    let distance = (left ^ right).count_ones() as f64;
+    (1.0 - (distance / bits as f64)).clamp(0.0, 1.0)
+}
+
+pub(crate) fn write_similarity_to_receipt(
+    receipt_path: &Path,
+    similarity: &Map<String, Value>,
+) -> Result<()> {
+    let Some(mut payload) = read_json_value(receipt_path) else {
+        return Ok(());
+    };
+    let Some(root) = payload.as_object_mut() else {
+        return Ok(());
+    };
+    let meta = root
+        .entry("result_metadata".to_string())
+        .or_insert_with(|| Value::Object(Map::new()));
+    if !meta.is_object() {
+        *meta = Value::Object(Map::new());
+    }
+    if let Some(meta_obj) = meta.as_object_mut() {
+        meta_obj.insert("similarity".to_string(), Value::Object(similarity.clone()));
+    }
+    write_json_value(receipt_path, &payload)?;
+    Ok(())
+}
+
+pub(crate) fn export_html_native(run_dir: &Path, out_path: &Path) -> Result<()> {
+    let thread_path = run_dir.join("thread.json");
+    let versions = read_json_value(&thread_path)
+        .and_then(|value| {
+            value
+                .as_object()
+                .and_then(|obj| obj.get("versions"))
+                .and_then(Value::as_array)
+                .cloned()
+        })
+        .unwrap_or_default();
+
+    let mut cards = String::new();
+    for version in versions {
+        let Some(version_obj) = version.as_object() else {
+            continue;
+        };
+        let prompt = version_obj
+            .get("prompt")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let version_id = version_obj
+            .get("version_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let artifacts = version_obj
+            .get("artifacts")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        for artifact in artifacts {
+            let Some(artifact_obj) = artifact.as_object() else {
+                continue;
+            };
+            let image_src = artifact_obj
+                .get("image_path")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let receipt_src = artifact_obj
+                .get("receipt_path")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            cards.push_str(&format!(
+                "<div class='card'><div class='thumb'><img src='{image_src}' alt='artifact'></div><div class='meta'><div class='vid'>{version_id}</div><div class='prompt'>{prompt}</div><div class='links'><a href='{receipt_src}'>receipt</a></div></div></div>",
+                image_src = export::escape_html(image_src),
+                version_id = export::escape_html(version_id),
+                prompt = export::escape_html(prompt),
+                receipt_src = export::escape_html(receipt_src),
+            ));
+        }
+    }
+
+    let html_doc = format!(
+        "<!doctype html>\n<html>\n<head>\n  <meta charset='utf-8'>\n  <title>Cue Export</title>\n  <style>\n    body {{ font-family: Arial, sans-serif; background: #f6f6f6; margin: 0; padding: 20px; }}\n    .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }}\n    .card {{ background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }}\n    .thumb {{ width: 100%; height: 200px; background: #eee; display: flex; align-items: center; justify-content: center; }}\n    .thumb img {{ max-width: 100%; max-height: 100%; }}\n    .meta {{ padding: 10px; }}\n    .vid {{ font-weight: bold; font-size: 12px; color: #444; }}\n    .prompt {{ font-size: 13px; margin: 8px 0; }}\n    .links a {{ font-size: 12px; color: #0066cc; text-decoration: none; }}\n  </style>\n</head>\n<body>\n  <h1>Cue Run Export</h1>\n  <div class='grid'>\n    {cards}\n  </div>\n</body>\n</html>\n"
+    );
+
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out_path, html_doc)?;
+    Ok(())
+}
+
+pub(crate) fn escape_html(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#x27;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn value_as_non_empty_string(value: Option<&Value>) -> Option<String> {
+    let raw = value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    if raw.is_empty() {
+        None
+    } else {
+        Some(raw.to_string())
+    }
+}
+
+fn action_to_command_name(action: &str) -> Option<String> {
+    match action {
+        "set_profile" => Some("profile".to_string()),
+        "set_text_model" => Some("text_model".to_string()),
+        "set_image_model" => Some("image_model".to_string()),
+        "set_quality" => Some("quality".to_string()),
+        "set_active_image" => Some("use".to_string()),
+        "help" | "generate" | "unknown" | "noop" => None,
+        other => Some(other.to_string()),
+    }
+}
+
+fn json_object(value: Value) -> Map<String, Value> {
+    value.as_object().cloned().unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        active_image_for_edit_prompt, build_realtime_websocket_request, default_realtime_model,
+        extract_gemini_finish_reason, extract_gemini_output_text, extract_gemini_token_usage_pair,
+        intent_realtime_reference_image_limit, is_anyhow_realtime_transport_error,
+        is_edit_style_prompt, pseudo_random_seed, resolve_realtime_gemini_model_for_transport,
+        resolve_streamed_response_text, sanitize_gemini_generate_content_model,
+        sanitize_openrouter_gemini_model, sanitize_openrouter_model, RealtimeJobError,
+        RealtimeJobErrorKind, RealtimeProvider, RealtimeSessionKind, REALTIME_BETA_HEADER_VALUE,
+        REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_MAX,
+    };
+    use crate::observe::vision::{
+        clean_description, description_realtime_instruction, extract_openrouter_chat_output_text,
+        openrouter_chat_content_to_responses_input, openrouter_responses_content_to_chat_content,
+        should_fallback_openrouter_responses, vision_description_model_candidates_for,
+    };
+    use serde_json::json;
+    use std::io;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::{env, fs};
+
+    #[test]
+    fn pseudo_random_seed_stays_in_range_and_is_not_pinned_to_max() {
+        const MAX_SEED: i64 = 2_147_483_647;
+        let mut saw_non_max = false;
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..32 {
+            let seed = pseudo_random_seed();
+            assert!((1..=MAX_SEED).contains(&seed), "seed out of range: {seed}");
+            if seed != MAX_SEED {
+                saw_non_max = true;
+            }
+            seen.insert(seed);
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(
+            saw_non_max,
+            "seed generator should not be pinned to MAX_SEED"
+        );
+        assert!(seen.len() > 1, "seed generator should vary across calls");
+    }
+
+    #[test]
+    fn realtime_ws_request_includes_upgrade_headers() {
+        let request =
+            build_realtime_websocket_request("gpt-realtime-mini", "test-api-key").unwrap();
+        let uri = request.uri().to_string();
+        let headers = request.headers();
+
+        assert!(
+            uri.contains("/realtime?model=gpt-realtime-mini"),
+            "unexpected realtime uri: {uri}"
+        );
+        assert!(headers.contains_key("sec-websocket-key"));
+        assert_eq!(
+            headers.get("upgrade").and_then(|v| v.to_str().ok()),
+            Some("websocket")
+        );
+        assert!(headers
+            .get("connection")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.to_ascii_lowercase().contains("upgrade"))
+            .unwrap_or(false));
+        assert_eq!(
+            headers.get("authorization").and_then(|v| v.to_str().ok()),
+            Some("Bearer test-api-key")
+        );
+        assert_eq!(
+            headers.get("openai-beta").and_then(|v| v.to_str().ok()),
+            Some(REALTIME_BETA_HEADER_VALUE)
+        );
+    }
+
+    #[test]
+    fn intent_icons_instruction_enforces_cv_caption_style_labels() {
+        let instruction = crate::observe::vision::intent_icons_instruction(false);
+        assert!(instruction.contains("computer-vision caption style"));
+        assert!(instruction.contains("<=40 chars"));
+        assert!(instruction.contains("A photo of ...` is acceptable but not required"));
+        assert!(instruction.contains("use the proper name"));
+        assert!(instruction.contains("Do not hedge (\"appears to\", \"looks like\")"));
+    }
+
+    #[test]
+    fn intent_icons_per_request_hint_enforces_cv_caption_style() {
+        let hint = RealtimeSessionKind::IntentIcons { mother: false }
+            .per_request_input_text()
+            .unwrap_or_default();
+        assert!(hint.contains("computer-vision caption style"));
+        assert!(hint.contains("<= 40 characters"));
+        assert!(hint.contains("use the proper name"));
+        assert!(hint.contains("Avoid generic role labels like 'basketball player'"));
+        assert!(hint.contains("Do not mirror generic vision_desc hints"));
+        assert!(hint.contains("Return strict JSON only"));
+    }
+
+    #[test]
+    fn clean_description_does_not_force_photo_prefix() {
+        assert_eq!(
+            clean_description("Basketball player portrait.", 64),
+            "Basketball player portrait"
+        );
+        assert_eq!(
+            clean_description("image of Alex Rivera holding a basketball", 64),
+            "Alex Rivera holding basketball"
+        );
+        assert_eq!(
+            clean_description("Alex Rivera is holding a basketball.", 64),
+            "Alex Rivera holding basketball"
+        );
+        assert_eq!(
+            clean_description(
+                "A basketball player in a yellow jersey is holding a ball.",
+                64
+            ),
+            "basketball player in yellow jersey holding ball"
+        );
+        assert_eq!(
+            clean_description("Basketball player is in a yellow jersey.", 64),
+            "Basketball player in yellow jersey"
+        );
+    }
+
+    #[test]
+    fn description_realtime_instruction_matches_probe_style() {
+        let instruction = description_realtime_instruction();
+        assert!(instruction.contains("short caption fragment"));
+        assert!(instruction.contains("<=40 chars"));
+        assert!(instruction.contains("not a full sentence"));
+        assert!(instruction.contains("Do not use auxiliary verbs"));
+    }
+
+    #[test]
+    fn realtime_transport_error_uses_typed_chain_classification() {
+        let broken_pipe = anyhow::Error::new(tungstenite::Error::Io(io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            "broken pipe",
+        )));
+        assert!(is_anyhow_realtime_transport_error(&broken_pipe));
+        let typed = RealtimeJobError::from_anyhow(broken_pipe);
+        assert_eq!(typed.kind, RealtimeJobErrorKind::Transport);
+
+        let timeout_message = anyhow::anyhow!("Realtime intent inference timed out.");
+        assert!(!is_anyhow_realtime_transport_error(&timeout_message));
+        let typed_timeout = RealtimeJobError::from_anyhow(timeout_message);
+        assert_eq!(typed_timeout.kind, RealtimeJobErrorKind::Terminal);
+    }
+
+    #[test]
+    fn intent_realtime_reference_limit_has_default_and_bounds() {
+        let value = intent_realtime_reference_image_limit();
+        assert!(value >= 1);
+        assert!(value <= REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_MAX);
+    }
+
+    #[test]
+    fn realtime_provider_parse_accepts_openai_and_gemini_aliases() {
+        assert_eq!(
+            RealtimeProvider::parse("openai_realtime"),
+            Some(RealtimeProvider::OpenAiRealtime)
+        );
+        assert_eq!(
+            RealtimeProvider::parse("OPENAI"),
+            Some(RealtimeProvider::OpenAiRealtime)
+        );
+        assert_eq!(
+            RealtimeProvider::parse("gemini_flash"),
+            Some(RealtimeProvider::GeminiFlash)
+        );
+        assert_eq!(
+            RealtimeProvider::parse("GEMINI"),
+            Some(RealtimeProvider::GeminiFlash)
+        );
+        assert_eq!(RealtimeProvider::parse("unknown"), None);
+    }
+
+    #[test]
+    fn gemini_realtime_default_model_is_gemini_three_flash_preview() {
+        assert_eq!(
+            default_realtime_model(RealtimeProvider::GeminiFlash, false),
+            "gemini-3-flash-preview"
+        );
+        assert_eq!(
+            default_realtime_model(RealtimeProvider::GeminiFlash, true),
+            "gemini-3-flash-preview"
+        );
+    }
+
+    #[test]
+    fn openai_realtime_default_model_is_mini_for_mother_and_non_mother() {
+        assert_eq!(
+            default_realtime_model(RealtimeProvider::OpenAiRealtime, false),
+            "gpt-realtime-mini"
+        );
+        assert_eq!(
+            default_realtime_model(RealtimeProvider::OpenAiRealtime, true),
+            "gpt-realtime-mini"
+        );
+    }
+
+    #[test]
+    fn describe_model_candidates_prefer_gemini_when_gemini_realtime_provider_active() {
+        let models = vision_description_model_candidates_for(RealtimeProvider::GeminiFlash, None);
+        assert_eq!(models, vec!["gemini-3.0-flash".to_string()]);
+    }
+
+    #[test]
+    fn describe_model_candidates_default_to_openai_family_when_openai_realtime_provider_active() {
+        let models =
+            vision_description_model_candidates_for(RealtimeProvider::OpenAiRealtime, None);
+        assert_eq!(
+            models,
+            vec!["gpt-5.2".to_string(), "gpt-5-nano".to_string()]
+        );
+    }
+
+    #[test]
+    fn describe_model_candidates_respect_explicit_override() {
+        let models = vision_description_model_candidates_for(
+            RealtimeProvider::GeminiFlash,
+            Some("openai/gpt-4.1-mini"),
+        );
+        assert_eq!(
+            models,
+            vec!["openai/gpt-4.1-mini".to_string(), "gpt-5-nano".to_string()]
+        );
+    }
+
+    #[test]
+    fn openrouter_gemini_model_normalization_maps_aliases() {
+        assert_eq!(
+            sanitize_openrouter_gemini_model("gemini-3.0-flash", "google/gemini-3-flash-preview"),
+            "google/gemini-3-flash-preview"
+        );
+        assert_eq!(
+            sanitize_openrouter_gemini_model(
+                "google/gemini-3.0-flash",
+                "google/gemini-3-flash-preview"
+            ),
+            "google/gemini-3-flash-preview"
+        );
+        assert_eq!(
+            sanitize_openrouter_gemini_model("gemini-2.0-flash", "google/gemini-3-flash-preview"),
+            "google/gemini-2.0-flash-001"
+        );
+        assert_eq!(
+            sanitize_openrouter_gemini_model(
+                "google/gemini-2.5-flash",
+                "google/gemini-3-flash-preview"
+            ),
+            "google/gemini-2.5-flash"
+        );
+    }
+
+    #[test]
+    fn openrouter_model_normalization_maps_openai_and_gemini_aliases() {
+        assert_eq!(
+            sanitize_openrouter_model("gpt-4o-mini", "openai/gpt-4o-mini"),
+            "openai/gpt-4o-mini"
+        );
+        assert_eq!(
+            sanitize_openrouter_model("gemini-3.0-flash", "google/gemini-3-flash-preview"),
+            "google/gemini-3-flash-preview"
+        );
+        assert_eq!(
+            sanitize_openrouter_model("google/gemini-3.0-flash", "google/gemini-3-flash-preview"),
+            "google/gemini-3-flash-preview"
+        );
+        assert_eq!(
+            sanitize_openrouter_model("openrouter/auto", "openrouter/auto"),
+            "openrouter/auto"
+        );
+    }
+
+    #[test]
+    fn gemini_generate_content_model_normalization_strips_prefix_and_aliases() {
+        assert_eq!(
+            sanitize_gemini_generate_content_model(
+                "google/gemini-3-flash-preview",
+                "gemini-3-flash-preview"
+            ),
+            "gemini-3-flash-preview"
+        );
+        assert_eq!(
+            sanitize_gemini_generate_content_model("gemini-3.0-flash", "gemini-3-flash-preview"),
+            "gemini-3-flash-preview"
+        );
+        assert_eq!(
+            sanitize_gemini_generate_content_model(
+                "models/gemini-2.0-flash",
+                "gemini-3-flash-preview"
+            ),
+            "gemini-2.0-flash-001"
+        );
+    }
+
+    #[test]
+    fn resolve_realtime_gemini_model_enforces_gemini_family() {
+        let via_openrouter = resolve_realtime_gemini_model_for_transport("gemini-3.0-flash", true)
+            .expect("gemini alias should normalize");
+        assert_eq!(via_openrouter, "google/gemini-3-flash-preview");
+
+        let direct = resolve_realtime_gemini_model_for_transport("models/gemini-2.0-flash", false)
+            .expect("gemini direct alias should normalize");
+        assert_eq!(direct, "gemini-2.0-flash-001");
+
+        let err = resolve_realtime_gemini_model_for_transport("openai/gpt-5.2", true)
+            .expect_err("non-gemini model should be rejected");
+        assert!(
+            err.contains("requires a Gemini model"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_streamed_response_text_includes_usage_tokens_in_meta() {
+        let response = json!({
+            "id": "resp_test",
+            "status": "completed",
+            "usage": {
+                "input_tokens": 321,
+                "output_tokens": 89
+            }
+        });
+        let (_text, meta) = resolve_streamed_response_text("ok", &response);
+        assert_eq!(meta.get("input_tokens"), Some(&json!(321)));
+        assert_eq!(meta.get("output_tokens"), Some(&json!(89)));
+    }
+
+    #[test]
+    fn gemini_extractors_pull_text_usage_and_finish_reason() {
+        let response = json!({
+            "candidates": [{
+                "finishReason": "STOP",
+                "content": {
+                    "parts": [
+                        {"text": "line one"},
+                        {"text": "line two"}
+                    ]
+                }
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 111,
+                "candidatesTokenCount": 37
+            }
+        });
+        assert_eq!(extract_gemini_output_text(&response), "line one\nline two");
+        assert_eq!(
+            extract_gemini_token_usage_pair(&response),
+            Some((Some(111), Some(37)))
+        );
+        assert_eq!(
+            extract_gemini_finish_reason(&response),
+            Some("STOP".to_string())
+        );
+    }
+
+    #[test]
+    fn openrouter_chat_content_maps_to_responses_input_shapes() {
+        let chat_content = vec![
+            json!({"type": "text", "text": "hello"}),
+            json!({"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}),
+        ];
+        let mapped = openrouter_chat_content_to_responses_input(&chat_content);
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(mapped[0], json!({"type": "input_text", "text": "hello"}));
+        assert_eq!(
+            mapped[1],
+            json!({"type": "input_image", "image_url": "data:image/png;base64,AAAA"})
+        );
+    }
+
+    #[test]
+    fn openrouter_responses_content_maps_back_to_chat_shapes() {
+        let responses_content = vec![
+            json!({"type": "input_text", "text": "hello"}),
+            json!({"type": "input_image", "image_url": "data:image/png;base64,AAAA"}),
+        ];
+        let mapped = openrouter_responses_content_to_chat_content(&responses_content);
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(mapped[0], json!({"type": "text", "text": "hello"}));
+        assert_eq!(
+            mapped[1],
+            json!({"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}})
+        );
+    }
+
+    #[test]
+    fn openrouter_chat_output_extractor_supports_string_and_chunked_content() {
+        let chunked = json!({
+            "choices": [{
+                "message": {
+                    "content": [
+                        {"type": "text", "text": "line one"},
+                        {"type": "text", "text": "line two"}
+                    ]
+                }
+            }]
+        });
+        assert_eq!(
+            extract_openrouter_chat_output_text(&chunked),
+            "line one\nline two"
+        );
+
+        let string_content = json!({
+            "choices": [{
+                "message": {
+                    "content": "single-line"
+                }
+            }]
+        });
+        assert_eq!(
+            extract_openrouter_chat_output_text(&string_content),
+            "single-line"
+        );
+    }
+
+    #[test]
+    fn openrouter_responses_fallback_only_triggers_for_unsupported_shapes() {
+        assert!(should_fallback_openrouter_responses(
+            404,
+            "Not Found: /responses route"
+        ));
+        assert!(should_fallback_openrouter_responses(
+            400,
+            "responses API is not supported for this model"
+        ));
+        assert!(!should_fallback_openrouter_responses(401, "unauthorized"));
+    }
+
+    #[test]
+    fn edit_style_prompt_detection_only_matches_edit_and_replace_heads() {
+        assert!(is_edit_style_prompt(
+            "edit the image: isolate subject and keep dimensions"
+        ));
+        assert!(is_edit_style_prompt(
+            "  REPLACE the background with pure white and preserve logos"
+        ));
+        assert!(!is_edit_style_prompt("editors choice cinematic portrait"));
+        assert!(!is_edit_style_prompt("generate a brand new scene"));
+    }
+
+    #[test]
+    fn active_image_for_edit_prompt_requires_existing_file() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_nanos())
+            .unwrap_or(0);
+        let test_path = env::temp_dir().join(format!("cue-cli-edit-path-{stamp}.png"));
+        fs::write(&test_path, b"test").unwrap();
+        let test_path_text = test_path.to_string_lossy().to_string();
+
+        let matched = active_image_for_edit_prompt(
+            "replace the background with seamless white",
+            Some(&test_path_text),
+        );
+        assert_eq!(matched, Some(test_path_text.clone()));
+        assert_eq!(
+            active_image_for_edit_prompt("generate a city skyline at dusk", Some(&test_path_text)),
+            None
+        );
+        assert_eq!(
+            active_image_for_edit_prompt(
+                "edit the image: remove people",
+                Some("/tmp/does-not-exist-cue-cli.png")
+            ),
+            None
+        );
+
+        let _ = fs::remove_file(test_path);
+    }
+}

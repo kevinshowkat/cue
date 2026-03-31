@@ -6,8 +6,10 @@ function normalizePackId(value = "") {
   return String(value || "").trim() || DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID;
 }
 
-function escapeCssUrl(value = "") {
-  return String(value || '').replace(/'/g, '%27');
+function escapeHtmlAttribute(value = "") {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;");
 }
 
 export const JUGGERNAUT_RAIL_ICON_PACK_ASSET_URLS = Object.freeze({
@@ -105,6 +107,6 @@ export function getJuggernautRailIconMarkup(toolId = "", packId = DEFAULT_JUGGER
   if (!assetUrl) return "";
   const toolClass = `tool-icon-${normalizedToolId.replace(/_/g, "-")}`;
   const packClass = `tool-icon-pack-${normalizedPackId.replace(/_/g, "-")}`;
-  return `<span class="tool-icon tool-icon-mask ${toolClass} ${packClass}" aria-hidden="true" style="--tool-icon-mask:url('${escapeCssUrl(assetUrl)}')"></span>`;
+  const escapedAssetUrl = escapeHtmlAttribute(assetUrl);
+  return `<img class="tool-icon tool-icon-image ${toolClass} ${packClass}" aria-hidden="true" alt="" draggable="false" src="${escapedAssetUrl}" style="filter:brightness(0) saturate(100%);" />`;
 }
-

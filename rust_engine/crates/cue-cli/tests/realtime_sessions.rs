@@ -12,13 +12,19 @@ fn realtime_session_descriptor_exposes_expected_metadata() {
     let canvas = RealtimeSessionKind::CanvasContext.descriptor();
     assert_eq!(canvas.event_type, "canvas_context");
     assert_eq!(canvas.failed_event_type, "canvas_context_failed");
-    assert_eq!(canvas.provider_env_key, "CUE_CANVAS_CONTEXT_REALTIME_PROVIDER");
+    assert_eq!(
+        canvas.provider_env_key,
+        "CUE_CANVAS_CONTEXT_REALTIME_PROVIDER"
+    );
     assert_eq!(canvas.thread_name, "cue-aov-realtime");
     assert_eq!(canvas.max_output_tokens, 520);
 
     let mother = RealtimeSessionKind::IntentIcons { mother: true }.descriptor();
     assert_eq!(mother.event_type, "intent_icons");
-    assert_eq!(mother.provider_env_key, "CUE_MOTHER_INTENT_REALTIME_PROVIDER");
+    assert_eq!(
+        mother.provider_env_key,
+        "CUE_MOTHER_INTENT_REALTIME_PROVIDER"
+    );
     assert_eq!(mother.disabled_env_key, "CUE_INTENT_REALTIME_DISABLED");
     assert_eq!(mother.thread_name, "cue-intent-realtime-mother");
     assert_eq!(mother.max_output_tokens, 2200);
