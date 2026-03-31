@@ -10604,9 +10604,10 @@ button.ghost:hover {
   height: 22px;
 }
 
-.timeline-card-glyph .tool-icon-mask {
+.timeline-card-glyph .tool-icon {
   width: 22px;
   height: 22px;
+  object-fit: contain;
 }
 
 .timeline-card-tip {
