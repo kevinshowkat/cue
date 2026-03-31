@@ -1,4 +1,6 @@
 export function registerDiagnosticsEventHandlers(map, types, handlers) {
+  map.set(types.PLAN_PREVIEW, handlers.onDiagnostics);
+  map.set(types.VERSION_CREATED, handlers.onDiagnostics);
   map.set(types.IMAGE_DESCRIPTION, handlers.onDiagnostics);
   map.set(types.IMAGE_DNA_EXTRACTED, handlers.onDiagnostics);
   map.set(types.IMAGE_DNA_EXTRACTED_FAILED, handlers.onDiagnostics);
