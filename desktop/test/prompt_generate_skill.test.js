@@ -41,5 +41,5 @@ test("Prompt Generate stays outside disabled auto-accept suggested-ability flows
   assert.match(app, /const autoAcceptSuggestedAbilityToggle = document\.getElementById\("auto-accept-suggested-ability-toggle"\);/);
   assert.match(app, /autoAcceptSuggestedAbilityToggle\.checked = false;/);
   assert.match(app, /autoAcceptSuggestedAbilityToggle\.disabled = true;/);
-  assert.match(app, /localStorage\.removeItem\("brood\.autoAcceptSuggestedAbility"\);/);
+  assert.match(app, /localStorage\.removeItem\("cue\.autoAcceptSuggestedAbility"\);/);
 });

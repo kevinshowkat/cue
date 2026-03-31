@@ -1,11 +1,11 @@
 # Always-On Vision (Background Canvas Context)
 
 ## Problem
-Brood can feel reactive: the user edits the canvas, then decides what to do next. For a "desktop Image IDE", we want Brood to be one step ahead by continuously extracting lightweight context from the current canvas without slowing UX.
+Cue can feel reactive: the user edits the canvas, then decides what to do next. For a "desktop Image IDE", we want Cue to be one step ahead by continuously extracting lightweight context from the current canvas without slowing UX.
 
 ## UX
 - Settings now includes an **Always-On Vision** toggle.
-- When enabled, Brood periodically (and quietly) scans an optimized snapshot of the current canvas in the background.
+- When enabled, Cue periodically (and quietly) scans an optimized snapshot of the current canvas in the background.
 - Results are shown as **Canvas Context** in the Settings drawer (for now).
 - The background scan is throttled and debounced to avoid interfering with user actions or responsiveness.
 
@@ -13,8 +13,8 @@ Brood can feel reactive: the user edits the canvas, then decides what to do next
 Primary files:
 - `desktop/src/canvas_app.js`
 - `desktop/src/index.html`
-- `rust_engine/crates/brood-contracts/src/chat/intent_parser.rs`
-- `rust_engine/crates/brood-cli/src/main.rs` (batch + realtime slash handlers)
+- `rust_engine/crates/cue-contracts/src/chat/intent_parser.rs`
+- `rust_engine/crates/cue-cli/src/lib.rs` (batch + realtime slash handlers)
 
 ### Desktop (Scheduler + Snapshot)
 - Toggle state is persisted via `localStorage` key `brood.alwaysOnVision`.
@@ -33,7 +33,7 @@ Primary files:
 ### Engine (Batch + Realtime)
 Batch (Responses API):
 - Slash command: `/canvas_context <path>`
-- Inference: `rust_engine/crates/brood-cli/src/main.rs` (`/canvas_context` native handler)
+- Inference: `rust_engine/crates/cue-cli/src/lib.rs` (`/canvas_context` native handler)
   - Defaults to `gpt-4o-mini` via the OpenAI Responses API.
   - Explicitly avoids `*realtime*` models on this path.
   - Optional Gemini fallback if keys + dependency are present.
@@ -43,7 +43,7 @@ Realtime (OpenAI Realtime API):
   - `/canvas_context_rt_start`
   - `/canvas_context_rt_stop`
   - `/canvas_context_rt <path>`
-- Implementation: `rust_engine/crates/brood-cli/src/main.rs` (native realtime session wiring)
+- Implementation: `rust_engine/crates/cue-cli/src/lib.rs` (native realtime session wiring)
   - Spawns a background websocket worker and streams `canvas_context` events as text deltas arrive.
 
 ### Notes On Realtime Models

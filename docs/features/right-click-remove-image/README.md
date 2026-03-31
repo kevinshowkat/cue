@@ -7,7 +7,7 @@ In multi-image workflows, users need a fast way to remove an image from the curr
 - Right click an image on the canvas to open an image context menu.
 - Menu action: `Remove from canvas`.
 - Removing the active image selects a sensible next image.
-- If only one image remains, Brood exits `Multi view` back to single-image mode.
+- If only one image remains, Cue exits `Multi view` back to single-image mode.
 
 ## Implementation
 - Added a lightweight `#image-menu` context menu (HTML + CSS).
@@ -30,4 +30,3 @@ Files:
 - Manual:
   - Load 2 images, right click one tile, remove it: verify only one image remains and view returns to single.
   - Load 3+ images, remove a non-active image: verify filmstrip and canvas update correctly.
-

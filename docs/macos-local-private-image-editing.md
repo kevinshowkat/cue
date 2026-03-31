@@ -11,7 +11,7 @@ Cue is currently verified most deeply on macOS through the Tauri desktop shell. 
 ## Local-First Runtime Model
 
 - The app runs locally on your machine.
-- Session artifacts are written under `~/brood_runs/`.
+- Session artifacts are written under `~/cue_runs/`.
 - API keys and provider settings stay local to your machine based on your environment and onboarding setup.
 
 ## What Stays Local

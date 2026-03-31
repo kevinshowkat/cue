@@ -1,7 +1,7 @@
 # Three-Image Abilities
 
 ## Problem
-Brood previously only had multi-image Abilities for exactly two images (Combine / Bridge / Swap DNA / Argue). When users import three images, the UI had no purpose-built actions even though three references is the minimum for pattern recognition.
+Cue previously only had multi-image Abilities for exactly two images (Combine / Bridge / Swap DNA / Argue). When users import three images, the UI had no purpose-built actions even though three references is the minimum for pattern recognition.
 
 This feature adds a 3-image action set that turns a 3-up canvas into a first-class input:
 - **Extract the Rule** (pattern recognition, text + lightweight visual annotation)
@@ -47,9 +47,9 @@ Notes:
 
 ### Engine
 Files:
-- `rust_engine/crates/brood-contracts/src/chat/intent_parser.rs` (slash command parsing)
-- `rust_engine/crates/brood-cli/src/main.rs` (desktop PTY chat loop + handlers)
-- `rust_engine/crates/brood-engine/src/lib.rs` (native generation orchestration)
+- `rust_engine/crates/cue-contracts/src/chat/intent_parser.rs` (slash command parsing)
+- `rust_engine/crates/cue-cli/src/lib.rs` (desktop PTY chat loop + handlers)
+- `rust_engine/crates/cue-engine/src/runtime.rs` (native generation orchestration)
 
 New slash commands:
 - `/extract_rule <a> <b> <c>`
@@ -66,8 +66,8 @@ Engine events emitted:
 Model routing:
 - **Extract the Rule / Odd One Out**: uses OpenAI vision when available (Gemini fallback if installed/configured).
   - Env overrides:
-    - `BROOD_EXTRACT_RULE_MODEL` / `OPENAI_EXTRACT_RULE_MODEL`
-    - `BROOD_ODD_ONE_OUT_MODEL` / `OPENAI_ODD_ONE_OUT_MODEL`
+    - `CUE_EXTRACT_RULE_MODEL` / `OPENAI_EXTRACT_RULE_MODEL`
+    - `CUE_ODD_ONE_OUT_MODEL` / `OPENAI_ODD_ONE_OUT_MODEL`
 - **Triforce**: uses the engine’s current `image_model` selection (desktop tries to keep this on a Gemini multi-image model).
 
 ## Testing

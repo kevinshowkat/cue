@@ -492,24 +492,24 @@ const MOTHER_GENERATION_TIMEOUT_EXTENSION_MS = 90_000;
 const MOTHER_GENERATION_POST_VERSION_TIMEOUT_MS = 240_000;
 const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview";
 const LEGACY_DEFAULT_IMAGE_MODEL = "gemini-2.5-flash-image";
-const IMAGE_MODEL_DEFAULT_MIGRATION_KEY = "brood.imageModel.default.v2";
+const IMAGE_MODEL_DEFAULT_MIGRATION_KEY = "cue.imageModel.default.v2";
 const RAIL_ICON_PACK_LS_KEY = "juggernaut.railIconPack.v1";
-const PROMPT_STRATEGY_MODE_KEY = "brood.promptStrategyMode.v1";
-const PROMPT_REPEAT_FULL_KEY = "brood.promptRepeatFull.v1";
-const PROMPT_BENCHMARK_LS_KEY = "brood.promptBenchmark.v1";
+const PROMPT_STRATEGY_MODE_KEY = "cue.promptStrategyMode.v1";
+const PROMPT_REPEAT_FULL_KEY = "cue.promptRepeatFull.v1";
+const PROMPT_BENCHMARK_LS_KEY = "cue.promptBenchmark.v1";
 const PROMPT_BENCHMARK_MAX_TRIALS = 600;
 const MOTHER_GENERATION_MODEL = DEFAULT_IMAGE_MODEL;
 const MOTHER_GENERATED_SOURCE = "mother_generated";
-const AESTHETIC_ONBOARDING_COMPLETED_KEY = "brood.aestheticOnboarding.completed.v1";
-const AESTHETIC_ONBOARDING_PROFILE_KEY = "brood.aestheticOnboarding.profile.v1";
-const OPENROUTER_ONBOARDING_COMPLETED_KEY = "brood.openrouterOnboarding.completed.v1";
-const OPENROUTER_ONBOARDING_PROFILE_KEY = "brood.openrouterOnboarding.profile.v1";
-const INSTALL_TELEMETRY_OPT_IN_KEY = "brood.installTelemetry.optIn.v1";
-const INSTALL_TELEMETRY_INSTALL_ID_KEY = "brood.installTelemetry.installId.v1";
-const INSTALL_TELEMETRY_ENDPOINT_KEY = "brood.installTelemetry.endpoint.v1";
+const AESTHETIC_ONBOARDING_COMPLETED_KEY = "cue.aestheticOnboarding.completed.v1";
+const AESTHETIC_ONBOARDING_PROFILE_KEY = "cue.aestheticOnboarding.profile.v1";
+const OPENROUTER_ONBOARDING_COMPLETED_KEY = "cue.openrouterOnboarding.completed.v1";
+const OPENROUTER_ONBOARDING_PROFILE_KEY = "cue.openrouterOnboarding.profile.v1";
+const INSTALL_TELEMETRY_OPT_IN_KEY = "cue.installTelemetry.optIn.v1";
+const INSTALL_TELEMETRY_INSTALL_ID_KEY = "cue.installTelemetry.installId.v1";
+const INSTALL_TELEMETRY_ENDPOINT_KEY = "cue.installTelemetry.endpoint.v1";
 const INSTALL_TELEMETRY_CONFIG_FILE = "install_telemetry_config.json";
 const INSTALL_TELEMETRY_LOG_FILE = "install_events.jsonl";
-const INSTALL_TELEMETRY_SCHEMA_VERSION = "brood.install_telemetry.v1";
+const INSTALL_TELEMETRY_SCHEMA_VERSION = "cue.install_telemetry.v1";
 const INSTALL_TELEMETRY_LOG_MAX_BYTES = 5 * 1024 * 1024;
 const INSTALL_TELEMETRY_UPLOAD_TIMEOUT_MS = 4500;
 const OPENROUTER_ONBOARDING_SUCCESS_AUTO_CLOSE_MS = 1500;
@@ -647,7 +647,7 @@ const MOTHER_V2_ROLE_GLYPH = Object.freeze({
 const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator?.platform || "");
 // Use a more intuitive hold key for Mother option/hints reveal on macOS.
 const MOTHER_OPTION_REVEAL_HOLD_KEY = IS_MAC ? "h" : "i";
-const MOTHER_MOOD_PROFILE_KEY = "brood.motherMood.v1";
+const MOTHER_MOOD_PROFILE_KEY = "cue.motherMood.v1";
 const MOTHER_MOOD_PLACEHOLDER_EMOJI = "☺";
 const MOTHER_CREATIVE_DIRECTIVE_BASE = "stunningly awe-inspiring";
 const MOTHER_CREATIVE_DIRECTIVE_MOOD_PREFIX = "";
@@ -841,8 +841,9 @@ const MOTHER_OFFER_PREVIEW_MAX_VIEWPORT_COVER = 0.92;
 // World-projection overscan: keep viewport boxes from filling panel projections immediately when zooming out.
 const WORLD_PROJECTION_OVERSCAN_RATIO = 0.75;
 const ENABLE_FILE_BROWSER_DOCK = true;
-const FILE_BROWSER_ROOT_DIR_LS_KEY = "brood.fileBrowser.rootDir";
-const FILE_BROWSER_DRAG_MIME = "application/x-brood-local-image-path";
+const FILE_BROWSER_ROOT_DIR_LS_KEY = "cue.fileBrowser.rootDir";
+const FILE_BROWSER_DRAG_MIME = "application/x-cue-local-image-path";
+const LEGACY_FILE_BROWSER_DRAG_MIME = "application/x-brood-local-image-path";
 const FILE_BROWSER_IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".heic"]);
 const TOP_METRICS_WINDOW_MINUTES = 30;
 const TOP_METRICS_RENDER_SAMPLE_MAX = 20;
@@ -1130,9 +1131,9 @@ const els = {
   aestheticOnboardingNext: document.getElementById("aesthetic-onboarding-next"),
 };
 
-localStorage.setItem("brood.rsNative", "1");
-localStorage.setItem("brood.rsNative.default.v2", "1");
-localStorage.removeItem("brood.emergencyCompatFallback");
+localStorage.setItem("cue.rsNative", "1");
+localStorage.setItem("cue.rsNative.default.v2", "1");
+localStorage.removeItem("cue.emergencyCompatFallback");
 
 let sessionToolRegistry = createInSessionToolRegistry();
 const agentRunnerPlanner = createAgentRunnerPlanner({
@@ -1668,22 +1669,44 @@ function promptBenchmarkReset() {
   promptBenchmarkRenderReadout();
 }
 
+function migrateLegacyBroodLocalStorage() {
+  try {
+    const pending = [];
+    for (let idx = 0; idx < localStorage.length; idx += 1) {
+      const legacyKey = localStorage.key(idx);
+      if (!legacyKey || !legacyKey.startsWith("brood.")) continue;
+      const canonicalKey = `cue.${legacyKey.slice("brood.".length)}`;
+      if (localStorage.getItem(canonicalKey) !== null) continue;
+      pending.push([canonicalKey, localStorage.getItem(legacyKey)]);
+    }
+    for (const [canonicalKey, value] of pending) {
+      if (value !== null) {
+        localStorage.setItem(canonicalKey, value);
+      }
+    }
+  } catch {
+    // localStorage can fail in some embedded/test contexts
+  }
+}
+
+migrateLegacyBroodLocalStorage();
+
 const settings = {
-  memory: localStorage.getItem("brood.memory") === "1",
+  memory: localStorage.getItem("cue.memory") === "1",
   alwaysOnVision: false,
   railIconPack: normalizeJuggernautRailIconPackId(
     localStorage.getItem(RAIL_ICON_PACK_LS_KEY) || DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID
   ),
-  textModel: localStorage.getItem("brood.textModel") || "gpt-5.2",
+  textModel: localStorage.getItem("cue.textModel") || "gpt-5.2",
   imageModel: (() => {
-    const storedRaw = String(localStorage.getItem("brood.imageModel") || "").trim();
+    const storedRaw = String(localStorage.getItem("cue.imageModel") || "").trim();
     const migrated = localStorage.getItem(IMAGE_MODEL_DEFAULT_MIGRATION_KEY) === "1";
     if (!storedRaw) {
       if (!migrated) localStorage.setItem(IMAGE_MODEL_DEFAULT_MIGRATION_KEY, "1");
       return DEFAULT_IMAGE_MODEL;
     }
     if (!migrated && storedRaw === LEGACY_DEFAULT_IMAGE_MODEL) {
-      localStorage.setItem("brood.imageModel", DEFAULT_IMAGE_MODEL);
+      localStorage.setItem("cue.imageModel", DEFAULT_IMAGE_MODEL);
       localStorage.setItem(IMAGE_MODEL_DEFAULT_MIGRATION_KEY, "1");
       return DEFAULT_IMAGE_MODEL;
     }
@@ -1838,7 +1861,7 @@ async function resolveInstallTelemetryPaths() {
   try {
     const home = await homeDir();
     if (!home) return false;
-    const broodDir = await join(home, ".brood");
+    const broodDir = await join(home, ".cue");
     await createDir(broodDir, { recursive: true }).catch(() => {});
     telemetry.configPath = await join(broodDir, INSTALL_TELEMETRY_CONFIG_FILE);
     telemetry.logPath = await join(broodDir, INSTALL_TELEMETRY_LOG_FILE);
@@ -2853,8 +2876,8 @@ const state = {
     tabFullRenderAfterPreviewMs: 0,
   },
   // Hide the filmstrip by default (keeps the UI focused on the canvas). The feature remains
-  // implemented; set `localStorage.brood.showFilmstrip = "1"` to re-enable in dev.
-  filmstripVisible: localStorage.getItem("brood.showFilmstrip") === "1",
+  // implemented; set `localStorage.cue.showFilmstrip = "1"` to re-enable in dev.
+  filmstripVisible: localStorage.getItem("cue.showFilmstrip") === "1",
   runtimeChrome: {
     pinAssistant: readJuggernautRuntimeChromePreference(JUGGERNAUT_RUNTIME_PIN_ASSISTANT_LS_KEY, false),
     showDiagnostics: readJuggernautRuntimeChromePreference(JUGGERNAUT_RUNTIME_SHOW_DIAGNOSTICS_LS_KEY, false),
@@ -3269,7 +3292,7 @@ const state = {
     dir: null, // string|null
     dirChecked: false,
     dirPromise: null, // Promise<string|null>|null
-    diskDir: null, // string|null (persisted across dev/prod builds via ~/.brood)
+    diskDir: null, // string|null (persisted across dev/prod builds via ~/.cue)
     diskDirChecked: false,
     diskDirPromise: null, // Promise<string|null>|null
     urlCache: new Map(), // path -> { url, urlPromise, imgPromise } (separate from canvas image cache)
@@ -3870,7 +3893,7 @@ async function appendIntentTrace(entry) {
   if (!outPath) return false;
 
   const payload = {
-    schema: "brood.intent_trace",
+    schema: "cue.intent_trace",
     schema_version: 1,
     seq: (intentTraceSeq += 1),
     at_ms: Date.now(),
@@ -5269,7 +5292,7 @@ function scheduleIntentStateWrite({ immediate = false } = {}) {
 function buildIntentPersistedState() {
   const intent = state.intent || {};
   return {
-    schema: "brood.intent_state",
+    schema: "cue.intent_state",
     schema_version: 1,
     generated_at: new Date().toISOString(),
     locked: Boolean(intent.locked),
@@ -6095,7 +6118,7 @@ function buildMotherRealtimeContextEnvelope({ motherContextPayload = null, image
     .filter(Boolean)
     .slice(0, 10);
   return {
-    schema: "brood.mother.realtime_context.v1",
+    schema: "cue.mother.realtime_context.v1",
     optimization_target: motherCurrentOptimizationTarget(),
     optimization_hint: `Optimize proposals for ${motherCurrentOptimizationTarget()} with bold, surprising recombinations.`,
     action_version: Number(payload?.action_version) || Number(idle?.actionVersion) || 0,
@@ -6195,7 +6218,7 @@ function buildIntentContextEnvelope(frameId, { motherContextPayload = null } = {
     : 0;
 
   const envelope = {
-    schema: "brood.intent_envelope",
+    schema: "cue.intent_envelope",
     schema_version: INTENT_ENVELOPE_VERSION,
     generated_at: new Date().toISOString(),
     frame_id: String(frameId || ""),
@@ -6341,7 +6364,7 @@ function buildFallbackIntentIconState(frameId, { reason = null } = {}) {
   }));
   return {
     frame_id: String(frameId || `fallback-${Date.now()}`),
-    schema: "brood.intent_icons",
+    schema: "cue.intent_icons",
     schema_version: 1,
     intent_icons: [gen, iterate, outputs, pipeline],
     relations: [
@@ -7150,7 +7173,7 @@ async function lockIntentToBranch(branchId) {
 
   // Persist locked intent as a run artifact for downstream prompting/recommendations.
   const lockedPayload = {
-    schema: "brood.intent_locked",
+    schema: "cue.intent_locked",
     schema_version: 1,
     locked_at_ms: Number(intent.lockedAt) || 0,
     locked_branch_id: intent.lockedBranchId,
@@ -7961,6 +7984,8 @@ function fileBrowserReadInternalDragPath(dataTransfer) {
   if (typeof dataTransfer.getData === "function") {
     const custom = normalizeLocalFsPath(dataTransfer.getData(FILE_BROWSER_DRAG_MIME) || "");
     if (custom) return custom;
+    const legacyCustom = normalizeLocalFsPath(dataTransfer.getData(LEGACY_FILE_BROWSER_DRAG_MIME) || "");
+    if (legacyCustom) return legacyCustom;
     const plain = normalizeLocalFsPath(dataTransfer.getData("text/plain") || "");
     if (plain && isBrowserImagePath(plain)) return plain;
   }
@@ -8302,7 +8327,7 @@ function classifyOpenRouterOauthError(detail) {
     lower.includes("address already in use")
   ) {
     return {
-      message: "Port 3000 is in use, so Brood could not receive the OAuth callback. Retry after freeing that port, or use manual key paste.",
+      message: "Port 3000 is in use, so Cue could not receive the OAuth callback. Retry after freeing that port, or use manual key paste.",
       canRetryOauth: true,
       canRevealManual: true,
       canCopyDetail: true,
@@ -8427,7 +8452,7 @@ function buildOpenRouterOnboardingKeyHtml() {
     : "";
   return `
     <section class="openrouter-onboarding-step openrouter-onboarding-step-key">
-      <h3 class="openrouter-onboarding-intro-title">Brood works best with OpenRouter</h3>
+      <h3 class="openrouter-onboarding-intro-title">Cue works best with OpenRouter</h3>
       <p class="openrouter-onboarding-intro-copy openrouter-onboarding-key-lede">
         Sign in with OpenRouter to connect your key automatically.
       </p>
@@ -9117,13 +9142,13 @@ function buildAestheticSummaryStepHtml() {
   }
   const mappedNote =
     winner.modelValue && winner.modelValue !== winner.id
-      ? `This preference maps to ${winner.modelValue} inside Brood right now.`
+      ? `This preference maps to ${winner.modelValue} inside Cue right now.`
       : `This will become your default Image Model in Settings and Effects.`;
   return `
     <section class="aesthetic-question">
       <div class="aesthetic-question-head">
         <h3>Your default model recommendation</h3>
-        <p>Confirm to apply it as your Brood image default.</p>
+        <p>Confirm to apply it as your Cue image default.</p>
       </div>
       <div class="aesthetic-summary-card">
         <div class="aesthetic-summary-label">Recommended model</div>
@@ -9153,14 +9178,14 @@ function renderAestheticOnboardingStep({ animate = false } = {}) {
     } else if (stepIndex === 1) {
       els.aestheticOnboardingBody.innerHTML = buildAestheticOptionStepHtml({
         answerKey: "featurePriority",
-        title: "What Brood feature do you expect to use the most?",
+        title: "What Cue feature do you expect to use the most?",
         subtitle: "This helps us bias toward a better default model for your workflow.",
         options: AESTHETIC_FEATURE_OPTIONS,
       });
     } else if (stepIndex === 2) {
       els.aestheticOnboardingBody.innerHTML = buildAestheticOptionStepHtml({
         answerKey: "directionality",
-        title: "How should Brood bias your default?",
+        title: "How should Cue bias your default?",
         subtitle: "Choose whether speed or final polish matters more by default.",
         options: AESTHETIC_DIRECTION_OPTIONS,
       });
@@ -9299,7 +9324,7 @@ async function applyImageModelSetting(nextValue, { announce = false } = {}) {
   }
   const changed = resolved !== settings.imageModel;
   settings.imageModel = resolved;
-  localStorage.setItem("brood.imageModel", settings.imageModel);
+  localStorage.setItem("cue.imageModel", settings.imageModel);
   if (els.imageModel) {
     els.imageModel.value = settings.imageModel;
   }
@@ -9427,7 +9452,7 @@ async function ensureGeminiProImagePreviewForAction(actionLabel = "This action")
 
   const changed = settings.imageModel !== nextModel;
   settings.imageModel = nextModel;
-  localStorage.setItem("brood.imageModel", settings.imageModel);
+  localStorage.setItem("cue.imageModel", settings.imageModel);
   if (els.imageModel) els.imageModel.value = settings.imageModel;
   updatePortraitIdle({ fromSettings: true });
   if (state.ptySpawned) {
@@ -9507,14 +9532,18 @@ function portraitTitleForSlot(slot, provider) {
   return providerDisplay(provider);
 }
 
-const PORTRAITS_DIR_LS_KEY = "brood.portraitsDir";
+const PORTRAITS_DIR_LS_KEY = "cue.portraitsDir";
 const PORTRAITS_DIR_DISK_FILE = "portraits_dir.json";
 
 async function getPortraitsDirDiskPath() {
   try {
     const home = await homeDir();
     if (!home) return null;
-    return await join(home, ".brood", PORTRAITS_DIR_DISK_FILE);
+    const cuePath = await join(home, ".cue", PORTRAITS_DIR_DISK_FILE);
+    if (await exists(cuePath).catch(() => false)) return cuePath;
+    const legacyPath = await join(home, ".brood", PORTRAITS_DIR_DISK_FILE);
+    if (await exists(legacyPath).catch(() => false)) return legacyPath;
+    return cuePath;
   } catch (_) {
     return null;
   }
@@ -9548,9 +9577,9 @@ async function persistPortraitsDirToDisk(dir) {
   try {
     const home = await homeDir();
     if (!home) return;
-    const broodDir = await join(home, ".brood");
-    await createDir(broodDir, { recursive: true }).catch(() => {});
-    const path = await join(broodDir, PORTRAITS_DIR_DISK_FILE);
+    const cueDir = await join(home, ".cue");
+    await createDir(cueDir, { recursive: true }).catch(() => {});
+    const path = await join(cueDir, PORTRAITS_DIR_DISK_FILE);
     const payload = { dir: String(dir || "").trim() || null, updated_at: new Date().toISOString() };
     await writeTextFile(path, JSON.stringify(payload, null, 2));
     state.portraitMedia.diskDir = payload.dir;
@@ -9773,6 +9802,8 @@ async function resolvePortraitsDir() {
     try {
       const home = await homeDir();
       if (home) {
+        candidates.push(await join(home, ".cue", "portraits"));
+        candidates.push(await join(home, "cue_runs", "portraits"));
         candidates.push(await join(home, ".brood", "portraits"));
         candidates.push(await join(home, "brood_runs", "portraits"));
       }
@@ -15164,7 +15195,7 @@ function _automationStateEnvelope() {
 function _makeAutomationEvent(type, entry = {}, { requestId = null } = {}) {
   return {
     type,
-    schema: "brood.desktop_automation_event",
+    schema: "cue.desktop_automation_event",
     schema_version: 1,
     seq: ++automationEventSeq,
     at: new Date().toISOString(),
@@ -18547,7 +18578,7 @@ function motherV2BuildProposalContextForIntentPayload({
   });
   const overallConfidence = round4(clamp01(0.6 * interactionConfidence + 0.4 * geometryConfidence));
   return {
-    schema: "brood.mother.proposal_context.v1",
+    schema: "cue.mother.proposal_context.v1",
     interaction_decay_tau_ms: INTERACTION_DECAY_TAU_MS,
     interaction_stale_cutoff_ms: INTERACTION_STALE_CUTOFF_MS,
     focus_rank: rows
@@ -18640,7 +18671,7 @@ function motherV2IntentPayload() {
     transformationModeCandidates: proposalModeCandidates,
   });
   return {
-    schema: "brood.mother.intent_infer.v1",
+    schema: "cue.mother.intent_infer.v1",
     action_version: Number(idle?.actionVersion) || 0,
     creative_directive: motherCurrentCreativeDirective(),
     creative_directive_instruction: motherCurrentCreativeDirectiveSentence(),
@@ -19235,7 +19266,7 @@ async function motherV2RequestPromptCompile({ speculative = false } = {}) {
   const activeId = getVisibleActiveId();
   const selectedIds = getVisibleSelectedIds().map((v) => String(v || "").trim()).filter(Boolean);
   const payload = {
-    schema: "brood.mother.prompt_compile.v1",
+    schema: "cue.mother.prompt_compile.v1",
     action_version: Number(idle.actionVersion) || 0,
     intent: sanitizedIntent,
     roles: motherV2RoleMapClone(),
@@ -20096,7 +20127,7 @@ function motherV2BuildNonGeminiModelContextEnvelope({
     ? imagePayload.dispatchImageManifest.filter((entry) => Boolean(entry?.transformed)).length
     : 0;
   const envelope = {
-    schema: `brood.model_context_envelope.${providerKey}.v1`,
+    schema: `cue.model_context_envelope.${providerKey}.v1`,
     provider: providerKey,
     model: modelKey || null,
     profile: providerKey === "flux" ? "flux-editing-compact" : "openai-image-structured",
@@ -20850,7 +20881,7 @@ function motherV2BuildGeminiContextPacket({ compiled = {}, promptLine = "", sani
   const transformedDispatchCount = dispatchManifest.filter((entry) => Boolean(entry?.transformed)).length;
 
   return {
-    schema: "brood.gemini.context_packet.v2",
+    schema: "cue.gemini.context_packet.v2",
     action_version: actionVersion,
     intent_id: String(intent.intent_id || idle?.intent?.intent_id || "").trim() || null,
     goal: `Intent summary: ${summary || MOTHER_V2_PROPOSAL_BY_MODE[transformationMode] || "Create one coherent image."}`,
@@ -21034,7 +21065,7 @@ async function motherV2DispatchViaImagePayload(compiled = {}, promptLine = "", {
     }
   }
   const payload = {
-    schema: "brood.mother.generate.v2",
+    schema: "cue.mother.generate.v2",
     action_version: Number(idle.actionVersion) || 0,
     intent_id: sanitizedIntent?.intent_id || idle.intent?.intent_id || null,
     prompt: finalPromptLine,
@@ -37008,7 +37039,7 @@ function buildVisualPrompt() {
   }
 
   return {
-    schema: "brood.visual_prompt",
+    schema: "cue.visual_prompt",
     schema_version: VISUAL_PROMPT_SCHEMA_VERSION,
     visual_grammar_version: VISUAL_GRAMMAR_VERSION,
     updated_at: nowIso,
@@ -37407,7 +37438,7 @@ async function aiReplaceBackground(style) {
     setStatus(`Engine: ${label}…`);
     showToast(`Morphing: ${label}`, "info", 2200);
 
-    // Must start with "replace" for Brood's edit detection.
+    // Must start with "replace" for Cue's edit detection.
     const prompt =
       style === "sweep"
         ? "replace the background with a soft studio sweep background. keep the subject exactly the same. preserve logos and text. do not crop."
@@ -37455,7 +37486,7 @@ async function aiRemovePeople({ fromQueue = false } = {}) {
 
     await maybeOverrideEngineImageModel(ACTION_IMAGE_MODEL.remove_people || pickGeminiImageModel());
 
-    // Must start with "edit" or "replace" for Brood's edit detection.
+    // Must start with "edit" or "replace" for Cue's edit detection.
     const prompt =
       "edit the image: remove any people (humans) from the image completely. " +
       "fill in the background naturally. keep everything else exactly the same. " +
@@ -37514,7 +37545,7 @@ async function aiSurpriseMe({ fromQueue = false } = {}) {
     ];
     const chosen = surprises[Math.floor(Math.random() * surprises.length)] || surprises[0];
 
-    // Must start with "edit" or "replace" for Brood's edit detection.
+    // Must start with "edit" or "replace" for Cue's edit detection.
     const prompt =
       `edit the image: * surprise me.\n` +
       `${chosen}\n` +
@@ -37680,7 +37711,7 @@ async function aiAnnotateEdit({
       await invoke("write_pty", { data: `${PTY_COMMANDS.IMAGE_MODEL} ${effectiveModel}\n` }).catch(() => {});
     }
 
-    // Must start with "edit" or "replace" for Brood's edit detection.
+    // Must start with "edit" or "replace" for Cue's edit detection.
     const prompt =
       `edit the image: ${instruction}\n` +
       "Output ONE image. No split-screen or collage. Do not add any text or logos. Do not crop.";
@@ -41069,8 +41100,11 @@ async function spawnEngine() {
   setStatus("Engine: starting…");
   state.ptySpawned = false;
   const preferredMode = "native";
-  const baseEnv = { BROOD_MEMORY: settings.memory ? "1" : "0" };
-  const broodArgs = ["chat", "--out", state.runDir, "--events", state.eventsPath];
+  const baseEnv = {
+    CUE_MEMORY: settings.memory ? "1" : "0",
+    BROOD_MEMORY: settings.memory ? "1" : "0",
+  };
+  const cueArgs = ["chat", "--out", state.runDir, "--events", state.eventsPath];
   try {
     let spawned = false;
     let lastErr = null;
@@ -41084,7 +41118,7 @@ async function spawnEngine() {
         launchMeta = { mode: "native", label };
       } catch (err) {
         lastErr = err;
-        console.warn(`[brood] spawn attempt failed (${label})`, err);
+        console.warn(`[cue] spawn attempt failed (${label})`, err);
       }
     };
 
@@ -41099,17 +41133,24 @@ async function spawnEngine() {
     if (repoRoot) {
       await spawnAttempt({
         command: "cargo",
-        args: ["run", "-q", "-p", "brood-cli", "--", ...broodArgs],
+        args: ["run", "-q", "-p", "cue-cli", "--", ...cueArgs],
         cwd: `${repoRoot}/rust_engine`,
-        label: "cargo run -p brood-cli",
+        label: "cargo run -p cue-cli",
       });
     }
 
     await spawnAttempt({
-      command: "brood-rs",
-      args: broodArgs,
+      command: "cue-rs",
+      args: cueArgs,
       cwd: state.runDir,
-      label: "brood-rs",
+      label: "cue-rs",
+    });
+
+    await spawnAttempt({
+      command: "brood-rs",
+      args: cueArgs,
+      cwd: state.runDir,
+      label: "brood-rs (legacy alias)",
     });
 
     if (!spawned) {
@@ -41128,7 +41169,7 @@ async function spawnEngine() {
     state.engineLaunchMode = launchMeta?.mode || "native";
     state.engineLaunchPath = launchMeta?.label || "unknown";
     console.info(
-      `[brood] engine launch mode=${state.engineLaunchMode} path=${state.engineLaunchPath} preferred=${preferredMode}`
+      `[cue] engine launch mode=${state.engineLaunchMode} path=${state.engineLaunchPath} preferred=${preferredMode}`
     );
     await invoke("write_pty", { data: `${PTY_COMMANDS.TEXT_MODEL} ${settings.textModel}\n` }).catch(() => {});
     await invoke("write_pty", { data: `${PTY_COMMANDS.IMAGE_MODEL} ${settings.imageModel}\n` }).catch(() => {});
@@ -42552,7 +42593,7 @@ async function handleEventLegacy(event) {
         errLower.includes("realtime provider 'gemini_flash'") ||
         errLower.includes("openrouter_api_key alone is insufficient") ||
         errLower.includes("missing dependency") ||
-        errLower.includes("disabled (brood_intent_realtime_disabled=1") ||
+        errLower.includes("disabled (cue_intent_realtime_disabled=1") ||
         errLower.includes("realtime intent inference is disabled")
     );
     // Only treat clearly-unrecoverable cases as a "hard" disabled state. Otherwise,
@@ -47966,7 +48007,7 @@ function ensureRuntimeChromeMenu() {
       menuKey: "diagnostics",
       label: "DEBUG",
       ariaLabel: "Show runtime diagnostics",
-      title: "Reveal diagnostics, portraits, file browser, and the Brood HUD.",
+      title: "Reveal diagnostics, portraits, file browser, and the Cue HUD.",
     });
     section.append(guide.row, debug.row);
     menu.append(divider, section);
@@ -48661,7 +48702,7 @@ function installUi() {
     els.memoryToggle.addEventListener("change", () => {
       bumpInteraction();
       settings.memory = els.memoryToggle.checked;
-      localStorage.setItem("brood.memory", settings.memory ? "1" : "0");
+      localStorage.setItem("cue.memory", settings.memory ? "1" : "0");
       setStatus("Engine: memory applies next run");
     });
   }
@@ -48700,14 +48741,14 @@ function installUi() {
     autoAcceptSuggestedAbilityToggle.checked = false;
     autoAcceptSuggestedAbilityToggle.disabled = true;
     autoAcceptSuggestedAbilityToggle.title = "Passive canvas-context suggestions are not part of the launch-slice runtime.";
-    localStorage.removeItem("brood.autoAcceptSuggestedAbility");
+    localStorage.removeItem("cue.autoAcceptSuggestedAbility");
   }
   if (els.textModel) {
     els.textModel.value = settings.textModel;
     els.textModel.addEventListener("change", () => {
       bumpInteraction();
       settings.textModel = els.textModel.value;
-      localStorage.setItem("brood.textModel", settings.textModel);
+      localStorage.setItem("cue.textModel", settings.textModel);
       updatePortraitIdle({ fromSettings: true });
       if (state.ptySpawned) {
         invoke("write_pty", { data: `${PTY_COMMANDS.TEXT_MODEL} ${settings.textModel}\n` }).catch(() => {});
@@ -49559,7 +49600,7 @@ async function boot() {
         if (state.pendingPtyExit) {
           state.pendingPtyExit = false;
         }
-        console.info("[brood] ignored stale pty-exit while PTY remains running");
+        console.info("[cue] ignored stale pty-exit while PTY remains running");
         return;
       }
     } catch (_) {
@@ -49568,7 +49609,7 @@ async function boot() {
 
     if (state.ptySpawning) {
       state.pendingPtyExit = true;
-      console.info("[brood] deferred pty-exit while spawn is in progress");
+      console.info("[cue] deferred pty-exit while spawn is in progress");
       return;
     }
     cachePtyStatus({ running: false, run_dir: null, events_path: null });

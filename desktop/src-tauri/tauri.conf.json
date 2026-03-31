@@ -19,7 +19,7 @@
       },
       "protocol": {
         "asset": true,
-        "assetScope": ["$HOME/brood_runs/**"]
+        "assetScope": ["$HOME/cue_runs/**"]
       }
     },
     "windows": [
@@ -38,7 +38,7 @@
       "identifier": "com.cue.app",
       "active": true,
       "targets": ["dmg"],
-      "resources": ["resources/brood-rs"],
+      "resources": ["resources/cue-rs"],
       "icon": ["icons/icon.icns", "icons/icon.png"]
     }
   }

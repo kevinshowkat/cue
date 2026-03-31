@@ -15,7 +15,7 @@ test("Mother intent payload includes proposal_context soft priors", () => {
 
   assert.match(fnText, /const proposalContext = motherV2BuildProposalContextForIntentPayload\(/);
   assert.match(fnText, /proposal_context:\s*proposalContext/);
-  assert.match(fnText, /schema:\s*"brood\.mother\.intent_infer\.v1"/);
+  assert.match(fnText, /schema:\s*"cue\.mother\.intent_infer\.v1"/);
 });
 
 test("Mother proposal_context builder includes interaction staleness and compact geometry priors", () => {
@@ -25,7 +25,7 @@ test("Mother proposal_context builder includes interaction staleness and compact
   assert.ok(fnMatch, "motherV2BuildProposalContextForIntentPayload block not found");
   const fnText = fnMatch[0];
 
-  assert.match(fnText, /schema:\s*"brood\.mother\.proposal_context\.v1"/);
+  assert.match(fnText, /schema:\s*"cue\.mother\.proposal_context\.v1"/);
   assert.match(fnText, /\bINTERACTION_STALE_CUTOFF_MS = 10 \* 60 \* 1000\b/);
   assert.match(fnText, /\binteraction_stale_cutoff_ms:\s*INTERACTION_STALE_CUTOFF_MS\b/);
   assert.match(fnText, /\bweight_hint\b/);

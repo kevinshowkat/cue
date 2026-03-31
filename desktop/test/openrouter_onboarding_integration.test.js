@@ -60,7 +60,7 @@ test("OpenRouter onboarding: settings clear-key control is wired as a distinct a
 });
 
 test("OpenRouter onboarding: oauth-first copy, manual reveal, and bottom progress dots are concise", () => {
-  assert.match(app, /Brood works best with OpenRouter/);
+  assert.match(app, /Cue works best with OpenRouter/);
   assert.match(app, /const dotCount = 2;/);
   assert.doesNotMatch(app, /openrouter-onboarding-progress-dot-label/);
   assert.match(app, /Sign in with OpenRouter to connect your key automatically\./);
@@ -68,8 +68,8 @@ test("OpenRouter onboarding: oauth-first copy, manual reveal, and bottom progres
   assert.match(app, /data-openrouter-action="oauth_sign_in"/);
   assert.match(app, /Use API key manually instead/);
   assert.match(app, /data-openrouter-action="show_manual"/);
-  assert.doesNotMatch(app, /Brood will open your browser, then finish setup automatically\./);
-  assert.doesNotMatch(app, /Stored locally in <code>~\/\.brood\/\.env<\/code>\./);
+  assert.doesNotMatch(app, /Cue will open your browser, then finish setup automatically\./);
+  assert.doesNotMatch(app, /Stored locally in <code>~\/\.cue\/\.env<\/code>\./);
   assert.match(app, /Skip for now keeps image generation disabled until you connect a key\./);
   assert.match(app, /const manualSaveVisible = stepIndex !== 0 \|\| openrouterOnboardingState\.manualEntryVisible;/);
   assert.match(app, /const nextText = stepIndex === 0 \? "Save key" : "Done";/);

@@ -475,10 +475,12 @@ fn find_repo_root(start: &Path) -> Option<PathBuf> {
 
 fn find_repo_root_best_effort() -> Option<PathBuf> {
     // Explicit override wins (useful for packaged apps).
-    if let Ok(root) = std::env::var("BROOD_REPO_ROOT") {
-        let path = PathBuf::from(root);
-        if let Some(repo_root) = find_repo_root(&path) {
-            return Some(repo_root);
+    for env_key in ["CUE_REPO_ROOT", "BROOD_REPO_ROOT"] {
+        if let Ok(root) = std::env::var(env_key) {
+            let path = PathBuf::from(root);
+            if let Some(repo_root) = find_repo_root(&path) {
+                return Some(repo_root);
+            }
         }
     }
 
@@ -677,12 +679,33 @@ fn remove_dotenv_key(path: &Path, key: &str) -> Result<bool, String> {
     Ok(true)
 }
 
-fn collect_brood_env_snapshot() -> HashMap<String, String> {
+fn cue_home_dir(home: &Path) -> PathBuf {
+    home.join(".cue")
+}
+
+fn legacy_brood_home_dir(home: &Path) -> PathBuf {
+    home.join(".brood")
+}
+
+fn cue_env_path(home: &Path) -> PathBuf {
+    cue_home_dir(home).join(".env")
+}
+
+fn legacy_brood_env_path(home: &Path) -> PathBuf {
+    legacy_brood_home_dir(home).join(".env")
+}
+
+fn first_existing_path(paths: &[PathBuf]) -> Option<PathBuf> {
+    paths.iter().find(|path| path.exists()).cloned()
+}
+
+fn collect_cue_env_snapshot() -> HashMap<String, String> {
     let mut vars: HashMap<String, String> = std::env::vars().collect();
 
     // Preferred location for persisted desktop keys/config.
     if let Some(home) = tauri::api::path::home_dir() {
-        merge_dotenv_vars(&mut vars, &home.join(".brood").join(".env"));
+        merge_dotenv_vars(&mut vars, &cue_env_path(&home));
+        merge_dotenv_vars(&mut vars, &legacy_brood_env_path(&home));
     }
 
     // Repo-local .env is useful in development.
@@ -701,9 +724,9 @@ fn save_openrouter_api_key(api_key: String) -> Result<serde_json::Value, String>
     }
 
     let home = tauri::api::path::home_dir().ok_or("No home dir")?;
-    let brood_dir = home.join(".brood");
-    std::fs::create_dir_all(&brood_dir).map_err(|e| e.to_string())?;
-    let env_path = brood_dir.join(".env");
+    let cue_dir = cue_home_dir(&home);
+    std::fs::create_dir_all(&cue_dir).map_err(|e| e.to_string())?;
+    let env_path = cue_dir.join(".env");
     upsert_dotenv_key(&env_path, "OPENROUTER_API_KEY", trimmed)?;
     #[cfg(target_family = "unix")]
     {
@@ -736,12 +759,13 @@ fn save_openrouter_api_key(api_key: String) -> Result<serde_json::Value, String>
 #[tauri::command]
 fn clear_openrouter_api_key() -> Result<serde_json::Value, String> {
     let home = tauri::api::path::home_dir().ok_or("No home dir")?;
-    let env_path = home.join(".brood").join(".env");
+    let env_path = cue_env_path(&home);
     let removed = remove_dotenv_key(&env_path, "OPENROUTER_API_KEY")?;
+    let legacy_removed = remove_dotenv_key(&legacy_brood_env_path(&home), "OPENROUTER_API_KEY")?;
     std::env::remove_var("OPENROUTER_API_KEY");
     Ok(serde_json::json!({
         "ok": true,
-        "removed": removed,
+        "removed": removed || legacy_removed,
         "env_path": env_path.to_string_lossy().to_string(),
     }))
 }
@@ -770,7 +794,7 @@ fn oauth_write_browser_result_page(stream: &mut impl Write, status: &str, title:
          background:#090d13;color:#ecf2f8;padding:32px}}.card{{max-width:560px;margin:0 auto;\
          border:1px solid #314357;border-radius:12px;padding:20px;background:#111924}}\
          h1{{font-size:22px;margin:0 0 10px}}p{{line-height:1.45;color:#c4cfdb}}</style></head>\
-         <body><div class=\"card\"><h1>{title}</h1><p>{body}</p><p>You can close this window and return to Brood.</p></div></body></html>"
+         <body><div class=\"card\"><h1>{title}</h1><p>{body}</p><p>You can close this window and return to Cue.</p></div></body></html>"
     );
     let response = format!(
         "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -939,7 +963,7 @@ fn run_openrouter_oauth_pkce_sign_in(
                         &mut stream,
                         "400 Bad Request",
                         "OpenRouter Sign-in Failed",
-                        "State validation failed. Please retry from Brood.",
+                        "State validation failed. Please retry from Cue.",
                     );
                     return Err(
                         "OpenRouter sign-in failed state validation. Please retry.".to_string()
@@ -951,7 +975,7 @@ fn run_openrouter_oauth_pkce_sign_in(
                         &mut stream,
                         "400 Bad Request",
                         "OpenRouter Sign-in Failed",
-                        "Authorization code was missing. Please retry from Brood.",
+                        "Authorization code was missing. Please retry from Cue.",
                     );
                     return Err("OpenRouter sign-in returned no authorization code.".to_string());
                 }
@@ -1051,9 +1075,9 @@ fn command_exit_detail(status: portable_pty::ExitStatus) -> String {
 
 fn native_engine_bin_name() -> &'static str {
     if cfg!(windows) {
-        "brood-rs.exe"
+        "cue-rs.exe"
     } else {
-        "brood-rs"
+        "cue-rs"
     }
 }
 
@@ -1097,7 +1121,7 @@ fn push_native_path_candidate(
     }
     if is_native_engine_placeholder(&path) {
         eprintln!(
-            "brood desktop skipping placeholder native engine candidate '{}'",
+            "cue desktop skipping placeholder native engine candidate '{}'",
             path.display()
         );
         return;
@@ -1116,7 +1140,10 @@ fn is_native_engine_placeholder(path: &Path) -> bool {
         return false;
     };
     let text = String::from_utf8_lossy(&raw).to_ascii_lowercase();
-    text.contains("brood-rs resource not staged") || text.contains("brood_rs_placeholder_stub")
+    text.contains("cue-rs resource not staged")
+        || text.contains("cue_rs_placeholder_stub")
+        || text.contains("brood-rs resource not staged")
+        || text.contains("brood_rs_placeholder_stub")
 }
 
 fn resolve_existing_env_binary_path(value: &str) -> Option<PathBuf> {
@@ -1137,7 +1164,12 @@ fn native_engine_program_candidates(app: Option<&tauri::AppHandle>) -> Vec<Engin
     let bin_name = native_engine_bin_name();
     let bin_with_triple = format!("{bin_name}-{}", native_engine_host_triple());
 
-    for env_key in ["BROOD_RS_BIN", "BROOD_ENGINE_BINARY"] {
+    for env_key in [
+        "CUE_RS_BIN",
+        "CUE_ENGINE_BINARY",
+        "BROOD_RS_BIN",
+        "BROOD_ENGINE_BINARY",
+    ] {
         if let Ok(raw) = std::env::var(env_key) {
             let value = raw.trim();
             if value.is_empty() {
@@ -1146,7 +1178,7 @@ fn native_engine_program_candidates(app: Option<&tauri::AppHandle>) -> Vec<Engin
             if let Some(path) = resolve_existing_env_binary_path(value) {
                 push_native_path_candidate(&mut out, path, format!("{env_key} ({})", value));
             } else {
-                // Allow executable names (e.g. "brood-rs") via env override.
+                // Allow executable names (e.g. "cue-rs") via env override.
                 push_engine_candidate(&mut out, value.to_string(), format!("{env_key} ({value})"));
             }
         }
@@ -1196,7 +1228,7 @@ fn native_engine_program_candidates(app: Option<&tauri::AppHandle>) -> Vec<Engin
 
 fn native_engine_command_requested(command: &str) -> bool {
     let trimmed = command.trim();
-    trimmed == "brood-rs" || trimmed == native_engine_bin_name()
+    trimmed == "cue-rs" || trimmed == "brood-rs" || trimmed == native_engine_bin_name()
 }
 
 fn resolve_spawn_candidates(app: &tauri::AppHandle, command: &str) -> Vec<EngineProgramCandidate> {
@@ -1328,7 +1360,8 @@ fn spawn_pty(
 
     let mut merged_env = env.unwrap_or_default();
     if let Some(home) = tauri::api::path::home_dir() {
-        merge_dotenv_vars(&mut merged_env, &home.join(".brood").join(".env"));
+        merge_dotenv_vars(&mut merged_env, &cue_env_path(&home));
+        merge_dotenv_vars(&mut merged_env, &legacy_brood_env_path(&home));
     }
     if let Some(repo_root) = find_repo_root_best_effort() {
         let env_path = repo_root.join(".env");
@@ -1367,7 +1400,7 @@ fn spawn_pty(
         }
 
         eprintln!(
-            "brood desktop spawn attempting '{}' ({})",
+            "cue desktop spawn attempting '{}' ({})",
             candidate.program, candidate.label
         );
         let mut child = match pair.slave.spawn_command(cmd) {
@@ -1416,7 +1449,7 @@ fn spawn_pty(
     };
 
     eprintln!(
-        "brood desktop spawn command resolved '{}' -> '{}' ({})",
+        "cue desktop spawn command resolved '{}' -> '{}' ({})",
         command, resolved_candidate.program, resolved_candidate.label
     );
     let run_dir = extract_arg_value(&args, "--out");
@@ -1474,7 +1507,7 @@ fn resize_pty(state: State<'_, SharedPtyState>, cols: u16, rows: u16) -> Result<
 #[tauri::command]
 fn create_run_dir() -> Result<serde_json::Value, String> {
     let home = tauri::api::path::home_dir().ok_or("No home dir")?;
-    let run_root = home.join("brood_runs");
+    let run_root = home.join("cue_runs");
     std::fs::create_dir_all(&run_root).map_err(|e| e.to_string())?;
     let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
     let run_dir = run_root.join(format!("run-{}", stamp));
@@ -5146,7 +5179,7 @@ fn export_run(
 
 #[tauri::command]
 fn get_key_status() -> Result<serde_json::Value, String> {
-    let vars = collect_brood_env_snapshot();
+    let vars = collect_cue_env_snapshot();
     let has = |key: &str| -> bool {
         vars.get(key)
             .map(|value| !value.trim().is_empty())
@@ -5188,7 +5221,8 @@ fn get_key_status() -> Result<serde_json::Value, String> {
     }
 
     let configured_global = vars
-        .get("BROOD_REALTIME_PROVIDER")
+        .get("CUE_REALTIME_PROVIDER")
+        .or_else(|| vars.get("BROOD_REALTIME_PROVIDER"))
         .and_then(|raw| RealtimeProvider::from_raw(raw));
     let infer_default = || {
         if openai {
@@ -5201,14 +5235,16 @@ fn get_key_status() -> Result<serde_json::Value, String> {
     };
     let default_provider = configured_global.unwrap_or_else(infer_default);
     let resolve_provider = |key: &str| -> RealtimeProvider {
+        let legacy_key = key.replacen("CUE_", "BROOD_", 1);
         vars.get(key)
+            .or_else(|| vars.get(&legacy_key))
             .and_then(|raw| RealtimeProvider::from_raw(raw))
             .or(configured_global)
             .unwrap_or_else(infer_default)
     };
-    let canvas_provider = resolve_provider("BROOD_CANVAS_CONTEXT_REALTIME_PROVIDER");
-    let intent_provider = resolve_provider("BROOD_INTENT_REALTIME_PROVIDER");
-    let mother_intent_provider = resolve_provider("BROOD_MOTHER_INTENT_REALTIME_PROVIDER");
+    let canvas_provider = resolve_provider("CUE_CANVAS_CONTEXT_REALTIME_PROVIDER");
+    let intent_provider = resolve_provider("CUE_INTENT_REALTIME_PROVIDER");
+    let mother_intent_provider = resolve_provider("CUE_MOTHER_INTENT_REALTIME_PROVIDER");
     let provider_ready = |provider: RealtimeProvider| -> bool {
         match provider {
             RealtimeProvider::OpenAiRealtime => openai,
@@ -7410,7 +7446,7 @@ fn run_design_review_provider_request_sync(
     if kind.is_empty() {
         return Err("design review provider request kind missing".to_string());
     }
-    let vars = collect_brood_env_snapshot();
+    let vars = collect_cue_env_snapshot();
     match kind.as_str() {
         "planner" | "upload_analysis" | "goal_contract" | "goal_check" => {
             run_design_review_planner_request(&request, &vars)
@@ -7445,9 +7481,12 @@ fn install_telemetry_log_path_from_env() -> Result<PathBuf, String> {
     if trimmed.is_empty() {
         return Err("HOME env is empty".to_string());
     }
-    Ok(PathBuf::from(trimmed)
-        .join(".brood")
-        .join("install_events.jsonl"))
+    let home = PathBuf::from(trimmed);
+    Ok(first_existing_path(&[
+        cue_home_dir(&home).join("install_events.jsonl"),
+        legacy_brood_home_dir(&home).join("install_events.jsonl"),
+    ])
+    .unwrap_or_else(|| cue_home_dir(&home).join("install_events.jsonl")))
 }
 
 fn install_telemetry_config_path_from_env() -> Result<PathBuf, String> {
@@ -7456,14 +7495,17 @@ fn install_telemetry_config_path_from_env() -> Result<PathBuf, String> {
     if trimmed.is_empty() {
         return Err("HOME env is empty".to_string());
     }
-    Ok(PathBuf::from(trimmed)
-        .join(".brood")
-        .join("install_telemetry_config.json"))
+    let home = PathBuf::from(trimmed);
+    Ok(first_existing_path(&[
+        cue_home_dir(&home).join("install_telemetry_config.json"),
+        legacy_brood_home_dir(&home).join("install_telemetry_config.json"),
+    ])
+    .unwrap_or_else(|| cue_home_dir(&home).join("install_telemetry_config.json")))
 }
 
 #[tauri::command]
 fn get_install_telemetry_defaults() -> Result<serde_json::Value, String> {
-    let vars = collect_brood_env_snapshot();
+    let vars = collect_cue_env_snapshot();
     let disk_config = install_telemetry_config_path_from_env()
         .ok()
         .and_then(|path| std::fs::read_to_string(path).ok())
@@ -7489,20 +7531,25 @@ fn get_install_telemetry_defaults() -> Result<serde_json::Value, String> {
         .map(|row| row.trim().to_string())
         .filter(|row| !row.is_empty());
 
-    let opt_in = env_flag(vars.get("BROOD_INSTALL_TELEMETRY"))
+    let opt_in = env_flag(vars.get("CUE_INSTALL_TELEMETRY"))
+        .or_else(|| env_flag(vars.get("CUE_TELEMETRY")))
+        .or_else(|| env_flag(vars.get("BROOD_INSTALL_TELEMETRY")))
         .or_else(|| env_flag(vars.get("BROOD_TELEMETRY")))
         .or(disk_opt_in)
         .unwrap_or(false);
-    let force_opt_in = env_flag(vars.get("BROOD_INSTALL_TELEMETRY_FORCE"))
+    let force_opt_in = env_flag(vars.get("CUE_INSTALL_TELEMETRY_FORCE"))
+        .or_else(|| env_flag(vars.get("BROOD_INSTALL_TELEMETRY_FORCE")))
         .or(disk_force_opt_in)
         .unwrap_or(false);
     let endpoint = vars
-        .get("BROOD_INSTALL_TELEMETRY_ENDPOINT")
+        .get("CUE_INSTALL_TELEMETRY_ENDPOINT")
+        .or_else(|| vars.get("BROOD_INSTALL_TELEMETRY_ENDPOINT"))
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
         .or(disk_endpoint);
     let install_id = vars
-        .get("BROOD_INSTALL_TELEMETRY_INSTALL_ID")
+        .get("CUE_INSTALL_TELEMETRY_INSTALL_ID")
+        .or_else(|| vars.get("BROOD_INSTALL_TELEMETRY_INSTALL_ID"))
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
         .or(disk_install_id);
@@ -7762,11 +7809,11 @@ fn handle_bridge_client(
                 });
 
                 eprintln!(
-                    "brood desktop bridge automation request {} dispatched (action={})",
+                    "cue desktop bridge automation request {} dispatched (action={})",
                     request_id, action
                 );
                 let _ = app_handle.emit_all("desktop-automation", emit_payload);
-                eprintln!("brood desktop bridge automation event emitted request_id={request_id}");
+                eprintln!("cue desktop bridge automation event emitted request_id={request_id}");
 
                 let timeout_ms = wait_ms.max(250);
                 let timeout = Duration::from_millis(timeout_ms);
@@ -7831,10 +7878,10 @@ fn report_automation_result(
 ) -> Result<(), String> {
     let request_id = result.request_id.trim().to_string();
     if request_id.is_empty() {
-        eprintln!("brood desktop bridge report_automation_result missing request_id");
+        eprintln!("cue desktop bridge report_automation_result missing request_id");
         return Err("missing request_id".to_string());
     }
-    eprintln!("brood desktop bridge received automation result for request_id={request_id}");
+    eprintln!("cue desktop bridge received automation result for request_id={request_id}");
     let sender = {
         let mut guard = state.lock().map_err(|_| "lock_poisoned")?;
         guard
@@ -7842,7 +7889,7 @@ fn report_automation_result(
             .remove(&request_id)
             .ok_or_else(|| {
                 eprintln!(
-                    "brood desktop bridge unknown_request_id={request_id}; waiter missing or already timed out"
+                    "cue desktop bridge unknown_request_id={request_id}; waiter missing or already timed out"
                 );
                 "unknown_request_id".to_string()
             })
@@ -7865,12 +7912,12 @@ fn report_automation_result(
         payload["markers"] = serde_json::json!(markers);
     }
 
-    eprintln!("brood desktop bridge automation result accepted request_id={request_id}");
+    eprintln!("cue desktop bridge automation result accepted request_id={request_id}");
     sender
         .send(payload)
         .map_err(|_| {
             eprintln!(
-                "brood desktop bridge automation result send failed request_id={request_id}; receiver dropped"
+                "cue desktop bridge automation result send failed request_id={request_id}; receiver dropped"
             );
             "automation_receiver_dropped".to_string()
         })
@@ -7889,8 +7936,9 @@ fn report_automation_frontend_ready(
 fn start_external_bridge(state: SharedPtyState, app_handle: tauri::AppHandle) {
     #[cfg(target_family = "unix")]
     {
-        let socket = std::env::var("BROOD_DESKTOP_BRIDGE_SOCKET")
-            .unwrap_or_else(|_| "/tmp/brood_desktop_bridge.sock".to_string());
+        let socket = std::env::var("CUE_DESKTOP_BRIDGE_SOCKET")
+            .or_else(|_| std::env::var("BROOD_DESKTOP_BRIDGE_SOCKET"))
+            .unwrap_or_else(|_| "/tmp/cue_desktop_bridge.sock".to_string());
         let socket_path = PathBuf::from(socket);
         if let Some(parent) = socket_path.parent() {
             if std::fs::create_dir_all(parent).is_err() {
@@ -7901,7 +7949,7 @@ fn start_external_bridge(state: SharedPtyState, app_handle: tauri::AppHandle) {
         let listener = match UnixListener::bind(&socket_path) {
             Ok(value) => value,
             Err(err) => {
-                eprintln!("brood desktop bridge bind failed: {err}");
+                eprintln!("cue desktop bridge bind failed: {err}");
                 return;
             }
         };
@@ -7917,7 +7965,7 @@ fn start_external_bridge(state: SharedPtyState, app_handle: tauri::AppHandle) {
                         });
                     }
                     Err(err) => {
-                        eprintln!("brood desktop bridge accept failed: {err}");
+                        eprintln!("cue desktop bridge accept failed: {err}");
                         break;
                     }
                 }
@@ -8739,11 +8787,11 @@ done
 
     #[test]
     fn placeholder_candidate_is_skipped() {
-        let path = temp_file_path("stub-brood-rs");
+        let path = temp_file_path("stub-cue-rs");
         let _ = std::fs::remove_file(&path);
         std::fs::write(
             &path,
-            "#!/usr/bin/env bash\n# BROOD_RS_PLACEHOLDER_STUB\necho \"brood-rs resource not staged\" >&2\nexit 1\n",
+            "#!/usr/bin/env bash\n# CUE_RS_PLACEHOLDER_STUB\necho \"cue-rs resource not staged\" >&2\nexit 1\n",
         )
         .expect("write placeholder");
         let mut candidates: Vec<EngineProgramCandidate> = Vec::new();
@@ -8755,7 +8803,7 @@ done
 
     #[test]
     fn real_candidate_is_kept() {
-        let path = temp_file_path("real-brood-rs");
+        let path = temp_file_path("real-cue-rs");
         let _ = std::fs::remove_file(&path);
         std::fs::write(&path, b"\x7fELFnot-a-real-binary").expect("write binary");
         let mut candidates: Vec<EngineProgramCandidate> = Vec::new();

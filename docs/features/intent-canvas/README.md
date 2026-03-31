@@ -85,7 +85,7 @@ Use the strict format below (schema versioning required):
 ```json
 {
   "frame_id": "<input frame id>",
-  "schema": "brood.intent_icons",
+  "schema": "cue.intent_icons",
   "schema_version": 1,
   "intent_icons": [
     {
@@ -117,6 +117,7 @@ Use the strict format below (schema versioning required):
 
 Notes:
 - `schema` and `schema_version` are required for forward compatibility.
+- `cue.intent_icons` is the contributor-facing schema id. Older runtime/docs may still use `brood.intent_icons` during the one-release compatibility window.
 - The UI must tolerate partial/invalid JSON in streaming by keeping the last valid state.
 
 ### Icon Taxonomy (Strict)

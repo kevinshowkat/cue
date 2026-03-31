@@ -1,18 +1,22 @@
 [package]
-name = "brood-cli"
+name = "cue-cli"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 
 [[bin]]
-name = "brood-rs"
+name = "cue-rs"
 path = "src/main.rs"
+
+[[bin]]
+name = "brood-rs"
+path = "src/bin/brood_rs_compat.rs"
 
 [dependencies]
 anyhow = { workspace = true }
 base64 = { workspace = true }
-brood-contracts = { path = "../brood-contracts" }
-brood-engine = { path = "../brood-engine" }
+cue-contracts = { path = "../cue-contracts" }
+cue-engine = { path = "../cue-engine" }
 clap = { workspace = true }
 image = { workspace = true }
 reqwest = { workspace = true }

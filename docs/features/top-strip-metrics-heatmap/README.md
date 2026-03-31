@@ -91,4 +91,4 @@ Primary file: `desktop/src/canvas_app.js`
 - Session cost updates during the run without manual refresh.
 - Queue tile updates when actions are enqueued/dequeued/active.
 - Avg render time updates after new successful renders.
-- Layout remains readable on standard desktop widths used by Brood.
+- Layout remains readable on standard desktop widths used by Cue.

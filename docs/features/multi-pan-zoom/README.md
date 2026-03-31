@@ -1,7 +1,7 @@
 # Multi View Pan and Zoom
 
 ## Problem
-When 2 images are loaded, Brood switches to `Multi view` for pair actions. In this mode, the mouse wheel zoom handler was explicitly disabled, which made it impossible to zoom out (or back in) while using Pan. Users can easily end up in a state where they want to zoom to re-frame both images but cannot.
+When 2 images are loaded, Cue switches to `Multi view` for pair actions. In this mode, the mouse wheel zoom handler was explicitly disabled, which made it impossible to zoom out (or back in) while using Pan. Users can easily end up in a state where they want to zoom to re-frame both images but cannot.
 
 ## UX
 - In `Multi view`, `Pan` now supports wheel zoom.
@@ -24,4 +24,3 @@ Files:
   - Load 2 images, enter `Multi view`, select `Pan`.
   - Scroll wheel to zoom out: tiles should shrink and stay under the cursor.
   - Pan around while zoomed: tiles should move smoothly.
-

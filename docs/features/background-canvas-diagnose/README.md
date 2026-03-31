@@ -1,10 +1,10 @@
 # Background Canvas Diagnose (Auto)
 
 ## Problem
-When users upload multiple images, Brood should proactively extract meaning across the whole canvas without the user explicitly clicking `Diagnose`. The goal is to be one step ahead and reduce "what should I do next?" friction.
+When users upload multiple images, Cue should proactively extract meaning across the whole canvas without the user explicitly clicking `Diagnose`. The goal is to be one step ahead and reduce "what should I do next?" friction.
 
 ## UX
-- When 2+ images are loaded, Brood runs a background canvas diagnosis automatically.
+- When 2+ images are loaded, Cue runs a background canvas diagnosis automatically.
 - Results appear in the Director output (HUD) as a diagnose-style critique/insight.
 - This runs quietly: no "Diagnose ready" toast for the background run.
 
@@ -25,4 +25,3 @@ Files:
   - Import 2 images and wait ~1-2 seconds.
   - Confirm a diagnose output appears without clicking `Diagnose`.
   - Confirm no "Diagnose ready" toast appears for the background run.
-

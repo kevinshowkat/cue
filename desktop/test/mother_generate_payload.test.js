@@ -8,14 +8,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
 const app = readFileSync(appPath, "utf8");
 
-test("Mother generate payload uses minimal brood.mother.generate.v2 envelope", () => {
+test("Mother generate payload uses minimal cue.mother.generate.v2 envelope", () => {
   const fnMatch = app.match(
     /async function motherV2DispatchViaImagePayload[\s\S]*?const payload = \{([\s\S]*?)\n\s*\};/
   );
   assert.ok(fnMatch, "motherV2DispatchViaImagePayload payload block not found");
   const payloadText = fnMatch[1];
 
-  assert.match(payloadText, /schema:\s*"brood\.mother\.generate\.v2"/);
+  assert.match(payloadText, /schema:\s*"cue\.mother\.generate\.v2"/);
   assert.match(payloadText, /prompt:\s*finalPromptLine/);
   assert.match(payloadText, /init_image:\s*imagePayload\.initImage/);
   assert.match(payloadText, /reference_images:\s*imagePayload\.referenceImages/);

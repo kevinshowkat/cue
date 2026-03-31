@@ -1,10 +1,10 @@
 # Move Engine Status Below Logo
 
 ## Problem
-The engine status pill (e.g. `Engine: imported 2 photos`) was positioned on the top-right of the app header. This makes it easy to miss and visually disconnects it from the Brood brand.
+The engine status pill (e.g. `Engine: imported 2 photos`) was positioned on the top-right of the app header. This makes it easy to miss and visually disconnects it from the Cue brand.
 
 ## UX
-- The engine status pill is placed directly under the Brood logo in the top-left header area.
+- The engine status pill is placed directly under the Cue logo in the top-left header area.
 - Status text remains truncated with ellipsis when long.
 
 ## Implementation
@@ -20,4 +20,3 @@ Files:
 - Manual:
   - Import photos and confirm the status updates appear under the logo.
   - Trigger an error status and confirm styling still applies.
-

@@ -23,7 +23,7 @@ Gemini can return multiple image parts per candidate. We cap the number of blobs
 
 Files:
 - `desktop/src/canvas_app.js`
-- `rust_engine/crates/brood-engine/src/lib.rs`
+- `rust_engine/crates/cue-engine/src/runtime.rs`
 
 ## Test Plan
 - `cd rust_engine && cargo test`

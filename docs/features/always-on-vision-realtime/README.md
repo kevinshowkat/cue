@@ -12,7 +12,7 @@ foreground UX.
 - Settings includes an **Always-On Vision** toggle and a **Canvas Context** readout.
 - When enabled:
   - Readout shows `Connecting…` while the realtime session comes up.
-  - Periodically (idle + throttled), Brood captures a small collage snapshot and sends it to the realtime session.
+  - Periodically (idle + throttled), Cue captures a small collage snapshot and sends it to the realtime session.
   - Readout shows `ANALYZING…` during the request, then fills with streaming text as it arrives.
 - On fatal failures (missing keys, network/API error):
   - Readout shows `DISABLED: <reason>`.
@@ -44,8 +44,8 @@ Primary file: `desktop/src/canvas_app.js`
 
 ### Engine
 Primary files:
-- `rust_engine/crates/brood-contracts/src/chat/intent_parser.rs` (new slash intents)
-- `rust_engine/crates/brood-cli/src/main.rs` (handlers + background realtime session worker)
+- `rust_engine/crates/cue-contracts/src/chat/intent_parser.rs` (new slash intents)
+- `rust_engine/crates/cue-cli/src/lib.rs` (handlers + background realtime session worker)
 
 Slash commands:
 - `/canvas_context_rt_start`
@@ -66,22 +66,22 @@ Events:
 
 Threading:
 - The realtime websocket client runs off the synchronous chat loop in a dedicated background thread.
-- `rust_engine/crates/brood-contracts/src/events.rs` uses a lock to keep `events.jsonl` append operations safe across threads.
+- `rust_engine/crates/cue-contracts/src/events.rs` uses a lock to keep `events.jsonl` append operations safe across threads.
 
 ## Config
-- `BROOD_REALTIME_PROVIDER` (default auto-routing):
+- `CUE_REALTIME_PROVIDER` (default auto-routing):
   - OpenAI key present -> `openai_realtime`
   - otherwise OpenRouter/Gemini presence -> `gemini_flash`
-- `BROOD_CANVAS_CONTEXT_REALTIME_PROVIDER` to override canvas-context provider only.
+- `CUE_CANVAS_CONTEXT_REALTIME_PROVIDER` to override canvas-context provider only.
 - Provider credentials:
   - `openai_realtime`: `OPENAI_API_KEY` (or `OPENAI_API_KEY_BACKUP`)
   - `gemini_flash`: `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) or `OPENROUTER_API_KEY`
 - Desktop readiness behavior:
   - realtime readiness is fail-closed until key status resolves (prevents brief false-ready UI states on startup/key refresh)
-- `BROOD_CANVAS_CONTEXT_REALTIME_MODEL` (default by provider):
+- `CUE_CANVAS_CONTEXT_REALTIME_MODEL` (default by provider):
   - OpenAI: `gpt-realtime-mini`
   - Gemini: `gemini-3-flash-preview` (OpenRouter normalized to `google/gemini-3-flash-preview`)
-- `BROOD_CANVAS_CONTEXT_REALTIME_DISABLED=1` to hard-disable realtime canvas context.
+- `CUE_CANVAS_CONTEXT_REALTIME_DISABLED=1` to hard-disable realtime canvas context.
 
 ## Manual Test
 1. `./scripts/dev_desktop.sh`

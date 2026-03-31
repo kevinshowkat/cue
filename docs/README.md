@@ -5,6 +5,8 @@ This tree mixes current Cue product docs, active implementation notes, historica
 ## Start Here
 
 - [desktop.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/desktop.md): current desktop app behavior and shell notes
+- [../rust_engine/ARCHITECTURE.md](/Users/mainframe/Desktop/projects/Juggernaut/rust_engine/ARCHITECTURE.md): `cue-cli` / `cue-contracts` / `cue-engine` ownership map plus legacy-path migration notes
+- [../rust_engine/README.md](/Users/mainframe/Desktop/projects/Juggernaut/rust_engine/README.md): native runtime workspace usage and compatibility commands
 - [features/visual-timeline/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/visual-timeline/README.md): tab-local history model and restore contract
 - [features/shell-canvas-integration.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/shell-canvas-integration.md): shell bridge, tool, and export wiring
 - [psd-export-slice.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/psd-export-slice.md): PSD contract plus the shared low-effort raster export notes
@@ -38,3 +40,5 @@ These still use older Brood/reference-first framing and should be treated as bac
 - [realtime_canvas_user_benefits_story.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/realtime_canvas_user_benefits_story.md)
 - [param_forge_reference.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/param_forge_reference.md)
 - [skills/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/skills/README.md)
+
+Historical wave runbooks under [runbooks/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/runbooks/README.md) also retain old branch names such as `debrood`; keep those labels only when referring to the original wave history.
