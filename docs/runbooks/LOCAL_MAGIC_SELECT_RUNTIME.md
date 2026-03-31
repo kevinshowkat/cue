@@ -311,7 +311,7 @@ Then verify the live path:
 5. Repeat a click near the same anchor.
 6. Confirm the overlay stays on the same single candidate instead of creating a visibly different alternate mask.
 
-On this machine, the verified in-app Aragorn click recorded image anchor `x=651, y=327` and wrote:
+On this machine, the verified in-app Aragorn click recorded image anchor `x=651, y=327` and wrote the following legacy compatibility paths. Contributor-facing docs now refer to the same location family as `~/cue_runs/`:
 
 ```text
 /Users/mainframe/brood_runs/run-20260313T140723/receipt-magic-select-20260313T141506715.json

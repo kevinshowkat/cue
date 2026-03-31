@@ -215,52 +215,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "brood-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "brood-contracts",
- "brood-engine",
- "clap",
- "image",
- "reqwest",
- "serde_json",
- "tungstenite",
-]
-
-[[package]]
-name = "brood-contracts"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "indexmap",
- "serde",
- "serde_json",
- "shell-words",
- "similar",
- "tempfile",
- "uuid",
-]
-
-[[package]]
-name = "brood-engine"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "brood-contracts",
- "chrono",
- "hex",
- "image",
- "reqwest",
- "serde_json",
- "sha2",
- "tempfile",
-]
-
-[[package]]
 name = "built"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -449,6 +403,52 @@ checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
 dependencies = [
  "generic-array",
  "typenum",
+]
+
+[[package]]
+name = "cue-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "clap",
+ "cue-contracts",
+ "cue-engine",
+ "image",
+ "reqwest",
+ "serde_json",
+ "tungstenite",
+]
+
+[[package]]
+name = "cue-contracts"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "indexmap",
+ "serde",
+ "serde_json",
+ "shell-words",
+ "similar",
+ "tempfile",
+ "uuid",
+]
+
+[[package]]
+name = "cue-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "chrono",
+ "cue-contracts",
+ "hex",
+ "image",
+ "reqwest",
+ "serde_json",
+ "sha2",
+ "tempfile",
 ]
 
 [[package]]

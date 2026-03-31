@@ -14,7 +14,7 @@ There is no web app.
 
 ## Core Concepts
 
-- **Run**: a folder under `~/brood_runs/` that stores imported files, artifacts, receipts, `events.jsonl`, `juggernaut-session.json`, and `session-timeline.json`.
+- **Run**: a folder under `~/cue_runs/` that stores imported files, artifacts, receipts, `events.jsonl`, `juggernaut-session.json`, and `session-timeline.json`.
 - **Session tab**: an isolated shell state bound to one run directory. Tabs can be created fresh, opened from disk, saved, closed, or forked from the current tab.
 - **Shared canvas**: only the active tab is attached to runtime/events at a time; switching tabs swaps session state into the shared surface.
 - **Visual timeline**: tab-local history shown in a dedicated shelf under the titlebar. It can collapse to a visible stub and restore prior committed states without re-running model work.
@@ -50,7 +50,7 @@ The primary Cue wedge is still single-image-first even though older Brood-derive
 - Session saves write `run_dir/juggernaut-session.json`.
 - Timeline persistence writes `run_dir/session-timeline.json`.
 - Receipts continue to live alongside run artifacts as `receipt-*.json` or export-specific receipt payloads.
-- Some on-disk paths, local-storage keys, and runtime env names still use legacy `brood` naming during the transition.
+- Legacy `brood` on-disk paths, local-storage keys, and runtime env names are still read during the transition, but Cue now writes canonical `cue` names.
 
 ## Export
 

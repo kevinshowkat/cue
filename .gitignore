@@ -19,6 +19,7 @@ desktop/src-tauri/target/
 desktop/dist/
 desktop/src-tauri/gen/
 desktop/src-tauri/resources/brood-rs
+desktop/src-tauri/resources/cue-rs
 rust_engine/target/
 
 # Environment

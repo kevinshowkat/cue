@@ -1,5 +1,7 @@
 # Warp Design Wave Runbook (Cue)
 
+Historical note: this runbook preserves the original design-wave branch names, including `debrood` labels. Treat those as wave-history artifacts rather than current naming guidance.
+
 Use this when repointing the existing Warp/Codex tabs from the launch slice to the design wave.
 
 ## 1. Base Branch

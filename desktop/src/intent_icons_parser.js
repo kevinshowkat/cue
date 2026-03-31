@@ -128,6 +128,7 @@ function _tryParseJsonLooseDetailed(raw) {
 function _looksLikeIntentIconsPayload(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const schemaRaw = value.schema ? String(value.schema).trim().toLowerCase() : "";
+  if (schemaRaw === "cue.intent_icons") return true;
   if (schemaRaw === "brood.intent_icons") return true;
   if (schemaRaw && schemaRaw.includes("intent") && schemaRaw.includes("icon")) return true;
   if (Array.isArray(value.intent_icons)) return true;
@@ -288,7 +289,7 @@ export function parseIntentIconsJsonDetailed(raw, { normalizeTransformationMode 
         parseable_candidates: parseableCandidates,
       };
     }
-    obj.schema = "brood.intent_icons";
+    obj.schema = "cue.intent_icons";
   }
   const hasIntentShape = Boolean(
     Array.isArray(obj.intent_icons) ||
@@ -418,7 +419,7 @@ export function parseIntentIconsJsonDetailed(raw, { normalizeTransformationMode 
   }
 
   if (!obj.frame_id) obj.frame_id = "";
-  if (!obj.schema) obj.schema = "brood.intent_icons";
+  if (!obj.schema) obj.schema = "cue.intent_icons";
   if (!obj.schema_version) obj.schema_version = 1;
   return {
     ok: true,

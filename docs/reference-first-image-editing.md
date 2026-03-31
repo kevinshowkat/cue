@@ -1,6 +1,6 @@
 # Reference-First Image Editing
 
-Brood is built for reference-first image editing: you start from real images, not long prompts.
+Cue is built for reference-first image editing: you start from real images, not long prompts.
 
 ## Who This Is For
 
@@ -12,7 +12,7 @@ Brood is built for reference-first image editing: you start from real images, no
 
 Turn existing brand/reference images into many high-quality creative variants quickly, without prompt engineering.
 
-## How It Works In Brood
+## How It Works In Cue
 
 1. Import one or more reference images.
 2. Arrange, resize, and select to express intent on canvas.
@@ -27,7 +27,7 @@ Turn existing brand/reference images into many high-quality creative variants qu
 
 ## Reproducibility Artifacts
 
-Each run writes to `~/brood_runs/run-*` with:
+Each run writes to `~/cue_runs/run-*` with:
 
 - `events.jsonl`
 - payload snapshots (`mother_intent_infer-*.json`, `mother_prompt_compile-*.json`, `mother_generate-*.json`)

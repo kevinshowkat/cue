@@ -282,7 +282,7 @@
               "priority": 1
             },
             {
-              "path": "rust_engine/crates/brood-cli/src/main.rs",
+              "path": "rust_engine/crates/cue-cli/src/lib.rs",
               "kind": "source",
               "why": "Native engine command wiring used by Abilities.",
               "priority": 2

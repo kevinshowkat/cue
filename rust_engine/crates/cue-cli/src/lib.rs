@@ -1,3 +1,8 @@
+pub mod export;
+pub mod observe;
+pub mod planning;
+pub mod realtime;
+
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
@@ -13,9 +18,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{bail, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
-use brood_contracts::chat::{parse_intent, CHAT_HELP_COMMANDS};
-use brood_contracts::events::EventWriter;
-use brood_engine::NativeEngine;
+use cue_contracts::chat::{parse_intent, CHAT_HELP_COMMANDS};
+use cue_contracts::events::EventWriter;
+use cue_engine::NativeEngine;
 use clap::{Parser, Subcommand};
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
@@ -23,13 +28,12 @@ use image::{DynamicImage, Rgba, RgbaImage};
 use reqwest::blocking::Client as HttpClient;
 use reqwest::header::CONTENT_TYPE;
 use serde_json::{json, Map, Value};
-use tungstenite::client::IntoClientRequest;
-use tungstenite::http::{HeaderValue, Request};
+use tungstenite::http::Request;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect as websocket_connect, Message as WsMessage, WebSocket};
 
 #[derive(Debug, Parser)]
-#[command(name = "brood-rs", version, about = "Brood Rust CLI scaffold")]
+#[command(name = "cue-rs", version, about = "Cue Rust CLI scaffold")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -96,12 +100,12 @@ const OPENAI_VISION_FALLBACK_MODEL: &str = "gpt-5.2";
 const OPENAI_VISION_SECONDARY_MODEL: &str = "gpt-5-nano";
 const OPENROUTER_OPENAI_VISION_FALLBACK_MODEL: &str = "openai/gpt-5.2";
 
-fn main() {
+pub fn main_entry() -> i32 {
     match run() {
-        Ok(code) => std::process::exit(code),
+        Ok(code) => code,
         Err(err) => {
-            eprintln!("brood-rs error: {err:#}");
-            std::process::exit(1);
+            eprintln!("cue-rs error: {err:#}");
+            1
         }
     }
 }
@@ -145,7 +149,7 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
     let canvas_rt_source = || canvas_context_realtime_provider().as_str().to_string();
     let intent_rt_source = |mother: bool| intent_realtime_provider(mother).as_str().to_string();
 
-    println!("Brood chat started. Type /help for commands.");
+    println!("Cue chat started. Type /help for commands.");
 
     loop {
         print!("> ");
@@ -221,7 +225,9 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                 }
 
                 let max_chars = REALTIME_DESCRIPTION_MAX_CHARS;
-                if let Some(inference) = vision_infer_description(&path, max_chars) {
+                if let Some(inference) =
+                    observe::describe::vision_infer_description(&path, max_chars)
+                {
                     engine.emit_event(
                         "image_description",
                         json_object(json!({
@@ -287,7 +293,9 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                     println!("Canvas context failed: file not found ({})", path.display());
                     continue;
                 }
-                if let Some(inference) = vision_infer_canvas_context(&path, None) {
+                if let Some(inference) =
+                    observe::canvas_context::vision_infer_canvas_context(&path, None)
+                {
                     engine.emit_event(
                         "canvas_context",
                         json_object(json!({
@@ -377,7 +385,7 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                     infer_structured_intent_payload_provider_first(
                         &payload,
                         engine.text_model(),
-                        "brood_intent_infer",
+                        "cue_intent_infer",
                     );
                 let action_version = payload
                     .get("action_version")
@@ -449,7 +457,7 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                 let (compiled, source, model) = compile_mother_prompt_payload_provider_first(
                     &payload,
                     engine.text_model(),
-                    "brood_prompt_compile",
+                    "cue_prompt_compile",
                 );
                 let action_version = payload
                     .get("action_version")
@@ -534,7 +542,7 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
 
                 let provider_hint =
                     provider_from_model_name(engine.image_model().unwrap_or("dryrun-image-1"));
-                let request = match mother_generate_request_from_payload(
+                let request = match planning::mother_generate_request_from_payload(
                     &payload,
                     &quality_preset,
                     provider_hint.as_deref(),
@@ -1635,7 +1643,8 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                     println!("Recreate failed: file not found ({})", reference.display());
                     continue;
                 }
-                let result = run_native_recreate_loop(&mut engine, &reference, &quality_preset, 1);
+                let result =
+                    planning::run_native_recreate_loop(&mut engine, &reference, &quality_preset, 1);
                 match result {
                     Ok(result) => {
                         if let Some(inferred) =
@@ -1683,7 +1692,7 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
                     continue;
                 }
                 let out_path = run_out_dir.join(format!("export-{}.html", compact_timestamp()));
-                export_html_native(&run_out_dir, &out_path)?;
+                export::export_html_native(&run_out_dir, &out_path)?;
                 println!("Exported report to {}", out_path.display());
             }
             "optimize" => {
@@ -1976,14 +1985,15 @@ fn run_recreate_native(args: RecreateArgs) -> Result<i32> {
         Some(args.text_model.clone()),
         args.image_model.clone(),
     )?;
-    let result = run_native_recreate_loop(&mut engine, &args.reference, "quality", 2);
+    let result =
+        planning::run_native_recreate_loop(&mut engine, &args.reference, "quality", 2);
     engine.finish()?;
     result?;
     Ok(0)
 }
 
 fn run_export_native(args: ExportArgs) -> Result<i32> {
-    export_html_native(&args.run, &args.out)?;
+    export::export_html_native(&args.run, &args.out)?;
     println!("Exported to {}", args.out.display());
     Ok(0)
 }
@@ -2732,15 +2742,7 @@ fn humanize_file_name(file: &str) -> String {
 }
 
 fn normalize_realtime_model_name(raw: &str, default: &str) -> String {
-    let model = raw.trim();
-    if model.is_empty() {
-        return default.to_string();
-    }
-    if model == "realtime-gpt" {
-        "gpt-realtime".to_string()
-    } else {
-        model.to_string()
-    }
+    realtime::normalize_realtime_model_name(raw, default)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2757,6 +2759,7 @@ impl RealtimeProvider {
         }
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     fn parse(raw: &str) -> Option<Self> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "openai" | "openai_realtime" => Some(Self::OpenAiRealtime),
@@ -2766,105 +2769,70 @@ impl RealtimeProvider {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn infer_default_realtime_provider() -> RealtimeProvider {
-    if openai_api_key().is_some() {
-        return RealtimeProvider::OpenAiRealtime;
+    match realtime::CredentialAvailability::from_env(&realtime::RealtimeEnv::from_current())
+        .infer_default_provider()
+    {
+        realtime::RealtimeProvider::OpenAiRealtime => RealtimeProvider::OpenAiRealtime,
+        realtime::RealtimeProvider::GeminiFlash => RealtimeProvider::GeminiFlash,
     }
-    if openrouter_api_key().is_some() || gemini_api_key().is_some() {
-        return RealtimeProvider::GeminiFlash;
-    }
-    RealtimeProvider::OpenAiRealtime
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn realtime_provider_from_env(keys: &[&str]) -> Option<RealtimeProvider> {
-    for key in keys {
-        if let Ok(value) = env::var(key) {
-            if let Some(provider) = RealtimeProvider::parse(&value) {
-                return Some(provider);
-            }
-        }
-    }
-    None
+    let env = realtime::RealtimeEnv::from_current();
+    keys.iter().find_map(|key| {
+        env.get_compat(key).and_then(|value| match realtime::RealtimeProvider::parse(value) {
+            Some(realtime::RealtimeProvider::OpenAiRealtime) => Some(RealtimeProvider::OpenAiRealtime),
+            Some(realtime::RealtimeProvider::GeminiFlash) => Some(RealtimeProvider::GeminiFlash),
+            None => None,
+        })
+    })
 }
 
 fn canvas_context_realtime_provider() -> RealtimeProvider {
-    realtime_provider_from_env(&[
-        "BROOD_CANVAS_CONTEXT_REALTIME_PROVIDER",
-        "BROOD_REALTIME_PROVIDER",
-    ])
-    .unwrap_or_else(infer_default_realtime_provider)
+    match realtime::RealtimeSessionConfig::from_current_env(realtime::RealtimeSessionKind::CanvasContext)
+        .provider
+    {
+        realtime::RealtimeProvider::OpenAiRealtime => RealtimeProvider::OpenAiRealtime,
+        realtime::RealtimeProvider::GeminiFlash => RealtimeProvider::GeminiFlash,
+    }
 }
 
 fn intent_realtime_provider(mother: bool) -> RealtimeProvider {
-    let keys = if mother {
-        vec![
-            "BROOD_MOTHER_INTENT_REALTIME_PROVIDER",
-            "BROOD_INTENT_REALTIME_PROVIDER",
-            "BROOD_REALTIME_PROVIDER",
-        ]
-    } else {
-        vec!["BROOD_INTENT_REALTIME_PROVIDER", "BROOD_REALTIME_PROVIDER"]
-    };
-    realtime_provider_from_env(&keys).unwrap_or_else(infer_default_realtime_provider)
+    match realtime::RealtimeSessionConfig::from_current_env(realtime::RealtimeSessionKind::IntentIcons {
+        mother,
+    })
+    .provider
+    {
+        realtime::RealtimeProvider::OpenAiRealtime => RealtimeProvider::OpenAiRealtime,
+        realtime::RealtimeProvider::GeminiFlash => RealtimeProvider::GeminiFlash,
+    }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn default_realtime_model(provider: RealtimeProvider, _mother: bool) -> &'static str {
     match provider {
-        RealtimeProvider::OpenAiRealtime => "gpt-realtime-mini",
-        RealtimeProvider::GeminiFlash => "gemini-3-flash-preview",
+        RealtimeProvider::OpenAiRealtime => {
+            realtime::config::default_realtime_model(realtime::RealtimeProvider::OpenAiRealtime, false)
+        }
+        RealtimeProvider::GeminiFlash => {
+            realtime::config::default_realtime_model(realtime::RealtimeProvider::GeminiFlash, false)
+        }
     }
 }
 
 fn canvas_context_realtime_model() -> String {
-    let provider = canvas_context_realtime_provider();
-    let value = env::var("BROOD_CANVAS_CONTEXT_REALTIME_MODEL")
-        .ok()
-        .or_else(|| {
-            if provider == RealtimeProvider::OpenAiRealtime {
-                env::var("OPENAI_CANVAS_CONTEXT_REALTIME_MODEL").ok()
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| default_realtime_model(provider, false).to_string());
-    normalize_realtime_model_name(&value, default_realtime_model(provider, false))
+    realtime::RealtimeSessionConfig::from_current_env(realtime::RealtimeSessionKind::CanvasContext)
+        .model
 }
 
 fn intent_realtime_model(mother: bool) -> String {
-    let provider = intent_realtime_provider(mother);
-    let keys: Vec<&str> = if mother {
-        if provider == RealtimeProvider::OpenAiRealtime {
-            vec![
-                "BROOD_MOTHER_INTENT_REALTIME_MODEL",
-                "BROOD_INTENT_REALTIME_MODEL",
-                "OPENAI_INTENT_REALTIME_MODEL",
-            ]
-        } else {
-            vec![
-                "BROOD_MOTHER_INTENT_REALTIME_MODEL",
-                "BROOD_INTENT_REALTIME_MODEL",
-            ]
-        }
-    } else {
-        if provider == RealtimeProvider::OpenAiRealtime {
-            vec![
-                "BROOD_INTENT_REALTIME_MODEL",
-                "OPENAI_INTENT_REALTIME_MODEL",
-            ]
-        } else {
-            vec!["BROOD_INTENT_REALTIME_MODEL"]
-        }
-    };
-    for key in keys {
-        if let Ok(value) = env::var(key) {
-            let normalized =
-                normalize_realtime_model_name(&value, default_realtime_model(provider, mother));
-            if !normalized.trim().is_empty() {
-                return normalized;
-            }
-        }
-    }
-    default_realtime_model(provider, mother).to_string()
+    realtime::RealtimeSessionConfig::from_current_env(realtime::RealtimeSessionKind::IntentIcons {
+        mother,
+    })
+    .model
 }
 
 fn extract_action_version_from_path(path: &Path) -> Option<i64> {
@@ -2889,12 +2857,17 @@ fn extract_action_version_from_text(raw: &str) -> Option<i64> {
     None
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 const REALTIME_BETA_HEADER_VALUE: &str = "realtime=v1";
 const REALTIME_TIMEOUT_SECONDS: f64 = 42.0;
 const REALTIME_MAX_PARTIAL_HZ_MS: u64 = 250;
+#[cfg_attr(not(test), allow(dead_code))]
 const REALTIME_TRANSPORT_RETRY_MAX_DEFAULT: usize = 2;
+#[cfg_attr(not(test), allow(dead_code))]
 const REALTIME_TRANSPORT_RETRY_BACKOFF_MS_DEFAULT: u64 = 350;
+#[cfg_attr(not(test), allow(dead_code))]
 const REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_DEFAULT: usize = 4;
+#[cfg_attr(not(test), allow(dead_code))]
 const REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_MAX: usize = 8;
 
 fn unix_epoch_millis() -> i64 {
@@ -2920,9 +2893,9 @@ impl RealtimeSessionKind {
 
     fn provider_env_key(self) -> &'static str {
         match self {
-            Self::CanvasContext => "BROOD_CANVAS_CONTEXT_REALTIME_PROVIDER",
-            Self::IntentIcons { mother: true } => "BROOD_MOTHER_INTENT_REALTIME_PROVIDER",
-            Self::IntentIcons { mother: false } => "BROOD_INTENT_REALTIME_PROVIDER",
+            Self::CanvasContext => "CUE_CANVAS_CONTEXT_REALTIME_PROVIDER",
+            Self::IntentIcons { mother: true } => "CUE_MOTHER_INTENT_REALTIME_PROVIDER",
+            Self::IntentIcons { mother: false } => "CUE_INTENT_REALTIME_PROVIDER",
         }
     }
 
@@ -2943,7 +2916,7 @@ impl RealtimeSessionKind {
     fn instruction(self) -> String {
         match self {
             Self::CanvasContext => canvas_context_realtime_instruction().to_string(),
-            Self::IntentIcons { mother } => intent_icons_instruction(mother),
+            Self::IntentIcons { mother } => observe::intent_icons::intent_icons_instruction(mother),
         }
     }
 
@@ -2990,19 +2963,19 @@ impl RealtimeSessionKind {
     fn disabled_message(self) -> &'static str {
         match self {
             Self::CanvasContext => {
-                "Realtime canvas context is disabled (BROOD_CANVAS_CONTEXT_REALTIME_DISABLED=1)."
+                "Realtime canvas context is disabled (CUE_CANVAS_CONTEXT_REALTIME_DISABLED=1)."
             }
             Self::IntentIcons { .. } => {
-                "Realtime intent inference is disabled (BROOD_INTENT_REALTIME_DISABLED=1)."
+                "Realtime intent inference is disabled (CUE_INTENT_REALTIME_DISABLED=1)."
             }
         }
     }
 
     fn thread_name(self) -> &'static str {
         match self {
-            Self::CanvasContext => "brood-aov-realtime",
-            Self::IntentIcons { mother: true } => "brood-intent-realtime-mother",
-            Self::IntentIcons { mother: false } => "brood-intent-realtime",
+            Self::CanvasContext => "cue-aov-realtime",
+            Self::IntentIcons { mother: true } => "cue-intent-realtime-mother",
+            Self::IntentIcons { mother: false } => "cue-intent-realtime",
         }
     }
 
@@ -3233,23 +3206,7 @@ fn resolve_realtime_gemini_model_for_transport(
     raw: &str,
     via_openrouter: bool,
 ) -> std::result::Result<String, String> {
-    let resolved = if via_openrouter {
-        sanitize_openrouter_gemini_model(raw, "google/gemini-3-flash-preview")
-    } else {
-        sanitize_gemini_generate_content_model(raw, "gemini-3-flash-preview")
-    };
-    let normalized = resolved
-        .strip_prefix("google/")
-        .unwrap_or(&resolved)
-        .trim()
-        .to_ascii_lowercase();
-    if normalized.starts_with("gemini-") {
-        return Ok(resolved);
-    }
-    Err(format!(
-        "Realtime provider gemini_flash requires a Gemini model. Got '{}'. Set BROOD_CANVAS_CONTEXT_REALTIME_MODEL / BROOD_INTENT_REALTIME_MODEL / BROOD_MOTHER_INTENT_REALTIME_MODEL to a Gemini Flash model.",
-        raw.trim()
-    ))
+    realtime::resolve_realtime_gemini_model_for_transport(raw, via_openrouter)
 }
 
 fn sanitize_gemini_generate_content_model(raw: &str, default_model: &str) -> String {
@@ -3338,7 +3295,7 @@ impl CanvasContextRealtimeSession {
                 events,
                 canvas_context_realtime_model(),
                 RealtimeSessionKind::CanvasContext,
-                env::var("BROOD_CANVAS_CONTEXT_REALTIME_DISABLED")
+                compat_env_var("CUE_CANVAS_CONTEXT_REALTIME_DISABLED")
                     .map(|value| value.trim() == "1")
                     .unwrap_or(false),
             ),
@@ -3377,7 +3334,7 @@ impl IntentIconsRealtimeSession {
                 events,
                 intent_realtime_model(mother),
                 RealtimeSessionKind::IntentIcons { mother },
-                env::var("BROOD_INTENT_REALTIME_DISABLED")
+                compat_env_var("CUE_INTENT_REALTIME_DISABLED")
                     .map(|value| value.trim() == "1")
                     .unwrap_or(false),
             ),
@@ -4312,98 +4269,44 @@ fn open_realtime_websocket(
 }
 
 fn realtime_transport_retry_limit() -> usize {
-    env::var("BROOD_REALTIME_TRANSPORT_RETRIES")
-        .ok()
-        .and_then(|raw| raw.trim().parse::<usize>().ok())
-        .map(|value| value.min(6))
-        .unwrap_or(REALTIME_TRANSPORT_RETRY_MAX_DEFAULT)
+    realtime::RealtimeRetryPolicy::from_env(&realtime::RealtimeEnv::from_current()).max_retries
 }
 
 fn realtime_transport_retry_backoff(attempt: usize) -> Duration {
-    let base_ms = env::var("BROOD_REALTIME_TRANSPORT_RETRY_BACKOFF_MS")
-        .ok()
-        .and_then(|raw| raw.trim().parse::<u64>().ok())
-        .map(|value| value.clamp(50, 5000))
-        .unwrap_or(REALTIME_TRANSPORT_RETRY_BACKOFF_MS_DEFAULT);
-    let multiplier = u64::try_from(attempt.max(1)).unwrap_or(u64::MAX);
-    Duration::from_millis(base_ms.saturating_mul(multiplier))
+    realtime::RealtimeRetryPolicy::from_env(&realtime::RealtimeEnv::from_current())
+        .backoff_for_attempt(attempt)
 }
 
 fn intent_realtime_reference_image_limit() -> usize {
-    env::var("BROOD_INTENT_REALTIME_REFERENCE_LIMIT")
-        .ok()
-        .and_then(|raw| raw.trim().parse::<usize>().ok())
-        .map(|value| value.clamp(1, REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_MAX))
-        .unwrap_or(REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_DEFAULT)
+    realtime::RealtimeSessionConfig::from_current_env(realtime::RealtimeSessionKind::IntentIcons {
+        mother: false,
+    })
+    .reference_image_limit
 }
 
 fn is_anyhow_realtime_transport_error(err: &anyhow::Error) -> bool {
-    err.chain().any(|cause| {
-        cause
-            .downcast_ref::<tungstenite::Error>()
-            .map(is_tungstenite_transport_error)
-            .unwrap_or(false)
-            || cause
-                .downcast_ref::<io::Error>()
-                .map(|io_err| is_transport_io_error_kind(io_err.kind()))
-                .unwrap_or(false)
-            || cause
-                .downcast_ref::<reqwest::Error>()
-                .map(is_reqwest_realtime_transport_error)
-                .unwrap_or(false)
-    })
+    realtime::is_anyhow_realtime_transport_error(err)
 }
 
 fn is_reqwest_realtime_transport_error(err: &reqwest::Error) -> bool {
-    err.is_timeout() || err.is_connect() || err.is_request() || err.is_body()
+    realtime::is_reqwest_realtime_transport_error(err)
 }
 
 fn is_tungstenite_transport_error(err: &tungstenite::Error) -> bool {
-    match err {
-        tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed => true,
-        tungstenite::Error::Io(io_err) => is_transport_io_error_kind(io_err.kind()),
-        tungstenite::Error::Tls(_) => true,
-        _ => false,
-    }
+    realtime::is_tungstenite_transport_error(err)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn is_transport_io_error_kind(kind: io::ErrorKind) -> bool {
-    matches!(
-        kind,
-        io::ErrorKind::WouldBlock
-            | io::ErrorKind::TimedOut
-            | io::ErrorKind::ConnectionReset
-            | io::ErrorKind::ConnectionAborted
-            | io::ErrorKind::BrokenPipe
-            | io::ErrorKind::UnexpectedEof
-            | io::ErrorKind::NotConnected
-    )
+    realtime::is_transport_io_error_kind(kind)
 }
 
 fn error_chain_message(err: &anyhow::Error) -> String {
-    err.chain()
-        .map(|entry| entry.to_string())
-        .filter(|entry| !entry.trim().is_empty())
-        .collect::<Vec<String>>()
-        .join(": ")
+    realtime::error_chain_message(err)
 }
 
 fn build_realtime_websocket_request(model: &str, api_key: &str) -> Result<Request<()>> {
-    let ws_url = openai_realtime_ws_url(model);
-    let auth_header = format!("Bearer {api_key}");
-    let mut request = ws_url
-        .as_str()
-        .into_client_request()
-        .context("invalid realtime websocket request")?;
-    request.headers_mut().insert(
-        "Authorization",
-        HeaderValue::from_str(&auth_header).context("invalid realtime auth header")?,
-    );
-    request.headers_mut().insert(
-        "OpenAI-Beta",
-        HeaderValue::from_static(REALTIME_BETA_HEADER_VALUE),
-    );
-    Ok(request)
+    realtime::build_realtime_websocket_request(&openai_api_base(), model, api_key)
 }
 
 fn websocket_send_json(ws: &mut WebSocket<MaybeTlsStream<TcpStream>>, value: &Value) -> Result<()> {
@@ -4427,28 +4330,9 @@ fn set_realtime_socket_read_timeout(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn openai_realtime_ws_url(model: &str) -> String {
-    let base = openai_api_base();
-    if let Ok(mut url) = reqwest::Url::parse(&base) {
-        let scheme = if url.scheme() == "https" {
-            "wss".to_string()
-        } else if url.scheme() == "http" {
-            "ws".to_string()
-        } else {
-            url.scheme().to_string()
-        };
-        let _ = url.set_scheme(&scheme);
-        let mut path = url.path().trim_end_matches('/').to_string();
-        if path.is_empty() {
-            path = "/v1".to_string();
-        }
-        url.set_path(&format!("{path}/realtime"));
-        url.query_pairs_mut()
-            .clear()
-            .append_pair("model", model.trim());
-        return url.to_string();
-    }
-    format!("wss://api.openai.com/v1/realtime?model={}", model.trim())
+    realtime::openai_realtime_ws_url(&openai_api_base(), model)
 }
 
 fn gemini_generate_content_endpoint(model: &str) -> String {
@@ -5000,7 +4884,7 @@ fn summarize_realtime_response(response: &Value) -> String {
 }
 
 fn canvas_context_realtime_instruction() -> &'static str {
-    "You are Brood's always-on background vision.\nAnalyze the attached CANVAS SNAPSHOT (it may contain multiple photos arranged in a grid).\nYou may also receive a CONTEXT ENVELOPE (JSON) describing the current UI state, available actions,\nand recent timeline. Use it to ground NEXT ACTIONS and avoid recommending unavailable abilities.\nOutput compact, machine-readable notes we can use for future action recommendations.\n\nFormat (keep under ~210 words):\nCANVAS:\n<one sentence summary>\n\nUSE CASE (guess):\n<one short line: what the user is likely trying to do (e.g., product listing, ad creative, editorial still, UI screenshot, moodboard)>\n\nSUBJECTS:\n- <2-6 bullets>\n\nSTYLE:\n- <3-7 short tags>\n\nNEXT ACTIONS:\n- <Action>: <why>  (max 5)\n\nActions must be chosen from CONTEXT_ENVELOPE_JSON.abilities[].label (prefer enabled=true).\nIf CONTEXT_ENVELOPE_JSON is missing, choose from: Multi view, Single view, Combine, Bridge, Swap DNA, Argue, Extract the Rule, Odd One Out, Triforce, Diagnose, Recast, Variations, Background: White, Background: Sweep, Crop: Square, Annotate.\nRules: infer the use case from both the image and CONTEXT_ENVELOPE_JSON.timeline_recent (edits). No fluff, no marketing language. Be specific about composition, lighting, color, materials. NEXT ACTIONS should serve the hypothesized use case."
+    "You are Cue's always-on background vision.\nAnalyze the attached CANVAS SNAPSHOT (it may contain multiple photos arranged in a grid).\nYou may also receive a CONTEXT ENVELOPE (JSON) describing the current UI state, available actions,\nand recent timeline. Use it to ground NEXT ACTIONS and avoid recommending unavailable abilities.\nOutput compact, machine-readable notes we can use for future action recommendations.\n\nFormat (keep under ~210 words):\nCANVAS:\n<one sentence summary>\n\nUSE CASE (guess):\n<one short line: what the user is likely trying to do (e.g., product listing, ad creative, editorial still, UI screenshot, moodboard)>\n\nSUBJECTS:\n- <2-6 bullets>\n\nSTYLE:\n- <3-7 short tags>\n\nNEXT ACTIONS:\n- <Action>: <why>  (max 5)\n\nActions must be chosen from CONTEXT_ENVELOPE_JSON.abilities[].label (prefer enabled=true).\nIf CONTEXT_ENVELOPE_JSON is missing, choose from: Multi view, Single view, Combine, Bridge, Swap DNA, Argue, Extract the Rule, Odd One Out, Triforce, Diagnose, Recast, Variations, Background: White, Background: Sweep, Crop: Square, Annotate.\nRules: infer the use case from both the image and CONTEXT_ENVELOPE_JSON.timeline_recent (edits). No fluff, no marketing language. Be specific about composition, lighting, color, materials. NEXT ACTIONS should serve the hypothesized use case."
 }
 
 #[allow(dead_code)]
@@ -5230,7 +5114,7 @@ fn build_intent_icons_payload(snapshot_path: &Path, mother: bool) -> Value {
 
     json!({
         "frame_id": frame_id,
-        "schema": "brood.intent_icons",
+        "schema": "cue.intent_icons",
         "schema_version": 1,
         "intent_icons": [
             { "icon_id": "IMAGE_GENERATION", "confidence": if mother { 0.84 } else { 0.74 }, "position_hint": "primary" },
@@ -5452,7 +5336,7 @@ fn infer_structured_intent_payload_via_provider(
     let image_ids = mother_payload_image_ids(payload);
     let payload_json = serde_json::to_string(payload).ok()?;
     let instruction = format!(
-        "You are Brood's Mother intent inference engine.\nReturn JSON only (no markdown).\n\
+        "You are Cue's Mother intent inference engine.\nReturn JSON only (no markdown).\n\
 Given PAYLOAD_JSON, infer one intent object with this exact schema:\n\
 {{\n  \"intent_id\": \"string\",\n  \"summary\": \"string\",\n  \"creative_directive\": \"stunningly awe-inspiring and tearfully joyous\",\n  \"transformation_mode\": \"amplify|transcend|destabilize|purify|hybridize|mythologize|monumentalize|fracture|romanticize|alienate\",\n  \"target_ids\": [\"id\"],\n  \"reference_ids\": [\"id\"],\n  \"placement_policy\": \"adjacent|grid|replace\",\n  \"confidence\": 0.0,\n  \"roles\": {{ \"subject\": [\"id\"], \"model\": [\"id\"], \"mediator\": [\"id\"], \"object\": [\"id\"] }},\n  \"alternatives\": [{{\"placement_policy\":\"adjacent\"}}, {{\"placement_policy\":\"grid\"}}]\n}}\n\
 Rules:\n- Use only image IDs from this allowlist: [{}].\n\
@@ -5944,7 +5828,7 @@ fn compile_mother_prompt_payload_via_provider(
 ) -> Option<(Map<String, Value>, String)> {
     let payload_json = serde_json::to_string(payload).ok()?;
     let instruction = format!(
-        "You are Brood's Mother prompt compiler.\nReturn JSON only (no markdown).\n\
+        "You are Cue's Mother prompt compiler.\nReturn JSON only (no markdown).\n\
 Given PAYLOAD_JSON, produce one object with this exact schema:\n\
 {{\n  \"action_version\": 0,\n  \"creative_directive\": \"string\",\n  \"transformation_mode\": \"amplify|transcend|destabilize|purify|hybridize|mythologize|monumentalize|fracture|romanticize|alienate\",\n  \"positive_prompt\": \"string\",\n  \"negative_prompt\": \"string\",\n  \"compile_constraints\": [\"string\"],\n  \"generation_params\": {{\n    \"guidance_scale\": 7.0,\n    \"layout_hint\": \"adjacent|grid|replace\",\n    \"seed_strategy\": \"random\",\n    \"transformation_mode\": \"same as top-level\"\n  }}\n}}\n\
 Rules:\n- Prompts must be production-ready for image generation.\n\
@@ -6270,7 +6154,11 @@ fn mother_generate_request_from_payload(
         .cloned()
         .unwrap_or_default();
     let schema = value_as_non_empty_string(payload.get("schema")).unwrap_or_default();
-    let is_v2 = schema.trim() == "brood.mother.generate.v2";
+    let schema_norm = schema.trim().to_ascii_lowercase();
+    let is_v2 = matches!(
+        schema_norm.as_str(),
+        "cue.mother.generate.v2" | "brood.mother.generate.v2"
+    );
     let intent_id = if is_v2 {
         payload.get("intent_id").cloned().unwrap_or(Value::Null)
     } else {
@@ -6813,10 +6701,26 @@ struct IntentIconsVisionInference {
 
 fn first_non_empty_env(keys: &[&str]) -> Option<String> {
     for key in keys {
-        if let Ok(value) = env::var(key) {
+        if let Some(value) = compat_env_var(key) {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn compat_env_var(key: &str) -> Option<String> {
+    let mut candidates = vec![key.to_string()];
+    if let Some(rest) = key.strip_prefix("CUE_") {
+        candidates.push(format!("BROOD_{rest}"));
+    }
+    for candidate in candidates {
+        if let Ok(value) = env::var(&candidate) {
+            let trimmed = value.trim().to_string();
+            if !trimmed.is_empty() {
+                return Some(trimmed);
             }
         }
     }
@@ -6871,11 +6775,11 @@ fn apply_openrouter_request_headers(
     mut request: reqwest::blocking::RequestBuilder,
 ) -> reqwest::blocking::RequestBuilder {
     if let Some(referer) =
-        first_non_empty_env(&["OPENROUTER_HTTP_REFERER", "BROOD_OPENROUTER_HTTP_REFERER"])
+        first_non_empty_env(&["OPENROUTER_HTTP_REFERER", "CUE_OPENROUTER_HTTP_REFERER"])
     {
         request = request.header("HTTP-Referer", referer);
     }
-    if let Some(title) = first_non_empty_env(&["OPENROUTER_X_TITLE", "BROOD_OPENROUTER_X_TITLE"]) {
+    if let Some(title) = first_non_empty_env(&["OPENROUTER_X_TITLE", "CUE_OPENROUTER_X_TITLE"]) {
         request = request.header("X-Title", title);
     }
     request
@@ -7983,7 +7887,7 @@ Also provide ranked alternatives with awe_joy_score and confidence.
 OUTPUT FORMAT (STRICT JSON)
 {
   "frame_id": "<input frame id>",
-  "schema": "brood.intent_icons",
+  "schema": "cue.intent_icons",
   "schema_version": 1,
   "transformation_mode": "<one mode from enum>",
   "transformation_mode_candidates": [
@@ -8068,7 +7972,7 @@ SAFETY
 Return JSON only."#;
     if mother {
         return format!(
-            "You are ranking image proposals for Brood.\nPrimary target: outputs most likely to feel \"stunningly awe-inspiring and tearfully joyous.\"\nMaximize visual wow and emotional impact.\n\nRULES\n- CONTEXT_ENVELOPE_JSON.mother_context is authoritative when present.\n- Treat mother_context.creative_directive and mother_context.optimization_target as hard steering.\n- branches[].confidence must estimate likelihood that a generated image will feel \"stunningly awe-inspiring and tearfully joyous.\"\n- transformation_mode_candidates must include all 10 transformation enum modes exactly once.\n- transformation_mode_candidates[].awe_joy_score (0-100) must estimate intensity of \"stunningly awe-inspiring and tearfully joyous.\"\n- transformation_mode_candidates[].confidence (0-1) must estimate certainty in that awe_joy_score.\n- Sort branches by confidence DESC.\n- Sort transformation_mode_candidates by awe_joy_score DESC (tie-break confidence DESC).\n- Prefer transformation modes that are novel relative to mother_context.recent_rejected_modes_for_context.\n- Avoid repeating mother_context.last_accepted_mode unless confidence improvement is substantial.\n- Use mother_context.selected_ids and mother_context.active_id to prioritize evidence_image_ids.\n- Use mother_context.preferred_shot_type, mother_context.preferred_lighting_profile, and mother_context.preferred_lens_guidance as ranking cues for image-impacting proposal quality.\n- When mother_context.shot_type_hints or candidate shot/lighting/lens fields are present, use them to validate and adjust ranking strength per mode.\n- Use images[].origin to balance uploaded references with mother-generated continuity.\n- For 2+ images, prefer bold fusion over collage and allow stylized camera/lighting choices when impact improves.\n- Keep anti-artifact behavior conservative: avoid ghosting, duplication, and interface residue.\n\nReturn the same strict JSON schema contract as the default intent engine.\n\n{}",
+            "You are ranking image proposals for Cue.\nPrimary target: outputs most likely to feel \"stunningly awe-inspiring and tearfully joyous.\"\nMaximize visual wow and emotional impact.\n\nRULES\n- CONTEXT_ENVELOPE_JSON.mother_context is authoritative when present.\n- Treat mother_context.creative_directive and mother_context.optimization_target as hard steering.\n- branches[].confidence must estimate likelihood that a generated image will feel \"stunningly awe-inspiring and tearfully joyous.\"\n- transformation_mode_candidates must include all 10 transformation enum modes exactly once.\n- transformation_mode_candidates[].awe_joy_score (0-100) must estimate intensity of \"stunningly awe-inspiring and tearfully joyous.\"\n- transformation_mode_candidates[].confidence (0-1) must estimate certainty in that awe_joy_score.\n- Sort branches by confidence DESC.\n- Sort transformation_mode_candidates by awe_joy_score DESC (tie-break confidence DESC).\n- Prefer transformation modes that are novel relative to mother_context.recent_rejected_modes_for_context.\n- Avoid repeating mother_context.last_accepted_mode unless confidence improvement is substantial.\n- Use mother_context.selected_ids and mother_context.active_id to prioritize evidence_image_ids.\n- Use mother_context.preferred_shot_type, mother_context.preferred_lighting_profile, and mother_context.preferred_lens_guidance as ranking cues for image-impacting proposal quality.\n- When mother_context.shot_type_hints or candidate shot/lighting/lens fields are present, use them to validate and adjust ranking strength per mode.\n- Use images[].origin to balance uploaded references with mother-generated continuity.\n- For 2+ images, prefer bold fusion over collage and allow stylized camera/lighting choices when impact improves.\n- Keep anti-artifact behavior conservative: avoid ghosting, duplication, and interface residue.\n\nReturn the same strict JSON schema contract as the default intent engine.\n\n{}",
             base
         );
     }
@@ -8077,7 +7981,7 @@ Return JSON only."#;
 
 fn vision_description_realtime_model() -> String {
     let value = first_non_empty_env(&[
-        "BROOD_DESCRIBE_REALTIME_MODEL",
+        "CUE_DESCRIBE_REALTIME_MODEL",
         "OPENAI_DESCRIBE_REALTIME_MODEL",
     ])
     .unwrap_or_else(|| "gpt-realtime-mini".to_string());
@@ -8131,7 +8035,7 @@ fn vision_description_model_candidates_for(
 }
 
 fn vision_description_model_candidates() -> Vec<String> {
-    let explicit = first_non_empty_env(&["BROOD_DESCRIBE_MODEL", "OPENAI_DESCRIBE_MODEL"]);
+    let explicit = first_non_empty_env(&["CUE_DESCRIBE_MODEL", "OPENAI_DESCRIBE_MODEL"]);
     vision_description_model_candidates_for(canvas_context_realtime_provider(), explicit.as_deref())
 }
 
@@ -8321,7 +8225,7 @@ fn vision_infer_description(path: &Path, max_chars: usize) -> Option<Description
 }
 
 fn vision_infer_diagnosis(path: &Path) -> Option<TextVisionInference> {
-    let model = first_non_empty_env(&["BROOD_DIAGNOSE_MODEL", "OPENAI_DIAGNOSE_MODEL"])
+    let model = first_non_empty_env(&["CUE_DIAGNOSE_MODEL", "OPENAI_DIAGNOSE_MODEL"])
         .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
     let data_url = prepare_vision_image_data_url(path, 1024)?;
     let content = vec![
@@ -8350,7 +8254,7 @@ fn vision_infer_canvas_context(
     let model_raw = requested_model
         .filter(|value| !value.trim().is_empty())
         .or_else(|| {
-            first_non_empty_env(&["BROOD_CANVAS_CONTEXT_MODEL", "OPENAI_CANVAS_CONTEXT_MODEL"])
+            first_non_empty_env(&["CUE_CANVAS_CONTEXT_MODEL", "OPENAI_CANVAS_CONTEXT_MODEL"])
         })
         .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
     let requested = sanitize_openai_responses_model(&model_raw, OPENAI_VISION_FALLBACK_MODEL);
@@ -8384,7 +8288,7 @@ fn vision_infer_canvas_context(
 }
 
 fn vision_infer_argument(path_a: &Path, path_b: &Path) -> Option<TextVisionInference> {
-    let model = first_non_empty_env(&["BROOD_ARGUE_MODEL", "OPENAI_ARGUE_MODEL"])
+    let model = first_non_empty_env(&["CUE_ARGUE_MODEL", "OPENAI_ARGUE_MODEL"])
         .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
     let content = build_labeled_image_content(
         &[("Image A:", path_a), ("Image B:", path_b)],
@@ -8407,7 +8311,7 @@ fn vision_infer_argument(path_a: &Path, path_b: &Path) -> Option<TextVisionInfer
 }
 
 fn vision_infer_dna_signature(path: &Path) -> Option<DnaVisionInference> {
-    let model = first_non_empty_env(&["BROOD_DNA_VISION_MODEL", "OPENAI_DNA_MODEL"])
+    let model = first_non_empty_env(&["CUE_DNA_VISION_MODEL", "OPENAI_DNA_MODEL"])
         .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
     let data_url = prepare_vision_image_data_url(path, 1024)?;
     let content = vec![
@@ -8431,7 +8335,7 @@ fn vision_infer_dna_signature(path: &Path) -> Option<DnaVisionInference> {
 }
 
 fn vision_infer_soul_signature(path: &Path) -> Option<SoulVisionInference> {
-    let model = first_non_empty_env(&["BROOD_SOUL_VISION_MODEL", "OPENAI_SOUL_MODEL"])
+    let model = first_non_empty_env(&["CUE_SOUL_VISION_MODEL", "OPENAI_SOUL_MODEL"])
         .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
     let data_url = prepare_vision_image_data_url(path, 1024)?;
     let content = vec![
@@ -8537,9 +8441,9 @@ fn vision_infer_triplet_rule(
     path_c: &Path,
 ) -> Option<TripletRuleVisionInference> {
     let model = first_non_empty_env(&[
-        "BROOD_EXTRACT_RULE_MODEL",
+        "CUE_EXTRACT_RULE_MODEL",
         "OPENAI_EXTRACT_RULE_MODEL",
-        "BROOD_DIAGNOSE_MODEL",
+        "CUE_DIAGNOSE_MODEL",
         "OPENAI_DIAGNOSE_MODEL",
     ])
     .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
@@ -8610,9 +8514,9 @@ fn vision_infer_triplet_odd_one_out(
     path_c: &Path,
 ) -> Option<TripletOddOneOutVisionInference> {
     let model = first_non_empty_env(&[
-        "BROOD_ODD_ONE_OUT_MODEL",
+        "CUE_ODD_ONE_OUT_MODEL",
         "OPENAI_ODD_ONE_OUT_MODEL",
-        "BROOD_ARGUE_MODEL",
+        "CUE_ARGUE_MODEL",
         "OPENAI_ARGUE_MODEL",
     ])
     .unwrap_or_else(|| OPENAI_VISION_FALLBACK_MODEL.to_string());
@@ -8650,7 +8554,7 @@ fn normalize_intent_icons_payload(
 ) -> Map<String, Value> {
     payload
         .entry("schema".to_string())
-        .or_insert_with(|| Value::String("brood.intent_icons".to_string()));
+        .or_insert_with(|| Value::String("cue.intent_icons".to_string()));
     payload
         .entry("schema_version".to_string())
         .or_insert_with(|| Value::Number(1.into()));
@@ -8710,7 +8614,7 @@ fn vision_infer_intent_icons_payload(
 ) -> Option<IntentIconsVisionInference> {
     let data_url = prepare_vision_image_data_url(path, 1024)?;
     let content = vec![
-        json!({"type": "input_text", "text": intent_icons_instruction(mother)}),
+        json!({"type": "input_text", "text": observe::intent_icons::intent_icons_instruction(mother)}),
         json!({"type": "input_image", "image_url": data_url}),
     ];
     let (text, input_tokens, output_tokens, model_name) =
@@ -8720,7 +8624,7 @@ fn vision_infer_intent_icons_payload(
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or("frame");
-    let payload = normalize_intent_icons_payload(payload, frame_id);
+    let payload = observe::intent_icons::normalize_intent_icons_payload(payload, frame_id);
     Some(IntentIconsVisionInference {
         payload,
         model: model_name,
@@ -9103,16 +9007,16 @@ fn export_html_native(run_dir: &Path, out_path: &Path) -> Result<()> {
                 .unwrap_or_default();
             cards.push_str(&format!(
                 "<div class='card'><div class='thumb'><img src='{image_src}' alt='artifact'></div><div class='meta'><div class='vid'>{version_id}</div><div class='prompt'>{prompt}</div><div class='links'><a href='{receipt_src}'>receipt</a></div></div></div>",
-                image_src = escape_html(image_src),
-                version_id = escape_html(version_id),
-                prompt = escape_html(prompt),
-                receipt_src = escape_html(receipt_src),
+                image_src = export::escape_html(image_src),
+                version_id = export::escape_html(version_id),
+                prompt = export::escape_html(prompt),
+                receipt_src = export::escape_html(receipt_src),
             ));
         }
     }
 
     let html_doc = format!(
-        "<!doctype html>\n<html>\n<head>\n  <meta charset='utf-8'>\n  <title>Brood Export</title>\n  <style>\n    body {{ font-family: Arial, sans-serif; background: #f6f6f6; margin: 0; padding: 20px; }}\n    .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }}\n    .card {{ background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }}\n    .thumb {{ width: 100%; height: 200px; background: #eee; display: flex; align-items: center; justify-content: center; }}\n    .thumb img {{ max-width: 100%; max-height: 100%; }}\n    .meta {{ padding: 10px; }}\n    .vid {{ font-weight: bold; font-size: 12px; color: #444; }}\n    .prompt {{ font-size: 13px; margin: 8px 0; }}\n    .links a {{ font-size: 12px; color: #0066cc; text-decoration: none; }}\n  </style>\n</head>\n<body>\n  <h1>Brood Run Export</h1>\n  <div class='grid'>\n    {cards}\n  </div>\n</body>\n</html>\n"
+        "<!doctype html>\n<html>\n<head>\n  <meta charset='utf-8'>\n  <title>Cue Export</title>\n  <style>\n    body {{ font-family: Arial, sans-serif; background: #f6f6f6; margin: 0; padding: 20px; }}\n    .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }}\n    .card {{ background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }}\n    .thumb {{ width: 100%; height: 200px; background: #eee; display: flex; align-items: center; justify-content: center; }}\n    .thumb img {{ max-width: 100%; max-height: 100%; }}\n    .meta {{ padding: 10px; }}\n    .vid {{ font-weight: bold; font-size: 12px; color: #444; }}\n    .prompt {{ font-size: 13px; margin: 8px 0; }}\n    .links a {{ font-size: 12px; color: #0066cc; text-decoration: none; }}\n  </style>\n</head>\n<body>\n  <h1>Cue Run Export</h1>\n  <div class='grid'>\n    {cards}\n  </div>\n</body>\n</html>\n"
     );
 
     if let Some(parent) = out_path.parent() {
@@ -9171,9 +9075,9 @@ mod tests {
         active_image_for_edit_prompt, build_realtime_websocket_request, clean_description,
         default_realtime_model, description_realtime_instruction, extract_gemini_finish_reason,
         extract_gemini_output_text, extract_gemini_token_usage_pair,
-        extract_openrouter_chat_output_text, intent_icons_instruction,
-        intent_realtime_reference_image_limit, is_anyhow_realtime_transport_error,
-        is_edit_style_prompt, openrouter_chat_content_to_responses_input,
+        extract_openrouter_chat_output_text, intent_realtime_reference_image_limit,
+        is_anyhow_realtime_transport_error, is_edit_style_prompt,
+        openrouter_chat_content_to_responses_input,
         openrouter_responses_content_to_chat_content, pseudo_random_seed,
         resolve_realtime_gemini_model_for_transport, resolve_streamed_response_text,
         sanitize_gemini_generate_content_model, sanitize_openrouter_gemini_model,
@@ -9241,7 +9145,7 @@ mod tests {
 
     #[test]
     fn intent_icons_instruction_enforces_cv_caption_style_labels() {
-        let instruction = intent_icons_instruction(false);
+        let instruction = crate::observe::intent_icons::intent_icons_instruction(false);
         assert!(instruction.contains("computer-vision caption style"));
         assert!(instruction.contains("<=40 chars"));
         assert!(instruction.contains("A photo of ...` is acceptable but not required"));
@@ -9614,7 +9518,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .map(|value| value.as_nanos())
             .unwrap_or(0);
-        let test_path = env::temp_dir().join(format!("brood-cli-edit-path-{stamp}.png"));
+        let test_path = env::temp_dir().join(format!("cue-cli-edit-path-{stamp}.png"));
         fs::write(&test_path, b"test").unwrap();
         let test_path_text = test_path.to_string_lossy().to_string();
 
@@ -9630,7 +9534,7 @@ mod tests {
         assert_eq!(
             active_image_for_edit_prompt(
                 "edit the image: remove people",
-                Some("/tmp/does-not-exist-brood-cli.png")
+                Some("/tmp/does-not-exist-cue-cli.png")
             ),
             None
         );

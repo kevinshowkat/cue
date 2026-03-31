@@ -1,15 +1,15 @@
 [workspace]
 members = [
-  "crates/brood-cli",
-  "crates/brood-contracts",
-  "crates/brood-engine",
+  "crates/cue-cli",
+  "crates/cue-contracts",
+  "crates/cue-engine",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
 license = "Apache-2.0"
-authors = ["Brood"]
+authors = ["Cue"]
 
 [workspace.dependencies]
 anyhow = "1.0"

@@ -5,7 +5,7 @@ import { classifyIntentIconsRouting, parseIntentIconsJsonDetailed } from "../src
 function baseIntentPayload() {
   return {
     frame_id: "mother-intent-a7-123",
-    schema: "brood.intent_icons",
+    schema: "cue.intent_icons",
     schema_version: 1,
     transformation_mode: "hybridize",
     intent_icons: [{ icon_id: "IMAGE_GENERATION", confidence: 0.93, position_hint: "primary" }],
@@ -21,7 +21,7 @@ function payloadText(indent = 2) {
 test("parse intent icons: valid raw JSON object", () => {
   const parsed = parseIntentIconsJsonDetailed(payloadText());
   assert.equal(parsed.ok, true);
-  assert.equal(parsed.value.schema, "brood.intent_icons");
+  assert.equal(parsed.value.schema, "cue.intent_icons");
   assert.equal(parsed.value.intent_icons[0].icon_id, "IMAGE_GENERATION");
 });
 
@@ -36,7 +36,7 @@ test("parse intent icons: prose plus fenced JSON", () => {
   const wrapped = `Here is the structured output:\n\`\`\`json\n${payloadText()}\n\`\`\`\nDone.`;
   const parsed = parseIntentIconsJsonDetailed(wrapped);
   assert.equal(parsed.ok, true);
-  assert.equal(parsed.value.schema, "brood.intent_icons");
+  assert.equal(parsed.value.schema, "cue.intent_icons");
 });
 
 test("parse intent icons: duplicated concatenated objects", () => {
@@ -63,7 +63,7 @@ test("parse intent icons: nested payload in result string", () => {
 
 test("parse intent icons: trailing commas are tolerated", () => {
   const withTrailingCommas = `{
-  "schema": "brood.intent_icons",
+  "schema": "cue.intent_icons",
   "schema_version": 1,
   "transformation_mode": "hybridize",
   "intent_icons": [
@@ -108,7 +108,7 @@ test("parse intent icons: transformation mode candidates rank by awe_joy_score t
 
 test("parse intent icons: real truncated payload shape is classified as truncated_json", () => {
   const truncatedFromRunLog =
-    '{\n  "frame_id": "mother-intent-a0-1771156098794-a00",\n  "schema": "brood.intent_icons",\n  "schema_version": 1,\n  "intent_icons": [{"icon_id":"IMAGE_GENERATION","confidence":0.9,"position_hint":"primary"}],\n  "branches": [{"branch_id":"content_engine","confidence":0.7,"icons":["CONTENT_ENGINE"],"lane_position":"left"}],\n  "checkpoint": {\n    "icons';
+    '{\n  "frame_id": "mother-intent-a0-1771156098794-a00",\n  "schema": "cue.intent_icons",\n  "schema_version": 1,\n  "intent_icons": [{"icon_id":"IMAGE_GENERATION","confidence":0.9,"position_hint":"primary"}],\n  "branches": [{"branch_id":"content_engine","confidence":0.7,"icons":["CONTENT_ENGINE"],"lane_position":"left"}],\n  "checkpoint": {\n    "icons';
   const parsed = parseIntentIconsJsonDetailed(truncatedFromRunLog);
   assert.equal(parsed.ok, false);
   assert.equal(parsed.reason, "truncated_json");

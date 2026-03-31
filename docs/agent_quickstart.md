@@ -14,7 +14,7 @@ Use this when you need to pick a high-confidence starting path quickly.
 ## Task 1: Add or modify a desktop ability
 
 - Read: `desktop/src/canvas_app.js`
-- Read: `rust_engine/crates/brood-cli/src/main.rs`
+- Read: `rust_engine/crates/cue-cli/src/lib.rs`
 - Run:
   - `cd desktop && npm test`
   - `cd rust_engine && cargo test`
@@ -24,8 +24,8 @@ Use this when you need to pick a high-confidence starting path quickly.
 
 ## Task 2: Change event schema or run-artifact behavior
 
-- Read: `rust_engine/crates/brood-contracts/src/events.rs`
-- Read: `rust_engine/crates/brood-engine/src/lib.rs`
+- Read: `rust_engine/crates/cue-contracts/src/events.rs`
+- Read: `rust_engine/crates/cue-engine/src/runtime.rs`
 - Read: `docs/desktop.md`
 - Run:
   - `cd rust_engine && cargo test`

@@ -6,7 +6,7 @@ Last updated: 2026-02-21
 
 ## Summary
 
-Brood should let images do most of the instruction work. Today, Mother generation prompts contain too much natural-language policy (especially shot/lighting fallbacks and repeated constraints). This PRD proposes a prompt-diet architecture: move policy decisions into realtime intent + context envelopes, keep prompt text minimal, and run fallback behavior in runtime logic instead of `if/then` prose.
+Cue should let images do most of the instruction work. Today, Mother generation prompts contain too much natural-language policy (especially shot/lighting fallbacks and repeated constraints). This PRD proposes a prompt-diet architecture: move policy decisions into realtime intent + context envelopes, keep prompt text minimal, and run fallback behavior in runtime logic instead of `if/then` prose.
 
 ## Problem
 
@@ -106,9 +106,9 @@ Primary files:
   - `motherV2CompilePromptLocal`
   - `motherV2BuildPromptComposerResult`
   - shot/lighting/lens cue assembly paths
-- `rust_engine/crates/brood-cli/src/main.rs`
+- `rust_engine/crates/cue-cli/src/lib.rs`
   - generation retry policy hooks (if needed for alternate-cue rerun)
-- `rust_engine/crates/brood-engine/src/lib.rs`
+- `rust_engine/crates/cue-engine/src/runtime.rs`
   - provider-safe constraint routing
 
 Docs/tests:
@@ -125,7 +125,7 @@ Docs/tests:
 
 ## Phase 1: Prompt Diet v1 (behind flag)
 
-- Feature flag: `BROOD_PROMPT_DIET=1` (or equivalent settings key).
+- Feature flag: `CUE_PROMPT_DIET=1` (or equivalent settings key).
 - Remove conditional fallback phrases from prompt text.
 - Keep full envelope metadata unchanged.
 
@@ -177,4 +177,3 @@ Mitigation: regression tests ensuring required constraints reach non-Gemini path
 1. Should fallback attempt happen automatically once, or only on explicit reroll?
 2. Which quality gate should trigger alternate cues (provider response quality signal vs post-check heuristics)?
 3. Should prompt-diet apply to all abilities immediately, or Mother-first then expand?
-

@@ -4,14 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUST_ENGINE_DIR="$ROOT_DIR/rust_engine"
 DEST_DIR="$ROOT_DIR/desktop/src-tauri/resources"
-DEST_BIN="$DEST_DIR/brood-rs"
-HOST_BIN="$RUST_ENGINE_DIR/target/release/brood-rs"
+DEST_BIN="$DEST_DIR/cue-rs"
+LEGACY_ALIAS_BIN="$DEST_DIR/brood-rs"
+HOST_BIN="$RUST_ENGINE_DIR/target/release/cue-rs"
 
 mkdir -p "$DEST_DIR"
 
 build_host_release() {
-  echo "[brood] building native engine (host release)"
-  (cd "$RUST_ENGINE_DIR" && cargo build --release -p brood-cli)
+  echo "[cue] building native engine (host release)"
+  (cd "$RUST_ENGINE_DIR" && cargo build --release -p cue-cli)
 }
 
 maybe_sign_macos_binary() {
@@ -21,11 +22,11 @@ maybe_sign_macos_binary() {
 
   local identity="${APPLE_SIGNING_IDENTITY:-}"
   if [[ -z "$identity" ]]; then
-    echo "[brood] APPLE_SIGNING_IDENTITY not set; leaving staged engine unsigned"
+    echo "[cue] APPLE_SIGNING_IDENTITY not set; leaving staged engine unsigned"
     return 0
   fi
 
-  echo "[brood] signing staged engine with Developer ID identity: $identity"
+  echo "[cue] signing staged engine with Developer ID identity: $identity"
   # Notarization requires a valid Developer ID signature, hardened runtime, and timestamp.
   codesign --force --sign "$identity" --options runtime --timestamp "$DEST_BIN"
   codesign --verify --deep --strict --verbose=2 "$DEST_BIN"
@@ -39,14 +40,14 @@ build_macos_universal() {
     return 1
   fi
 
-  local aarch_bin="$RUST_ENGINE_DIR/target/aarch64-apple-darwin/release/brood-rs"
-  local x64_bin="$RUST_ENGINE_DIR/target/x86_64-apple-darwin/release/brood-rs"
+  local aarch_bin="$RUST_ENGINE_DIR/target/aarch64-apple-darwin/release/cue-rs"
+  local x64_bin="$RUST_ENGINE_DIR/target/x86_64-apple-darwin/release/cue-rs"
 
-  echo "[brood] attempting universal native engine build (aarch64 + x86_64)"
-  if ! (cd "$RUST_ENGINE_DIR" && cargo build --release -p brood-cli --target aarch64-apple-darwin); then
+  echo "[cue] attempting universal native engine build (aarch64 + x86_64)"
+  if ! (cd "$RUST_ENGINE_DIR" && cargo build --release -p cue-cli --target aarch64-apple-darwin); then
     return 1
   fi
-  if ! (cd "$RUST_ENGINE_DIR" && cargo build --release -p brood-cli --target x86_64-apple-darwin); then
+  if ! (cd "$RUST_ENGINE_DIR" && cargo build --release -p cue-cli --target x86_64-apple-darwin); then
     return 1
   fi
   if [[ ! -f "$aarch_bin" || ! -f "$x64_bin" ]]; then
@@ -55,19 +56,23 @@ build_macos_universal() {
 
   lipo -create "$aarch_bin" "$x64_bin" -output "$DEST_BIN"
   chmod +x "$DEST_BIN"
+  cp "$DEST_BIN" "$LEGACY_ALIAS_BIN"
+  chmod +x "$LEGACY_ALIAS_BIN"
   maybe_sign_macos_binary
-  echo "[brood] staged universal native engine at $DEST_BIN"
+  echo "[cue] staged universal native engine at $DEST_BIN"
   return 0
 }
 
 if ! build_macos_universal; then
   build_host_release
   if [[ ! -f "$HOST_BIN" ]]; then
-    echo "[brood] native engine binary missing after build: $HOST_BIN" >&2
+    echo "[cue] native engine binary missing after build: $HOST_BIN" >&2
     exit 1
   fi
   cp "$HOST_BIN" "$DEST_BIN"
   chmod +x "$DEST_BIN"
+  cp "$DEST_BIN" "$LEGACY_ALIAS_BIN"
+  chmod +x "$LEGACY_ALIAS_BIN"
   maybe_sign_macos_binary
-  echo "[brood] staged host native engine at $DEST_BIN"
+  echo "[cue] staged host native engine at $DEST_BIN"
 fi

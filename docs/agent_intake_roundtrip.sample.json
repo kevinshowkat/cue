@@ -26,7 +26,7 @@
     "schema_version": "aip-1",
     "entrypoints": [
       "desktop/src/canvas_app.js",
-      "rust_engine/crates/brood-contracts/src/events.rs",
+      "rust_engine/crates/cue-contracts/src/events.rs",
       "docs/desktop.md"
     ],
     "suggested_tags": [

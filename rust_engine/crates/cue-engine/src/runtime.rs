@@ -8,14 +8,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{bail, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
-use brood_contracts::events::{EventPayload, EventWriter};
-use brood_contracts::models::{ModelSelector, ModelSpec};
-use brood_contracts::runs::cache::CacheStore;
-use brood_contracts::runs::receipts::{
+use cue_contracts::events::{EventPayload, EventWriter};
+use cue_contracts::models::{ModelSelector, ModelSpec};
+use cue_contracts::runs::cache::CacheStore;
+use cue_contracts::runs::receipts::{
     build_receipt, write_receipt, ImageInputs, ImageRequest, ResolvedRequest,
 };
-use brood_contracts::runs::summary::{write_summary, RunSummary};
-use brood_contracts::runs::thread_manifest::ThreadManifest;
+use cue_contracts::runs::summary::{write_summary, RunSummary};
+use cue_contracts::runs::thread_manifest::ThreadManifest;
 use image::{Rgb, RgbImage};
 use reqwest::blocking::multipart::{Form as MultipartForm, Part as MultipartPart};
 use reqwest::blocking::{Client as HttpClient, Response as HttpResponse};
@@ -168,13 +168,13 @@ impl ImageProvider for DryrunProvider {
     }
 }
 
-struct ReplicateProvider {
+pub struct ReplicateProvider {
     api_base: String,
     http: HttpClient,
 }
 
 impl ReplicateProvider {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             api_base: env::var("REPLICATE_API_BASE")
                 .ok()
@@ -484,13 +484,13 @@ impl ImageProvider for ReplicateProvider {
     }
 }
 
-struct StabilityProvider {
+pub struct StabilityProvider {
     api_base: String,
     http: HttpClient,
 }
 
 impl StabilityProvider {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             api_base: env::var("STABILITY_API_BASE")
                 .ok()
@@ -721,13 +721,13 @@ impl ImageProvider for StabilityProvider {
     }
 }
 
-struct FalProvider {
+pub struct FalProvider {
     api_base: String,
     http: HttpClient,
 }
 
 impl FalProvider {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             api_base: env::var("FAL_API_BASE")
                 .ok()
@@ -933,13 +933,13 @@ impl ImageProvider for FalProvider {
     }
 }
 
-struct OpenAiProvider {
+pub struct OpenAiProvider {
     api_base: String,
     http: HttpClient,
 }
 
 impl OpenAiProvider {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             api_base: env::var("OPENAI_API_BASE")
                 .ok()
@@ -1364,13 +1364,13 @@ impl ImageProvider for OpenAiProvider {
     }
 }
 
-struct GeminiProvider {
+pub struct GeminiProvider {
     api_base: String,
     http: HttpClient,
 }
 
 impl GeminiProvider {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             api_base: env::var("GEMINI_API_BASE")
                 .ok()
@@ -1781,13 +1781,13 @@ impl ImageProvider for GeminiProvider {
     }
 }
 
-struct FluxProvider {
+pub struct FluxProvider {
     api_base: String,
     http: HttpClient,
 }
 
 impl FluxProvider {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             api_base: env::var("FLUX_API_BASE")
                 .ok()
@@ -2365,13 +2365,13 @@ impl FluxProvider {
     fn apply_openrouter_request_headers(
         mut request: reqwest::blocking::RequestBuilder,
     ) -> reqwest::blocking::RequestBuilder {
-        if let Some(referer) = non_empty_env("OPENROUTER_HTTP_REFERER")
-            .or_else(|| non_empty_env("BROOD_OPENROUTER_HTTP_REFERER"))
+        if let Some(referer) =
+            non_empty_env("OPENROUTER_HTTP_REFERER").or_else(|| non_empty_env("CUE_OPENROUTER_HTTP_REFERER"))
         {
             request = request.header("HTTP-Referer", referer);
         }
-        if let Some(title) = non_empty_env("OPENROUTER_X_TITLE")
-            .or_else(|| non_empty_env("BROOD_OPENROUTER_X_TITLE"))
+        if let Some(title) =
+            non_empty_env("OPENROUTER_X_TITLE").or_else(|| non_empty_env("CUE_OPENROUTER_X_TITLE"))
         {
             request = request.header("X-Title", title);
         }
@@ -3162,13 +3162,13 @@ impl ImageProvider for FluxProvider {
     }
 }
 
-struct ImagenProvider {
+pub struct ImagenProvider {
     api_base: String,
     http: HttpClient,
 }
 
 impl ImagenProvider {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             api_base: env::var("IMAGEN_API_BASE")
                 .ok()
@@ -3577,16 +3577,16 @@ struct ImageBytes {
     mime_type: Option<String>,
 }
 
-fn default_provider_registry() -> ImageProviderRegistry {
+pub fn default_provider_registry() -> ImageProviderRegistry {
     let mut providers = ImageProviderRegistry::new();
     providers.register(DryrunProvider);
-    providers.register(OpenAiProvider::new());
-    providers.register(ReplicateProvider::new());
-    providers.register(StabilityProvider::new());
-    providers.register(FalProvider::new());
-    providers.register(GeminiProvider::new());
-    providers.register(ImagenProvider::new());
-    providers.register(FluxProvider::new());
+    providers.register(crate::providers::OpenAiProvider::new());
+    providers.register(crate::providers::ReplicateProvider::new());
+    providers.register(crate::providers::StabilityProvider::new());
+    providers.register(crate::providers::FalProvider::new());
+    providers.register(crate::providers::GeminiProvider::new());
+    providers.register(crate::providers::ImagenProvider::new());
+    providers.register(crate::providers::FluxProvider::new());
     providers
 }
 
@@ -3657,7 +3657,7 @@ impl NativeEngine {
             model_selector: ModelSelector::new(None),
             text_model,
             image_model,
-            providers: default_provider_registry(),
+            providers: crate::provider_foundation::registry::default_provider_registry(),
             pricing_tables: load_pricing_tables(),
             last_fallback_reason: None,
             last_cost_latency: None,
@@ -3750,6 +3750,15 @@ impl NativeEngine {
         settings: &Map<String, Value>,
         intent: &Map<String, Value>,
     ) -> Result<PlanPreview> {
+        crate::core::plan_preview::preview_plan(self, prompt, settings, intent)
+    }
+
+    pub(crate) fn preview_plan_core_impl(
+        &mut self,
+        prompt: &str,
+        settings: &Map<String, Value>,
+        intent: &Map<String, Value>,
+    ) -> Result<PlanPreview> {
         let selection = self.resolve_image_selection()?;
         let effective_settings = apply_quality_preset(settings, &selection.model);
         let size = effective_settings
@@ -3783,6 +3792,15 @@ impl NativeEngine {
     }
 
     pub fn generate(
+        &mut self,
+        prompt: &str,
+        settings: Map<String, Value>,
+        intent: Map<String, Value>,
+    ) -> Result<Vec<Map<String, Value>>> {
+        crate::core::coordinator::generate(self, prompt, settings, intent)
+    }
+
+    pub(crate) fn generate_core_impl(
         &mut self,
         prompt: &str,
         settings: Map<String, Value>,
@@ -4080,6 +4098,10 @@ impl NativeEngine {
     }
 
     pub fn finish(&mut self) -> Result<()> {
+        crate::core::coordinator::finish(self)
+    }
+
+    pub(crate) fn finish_core_impl(&mut self) -> Result<()> {
         let total_versions = self.thread.versions.len() as u64;
         let mut total_artifacts = 0u64;
         let mut winners: Vec<Map<String, Value>> = Vec::new();
@@ -4290,7 +4312,7 @@ fn apply_quality_preset(settings: &Map<String, Value>, model: &ModelSpec) -> Map
     updated
 }
 
-fn parse_dims(size: &str) -> (u32, u32) {
+pub fn parse_dims(size: &str) -> (u32, u32) {
     let raw = size.trim().to_ascii_lowercase();
     if let Some((w, h)) = raw.split_once('x') {
         let width = w.trim().parse::<u32>().unwrap_or(1024);
@@ -4313,7 +4335,17 @@ fn load_pricing_tables() -> BTreeMap<String, Map<String, Value>> {
 fn pricing_override_path() -> Option<PathBuf> {
     env::var_os("HOME")
         .map(PathBuf::from)
-        .map(|home| home.join(".brood").join("pricing_overrides.json"))
+        .map(|home| {
+            let cue_path = home.join(".cue").join("pricing_overrides.json");
+            let legacy_path = home.join(".brood").join("pricing_overrides.json");
+            if cue_path.exists() {
+                cue_path
+            } else if legacy_path.exists() {
+                legacy_path
+            } else {
+                cue_path
+            }
+        })
 }
 
 fn parse_pricing_table_rows(raw: &str) -> BTreeMap<String, Map<String, Value>> {
@@ -4460,7 +4492,7 @@ fn snap_multiple(value: u32, multiple: u32) -> u32 {
     rounded.max(multiple)
 }
 
-fn normalize_output_extension(output_format: &str) -> &'static str {
+pub fn normalize_output_extension(output_format: &str) -> &'static str {
     let mut lowered = output_format.trim().to_ascii_lowercase();
     if let Some(value) = lowered.strip_prefix("image/") {
         lowered = value.to_string();
@@ -4636,10 +4668,19 @@ fn request_metadata_from_intent(intent: &Map<String, Value>) -> Map<String, Valu
 }
 
 fn non_empty_env(key: &str) -> Option<String> {
-    env::var(key)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    let mut candidates = vec![key.to_string()];
+    if let Some(rest) = key.strip_prefix("CUE_") {
+        candidates.push(format!("BROOD_{rest}"));
+    }
+    for candidate in candidates {
+        if let Ok(value) = env::var(&candidate) {
+            let trimmed = value.trim().to_string();
+            if !trimmed.is_empty() {
+                return Some(trimmed);
+            }
+        }
+    }
+    None
 }
 
 fn merge_openai_provider_options(
@@ -5098,7 +5139,7 @@ fn is_retryable_transport_error(err: &anyhow::Error) -> bool {
     })
 }
 
-fn error_chain_text(err: &anyhow::Error, max_chars: usize) -> String {
+pub fn error_chain_text(err: &anyhow::Error, max_chars: usize) -> String {
     let mut parts = Vec::new();
     for cause in err.chain() {
         let text = cause.to_string();
@@ -5207,7 +5248,7 @@ fn now_utc_iso() -> String {
 
 fn format_gemini_context_packet(packet: &Map<String, Value>) -> String {
     let packet_json = serde_json::to_string(packet).unwrap_or_else(|_| "{}".to_string());
-    format!("BROOD_CONTEXT_PACKET_JSON:\n{packet_json}")
+    format!("CUE_CONTEXT_PACKET_JSON:\n{packet_json}")
 }
 
 #[cfg(test)]
@@ -5216,10 +5257,10 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use brood_contracts::runs::receipts::ImageInputs;
+    use cue_contracts::runs::receipts::ImageInputs;
     use serde_json::{json, Map, Value};
 
-    use brood_contracts::models::ModelSpec;
+    use cue_contracts::models::ModelSpec;
 
     use super::BASE64;
     use super::{
@@ -5885,7 +5926,7 @@ mod tests {
             .get("text")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        assert!(packet_text.starts_with("BROOD_CONTEXT_PACKET_JSON:\n"));
+        assert!(packet_text.starts_with("CUE_CONTEXT_PACKET_JSON:\n"));
         assert!(packet_text.contains("\"subject\":\"chair\""));
         assert_eq!(parts[3].get("text"), Some(&json!("studio still life")));
         Ok(())

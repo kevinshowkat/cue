@@ -43,6 +43,7 @@ That script runs desktop tests, frontend build, Rust checks, a Tauri DMG build, 
 - Product definition: [PRD.md](/Users/mainframe/Desktop/projects/Juggernaut/PRD.md)
 - Agent workflow rules: [AGENTS.md](/Users/mainframe/Desktop/projects/Juggernaut/AGENTS.md)
 - Docs index: [docs/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/README.md)
+- Native runtime crate map: [rust_engine/ARCHITECTURE.md](/Users/mainframe/Desktop/projects/Juggernaut/rust_engine/ARCHITECTURE.md)
 - Current desktop behavior: [docs/desktop.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/desktop.md)
 - Visual timeline contract: [docs/features/visual-timeline/README.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/visual-timeline/README.md)
 - Shell/tool/export bridge notes: [docs/features/shell-canvas-integration.md](/Users/mainframe/Desktop/projects/Juggernaut/docs/features/shell-canvas-integration.md)
@@ -53,7 +54,7 @@ That script runs desktop tests, frontend build, Rust checks, a Tauri DMG build, 
 ## Known Limitations
 
 - PSD, PNG, JPG, WEBP, and TIFF exports are all flattened for the current slice.
-- The native engine binary and some environment paths still use legacy `brood` naming internally during the transition.
+- Legacy `brood` binary names, env paths, local storage keys, and schema IDs are still read during the transition, but new writes are now `cue`-named.
 - Current automation, packaging, and smoke coverage are strongest on macOS.
 
 ## License

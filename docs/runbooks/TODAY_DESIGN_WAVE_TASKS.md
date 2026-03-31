@@ -3,6 +3,7 @@
 Historical prompt pack for the March 8, 2026 design wave.
 
 Update the date, branch names, worktree paths, and mission text before reusing these prompts.
+Any `Brood`, `debrood`, or `Brood-era` wording below is part of the historical wave snapshot rather than current naming guidance.
 
 ## Design Contract
 - Default workspace should feel closer to Photoshop or Figma than Brood.

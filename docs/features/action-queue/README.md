@@ -1,7 +1,7 @@
 # Action Queue (Hardened Queue Foundation)
 
 ## Problem
-Brood currently rejects or overlaps user actions when the engine is busy (e.g. rapid clicks on Abilities or the HUD action grid). This causes:
+Cue currently rejects or overlaps user actions when the engine is busy (e.g. rapid clicks on Abilities or the HUD action grid). This causes:
 
 - Lost intent: clicks are ignored with "already running" toasts.
 - Accidental concurrency: some actions can be triggered while other engine work is in-flight.
@@ -49,7 +49,7 @@ To fix this, the engine now emits a dedicated completion event:
 - `recreate_done` (always emitted via `finally`)
 
 Changes:
-- `rust_engine/crates/brood-cli/src/main.rs`: emits `recreate_done` with `success` and `error`.
+- `rust_engine/crates/cue-cli/src/lib.rs`: emits `recreate_done` with `success` and `error`.
 - `desktop/src/canvas_app.js`: clears `state.pendingRecreate` on `recreate_done`.
 
 ### Preventing Background Describe From Competing

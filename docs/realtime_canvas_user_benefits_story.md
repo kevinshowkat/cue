@@ -12,15 +12,15 @@ Source: `docs/assets/diagrams/realtime_canvas_user_benefits_story/src/one_slide_
 ## 10-Second Story
 
 1. User edits images on canvas.
-2. Brood captures what changed (layout + selection + short vision labels).
-3. Brood proposes a better next step and generates with that context.
+2. Cue captures what changed (layout + selection + short vision labels).
+3. Cue proposes a better next step and generates with that context.
 4. User gets a better first draft with fewer retries.
 
 ## Concrete Examples
 
-- User resizes one image smaller: Brood captures scale change and preserves composition balance in the next draft.
-- User selects two images and runs Bridge: Brood uses those exact two assets as the active intent pair.
-- User drags subject left: Brood keeps the subject placement intent instead of recentralizing by default.
+- User resizes one image smaller: Cue captures scale change and preserves composition balance in the next draft.
+- User selects two images and runs Bridge: Cue uses those exact two assets as the active intent pair.
+- User drags subject left: Cue keeps the subject placement intent instead of recentralizing by default.
 - User gets output: artifact, receipt, and cost/latency appear automatically for trust and debugging.
 
 ## Simplified Value Chain

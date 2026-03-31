@@ -117,7 +117,7 @@ Important:
 
 ### CSS
 - Replace minimap styles (`.minimap*`) with browser dock styles preserving existing HUD/control-strip proportions.
-- Keep visual identity consistent with Brood’s bottom control surface.
+- Keep visual identity consistent with Cue’s bottom control surface.
 
 ### JS
 - Add file browser state + renderer.

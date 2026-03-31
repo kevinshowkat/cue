@@ -1,7 +1,7 @@
 # Abilities Model Routing
 
 ## Problem
-Brood previously relied on the user's global `Image Model` setting for most engine-driven Abilities, with a few ad-hoc overrides. This leads to:
+Cue previously relied on the user's global `Image Model` setting for most engine-driven Abilities, with a few ad-hoc overrides. This leads to:
 - Poor UX when the global model doesn't support image-to-image edits (many providers ignore `init_image`).
 - Unnecessary cost/latency when a high-end model is used for simple, iterative edits.
 - Inconsistent quality for multi-image actions if a weaker model is selected.
@@ -21,7 +21,7 @@ Image edits are routed to Gemini models because the engine's edit path relies on
 - Combine / Swap DNA / Bridge: `gemini-3-pro-image-preview` (multi-image coherence)
 - Recast: `gemini-3-pro-image-preview` (quality-first creative leap)
 
-Costs in `rust_engine/crates/brood-engine/resources/default_pricing.json` suggest `gemini-3-pro-image-preview` is materially more expensive than `gemini-2.5-flash-image`, so we reserve it for the actions that benefit most.
+Costs in `rust_engine/crates/cue-engine/resources/default_pricing.json` suggest `gemini-3-pro-image-preview` is materially more expensive than `gemini-2.5-flash-image`, so we reserve it for the actions that benefit most.
 
 ## Implementation
 - Added an `ACTION_IMAGE_MODEL` mapping in `desktop/src/canvas_app.js`.
