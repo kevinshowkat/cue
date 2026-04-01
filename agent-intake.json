@@ -1,0 +1,389 @@
+{
+  "schema_version": "aip-1",
+  "schema": {
+    "url": "https://raw.githubusercontent.com/kevinshowkat/cue/main/docs/aip-1.schema.json",
+    "local_path": "docs/aip-1.schema.json",
+    "request_def": "#/$defs/IntakeRequest",
+    "response_def": "#/$defs/IntakeResponse"
+  },
+  "intake_endpoint": "https://6yq5plinssvsog2ozyhnfnscya0qwdzp.lambda-url.us-east-1.on.aws/aip/intake",
+  "notes": [
+    "This file is repo-side only. AIP requires operating the intake_endpoint on infrastructure you control.",
+    "If you later host schema/intake on a custom domain, update the URLs here (or leave AIP unused and follow llms.txt fallback entrypoints).",
+    "For deterministic intake health/fallback behavior, see docs/agent_intake_status.md and docs/agent_intake_roundtrip.sample.json."
+  ],
+  "intake_status_cue": {
+    "healthy_when": [
+      "HTTP 200 response from intake_endpoint",
+      "valid JSON response",
+      "schema_version == aip-1",
+      "response.entrypoints is non-empty"
+    ],
+    "degraded_when": [
+      "timeout or network failure",
+      "non-2xx response",
+      "invalid JSON or wrong schema version",
+      "missing or empty entrypoints"
+    ],
+    "fallback_path": [
+      "llms.txt",
+      "docs/agent_quickstart.md",
+      "fallback_entrypoints"
+    ],
+    "status_doc": "docs/agent_intake_status.md",
+    "roundtrip_example": "docs/agent_intake_roundtrip.sample.json"
+  },
+  "privacy": {
+    "purpose": "Return curated entrypoints (files/scripts) and optional context pack URLs; optionally log coarse task tags for aggregate usage.",
+    "expected_logs": [
+      "timestamp",
+      "agent.tool",
+      "agent.tool_version",
+      "task.tags",
+      "repo.ref (if provided)",
+      "response.packs[].id (if any)"
+    ],
+    "do_not_send": [
+      "raw prompts (unless the user explicitly chooses to share them)",
+      "API keys or secrets",
+      "source images / binary artifacts"
+    ],
+    "opt_out": {
+      "request_field": "telemetry.opt_out",
+      "header": "X-Cue-Opt-Out",
+      "header_value": "1"
+    }
+  },
+  "tags": [
+    "agent-runtime",
+    "agent-goal-contract",
+    "agent-observable",
+    "single-image-routing",
+    "tool-runtime",
+    "desktop-dev",
+    "desktop-quick-actions",
+    "desktop-canvas",
+    "desktop-tauri",
+    "engine-rust",
+    "engine-cli",
+    "engine-providers",
+    "engine-recreate",
+    "engine-memory",
+    "engine-events",
+    "tests",
+    "docs"
+  ],
+  "fallback_entrypoints": [
+    {
+      "path": "README.md",
+      "kind": "doc",
+      "why": "Top-level product, setup, and release-status overview.",
+      "priority": 1
+    },
+    {
+      "path": "AGENTS.md",
+      "kind": "doc",
+      "why": "Repo workflow, worktree rules, and verified build commands.",
+      "priority": 1
+    },
+    {
+      "path": "docs/agent_quickstart.md",
+      "kind": "doc",
+      "why": "Fastest current task routing for agent/runtime work.",
+      "priority": 1
+    },
+    {
+      "path": "docs/agent-runtime.md",
+      "kind": "doc",
+      "why": "Current shipped Agent Run, observable-driver, and runtime constraints.",
+      "priority": 2
+    },
+    {
+      "path": "docs/agent-affordances.json",
+      "kind": "doc",
+      "why": "Machine-readable summary of current actions, affordances, and route profiles.",
+      "priority": 2
+    },
+    {
+      "path": "docs/agent_intake_status.md",
+      "kind": "doc",
+      "why": "Deterministic intake health/fallback cue for intake-first routing.",
+      "priority": 2
+    },
+    {
+      "path": "docs/agent_intake_roundtrip.sample.json",
+      "kind": "doc",
+      "why": "Compact request/response/next-action intake example.",
+      "priority": 2
+    },
+    {
+      "path": "docs/README.md",
+      "kind": "doc",
+      "why": "Docs index for the public repo surface and current feature docs.",
+      "priority": 2
+    },
+    {
+      "path": "docs/local-magic-select-runtime.md",
+      "kind": "doc",
+      "why": "Prepared-runtime contract for local Magic Select and warm-click flows.",
+      "priority": 2
+    },
+    {
+      "path": "docs/legacy-internals.md",
+      "kind": "doc",
+      "why": "Allowlist for remaining brood/juggernaut internal identifiers.",
+      "priority": 2
+    },
+    {
+      "path": ".env.example",
+      "kind": "config",
+      "why": "Current public env surface with CUE-first naming and BROOD compatibility aliases.",
+      "priority": 2
+    },
+    {
+      "path": "desktop/src/agent_runner_runtime.js",
+      "kind": "source",
+      "why": "Planner prompt contract, context summary, action parsing, and export/control actions.",
+      "priority": 2
+    },
+    {
+      "path": "desktop/src/agent_runner_goal_contract.js",
+      "kind": "source",
+      "why": "Goal-contract compile and stop-check schemas, prompts, and parsers.",
+      "priority": 2
+    },
+    {
+      "path": "desktop/src/agent_observable_driver.js",
+      "kind": "source",
+      "why": "Lower-level visible-canvas automation contract for replay and observable actions.",
+      "priority": 2
+    },
+    {
+      "path": "desktop/src/single_image_capability_routing.js",
+      "kind": "source",
+      "why": "Authoritative seeded-tool and direct-affordance routing with current route profile ids.",
+      "priority": 2
+    },
+    {
+      "path": "desktop/src/tool_runtime.js",
+      "kind": "source",
+      "why": "Create Tool manifest builder, tool schemas, and custom-tool runtime.",
+      "priority": 2
+    },
+    {
+      "path": "desktop/src/juggernaut_shell/rail.js",
+      "kind": "source",
+      "why": "Shell rail ordering, visibility, and surfaced affordances.",
+      "priority": 2
+    },
+    {
+      "path": "rust_engine/crates/brood-cli/src/main.rs",
+      "kind": "source",
+      "why": "Primary native CLI entry and realtime/env plumbing for the packaged engine.",
+      "priority": 3
+    },
+    {
+      "path": "rust_engine/crates/brood-engine/src/lib.rs",
+      "kind": "source",
+      "why": "Native engine orchestration and provider/env behavior.",
+      "priority": 3
+    },
+    {
+      "path": "desktop/src-tauri/src/main.rs",
+      "kind": "source",
+      "why": "Tauri backend glue, filesystem scope, and desktop env handling.",
+      "priority": 3
+    },
+    {
+      "path": "desktop/src-tauri/tauri.conf.json",
+      "kind": "config",
+      "why": "FS scope and app configuration (common cause of import/export issues).",
+      "priority": 3
+    },
+    {
+      "path": "scripts/dev_desktop.sh",
+      "kind": "script",
+      "why": "Dev runner that starts the Tauri app with native Rust runtime defaults.",
+      "priority": 3
+    }
+  ],
+  "tag_catalog": {
+    "agent-runtime": {
+      "description": "Agent Run planner behavior, action parsing, and planner-visible constraints.",
+      "entrypoints": [
+        "docs/agent-runtime.md",
+        "docs/agent-affordances.json",
+        "desktop/src/agent_runner_runtime.js",
+        "desktop/test/agent_runner_runtime.test.js"
+      ]
+    },
+    "agent-goal-contract": {
+      "description": "Goal compile, hard-requirement extraction, and stop checks for Agent Run.",
+      "entrypoints": [
+        "docs/agent-runtime.md",
+        "desktop/src/agent_runner_goal_contract.js",
+        "desktop/test/agent_runner_goal_contract.test.js"
+      ]
+    },
+    "agent-observable": {
+      "description": "Visible-canvas automation, replay, and Magic Select prepared-runtime behavior.",
+      "entrypoints": [
+        "docs/agent-runtime.md",
+        "docs/local-magic-select-runtime.md",
+        "desktop/src/agent_observable_driver.js",
+        "desktop/src/magic_select_runtime.js",
+        "desktop/src/canvas_app.js"
+      ]
+    },
+    "single-image-routing": {
+      "description": "Seeded tools, direct affordances, and current route profile ids.",
+      "entrypoints": [
+        "docs/agent-affordances.json",
+        "desktop/src/single_image_capability_routing.js",
+        "desktop/src/juggernaut_shell/rail.js",
+        "desktop/src/canvas_app.js"
+      ]
+    },
+    "tool-runtime": {
+      "description": "Create Tool manifest generation, tool schemas, and custom-tool invocation.",
+      "entrypoints": [
+        "docs/agent-affordances.json",
+        "docs/legacy-internals.md",
+        "desktop/src/tool_runtime.js",
+        "desktop/src/juggernaut_shell/rail.js"
+      ]
+    },
+    "desktop-dev": {
+      "description": "Run the desktop app locally; fix build/startup issues.",
+      "entrypoints": [
+        "README.md",
+        "scripts/dev_desktop.sh",
+        "desktop/src-tauri/src/main.rs",
+        "rust_engine/crates/brood-cli/src/main.rs",
+        ".env.example",
+        "scripts/stage_rust_engine_binary.sh"
+      ]
+    },
+    "desktop-quick-actions": {
+      "description": "Change seeded-tool or direct-affordance UI/behavior in the current shell.",
+      "entrypoints": [
+        "docs/desktop.md",
+        "desktop/src/single_image_capability_routing.js",
+        "desktop/src/juggernaut_shell/rail.js",
+        "desktop/src/canvas_app.js"
+      ]
+    },
+    "desktop-canvas": {
+      "description": "Canvas interactions, selections, tools, layout, filmstrip behavior.",
+      "entrypoints": [
+        "desktop/src/canvas_app.js",
+        "desktop/src/styles.css",
+        "docs/desktop.md"
+      ]
+    },
+    "desktop-tauri": {
+      "description": "Tauri backend, FS scope, command wiring, native build issues.",
+      "entrypoints": [
+        "desktop/src-tauri/src/main.rs",
+        "desktop/src-tauri/tauri.conf.json",
+        "scripts/stage_rust_engine_binary.sh",
+        ".env.example",
+        "README.md"
+      ]
+    },
+    "engine-rust": {
+      "description": "Native Rust engine commands, orchestration, contracts, and compatibility safeguards.",
+      "entrypoints": [
+        "rust_engine/crates/brood-cli/src/main.rs",
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "rust_engine/crates/brood-contracts/src/events.rs",
+        "desktop/src-tauri/src/main.rs",
+        "README.md"
+      ]
+    },
+    "engine-cli": {
+      "description": "Cue CLI commands and flags, native Rust runtime.",
+      "entrypoints": [
+        "rust_engine/crates/brood-cli/src/main.rs",
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "README.md"
+      ]
+    },
+    "engine-providers": {
+      "description": "Provider integrations, model routing, and API key handling in the native runtime.",
+      "entrypoints": [
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "rust_engine/crates/brood-contracts/src/chat/intent_parser.rs",
+        "README.md",
+        ".env.example"
+      ]
+    },
+    "engine-recreate": {
+      "description": "Recreate flow (reference image in, similarities/edits out).",
+      "entrypoints": [
+        "rust_engine/crates/brood-cli/src/main.rs",
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "docs/desktop.md"
+      ]
+    },
+    "engine-memory": {
+      "description": "Opt-in memory system, storage, and retrieval logic.",
+      "entrypoints": [
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "README.md"
+      ]
+    },
+    "engine-events": {
+      "description": "Run artifacts + events.jsonl format; stability of event stream consumed by desktop.",
+      "entrypoints": [
+        "rust_engine/crates/brood-contracts/src/events.rs",
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "docs/desktop.md"
+      ]
+    },
+    "tests": {
+      "description": "Rust + desktop test coverage and validation commands.",
+      "entrypoints": [
+        "rust_engine/crates/brood-engine/src/lib.rs",
+        "rust_engine/crates/brood-contracts/src/events.rs",
+        "desktop/test/"
+      ]
+    },
+    "docs": {
+      "description": "Docs updates for the public repo surface and agent/runtime references.",
+      "entrypoints": [
+        "docs/README.md",
+        "docs/agent-runtime.md",
+        "docs/agent-workflow-prd.md",
+        "docs/agent-affordances.json",
+        "docs/agent_quickstart.md",
+        "docs/agent_intake_status.md",
+        "docs/agent_intake_roundtrip.sample.json",
+        "docs/local-magic-select-runtime.md",
+        "docs/legacy-internals.md"
+      ]
+    }
+  },
+  "example_request": {
+    "schema_version": "aip-1",
+    "agent": {
+      "tool": "codex",
+      "tool_version": "0.0",
+      "git_user_agent": "git/2.x"
+    },
+    "repo": {
+      "url": "https://github.com/<org-or-user>/cue",
+      "ref": "main"
+    },
+    "task": {
+      "tags": [
+        "agent-runtime",
+        "single-image-routing"
+      ],
+      "notes": "Need to adjust Agent Run or a single-image affordance without drifting from the current public runtime contracts."
+    },
+    "telemetry": {
+      "opt_out": false
+    }
+  }
+}

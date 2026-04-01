@@ -1,0 +1,11 @@
+<svg class="tool-icon tool-icon-create-tool tool-icon-pack-industrial-mono" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <circle fill="currentColor" cx="12" cy="12.2" r="2.05" fill-opacity="0.18" />
+  <circle fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" cx="12" cy="12.2" r="2.9" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M12 4.95v3.1" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M6.18 15.55l2.72-1.55" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M17.82 15.55l-2.72-1.55" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M16.6 4.88v1.34" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M15.93 5.55h1.34" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M15.23 4.18l.67.67" />
+  <path fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" d="M17.97 4.18l-.67.67" />
+</svg>

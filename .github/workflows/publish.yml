@@ -1,0 +1,170 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  clean-machine-smoke:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            desktop/src-tauri -> target
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build macOS DMG (unsigned smoke build)
+        working-directory: desktop
+        run: npm run tauri build -- --bundles dmg --ci -v
+
+      - name: Run clean-machine install smoke
+        run: scripts/macos_clean_machine_smoke.sh
+
+  publish-macos:
+    needs: clean-machine-smoke
+    permissions:
+      contents: write
+    env:
+      # Prefer a dedicated PAT for release API calls; fall back to the workflow token.
+      RELEASE_GITHUB_TOKEN: ${{ secrets.CUE_RELEASE_TOKEN != '' && secrets.CUE_RELEASE_TOKEN || secrets.BROOD_RELEASE_TOKEN != '' && secrets.BROOD_RELEASE_TOKEN || github.token }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            desktop/src-tauri -> target
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Desktop tests
+        working-directory: desktop
+        run: npm test
+
+      - name: Syntax check (canvas_app.js)
+        run: node --check desktop/src/canvas_app.js
+
+      - name: Verify tag matches app version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          APP_VERSION="$(node -e 'const fs=require("fs"); const cfg=JSON.parse(fs.readFileSync("desktop/src-tauri/tauri.conf.json","utf8")); process.stdout.write(cfg.package.version);')"
+          DESKTOP_VERSION="$(node -e 'const fs=require("fs"); const pkg=JSON.parse(fs.readFileSync("desktop/package.json","utf8")); process.stdout.write(pkg.version);')"
+          CARGO_VERSION="$(node -e 'const fs=require("fs"); const s=fs.readFileSync("desktop/src-tauri/Cargo.toml","utf8"); const m=s.match(/version\s*=\s*\"([^\"]+)\"/); if(!m) process.exit(2); process.stdout.write(m[1]);')"
+          echo "tag=$TAG"
+          echo "tauri.conf.json=$APP_VERSION"
+          echo "desktop/package.json=$DESKTOP_VERSION"
+          echo "desktop/src-tauri/Cargo.toml=$CARGO_VERSION"
+          test "$TAG" = "v$APP_VERSION"
+          test "$APP_VERSION" = "$DESKTOP_VERSION"
+          test "$APP_VERSION" = "$CARGO_VERSION"
+
+      - name: Prepare signing keychain
+        run: echo "KEYCHAIN_PASSWORD=$(uuidgen)" >> "$GITHUB_ENV"
+
+      - name: Import Apple Developer Certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ env.KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          # Ensure codesign can find identities in the temporary keychain.
+          security list-keychains -d user -s build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          # `-A` prevents "User interaction is not allowed" failures in CI when accessing the private key.
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -A -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/xcrun
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          security find-identity -v -p codesigning build.keychain
+
+      - name: Detect signing identity
+        run: |
+          CERT_INFO="$(security find-identity -v -p codesigning build.keychain | grep -F 'Developer ID Application' | head -n 1 || true)"
+          if [ -z "$CERT_INFO" ]; then
+            echo "No 'Developer ID Application' identity found in build.keychain"
+            exit 1
+          fi
+          # Use the SHA-1 fingerprint to avoid `codesign` ambiguity when multiple identities share the same name.
+          CERT_SHA="$(echo "$CERT_INFO" | awk '{print $2}')"
+          echo "APPLE_SIGNING_IDENTITY=$CERT_SHA" >> "$GITHUB_ENV"
+          echo "Using signing identity SHA: $CERT_SHA"
+
+      - name: Ensure draft release exists
+        env:
+          GH_TOKEN: ${{ env.RELEASE_GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release for $TAG already exists."
+            exit 0
+          fi
+
+          echo "Creating draft release for $TAG..."
+          if ! gh release create "$TAG" \
+            --draft \
+            --title "Cue $TAG" \
+            --generate-notes; then
+            echo "Failed to create release for $TAG. Configure CUE_RELEASE_TOKEN or BROOD_RELEASE_TOKEN with repo contents write access." >&2
+            exit 1
+          fi
+
+      - name: Build and publish (signed + notarized DMG)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ env.RELEASE_GITHUB_TOKEN }}
+          # Notarization
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Some tools expect APPLE_PASSWORD, others APPLE_ID_PASSWORD; set both.
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # Signing (certificate imported into build.keychain above)
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          RUST_BACKTRACE: 1
+        with:
+          projectPath: desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: Cue ${{ github.ref_name }}
+          releaseBody: |
+            See `CHANGELOG.md` for full details.
+          generateReleaseNotes: true
+          releaseDraft: true
+          prerelease: false
+          args: --target universal-apple-darwin --ci -v

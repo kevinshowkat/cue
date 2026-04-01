@@ -1,0 +1,51 @@
+{
+  "schema_version": "cue.agent_intake_roundtrip.v1",
+  "intake_endpoint": "https://6yq5plinssvsog2ozyhnfnscya0qwdzp.lambda-url.us-east-1.on.aws/aip/intake",
+  "request": {
+    "schema_version": "aip-1",
+    "agent": {
+      "tool": "codex",
+      "tool_version": "0.0"
+    },
+    "repo": {
+      "url": "https://github.com/kevinshowkat/cue",
+      "ref": "main"
+    },
+    "task": {
+      "tags": [
+        "agent-runtime",
+        "single-image-routing"
+      ],
+      "notes": "Update Agent Run behavior without drifting from the current single-image routing contract."
+    },
+    "telemetry": {
+      "opt_out": false
+    }
+  },
+  "success_response_example": {
+    "schema_version": "aip-1",
+    "entrypoints": [
+      "desktop/src/agent_runner_runtime.js",
+      "desktop/src/single_image_capability_routing.js",
+      "docs/agent-runtime.md"
+    ],
+    "suggested_tags": [
+      "agent-runtime",
+      "single-image-routing"
+    ],
+    "packs": []
+  },
+  "next_actions_after_success": [
+    "Open entrypoints in order and implement the scoped change.",
+    "Run local tests for affected layers.",
+    "Run ./scripts/check_agent_entrypoints.py before commit."
+  ],
+  "fallback_if_degraded": {
+    "status": "degraded",
+    "next_actions": [
+      "Use llms.txt Start Here and Task Routing sections.",
+      "Use docs/agent_quickstart.md for canonical task flows.",
+      "Use agent-intake.json fallback_entrypoints as deterministic backup."
+    ]
+  }
+}

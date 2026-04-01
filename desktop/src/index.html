@@ -1,0 +1,1629 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cue</title>
+    <style>
+      html,
+      body {
+        background: #eee9db;
+      }
+    </style>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="juggernaut-shell boot-pending">
+    <div id="boot-video-overlay" class="boot-video-overlay">
+      <video
+        id="boot-video-player"
+        class="boot-video-player"
+        playsinline
+        preload="auto"
+        muted
+        aria-hidden="true"
+      ></video>
+      <div class="boot-video-scrim" aria-hidden="true"></div>
+      <div class="boot-video-copy" aria-hidden="true">
+        <img class="boot-video-logo" src="./assets/cue_brand_tile.png" alt="" />
+        <div class="boot-video-mark">Cue</div>
+      </div>
+      <div class="boot-video-status-rail" aria-live="polite">
+        <div class="boot-video-status-label">Loading</div>
+        <div id="boot-video-status" class="boot-video-status">Starting splash shell…</div>
+        <div class="boot-video-progress" aria-hidden="true">
+          <div id="boot-video-progress-bar" class="boot-video-progress-bar"></div>
+        </div>
+      </div>
+    </div>
+    <div id="app">
+      <div id="boot-error" class="boot-error hidden">
+        Cue failed to initialize. Check the terminal for errors.
+      </div>
+      <div class="brand-strip" role="toolbar" aria-label="Cue window toolbar">
+        <div class="juggernaut-brand" aria-label="Cue" data-tauri-drag-region>
+          <div class="juggernaut-brand-mark" aria-hidden="true">
+            <img class="juggernaut-brand-mark-image" src="./assets/cue_brand_tile.png" alt="" />
+          </div>
+          <span class="juggernaut-brand-wordmark">Cue</span>
+        </div>
+        <div class="window-drag-region" aria-hidden="true" data-tauri-drag-region></div>
+        <div id="session-tab-strip" class="session-tab-strip" role="group" aria-label="Session strip">
+          <div class="session-tab-run" role="group" aria-label="Open sessions, new session, and fork tab">
+            <div
+              id="session-tab-list"
+              class="session-tab-list"
+              role="tablist"
+              aria-label="Open sessions"
+              data-session-tab-schema="session-tab-v1"
+            >
+              <div
+                class="session-tab-item is-active"
+                data-schema-version="session-tab-v1"
+                data-tab-id="tab-launch"
+                data-title="Untitled Canvas"
+                data-run-dir=""
+                data-active="true"
+                data-is-active="true"
+                data-busy="false"
+                data-is-busy="false"
+                data-dirty="false"
+                data-is-dirty="false"
+                data-can-close="false"
+              >
+                <button
+                  class="session-tab-hit"
+                  type="button"
+                  role="tab"
+                  aria-selected="true"
+                  tabindex="0"
+                  title="Untitled Canvas"
+                >
+                  <span class="session-tab-labels">
+                    <span class="session-tab-title">Untitled Canvas</span>
+                    <span class="session-tab-run-dir"></span>
+                  </span>
+                  <span class="session-tab-flags" aria-hidden="true">
+                    <span class="session-tab-busy-indicator"></span>
+                  </span>
+                </button>
+                <button class="session-tab-close" type="button" aria-label="Close Untitled Canvas" title="Close Untitled Canvas" hidden>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M7 7l10 10M17 7 7 17"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <button
+              id="session-tab-new"
+              class="session-tab-strip-action session-tab-strip-new"
+              type="button"
+              aria-label="New session"
+              title="New session"
+            >
+              <span class="session-tab-action-icon" data-juggernaut-icon-slot="new_session" aria-hidden="true"></span>
+              <span class="sr-only">New session</span>
+            </button>
+            <button
+              id="session-tab-fork"
+              class="session-tab-strip-action session-tab-strip-fork"
+              type="button"
+              aria-label="Fork tab"
+              title="Fork tab"
+            >
+              <span class="session-tab-action-icon" data-juggernaut-icon-slot="fork_session" aria-hidden="true"></span>
+              <span class="sr-only">Fork tab</span>
+            </button>
+          </div>
+          <div class="session-tab-strip-actions" role="group" aria-label="Session actions">
+            <button
+              id="juggernaut-agent-runner-open"
+              class="session-tab-strip-action session-tab-runtime-action session-tab-runtime-icon-action"
+              type="button"
+              aria-label="Agent Run"
+              title="Agent Run"
+            >
+              <span class="session-tab-action-icon" data-juggernaut-icon-slot="agent_run" aria-hidden="true"></span>
+            </button>
+            <button
+              id="session-tab-design-review"
+              class="session-tab-strip-action session-tab-strip-review"
+              type="button"
+              aria-label="Design Review"
+              title="Design Review"
+            >
+              <span class="session-tab-action-icon" data-juggernaut-icon-slot="design_review" aria-hidden="true"></span>
+              <span>Design Review</span>
+            </button>
+            <div class="session-tab-action-menu">
+              <button
+                id="juggernaut-export-psd"
+                class="session-tab-strip-action session-tab-runtime-action session-tab-action-menu-toggle"
+                type="button"
+                aria-label="Export"
+                title="Export"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-controls="juggernaut-export-menu"
+              >
+                <span class="session-tab-action-icon" data-juggernaut-icon-slot="export" aria-hidden="true"></span>
+                <svg class="session-tab-action-menu-caret" viewBox="0 0 12 12" aria-hidden="true">
+                  <path
+                    d="M3 4.5 6 7.5 9 4.5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div id="juggernaut-export-menu" class="session-tab-action-menu-panel hidden" role="menu" aria-label="Export formats">
+                <button
+                  id="juggernaut-export-format-psd"
+                  class="session-tab-action-menu-item"
+                  type="button"
+                  role="menuitem"
+                  data-export-format="psd"
+                  title="Export Photoshop (.psd)"
+                >
+                  <span class="session-tab-action-menu-item-label">PSD</span>
+                  <span class="session-tab-action-menu-item-meta">Photoshop export with receipt</span>
+                </button>
+                <button
+                  id="juggernaut-export-format-png"
+                  class="session-tab-action-menu-item"
+                  type="button"
+                  role="menuitem"
+                  data-export-format="png"
+                  title="Export PNG (.png)"
+                >
+                  <span class="session-tab-action-menu-item-label">PNG</span>
+                  <span class="session-tab-action-menu-item-meta">Lossless raster export with receipt</span>
+                </button>
+                <button
+                  id="juggernaut-export-format-jpg"
+                  class="session-tab-action-menu-item"
+                  type="button"
+                  role="menuitem"
+                  data-export-format="jpg"
+                  title="Export JPG (.jpg)"
+                >
+                  <span class="session-tab-action-menu-item-label">JPG</span>
+                  <span class="session-tab-action-menu-item-meta">Opaque raster export with receipt</span>
+                </button>
+                <button
+                  id="juggernaut-export-format-webp"
+                  class="session-tab-action-menu-item"
+                  type="button"
+                  role="menuitem"
+                  data-export-format="webp"
+                  title="Export WEBP (.webp)"
+                >
+                  <span class="session-tab-action-menu-item-label">WEBP</span>
+                  <span class="session-tab-action-menu-item-meta">Compressed raster export with receipt</span>
+                </button>
+                <button
+                  id="juggernaut-export-format-tiff"
+                  class="session-tab-action-menu-item"
+                  type="button"
+                  role="menuitem"
+                  data-export-format="tiff"
+                  title="Export TIFF (.tiff)"
+                >
+                  <span class="session-tab-action-menu-item-label">TIFF</span>
+                  <span class="session-tab-action-menu-item-meta">Archive-friendly raster export with receipt</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="brand-actions" role="group" aria-label="Window actions">
+          <div class="sr-only">
+            <span
+              id="engine-status"
+              class="engine-status engine-status-dot"
+              data-state="idle"
+              role="status"
+              aria-label="Engine status: idle"
+              title="Engine status dot&#10;Shows current engine activity.&#10;State: idle&#10;Engine: idle"
+            ></span>
+            <span
+              id="mother-intent-source-indicator"
+              class="mother-intent-source-indicator"
+              title="Intent source dot&#10;Shows where Mother intent came from.&#10;Source: idle"
+              aria-hidden="true"
+            ></span>
+          </div>
+          <button
+            id="app-menu-toggle"
+            class="menu-toggle"
+            type="button"
+            aria-label="Cue menu"
+            aria-haspopup="menu"
+            aria-expanded="false"
+          >
+            <svg class="menu-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M19.4 15a7.8 7.8 0 0 0 .1-1l2-1.2-2-3.4-2.3.5a8 8 0 0 0-.8-.5L14.8 3h-3.6L9.6 7.4a7 7 0 0 0-.8.5l-2.3-.5-2 3.4 2 1.2a7.8 7.8 0 0 0 0 2l-2 1.2 2 3.4 2.3-.5c.3.2.5.3.8.5L11.2 21h3.6l1.6-4.4c.3-.2.5-.3.8-.5l2.3.5 2-3.4-2-1.2z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <div id="app-menu" class="app-menu hidden" role="menu" aria-label="Cue menu">
+            <div class="app-menu-section">
+              <button id="new-run" type="button" role="menuitem" data-menu-close="1">New Session</button>
+              <button id="open-run" type="button" role="menuitem" data-menu-close="1">Open Session…</button>
+              <button id="save-session" type="button" role="menuitem" data-menu-close="1">Save Session</button>
+              <button id="close-session" type="button" role="menuitem" data-menu-close="1">Close Session</button>
+              <button id="import" type="button" role="menuitem" data-menu-close="1">Import Photos…</button>
+              <button id="export" type="button" role="menuitem" data-menu-close="1">Export…</button>
+              <button id="settings-toggle" type="button" role="menuitem" data-menu-close="1">Settings…</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="timeline-dock" class="timeline-dock" role="group" aria-label="Session timeline">
+        <div id="timeline-shell" class="timeline-shell">
+          <button
+            id="timeline-toggle"
+            class="timeline-toggle"
+            type="button"
+            aria-label="Collapse history timeline"
+            aria-controls="timeline-body"
+            aria-expanded="true"
+            title="Collapse history timeline"
+          >
+            <span class="timeline-toggle-grip" aria-hidden="true">
+              <span class="session-tab-action-icon timeline-toggle-icon" data-juggernaut-icon-slot="history" aria-hidden="true"></span>
+            </span>
+            <span class="timeline-toggle-copy">
+              <span id="timeline-toggle-label" class="timeline-toggle-label">History</span>
+              <span id="timeline-toggle-summary" class="timeline-toggle-summary">Upload an image to start your session history.</span>
+            </span>
+            <span class="timeline-toggle-chevron" aria-hidden="true">⌄</span>
+          </button>
+          <div id="timeline-body" class="timeline-body">
+            <div class="timeline-track">
+              <button
+                id="timeline-prev"
+                class="timeline-arrow timeline-arrow--left is-hidden"
+                type="button"
+                aria-label="Show earlier timeline states"
+                tabindex="-1"
+              >
+                <span aria-hidden="true">‹</span>
+              </button>
+              <div id="timeline-strip" class="timeline-strip" aria-label="Timeline states"></div>
+              <button
+                id="timeline-next"
+                class="timeline-arrow timeline-arrow--right is-hidden"
+                type="button"
+                aria-label="Show later timeline states"
+                tabindex="-1"
+              >
+                <span aria-hidden="true">›</span>
+              </button>
+            </div>
+            <div id="timeline-detail" class="timeline-detail muted" aria-live="polite"></div>
+          </div>
+        </div>
+      </div>
+      <main class="workspace">
+        <div class="workspace-shell">
+          <section class="stage" aria-label="Canvas">
+            <div class="juggernaut-shell-chrome" aria-label="Cue shell">
+              <div id="action-grid" class="action-grid juggernaut-tool-rail" role="toolbar" aria-label="Cue left rail"></div>
+              <div id="custom-tool-dock" class="custom-tool-dock" role="toolbar" aria-label="Custom tools"></div>
+              <div id="juggernaut-selection-status" class="sr-only" aria-live="polite">
+                Drop an image to begin
+              </div>
+              <div class="juggernaut-shell-head" aria-hidden="true">
+                <div id="top-metrics" class="top-metrics hidden" aria-label="Session metrics ribbon">
+                  <span id="top-metric-tokens" class="top-metric-chip" data-heat="nodata">
+                  <span class="top-metric-chip-label">TOK</span>
+                  <span id="top-metric-tokens-value" class="top-metric-chip-value">
+                    <span class="top-metric-token-in">↓ ··········</span>
+                    <span class="top-metric-token-out">↑ ··········</span>
+                  </span>
+                  <span id="top-metric-tokens-spark-in" class="top-metric-chip-spark">--</span>
+                  <span id="top-metric-tokens-spark-out" class="hidden" aria-hidden="true"></span>
+                </span>
+                <span id="top-metric-cost" class="top-metric-chip" data-heat="nodata">
+                  <span class="top-metric-chip-label">COST</span>
+                  <span id="top-metric-cost-value" class="top-metric-chip-value">$0.00</span>
+                </span>
+                <span id="top-metric-api-calls" class="top-metric-chip" data-heat="nodata">
+                  <span class="top-metric-chip-label">API</span>
+                  <span id="top-metric-api-calls-value" class="top-metric-chip-value">0</span>
+                </span>
+                <span id="top-metric-queue" class="top-metric-chip" data-heat="nodata">
+                  <span class="top-metric-chip-label">QUEUE</span>
+                  <span id="top-metric-queue-value" class="top-metric-chip-value">P0 R0</span>
+                  <span id="top-metric-queue-trend" class="top-metric-chip-spark">··········</span>
+                </span>
+                <span id="top-metric-render" class="top-metric-chip" data-heat="nodata">
+                  <span class="top-metric-chip-label">AVG</span>
+                  <span id="top-metric-render-value" class="top-metric-chip-value">--</span>
+                </span>
+              </div>
+            </div>
+          </div>
+          <div id="canvas-wrap" class="canvas-wrap">
+            <div
+              id="drop-hint"
+              class="drop-hint"
+              aria-hidden="true"
+            ></div>
+            <canvas id="work-canvas"></canvas>
+            <canvas id="effects-canvas" aria-hidden="true"></canvas>
+            <div id="image-fx" class="image-fx hidden" aria-hidden="true"></div>
+            <div id="image-fx-2" class="image-fx hidden" aria-hidden="true"></div>
+            <canvas id="overlay-canvas" tabindex="0" aria-label="Canvas"></canvas>
+            <div id="communication-canvas-cursor" class="communication-canvas-cursor" aria-hidden="true">
+              <div id="communication-canvas-cursor-art" class="communication-canvas-cursor-art"></div>
+            </div>
+            <div
+              id="communication-proposal-tray"
+              class="communication-proposal-tray hidden"
+              role="group"
+              aria-label="Design Review"
+            >
+              <div class="communication-proposal-tray-head">
+                <div class="communication-proposal-tray-title">Design Review</div>
+                <button
+                  id="communication-proposal-tray-close"
+                  class="communication-proposal-tray-close"
+                  type="button"
+                  aria-label="Close Design Review tray"
+                >
+                  Close
+                </button>
+              </div>
+              <div
+                id="communication-proposal-slot-list"
+                class="communication-proposal-slot-list"
+                role="list"
+                aria-label="Proposal slots"
+              >
+                <div class="communication-proposal-slot is-skeleton" data-slot-index="0" data-slot-state="skeleton" role="listitem">
+                  <div class="communication-proposal-slot-eyebrow">Proposal 1</div>
+                  <div class="communication-proposal-slot-title">Review warming up</div>
+                  <div class="communication-proposal-slot-copy">Waiting for planner and proposals.</div>
+                </div>
+                <div class="communication-proposal-slot is-skeleton" data-slot-index="1" data-slot-state="skeleton" role="listitem">
+                  <div class="communication-proposal-slot-eyebrow">Proposal 2</div>
+                  <div class="communication-proposal-slot-title">Review warming up</div>
+                  <div class="communication-proposal-slot-copy">Waiting for planner and proposals.</div>
+                </div>
+                <div class="communication-proposal-slot is-skeleton" data-slot-index="2" data-slot-state="skeleton" role="listitem">
+                  <div class="communication-proposal-slot-eyebrow">Proposal 3</div>
+                  <div class="communication-proposal-slot-title">Review warming up</div>
+                  <div class="communication-proposal-slot-copy">Waiting for planner and proposals.</div>
+                </div>
+              </div>
+            </div>
+            <div id="image-menu" class="canvas-menu hidden image-menu" role="menu" aria-label="Image menu">
+              <button type="button" data-action="remove">Remove from canvas</button>
+              <button class="ghost" type="button" data-action="cancel">Cancel</button>
+            </div>
+            <div id="mother-wheel-menu" class="mother-wheel-menu hidden" role="menu" aria-label="Mother wheel menu">
+              <button
+                type="button"
+                class="mother-wheel-action"
+                data-action="add_photo"
+                aria-label="Add photo"
+                title="Add photo"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div id="annotate-panel" class="annotate-panel hidden" role="dialog" aria-label="Annotate">
+              <div class="annotate-header">
+                <div class="annotate-title">Annotate</div>
+                <button id="annotate-close" class="ghost" type="button" aria-label="Close annotate">Close</button>
+              </div>
+              <div class="annotate-body">
+                <div id="annotate-meta" class="annotate-meta muted"></div>
+                <label class="annotate-field">
+                  <div class="annotate-label">Model</div>
+                  <select id="annotate-model"></select>
+                </label>
+                <textarea
+                  id="annotate-text"
+                  class="annotate-text"
+                  rows="4"
+                  placeholder="Custom instruction…"
+                ></textarea>
+                <div class="annotate-actions">
+                  <button id="annotate-cancel" type="button">Cancel</button>
+                  <button id="annotate-send" type="button">Send</button>
+                </div>
+              </div>
+            </div>
+            <div id="mark-panel" class="annotate-panel hidden mark-panel" role="dialog" aria-label="Mark">
+              <div class="annotate-header">
+                <div id="mark-title" class="annotate-title">Mark</div>
+                <button id="mark-close" class="ghost" type="button" aria-label="Close mark panel">Close</button>
+              </div>
+              <div class="annotate-body">
+                <div id="mark-meta" class="annotate-meta muted"></div>
+                <textarea id="mark-text" class="annotate-text" rows="3" placeholder="Label…"></textarea>
+                <div class="annotate-actions">
+                  <button id="mark-delete" type="button">Delete</button>
+                  <button id="mark-save" type="button">Save</button>
+                </div>
+              </div>
+            </div>
+            <div id="prompt-generate-panel" class="annotate-panel hidden prompt-generate-panel" role="dialog" aria-label="Prompt Generate">
+              <div class="annotate-header">
+                <div class="annotate-title">Prompt Generate</div>
+                <button id="prompt-generate-close" class="ghost" type="button" aria-label="Close prompt generate panel">Close</button>
+              </div>
+              <div class="annotate-body">
+                <div id="prompt-generate-meta" class="annotate-meta muted">Create a new image (no source image required).</div>
+                <label class="annotate-field">
+                  <div class="annotate-label">Model</div>
+                  <select id="prompt-generate-model"></select>
+                </label>
+                <textarea
+                  id="prompt-generate-text"
+                  class="annotate-text"
+                  rows="4"
+                  placeholder="Describe the image you want to generate…"
+                ></textarea>
+                <div class="annotate-actions">
+                  <button id="prompt-generate-cancel" type="button">Cancel</button>
+                  <button id="prompt-generate-send" type="button">Generate</button>
+                </div>
+              </div>
+            </div>
+            <div id="create-tool-panel" class="annotate-panel hidden create-tool-panel" role="dialog" aria-label="Create Tool">
+              <div class="annotate-header">
+                <div class="annotate-title">Create Tool</div>
+                <button id="create-tool-close" class="ghost" type="button" aria-label="Close create tool panel">Close</button>
+              </div>
+              <div class="annotate-body">
+                <div id="create-tool-meta" class="annotate-meta muted">
+                  Describe the tool you want. Cue will map it to a deterministic local edit manifest for today's slice.
+                </div>
+                <label class="annotate-field">
+                  <div class="annotate-label">Name</div>
+                  <input
+                    id="create-tool-name"
+                    class="annotate-input"
+                    type="text"
+                    maxlength="40"
+                    placeholder="Optional tool name"
+                  />
+                </label>
+                <label class="annotate-field">
+                  <div class="annotate-label">Description</div>
+                  <textarea
+                    id="create-tool-text"
+                    class="annotate-text"
+                    rows="4"
+                    placeholder="Example: make this brighter and more contrasty"
+                  ></textarea>
+                </label>
+                <label class="annotate-field">
+                  <div class="annotate-label">Manifest Preview</div>
+                  <pre id="create-tool-preview" class="create-tool-preview">Describe a tool to preview the manifest.</pre>
+                </label>
+                <div class="annotate-actions">
+                  <button id="create-tool-cancel" type="button">Cancel</button>
+                  <button id="create-tool-save" type="button">Create</button>
+                </div>
+              </div>
+            </div>
+            <div id="agent-runner-panel" class="annotate-panel hidden agent-runner-panel" role="dialog" aria-label="Agent Run">
+              <div class="annotate-header">
+                <div class="annotate-title">Agent Run</div>
+                <div class="agent-runner-panel-header-actions">
+                  <button
+                    id="agent-runner-expand"
+                    class="ghost"
+                    type="button"
+                    aria-label="Expand agent run panel"
+                    title="Expand agent run panel"
+                  >
+                    <svg class="agent-runner-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        d="M7.5 10.25 12 14.75l4.5-4.5"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.9"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    <span class="agent-runner-button-label">Expand</span>
+                  </button>
+                  <button
+                    id="agent-runner-close"
+                    class="ghost"
+                    type="button"
+                    aria-label="Close agent run panel"
+                    title="Close agent run panel"
+                  >
+                    <svg class="agent-runner-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        d="m8 8 8 8m0-8-8 8"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.9"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    <span class="agent-runner-button-label">Close</span>
+                  </button>
+                </div>
+              </div>
+              <div class="annotate-body">
+                <label class="annotate-field agent-runner-goal-field">
+                  <div class="annotate-label">Goal</div>
+                  <textarea
+                    id="agent-runner-goal"
+                    class="annotate-text"
+                    rows="4"
+                  ></textarea>
+                </label>
+                <div class="agent-runner-panel-compact-actions">
+                  <button id="agent-runner-submit" type="button" aria-label="Submit agent run" title="Submit agent run">
+                    <svg class="agent-runner-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        d="M6 12h9.5"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.1"
+                        stroke-linecap="round"
+                      />
+                      <path
+                        d="M11.5 8 16 12l-4.5 4"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.1"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    <span class="sr-only agent-runner-button-label">Submit</span>
+                  </button>
+                </div>
+                <div class="agent-runner-panel-expanded">
+                  <div id="agent-runner-meta" class="annotate-meta muted">
+                    Give the agent a goal, then step it or let it run. Actions execute through the visible canvas and the normal runtime bridges.
+                  </div>
+                  <label class="annotate-field">
+                  <div class="annotate-label">Planner</div>
+                  <select id="agent-runner-planner"></select>
+                  </label>
+                  <label class="annotate-field">
+                    <div class="annotate-label">Max Steps</div>
+                    <input
+                      id="agent-runner-max-steps"
+                      class="annotate-input"
+                      type="number"
+                      min="1"
+                      max="24"
+                      step="1"
+                      value="8"
+                    />
+                  </label>
+                  <label class="annotate-field">
+                    <div class="annotate-label">Last Plan</div>
+                    <pre id="agent-runner-plan" class="agent-runner-plan">No step yet.</pre>
+                  </label>
+                  <label class="annotate-field">
+                    <div class="annotate-label">Final Score</div>
+                    <div id="agent-runner-score" class="agent-runner-score" data-state="idle">No final score yet.</div>
+                  </label>
+                  <label class="annotate-field">
+                    <div class="annotate-label">Activity</div>
+                    <div id="agent-runner-log" class="agent-runner-log" aria-live="polite"></div>
+                  </label>
+                  <div class="annotate-actions">
+                    <button id="agent-runner-copy" type="button">Copy Logs</button>
+                    <button id="agent-runner-clear" type="button">Clear</button>
+                    <button id="agent-runner-step" type="button">Step</button>
+                    <button id="agent-runner-auto" type="button">Auto</button>
+                    <button id="agent-runner-stop" type="button">Stop</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="agent-runner-banner" class="agent-runner-banner hidden" role="status" aria-live="polite" aria-label="Agent Run status">
+              <div class="agent-runner-banner-head">
+                <div class="agent-runner-banner-badge">
+                  <span class="agent-runner-banner-dot" aria-hidden="true"></span>
+                  <span id="agent-runner-banner-mode">Agent Run</span>
+                </div>
+                <div id="agent-runner-banner-step" class="agent-runner-banner-step">Preparing</div>
+              </div>
+              <div id="agent-runner-banner-summary" class="agent-runner-banner-summary">
+                Agent Run is controlling the canvas.
+              </div>
+              <div id="agent-runner-banner-detail" class="agent-runner-banner-detail">
+                Watching the visible canvas, planning the next action, and applying edits through the normal runtime.
+              </div>
+              <div class="agent-runner-banner-actions">
+                <button id="agent-runner-banner-show" type="button">Show</button>
+                <button id="agent-runner-banner-stop" type="button">Stop</button>
+              </div>
+            </div>
+              <div id="canvas-mood-status" class="canvas-mood-status" aria-label="Mood status">
+                <button
+                  id="mother-mood-toggle"
+                  class="mother-mood-toggle"
+                  type="button"
+                  aria-label="Set mood"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                  data-empty="true"
+                  title="Mood status"
+                >☺</button>
+                <span class="canvas-mood-hint" aria-hidden="true">Set vibe</span>
+                <div id="mother-mood-menu" class="mother-mood-menu hidden" role="menu" aria-label="Mood status">
+                  <button class="mother-mood-option" type="button" role="menuitemradio" data-mood="joyous" aria-checked="false">😄 Joyous</button>
+                  <button class="mother-mood-option" type="button" role="menuitemradio" data-mood="nefarious" aria-checked="false">😈 Nefarious</button>
+                  <button class="mother-mood-option" type="button" role="menuitemradio" data-mood="somber" aria-checked="false">😔 Somber</button>
+                  <button class="mother-mood-option" type="button" role="menuitemradio" data-mood="angry" aria-checked="false">😡 Angry</button>
+                </div>
+              </div>
+              <div id="mother-overlay" class="mother-overlay" aria-label="Mother">
+                <div id="mother-portrait-shell" class="mother-portrait-shell panel" aria-hidden="true">
+                  <div class="mother-portrait">
+                    <div class="portrait-frame mother-portrait-frame">
+                      <div id="mother-avatar" class="portrait-avatar" data-provider="openai" aria-hidden="true">
+                        <video
+                          id="mother-video"
+                          class="portrait-video hidden"
+                          muted
+                          loop
+                          autoplay
+                          playsinline
+                          preload="auto"
+                        ></video>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div id="mother-panel-stack" class="mother-panel-stack" aria-label="Mother controls">
+                  <div id="mother-panel" class="mother-panel" aria-label="Mother dialog">
+                    <div class="mother-state-row">
+                      <span id="mother-state" class="mother-state" aria-live="polite">Watching</span>
+                    </div>
+                    <div class="mother-panel-body">
+                      <div id="mother-role-preview" class="mother-role-preview hidden" aria-label="Mother role preview"></div>
+                      <div id="tips-text" class="panel-body muted panel-readout"></div>
+                    </div>
+                    <div class="mother-panel-controls">
+                      <button id="mother-refine-toggle" class="mother-refine-toggle hidden" type="button" aria-expanded="false">
+                        Refine structure
+                      </button>
+                      <div id="mother-advanced" class="mother-advanced hidden" aria-label="Mother advanced structure">
+                        <label class="mother-advanced-row">
+                          <span class="mother-advanced-label">Transformation mode</span>
+                          <select id="mother-transformation-mode"></select>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mother-actions mother-actions-floating" aria-label="Mother controls">
+                    <div class="mother-action">
+                      <button id="mother-ability-icon" class="mother-ability-icon" type="button" aria-label="Next">→</button>
+                      <span class="mother-action-label">NEXT</span>
+                    </div>
+                    <div class="mother-action">
+                      <button id="mother-confirm" class="mother-confirm" type="button" aria-label="Draft">✓</button>
+                      <span class="mother-action-label">ACCEPT</span>
+                    </div>
+                    <div class="mother-action">
+                      <button id="mother-stop" class="mother-stop hidden" type="button" aria-label="Dismiss">✕</button>
+                      <span class="mother-action-label">REJECT</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div id="control-strip" class="control-strip" aria-label="HUD and Actions">
+                <div class="canvas-bumper canvas-bumper--left" aria-hidden="true"></div>
+                <div id="file-browser-dock" class="file-browser-dock" aria-label="File browser">
+                  <div id="file-browser-header" class="file-browser-header">
+                    <button
+                      id="file-browser-choose"
+                      class="file-browser-btn file-browser-btn-icon"
+                      type="button"
+                      aria-label="Choose folder"
+                      title="Choose folder"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M3.5 7.5a2 2 0 0 1 2-2h4l1.7 2H18.5a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-9z"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linejoin="round"
+                        />
+                        <path d="M12 10.5v5M9.5 13h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                      </svg>
+                    </button>
+                    <button
+                      id="file-browser-up"
+                      class="file-browser-btn file-browser-btn-icon"
+                      type="button"
+                      aria-label="Up"
+                      title="Up"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 17V7M8 11l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    </button>
+                    <button
+                      id="file-browser-refresh"
+                      class="file-browser-btn file-browser-btn-icon"
+                      type="button"
+                      aria-label="Refresh"
+                      title="Refresh"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M19.5 8.5A7.5 7.5 0 1 0 20 12"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                        />
+                        <path d="M20 4.5v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div id="file-browser-path" class="file-browser-path" title="No folder selected">No folder selected</div>
+                  <div id="file-browser-list" class="file-browser-list" role="listbox" aria-label="Local images"></div>
+                </div>
+                <div id="hud" class="hud" aria-label="HUD">
+                  <div class="hud-shell">
+                    <div class="hud-screen" aria-hidden="true">
+                      <div class="hud-readout">
+                        <div id="hud-line-unit" class="hud-line">
+                          <span class="hud-k">UNIT</span>
+                          <span id="hud-unit-desc" class="hud-v hud-desc"></span>
+                        </div>
+                        <div id="hud-line-director" class="hud-line hud-director-line hidden">
+                          <span id="hud-director-k" class="hud-k">DIR</span>
+                          <div id="hud-director-v" class="hud-v hud-director"></div>
+                        </div>
+                        <div id="hud-line-desc" class="hud-line">
+                          <span class="hud-k">DESC</span>
+                          <span id="hud-unit-name" class="hud-v"></span>
+                        </div>
+                        <div id="hud-line-sel" class="hud-line">
+                          <span class="hud-k">SEL</span>
+                          <span id="hud-unit-sel" class="hud-v"></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div id="agents-dock" class="agents-dock" aria-label="Agents">
+                  <div id="portrait-dock" class="portrait-dock">
+                    <div class="agent-portraits">
+                      <div id="agent-slot-primary" class="agent-slot">
+                        <div class="portrait-readout">
+                          <div id="portrait-title" class="portrait-title">Model</div>
+                        </div>
+                        <div class="portrait-frame">
+                          <div id="portrait-avatar" class="portrait-avatar" aria-hidden="true">
+                            <video
+                              id="portrait-video"
+                              class="portrait-video hidden"
+                              muted
+                              loop
+                              autoplay
+                              playsinline
+                              preload="auto"
+                            ></video>
+                          </div>
+                        </div>
+                      </div>
+                      <div id="agent-slot-secondary" class="agent-slot">
+                        <div class="portrait-readout">
+                          <div id="portrait-title-2" class="portrait-title">Model</div>
+                        </div>
+                        <div class="portrait-frame">
+                          <div id="portrait-avatar-2" class="portrait-avatar" aria-hidden="true">
+                            <video
+                              id="portrait-video-2"
+                              class="portrait-video hidden"
+                              muted
+                              loop
+                              autoplay
+                              playsinline
+                              preload="auto"
+                            ></video>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="canvas-bumper canvas-bumper--right" aria-hidden="true"></div>
+              </div>
+              <div id="spawnbar" class="spawnbar hidden" aria-live="polite"></div>
+              <div id="toast" class="toast" data-state="hidden" aria-live="polite" aria-hidden="true"></div>
+            </div>
+            <div id="filmstrip" class="filmstrip hidden" aria-label="Filmstrip"></div>
+          </section>
+          <div id="communication-shell" class="communication-shell">
+            <div id="communication-rail" class="communication-rail" role="toolbar" aria-label="Communication rail">
+              <button
+              id="communication-tool-marker"
+              class="communication-tool communication-tool-marker"
+              type="button"
+              data-communication-tool="marker"
+              aria-label="Marker"
+              title="Marker"
+            >
+              <svg class="communication-icon communication-icon-marker" viewBox="0 0 24 48" aria-hidden="true">
+                <path
+                  d="M10.05 4.05h3.9c.75 0 1.35.6 1.35 1.35V38.1c0 1.82-1.48 3.3-3.3 3.3s-3.3-1.48-3.3-3.3V5.4c0-.75.6-1.35 1.35-1.35Z"
+                  fill="rgba(14, 18, 24, 0.98)"
+                />
+                <path
+                  d="M9.55 6.05h4.9v2.25h-4.9z"
+                  fill="rgba(24, 29, 36, 0.94)"
+                />
+                <path
+                  d="M12 1.95c.49 0 .92.23 1.22.68l1.14 1.68c.19.28.29.6.29.94v.8H9.35v-.8c0-.34.1-.66.29-.94l1.14-1.68c.3-.45.73-.68 1.22-.68Z"
+                  fill="rgba(216, 52, 52, 0.96)"
+                />
+                <path
+                  d="M9.8 30.45h4.4"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.12)"
+                  stroke-width="0.9"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span class="communication-tool-label">Marker</span>
+            </button>
+            <button
+              id="communication-tool-protect"
+              class="communication-tool communication-tool-protect"
+              type="button"
+              data-communication-tool="protect"
+              aria-label="Highlight"
+              title="Highlight"
+            >
+              <svg class="communication-icon communication-icon-protect" viewBox="0 0 24 48" aria-hidden="true">
+                <path
+                  d="M12 1.92c.54 0 1 .24 1.33.74l1.26 1.86c.21.31.32.67.32 1.05v1.18H9.09V5.57c0-.38.11-.74.32-1.05l1.26-1.86c.33-.5.79-.74 1.33-.74Z"
+                  fill="rgba(247, 206, 36, 0.99)"
+                  stroke="rgba(171, 131, 10, 0.28)"
+                  stroke-width="0.88"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M10.32 6.12h3.36"
+                  fill="none"
+                  stroke="rgba(150, 114, 8, 0.34)"
+                  stroke-width="0.82"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M8.05 8.45h7.9L17 10v22.55l-1.05 1.55h-7.9L7 32.55V10Z"
+                  fill="rgba(248, 216, 62, 0.99)"
+                  stroke="rgba(174, 139, 14, 0.28)"
+                  stroke-width="0.9"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M9.45 10.8h5.1"
+                  fill="none"
+                  stroke="rgba(255, 247, 178, 0.84)"
+                  stroke-width="1.02"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M9.95 16.9c1.45-.74 2.38-.58 3.18.18.76.73 1.33.9 1.9.75"
+                  fill="none"
+                  stroke="rgba(56, 44, 10, 0.68)"
+                  stroke-width="1.02"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M9.65 19.75h5.35"
+                  fill="none"
+                  stroke="rgba(92, 72, 8, 0.48)"
+                  stroke-width="0.9"
+                  stroke-linecap="round"
+                />
+                <rect
+                  x="12.2"
+                  y="12.25"
+                  width="2.55"
+                  height="2.05"
+                  rx="0.34"
+                  fill="rgba(252, 241, 154, 0.92)"
+                  stroke="rgba(76, 60, 8, 0.42)"
+                  stroke-width="0.72"
+                />
+                <path
+                  d="M12.72 12.98h1.5"
+                  fill="none"
+                  stroke="rgba(74, 58, 8, 0.48)"
+                  stroke-width="0.6"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M8.35 34.7h7.3l1.3 1.05v3.95l-1.3 1.1h-7.3l-1.2-1.1v-3.95Z"
+                  fill="rgba(246, 210, 48, 0.99)"
+                  stroke="rgba(166, 129, 10, 0.28)"
+                  stroke-width="0.9"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M9.15 35.95h6"
+                  fill="none"
+                  stroke="rgba(255, 244, 171, 0.72)"
+                  stroke-width="0.9"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M10.35 38.95h3.3"
+                  fill="none"
+                  stroke="rgba(144, 110, 8, 0.28)"
+                  stroke-width="0.94"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span class="communication-tool-label">Highlight</span>
+            </button>
+            <button
+              id="communication-tool-magic-select"
+              class="communication-tool communication-tool-magic-select"
+              type="button"
+              data-communication-tool="magic_select"
+              aria-label="Magic Select"
+              title="Magic Select"
+            >
+              <svg class="communication-icon communication-icon-magic-select" viewBox="0 0 24 48" aria-hidden="true">
+                <path
+                  d="M12 2.25 12.85 4.18 14.78 5.03 12.85 5.88 12 7.82 11.15 5.88 9.22 5.03 11.15 4.18Z"
+                  fill="rgba(255, 95, 190, 0.9)"
+                />
+                <path
+                  d="M11.15 7.4h1.7v34.4h-1.7z"
+                  fill="rgba(32, 40, 49, 0.96)"
+                />
+                <circle
+                  cx="12"
+                  cy="24.5"
+                  r="3.05"
+                  fill="none"
+                  stroke="rgba(255, 95, 190, 0.82)"
+                  stroke-width="1.55"
+                />
+                <path
+                  d="M16.1 26.5 16.7 27.85 18.05 28.45 16.7 29.05 16.1 30.4 15.5 29.05 14.15 28.45 15.5 27.85Z"
+                  fill="rgba(100, 210, 255, 0.88)"
+                />
+              </svg>
+              <span class="communication-tool-label">Magic Select</span>
+            </button>
+            <button
+              id="communication-tool-stamp"
+              class="communication-tool communication-tool-stamp"
+              type="button"
+              data-communication-tool="stamp"
+              aria-label="Stamp"
+              title="Stamp"
+            >
+              <svg class="communication-icon communication-icon-stamp" viewBox="0 0 24 48" aria-hidden="true">
+                <path
+                  d="M8.55 4.35h6.9c.74 0 1.34.6 1.34 1.34v2.4H7.21v-2.4c0-.74.6-1.34 1.34-1.34Z"
+                  fill="rgba(30, 38, 49, 0.96)"
+                />
+                <path
+                  d="M9.1 2.85h5.8c.58 0 1.05.47 1.05 1.05v1.02H8.05V3.9c0-.58.47-1.05 1.05-1.05Z"
+                  fill="rgba(58, 67, 78, 0.92)"
+                />
+                <path
+                  d="M8.4 8.45h7.2L17 10.2v21.7l-1.4 1.8h-7.2L7 31.9V10.2Z"
+                  fill="rgba(42, 51, 63, 0.96)"
+                  stroke="rgba(239, 245, 252, 0.16)"
+                  stroke-width="0.82"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M9.5 10.9h5"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.18)"
+                  stroke-width="0.82"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M9.55 16.15h4.9"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.14)"
+                  stroke-width="0.82"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M8.35 33.15h7.3l1.08 1v3.6l-1.08 1.1h-7.3l-1.08-1.1v-3.6Z"
+                  fill="rgba(32, 40, 51, 0.98)"
+                  stroke="rgba(239, 245, 252, 0.14)"
+                  stroke-width="0.8"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M9.05 34.25h5.9"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.14)"
+                  stroke-width="0.82"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M9.6 37.15h4.8"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.12)"
+                  stroke-width="0.82"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span class="communication-tool-label">Stamp</span>
+            </button>
+            <button
+              id="communication-tool-eraser"
+              class="communication-tool communication-tool-eraser"
+              type="button"
+              data-communication-tool="eraser"
+              aria-label="Eraser"
+              title="Eraser"
+            >
+              <svg class="communication-icon communication-icon-eraser" viewBox="0 0 24 48" aria-hidden="true">
+                <rect x="9.1" y="2.45" width="5.8" height="3.75" rx="1.45" fill="rgba(241, 132, 157, 0.96)" />
+                <rect x="9.35" y="5.95" width="5.3" height="1.95" rx="0.8" fill="rgba(212, 201, 185, 0.98)" />
+                <path
+                  d="M10 7.6h4c.86 0 1.55.69 1.55 1.55V38.4c0 1.71-1.39 3.1-3.1 3.1h-.9c-1.71 0-3.1-1.39-3.1-3.1V9.15c0-.86.69-1.55 1.55-1.55Z"
+                  fill="rgba(224, 170, 88, 0.98)"
+                />
+                <path
+                  d="M10.3 22.55h3.4M10.3 27.25h3.4"
+                  fill="none"
+                  stroke="rgba(176, 120, 48, 0.88)"
+                  stroke-width="1.1"
+                  stroke-linecap="round"
+                />
+                <path d="M10.9 41.5 12 43.7l1.1-2.2" fill="rgba(249, 229, 194, 0.94)" />
+              </svg>
+              <span class="communication-tool-label">Eraser</span>
+            </button>
+          </div>
+          <div id="communication-stamp-picker" class="communication-stamp-picker" aria-label="Stamp intents" hidden>
+            <div class="communication-stamp-picker-orbit" aria-hidden="true"></div>
+            <div class="communication-stamp-picker-core" aria-hidden="true">
+              <span id="communication-stamp-picker-title" class="communication-stamp-picker-title">Stamp</span>
+              <span id="communication-stamp-picker-subtitle" class="communication-stamp-picker-subtitle">Choose intent</span>
+            </div>
+            <div id="communication-stamp-intent-list" class="communication-stamp-intent-list" role="menu" aria-label="Stamp intents">
+              <button class="communication-stamp-intent" type="button" data-stamp-intent="fix">Fix</button>
+              <button class="communication-stamp-intent" type="button" data-stamp-intent="move">Move</button>
+              <button class="communication-stamp-intent" type="button" data-stamp-intent="remove">Remove</button>
+              <button class="communication-stamp-intent" type="button" data-stamp-intent="replace">Replace</button>
+              <button class="communication-stamp-intent" type="button" data-stamp-intent="custom">Custom</button>
+            </div>
+            <form
+              id="communication-stamp-custom-panel"
+              class="communication-stamp-custom-panel hidden"
+              aria-label="Custom stamp text"
+              hidden
+            >
+              <label class="sr-only" for="communication-stamp-custom-input">Custom stamp text</label>
+              <input
+                id="communication-stamp-custom-input"
+                class="communication-stamp-custom-input"
+                type="text"
+                maxlength="48"
+                placeholder="Add note"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <div class="communication-stamp-custom-actions">
+                <button
+                  id="communication-stamp-custom-cancel"
+                  class="communication-stamp-custom-action communication-stamp-custom-action-secondary"
+                  type="button"
+                >
+                  Back
+                </button>
+                <button
+                  id="communication-stamp-custom-submit"
+                  class="communication-stamp-custom-action communication-stamp-custom-action-primary"
+                  type="submit"
+                >
+                  Add
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      </main>
+      <div id="settings-drawer" class="drawer hidden" aria-label="Settings">
+        <div class="drawer-header">
+          <div class="drawer-title">Settings</div>
+          <button id="settings-close" class="ghost" type="button">Close</button>
+        </div>
+        <div class="drawer-body">
+          <label class="field">
+            <div class="field-label">Iconography</div>
+            <select id="rail-icon-pack">
+              <option value="default_classic">Default</option>
+              <option value="oscillo_ink">Oscillo / Cuphead</option>
+              <option value="industrial_mono">Jony Ive</option>
+              <option value="painterly_folk">Frida Kahlo</option>
+              <option value="kinetic_marker">Michael Jordan</option>
+            </select>
+          </label>
+          <label class="field">
+            <div class="field-label">Memory</div>
+            <input id="memory-toggle" type="checkbox" />
+          </label>
+          <label class="field">
+            <div class="field-label">Always-On Vision</div>
+            <input id="always-on-vision-toggle" type="checkbox" />
+          </label>
+          <label class="field">
+            <div class="field-label">Keep Guide Visible</div>
+            <input id="runtime-pin-assistant-toggle" type="checkbox" />
+          </label>
+          <label class="field">
+            <div class="field-label">Show Diagnostics</div>
+            <input id="runtime-diagnostics-toggle" type="checkbox" />
+          </label>
+          <label class="field">
+            <div class="field-label">Text Model</div>
+            <select id="text-model">
+              <option value="dryrun-text-1">dryrun-text-1</option>
+              <option value="gpt-4o-mini">gpt-4o-mini</option>
+              <option value="gpt-5.2">gpt-5.2</option>
+              <option value="gpt-5.1-codex-max">gpt-5.1-codex-max</option>
+              <option value="claude-opus-4-5-20251101">claude-opus-4-5-20251101</option>
+              <option value="gemini-3-pro-preview">gemini-3-pro-preview</option>
+            </select>
+          </label>
+          <label class="field">
+            <div class="field-label">Image Model</div>
+            <select id="image-model">
+              <option value="dryrun-image-1">dryrun-image-1</option>
+              <option value="gemini-3-pro-image-preview">gemini-3-pro-image-preview</option>
+              <option value="gemini-2.5-flash-image">gemini-2.5-flash-image</option>
+              <option value="imagen-4.0-ultra">imagen-4.0-ultra</option>
+              <option value="imagen-4">imagen-4</option>
+              <option value="flux-2-max">flux-2-max</option>
+              <option value="flux-2-flex">flux-2-flex</option>
+              <option value="flux-2-pro">flux-2-pro</option>
+              <option value="flux-2">flux-2</option>
+              <option value="sdxl">sdxl</option>
+              <option value="gpt-image-1.5">gpt-image-1.5</option>
+              <option value="gpt-image-1-mini">gpt-image-1-mini</option>
+              <option value="gpt-image-1">gpt-image-1</option>
+            </select>
+          </label>
+          <label class="field">
+            <div class="field-label">Prompt Strategy</div>
+            <select id="prompt-strategy-mode">
+              <option value="auto">Auto (benchmark by model)</option>
+              <option value="tail">Constraint Tail (MUST)</option>
+              <option value="baseline">Baseline (no MUST tail)</option>
+            </select>
+          </label>
+          <label class="field">
+            <div class="field-label">Repeat Full Prompt</div>
+            <input id="prompt-repeat-full-toggle" type="checkbox" />
+          </label>
+          <div class="key-status-card">
+            <div class="key-status-title">Prompt Benchmark</div>
+            <div id="prompt-benchmark-readout" class="key-status-list muted">No benchmark data yet</div>
+            <div class="controls">
+              <button id="prompt-benchmark-reset" class="ghost" type="button">Reset</button>
+            </div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Aesthetic Preference</div>
+            <div id="aesthetic-onboarding-status" class="key-status-list muted">Not set yet</div>
+            <div class="controls">
+              <button id="aesthetic-onboarding-open" type="button">Run quiz</button>
+              <button id="aesthetic-onboarding-clear" class="ghost" type="button">Clear</button>
+            </div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">OpenRouter Onboarding</div>
+            <div id="openrouter-onboarding-status" class="key-status-list muted">Not started</div>
+            <div class="controls">
+              <button id="openrouter-onboarding-open" type="button">Run setup</button>
+              <button id="openrouter-onboarding-reset" class="ghost" type="button">Reset onboarding</button>
+              <button id="openrouter-api-key-clear" class="ghost" type="button">Clear key</button>
+            </div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Install Telemetry (Opt-in)</div>
+            <div id="install-telemetry-status" class="key-status-list muted">Off (opt-in required).</div>
+            <div class="controls">
+              <label for="install-telemetry-toggle" class="muted">Enable</label>
+              <input id="install-telemetry-toggle" type="checkbox" />
+            </div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Run Directory</div>
+            <div id="run-info" class="run-info-text muted">No run</div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Portraits Folder</div>
+            <div id="portraits-dir" class="key-status-list muted">Auto (not found)</div>
+            <div class="controls">
+              <button id="portraits-dir-pick" type="button">Choose…</button>
+              <button id="portraits-dir-clear" class="ghost" type="button">Auto</button>
+            </div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">API Keys</div>
+            <div id="key-status" class="key-status-list muted">Detecting local keys…</div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Canvas Context</div>
+            <div id="always-on-vision-readout" class="key-status-list muted">Off</div>
+          </div>
+          <div class="key-status-card">
+            <div class="key-status-title">Admin</div>
+            <div class="muted timeline-footnote">Internal demo/debug tools.</div>
+            <div class="controls">
+              <button id="reel-admin-toggle" type="button" aria-pressed="false">Enable Reel 9:16</button>
+            </div>
+          </div>
+          <div class="drawer-footnote muted">
+            For image-to-image edits and recreate, prefer a model that accepts image inputs (Gemini).
+          </div>
+        </div>
+      </div>
+      <div
+        id="openrouter-onboarding-modal"
+        class="openrouter-onboarding-modal hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="OpenRouter onboarding"
+      >
+        <div class="openrouter-onboarding-shell">
+          <div class="openrouter-onboarding-layout">
+            <section class="openrouter-onboarding-main">
+              <div id="openrouter-onboarding-header" class="openrouter-onboarding-header">
+                <div>
+                  <div class="openrouter-onboarding-title" id="openrouter-onboarding-title">
+                    OpenRouter onboarding
+                  </div>
+                  <div class="openrouter-onboarding-subtitle" id="openrouter-onboarding-subtitle">
+                    Intro
+                  </div>
+                </div>
+              </div>
+              <div id="openrouter-onboarding-body" class="openrouter-onboarding-body"></div>
+              <div
+                id="openrouter-onboarding-progress"
+                class="openrouter-onboarding-progress"
+                aria-label="OpenRouter onboarding progress"
+              ></div>
+              <div class="openrouter-onboarding-footer">
+                <div class="openrouter-onboarding-footer-left">
+                  <button id="openrouter-onboarding-back" class="ghost" type="button">Back</button>
+                  <a id="openrouter-onboarding-skip" class="openrouter-onboarding-skip-link" href="#" role="button">Skip for now</a>
+                </div>
+                <div class="openrouter-onboarding-footer-actions">
+                  <button id="openrouter-onboarding-next" type="button">Next</button>
+                </div>
+              </div>
+            </section>
+            <div class="openrouter-onboarding-media" aria-label="Mother portrait video">
+              <div class="openrouter-onboarding-media-frame">
+                <div id="openrouter-onboarding-media-slot" class="openrouter-onboarding-media-slot" aria-hidden="true">
+                  <video
+                    id="openrouter-onboarding-media-video"
+                    class="openrouter-onboarding-media-video"
+                    muted
+                    loop
+                    autoplay
+                    playsinline
+                    preload="metadata"
+                  ></video>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div
+        id="aesthetic-onboarding-modal"
+        class="aesthetic-onboarding-modal hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Aesthetic onboarding"
+      >
+        <div class="aesthetic-onboarding-shell">
+          <div class="aesthetic-onboarding-header">
+            <div>
+              <div class="aesthetic-onboarding-title" id="aesthetic-onboarding-title">Find your visual baseline</div>
+              <div class="aesthetic-onboarding-subtitle" id="aesthetic-onboarding-subtitle">
+                We will set your default image model from your picks.
+              </div>
+            </div>
+            <button id="aesthetic-onboarding-close" class="ghost" type="button">Skip</button>
+          </div>
+          <div id="aesthetic-onboarding-progress" class="aesthetic-onboarding-progress"></div>
+          <div id="aesthetic-onboarding-body" class="aesthetic-onboarding-body"></div>
+          <div class="aesthetic-onboarding-footer">
+            <button id="aesthetic-onboarding-back" class="ghost" type="button">Back</button>
+            <div class="aesthetic-onboarding-footer-actions">
+              <button id="aesthetic-onboarding-skip" class="ghost" type="button">Skip</button>
+              <button id="aesthetic-onboarding-next" type="button">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module">
+      import { readBinaryFile } from "@tauri-apps/api/fs";
+      import { appWindow, LogicalSize } from "@tauri-apps/api/window";
+
+      window.__cue_booted = false;
+      window.__juggernaut_booted = false;
+      const LOCAL_BOOT_VIDEO_PATH = "";
+      const LEGACY_BOOT_VIDEO_SESSION_KEY = "juggernaut.localBootVideoShown";
+      const LOCAL_BOOT_VIDEO_SESSION_KEY = "cue.localBootVideoShown";
+      const BOOT_VIDEO_MAX_HOLD_MS = 20000;
+      const BOOT_SHELL_INTRO_DELAY_MS = 60;
+      const BOOT_VIDEO_START_DELAY_MS = 2000;
+      const BOOT_COPY_FADE_LEAD_MS = 180;
+      const BOOT_STATUS_TICK_MS = 700;
+      const SPLASH_WINDOW_SIZE = 620;
+      const APP_WINDOW_WIDTH = 1400;
+      const APP_WINDOW_HEIGHT = 900;
+      const bootEl = document.getElementById("boot-error");
+      const bootOverlayEl = document.getElementById("boot-video-overlay");
+      const bootVideoEl = document.getElementById("boot-video-player");
+      const bootStatusEl = document.getElementById("boot-video-status");
+      const bootProgressBarEl = document.getElementById("boot-video-progress-bar");
+      const bodyEl = document.body;
+      const bootPrepStatusQueue = [
+        { message: "Loading workspace modules…", progress: 66 },
+        { message: "Preparing canvas engine…", progress: 74 },
+        { message: "Mounting controls…", progress: 82 },
+      ];
+      const bootReadyStatusQueue = [
+        { message: "Workspace ready. Waiting on video…", progress: 90 },
+        { message: "Syncing launch state…", progress: 92 },
+        { message: "Settling workspace layout…", progress: 94 },
+        { message: "Opening workspace…", progress: 96 },
+      ];
+      let bootReady = false;
+      let bootFailed = false;
+      let bootVideoDone = false;
+      let bootRevealStarted = false;
+      let bootVideoObjectUrl = null;
+      let bootPrepStatusTimer = 0;
+      let bootPrepStatusIndex = 0;
+      let bootStatusQueue = bootPrepStatusQueue;
+      let bootProgressValue = 0;
+
+      function setBootProgress(progress = 0) {
+        if (!bootProgressBarEl) return;
+        const normalized = Math.max(0, Math.min(100, Number(progress) || 0));
+        const next = Math.max(bootProgressValue, normalized);
+        bootProgressValue = next;
+        bootProgressBarEl.style.transform = `scaleX(${next / 100})`;
+      }
+
+      function setBootStatus(message = "", progress = null) {
+        if (!bootStatusEl) return;
+        bootStatusEl.textContent = String(message || "").trim() || "Loading Cue…";
+        if (progress !== null) setBootProgress(progress);
+      }
+
+      function stopBootPrepStatusCycle() {
+        if (bootPrepStatusTimer) {
+          window.clearInterval(bootPrepStatusTimer);
+          bootPrepStatusTimer = 0;
+        }
+      }
+
+      function startBootPrepStatusCycle(queue = bootPrepStatusQueue) {
+        stopBootPrepStatusCycle();
+        bootStatusQueue = Array.isArray(queue) && queue.length ? queue : bootPrepStatusQueue;
+        bootPrepStatusIndex = 0;
+        const current = bootStatusQueue[bootPrepStatusIndex];
+        if (current) setBootStatus(current.message, current.progress);
+        bootPrepStatusTimer = window.setInterval(() => {
+          bootPrepStatusIndex = (bootPrepStatusIndex + 1) % bootStatusQueue.length;
+          const next = bootStatusQueue[bootPrepStatusIndex];
+          if (next) setBootStatus(next.message, next.progress);
+        }, BOOT_STATUS_TICK_MS);
+      }
+
+      function cleanupBootVideoSource() {
+        bootOverlayEl?.classList.remove("is-video-ready");
+        bootOverlayEl?.classList.remove("is-video-imminent");
+        stopBootPrepStatusCycle();
+        if (bootVideoEl) {
+          bootVideoEl.classList.remove("is-visible");
+          bootVideoEl.pause();
+          bootVideoEl.removeAttribute("src");
+          bootVideoEl.load();
+        }
+        if (bootVideoObjectUrl) {
+          URL.revokeObjectURL(bootVideoObjectUrl);
+          bootVideoObjectUrl = null;
+        }
+      }
+
+      function armBootShellIntro() {
+        if (!bootOverlayEl) return;
+        window.requestAnimationFrame(() => {
+          window.setTimeout(() => {
+            bootOverlayEl.classList.add("is-shell-visible");
+          }, BOOT_SHELL_INTRO_DELAY_MS);
+        });
+      }
+
+      function hideBootOverlay() {
+        stopBootPrepStatusCycle();
+        setBootStatus("Workspace ready", 100);
+        bodyEl?.classList.add("is-boot-revealed");
+        if (!bootOverlayEl) return;
+        bootOverlayEl.classList.add("is-dismissed");
+        window.setTimeout(() => {
+          bootOverlayEl.classList.add("hidden");
+          cleanupBootVideoSource();
+        }, 260);
+      }
+
+      async function resizeWindow(width = APP_WINDOW_WIDTH, height = APP_WINDOW_HEIGHT) {
+        try {
+          await appWindow.setSize(new LogicalSize(width, height));
+          await appWindow.center();
+        } catch (error) {
+          console.warn("Could not resize startup window:", error);
+        }
+      }
+
+      async function enterSplashWindowMode() {
+        await resizeWindow(SPLASH_WINDOW_SIZE, SPLASH_WINDOW_SIZE);
+      }
+
+      async function expandWindowForApp() {
+        await resizeWindow(APP_WINDOW_WIDTH, APP_WINDOW_HEIGHT);
+      }
+
+      function maybeRevealApp() {
+        if (bootFailed || !bootReady || !bootVideoDone) return;
+        if (bootRevealStarted) return;
+        bootRevealStarted = true;
+        setBootStatus("Opening workspace…", 96);
+        expandWindowForApp()
+          .catch(() => {})
+          .finally(() => {
+            hideBootOverlay();
+          });
+      }
+
+      async function runLocalBootVideo() {
+        const alreadyShown =
+          window.sessionStorage?.getItem(LOCAL_BOOT_VIDEO_SESSION_KEY) === "1" ||
+          window.sessionStorage?.getItem(LEGACY_BOOT_VIDEO_SESSION_KEY) === "1";
+        if (alreadyShown || !bootOverlayEl || !bootVideoEl) {
+          setBootStatus("Opening workspace…", 96);
+          bootVideoDone = true;
+          maybeRevealApp();
+          return;
+        }
+        window.sessionStorage?.setItem(LOCAL_BOOT_VIDEO_SESSION_KEY, "1");
+        window.sessionStorage?.removeItem(LEGACY_BOOT_VIDEO_SESSION_KEY);
+        setBootStatus("Reading startup asset…", 18);
+        let holdTimer = 0;
+        try {
+          const bytes = await readBinaryFile(LOCAL_BOOT_VIDEO_PATH);
+          bootVideoObjectUrl = URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }));
+          setBootStatus("Holding launch frame…", 28);
+          const shellHoldMs = Math.max(0, BOOT_VIDEO_START_DELAY_MS - BOOT_COPY_FADE_LEAD_MS);
+          await new Promise((resolve) => {
+            window.setTimeout(resolve, shellHoldMs);
+          });
+          bootOverlayEl?.classList.add("is-video-imminent");
+          await new Promise((resolve) => {
+            window.setTimeout(resolve, BOOT_COPY_FADE_LEAD_MS);
+          });
+          setBootStatus("Starting playback…", 42);
+          bootVideoEl.src = bootVideoObjectUrl;
+          bootVideoEl.addEventListener(
+            "loadeddata",
+            () => {
+              bootOverlayEl?.classList.add("is-video-ready");
+              bootVideoEl.classList.add("is-visible");
+              setBootStatus("Startup video ready…", 54);
+            },
+            { once: true },
+          );
+          await new Promise((resolve) => {
+            let finished = false;
+            const complete = () => {
+              if (finished) return;
+              finished = true;
+              bootVideoEl.removeEventListener("ended", complete);
+              bootVideoEl.removeEventListener("error", complete);
+              window.clearTimeout(holdTimer);
+              resolve();
+            };
+            holdTimer = window.setTimeout(complete, BOOT_VIDEO_MAX_HOLD_MS);
+            bootVideoEl.addEventListener("ended", complete, { once: true });
+            bootVideoEl.addEventListener("error", complete, { once: true });
+            bootVideoEl.play().catch(() => complete());
+          });
+        } catch (error) {
+          console.warn("Local boot video unavailable:", error);
+          setBootStatus("Startup video unavailable. Opening workspace…", 88);
+        } finally {
+          bootVideoDone = true;
+          maybeRevealApp();
+        }
+      }
+
+      enterSplashWindowMode();
+      armBootShellIntro();
+      setBootStatus("Starting splash shell…", 10);
+      runLocalBootVideo();
+
+      startBootPrepStatusCycle();
+      Promise.all([import("./design_review_bootstrap.js"), import("./canvas_app.js")])
+        .then(() => {
+          window.__cue_booted = true;
+          window.__juggernaut_booted = true;
+          bootReady = true;
+          if (bootEl) bootEl.classList.add("hidden");
+          if (!bootVideoDone) startBootPrepStatusCycle(bootReadyStatusQueue);
+          maybeRevealApp();
+        })
+        .catch((err) => {
+          stopBootPrepStatusCycle();
+          bootFailed = true;
+          console.error(err);
+          if (bootEl) {
+            bootEl.classList.remove("hidden");
+            bootEl.textContent = `Cue failed to initialize: ${err?.message || err}`;
+          }
+          expandWindowForApp()
+            .catch(() => {})
+            .finally(() => {
+              hideBootOverlay();
+            });
+        });
+    </script>
+  </body>
+</html>

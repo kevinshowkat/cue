@@ -1,0 +1,286 @@
+{
+  "schemaVersion": "cue-agent-affordances-v2",
+  "lastUpdated": "2026-04-01",
+  "notes": [
+    "This manifest describes the current public agent surface in Cue.",
+    "It documents the shipped planner, observable driver, single-image routing, and tool runtime contracts.",
+    "Legacy schema ids and event names may still use juggernaut or brood internally. See docs/legacy-internals.md for the allowlist."
+  ],
+  "goalContract": {
+    "entrypoint": "desktop/src/agent_runner_goal_contract.js",
+    "schemaVersion": "juggernaut.agent_runner_goal_contract.v1",
+    "stopCheckSchemaVersion": "juggernaut.agent_runner_goal_check.v1",
+    "plannerModel": "gpt-5.4"
+  },
+  "designReview": {
+    "entrypoint": "desktop/src/design_review_contract.js",
+    "requestSchema": "cue.design_review_request.v1",
+    "proposalSchema": "cue.design_review_proposal.v1",
+    "applyRequestSchema": "cue.design_review_apply_request.v1",
+    "plannerTraceSchema": "cue.design_review_planner_trace.v1",
+    "plannerModel": "gpt-5.4",
+    "finalApplyModel": "gemini-3.1-flash-image-preview"
+  },
+  "agentRun": {
+    "entrypoint": "desktop/src/agent_runner_runtime.js",
+    "exportFormats": [
+      "psd",
+      "png",
+      "jpg",
+      "webp",
+      "tiff"
+    ],
+    "discountedPrepActions": [
+      "set_active_image",
+      "set_selected_images",
+      "marker_stroke",
+      "magic_select_click",
+      "eraser_stroke"
+    ],
+    "actions": [
+      {
+        "id": "set_active_image",
+        "group": "selection",
+        "mutatesPixels": false,
+        "maxSelectedImages": 1
+      },
+      {
+        "id": "set_selected_images",
+        "group": "selection",
+        "mutatesPixels": false,
+        "minSelectedImages": 1,
+        "maxSelectedImages": 3
+      },
+      {
+        "id": "marker_stroke",
+        "group": "visible_prep",
+        "mutatesPixels": false,
+        "minPoints": 2
+      },
+      {
+        "id": "magic_select_click",
+        "group": "visible_prep",
+        "mutatesPixels": false,
+        "minPoints": 1
+      },
+      {
+        "id": "eraser_stroke",
+        "group": "visible_prep",
+        "mutatesPixels": false,
+        "minPoints": 1
+      },
+      {
+        "id": "request_design_review",
+        "group": "review",
+        "mutatesPixels": false
+      },
+      {
+        "id": "accept_review_proposal",
+        "group": "review",
+        "mutatesPixels": true
+      },
+      {
+        "id": "invoke_seeded_tool",
+        "group": "image_action",
+        "mutatesPixels": true,
+        "toolIds": [
+          "cut_out",
+          "remove",
+          "new_background",
+          "reframe",
+          "variants"
+        ]
+      },
+      {
+        "id": "invoke_direct_affordance",
+        "group": "image_action",
+        "mutatesPixels": true,
+        "toolIds": [
+          "remove_people",
+          "polish",
+          "relight"
+        ]
+      },
+      {
+        "id": "preview_create_tool",
+        "group": "tool_creation",
+        "mutatesPixels": false
+      },
+      {
+        "id": "create_tool",
+        "group": "tool_creation",
+        "mutatesPixels": false
+      },
+      {
+        "id": "invoke_custom_tool",
+        "group": "tool_creation",
+        "mutatesPixels": true
+      },
+      {
+        "id": "export",
+        "group": "output",
+        "mutatesPixels": false,
+        "defaultFormat": "psd"
+      },
+      {
+        "id": "stop",
+        "group": "control",
+        "mutatesPixels": false
+      }
+    ]
+  },
+  "observableDriver": {
+    "entrypoint": "desktop/src/agent_observable_driver.js",
+    "actions": [
+      {
+        "id": "marker_stroke",
+        "tool": "marker",
+        "mutatesPixels": false
+      },
+      {
+        "id": "protect_stroke",
+        "tool": "highlight",
+        "mutatesPixels": false
+      },
+      {
+        "id": "magic_select_click",
+        "tool": "magic_select",
+        "mutatesPixels": false
+      },
+      {
+        "id": "stamp_click",
+        "tool": "stamp",
+        "mutatesPixels": false
+      },
+      {
+        "id": "make_space_click",
+        "tool": "make_space",
+        "mutatesPixels": false
+      },
+      {
+        "id": "eraser_stroke",
+        "tool": "eraser",
+        "mutatesPixels": false
+      }
+    ],
+    "agentRunSubset": [
+      "marker_stroke",
+      "magic_select_click",
+      "eraser_stroke"
+    ]
+  },
+  "singleImageAffordances": [
+    {
+      "jobId": "cut_out",
+      "label": "Cut Out",
+      "capability": "subject_isolation",
+      "surface": "rail",
+      "requiresSelection": true,
+      "executionType": "model_backed",
+      "routeProfileId": "model_capability_only"
+    },
+    {
+      "jobId": "remove",
+      "label": "Remove",
+      "capability": "targeted_remove",
+      "surface": "rail",
+      "requiresSelection": true,
+      "executionType": "model_backed",
+      "routeProfileId": "model_capability_only"
+    },
+    {
+      "jobId": "new_background",
+      "label": "New Background",
+      "capability": "background_replace",
+      "surface": "rail",
+      "requiresSelection": true,
+      "executionType": "model_backed",
+      "routeProfileId": "model_capability_only"
+    },
+    {
+      "jobId": "reframe",
+      "label": "Reframe",
+      "capability": "crop_or_outpaint",
+      "surface": "rail",
+      "requiresSelection": true,
+      "executionType": "model_backed",
+      "routeProfileId": "model_capability_only"
+    },
+    {
+      "jobId": "variants",
+      "label": "Variants",
+      "capability": "identity_preserving_variation",
+      "surface": "rail",
+      "requiresSelection": true,
+      "executionType": "model_backed",
+      "routeProfileId": "model_capability_only"
+    },
+    {
+      "jobId": "remove_people",
+      "label": "Remove People",
+      "capability": "people_removal",
+      "surface": "direct",
+      "requiresSelection": false,
+      "executionType": "model_backed",
+      "routeProfileId": "remove_people_model"
+    },
+    {
+      "jobId": "polish",
+      "label": "Polish",
+      "capability": "image_polish",
+      "surface": "direct",
+      "requiresSelection": false,
+      "executionType": "local_first",
+      "routeProfileId": "polish_local_first"
+    },
+    {
+      "jobId": "relight",
+      "label": "Relight",
+      "capability": "image_relight",
+      "surface": "direct",
+      "requiresSelection": false,
+      "executionType": "local_first",
+      "routeProfileId": "relight_local_first"
+    }
+  ],
+  "routeProfiles": [
+    {
+      "id": "model_capability_only",
+      "defaultExecutionKind": "model_capability",
+      "localOperation": null,
+      "fallbackExecutionKind": null
+    },
+    {
+      "id": "remove_people_model",
+      "defaultExecutionKind": "model_capability",
+      "localOperation": null,
+      "fallbackExecutionKind": null
+    },
+    {
+      "id": "polish_local_first",
+      "defaultExecutionKind": "local_edit",
+      "localOperation": "polish",
+      "fallbackExecutionKind": "model_capability"
+    },
+    {
+      "id": "relight_local_first",
+      "defaultExecutionKind": "local_edit",
+      "localOperation": "relight",
+      "fallbackExecutionKind": "model_capability"
+    },
+    {
+      "id": "create_tool_local_manifest_builder_v1",
+      "defaultExecutionKind": "local_manifest_builder",
+      "localOperation": "manifest_generation",
+      "fallbackExecutionKind": null
+    }
+  ],
+  "toolCreation": {
+    "entrypoint": "desktop/src/tool_runtime.js",
+    "affordanceId": "create_tool",
+    "manifestSchema": "juggernaut.tool_manifest.v1",
+    "invocationSchema": "juggernaut.tool_invocation.v1",
+    "invocationContract": "juggernaut.create_tool.v1",
+    "routeProfileId": "create_tool_local_manifest_builder_v1"
+  }
+}

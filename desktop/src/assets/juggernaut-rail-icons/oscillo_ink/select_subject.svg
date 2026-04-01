@@ -1,0 +1,11 @@
+<svg class="tool-icon tool-icon-select-subject tool-icon-pack-oscillo-ink" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <g transform="rotate(-3 12 12)">
+  <circle fill="currentColor" cx="12" cy="8.2" r="1.7" fill-opacity="0.11" />
+  <path fill="currentColor" d="M8.15 16.65c.62-2.44 2.01-3.66 4.18-3.66 2.14 0 3.48 1.22 4.02 3.66" fill-opacity="0.09" />
+  <path fill="none" stroke="currentColor" stroke-width="2.28" stroke-linecap="round" stroke-linejoin="round" d="M8.45 16.35c.58-2.12 1.87-3.18 3.88-3.18 1.99 0 3.24 1.06 3.77 3.18" />
+  <path fill="none" stroke="currentColor" stroke-width="2.28" stroke-linecap="round" stroke-linejoin="round" d="M6.2 7.25V5.45h2.3" />
+  <path fill="none" stroke="currentColor" stroke-width="2.28" stroke-linecap="round" stroke-linejoin="round" d="M17.8 7.25V5.45h-2.3" />
+  <path fill="none" stroke="currentColor" stroke-width="2.28" stroke-linecap="round" stroke-linejoin="round" d="M6.2 14.95v1.8h2.3" />
+  <path fill="none" stroke="currentColor" stroke-width="2.28" stroke-linecap="round" stroke-linejoin="round" d="M17.8 14.95v1.8h-2.3" />
+</g>
+</svg>

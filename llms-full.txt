@@ -1,0 +1,93 @@
+# Cue llms-full.txt
+
+This file is the expanded agent-facing context for the public Cue repository.
+
+## Project Identity
+
+- Product: Cue
+- Category: image-first desktop design workstation
+- Current public support bar: source release plus verified macOS DMG build
+- Desktop shell: Tauri
+- Native runtime: Rust engine packaged as the legacy internal resource `brood-rs`
+- Public configuration: prefer `CUE_*`; `BROOD_*` remains a documented compatibility alias layer
+
+## Read First
+
+- [`README.md`](README.md)
+- [`AGENTS.md`](AGENTS.md)
+- [`docs/README.md`](docs/README.md)
+- [`docs/agent_quickstart.md`](docs/agent_quickstart.md)
+- [`docs/agent-runtime.md`](docs/agent-runtime.md)
+- [`docs/agent-affordances.json`](docs/agent-affordances.json)
+- [`docs/legacy-internals.md`](docs/legacy-internals.md)
+
+## Intake And Fallback
+
+- Preferred intake contract: [`agent-intake.json`](agent-intake.json)
+- Schema: [`docs/aip-1.schema.json`](docs/aip-1.schema.json)
+- Intake health rules: [`docs/agent_intake_status.md`](docs/agent_intake_status.md)
+- Roundtrip example: [`docs/agent_intake_roundtrip.sample.json`](docs/agent_intake_roundtrip.sample.json)
+- If intake is unavailable, use [`llms.txt`](llms.txt) and the fallback entrypoints in [`agent-intake.json`](agent-intake.json).
+
+## Public Documentation Surface
+
+- [`docs/desktop.md`](docs/desktop.md): desktop behavior, run directories, shell/runtime layout
+- [`docs/agent-runtime.md`](docs/agent-runtime.md): current shipped Agent Run and observable-driver contract
+- [`docs/agent-workflow-prd.md`](docs/agent-workflow-prd.md): implemented workflow scope vs future direction
+- [`docs/agent-affordances.json`](docs/agent-affordances.json): machine-readable runtime summary
+- [`docs/local-magic-select-runtime.md`](docs/local-magic-select-runtime.md): prepared local Magic Select contract
+- [`docs/macos-local-private-image-editing.md`](docs/macos-local-private-image-editing.md): macOS local/private workflow notes
+- [`docs/benchmark-playbook.md`](docs/benchmark-playbook.md): reproducible benchmark format
+- [`RELEASING.md`](RELEASING.md): maintainer release workflow
+
+## Current Agent Surfaces
+
+- Goal contract compiler: [`desktop/src/agent_runner_goal_contract.js`](desktop/src/agent_runner_goal_contract.js)
+- Agent Run planner: [`desktop/src/agent_runner_runtime.js`](desktop/src/agent_runner_runtime.js)
+- Observable driver: [`desktop/src/agent_observable_driver.js`](desktop/src/agent_observable_driver.js)
+- Single-image routing: [`desktop/src/single_image_capability_routing.js`](desktop/src/single_image_capability_routing.js)
+- Tool runtime: [`desktop/src/tool_runtime.js`](desktop/src/tool_runtime.js)
+- Design Review schemas and planner/apply models: [`desktop/src/design_review_contract.js`](desktop/src/design_review_contract.js)
+
+## High-Signal Source Entrypoints
+
+- [`desktop/src/agent_runner_runtime.js`](desktop/src/agent_runner_runtime.js)
+- [`desktop/src/agent_runner_goal_contract.js`](desktop/src/agent_runner_goal_contract.js)
+- [`desktop/src/agent_observable_driver.js`](desktop/src/agent_observable_driver.js)
+- [`desktop/src/single_image_capability_routing.js`](desktop/src/single_image_capability_routing.js)
+- [`desktop/src/tool_runtime.js`](desktop/src/tool_runtime.js)
+- [`desktop/src/juggernaut_shell/rail.js`](desktop/src/juggernaut_shell/rail.js)
+- [`desktop/src/design_review_contract.js`](desktop/src/design_review_contract.js)
+- [`desktop/src/canvas_app.js`](desktop/src/canvas_app.js)
+- [`desktop/src/index.html`](desktop/src/index.html)
+- [`desktop/src/styles.css`](desktop/src/styles.css)
+- [`desktop/src-tauri/src/main.rs`](desktop/src-tauri/src/main.rs)
+- [`desktop/src-tauri/tauri.conf.json`](desktop/src-tauri/tauri.conf.json)
+- [`desktop/src/magic_select_runtime.js`](desktop/src/magic_select_runtime.js)
+- [`rust_engine/crates/brood-cli/src/main.rs`](rust_engine/crates/brood-cli/src/main.rs)
+- [`rust_engine/crates/brood-engine/src/lib.rs`](rust_engine/crates/brood-engine/src/lib.rs)
+- [`rust_engine/crates/brood-contracts/src/events.rs`](rust_engine/crates/brood-contracts/src/events.rs)
+
+## Validation Commands
+
+- `./scripts/check_agent_entrypoints.py`
+- `cd desktop && npm test`
+- `cd desktop && npm run build`
+- `cd desktop/src-tauri && cargo check`
+- `cd rust_engine && cargo check`
+- `./scripts/release_check.sh`
+
+## Release Notes
+
+- The public release flow is macOS-first. Windows and Linux remain roadmap targets and should be described honestly.
+- The release rehearsal should produce `desktop/src-tauri/target/release/bundle/dmg/Cue_<version>_aarch64.dmg`.
+- Public release names and GitHub Releases should say Cue.
+- Homebrew is intentionally out of scope for the first open-source launch.
+
+## Guardrails
+
+- Keep user-facing naming on Cue.
+- Do not reintroduce machine-local absolute paths.
+- Do not commit secrets.
+- Do not document aspirational agent APIs as if they are shipped contracts.
+- Treat [`docs/legacy-internals.md`](docs/legacy-internals.md) as the allowlist for temporary old internal names that still exist for launch-risk reasons.
