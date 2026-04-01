@@ -10,6 +10,7 @@ This folder holds the main public documentation for Cue.
 
 ## Technical Reference
 
+- [canvas-app-rewrite-prd.md](canvas-app-rewrite-prd.md): from-scratch desktop canvas runtime rewrite plan
 - [local-magic-select-runtime.md](local-magic-select-runtime.md): local weights-backed Magic Select setup and runtime contract
 - [psd-export-slice.md](psd-export-slice.md)
 - [benchmark-playbook.md](benchmark-playbook.md)
