@@ -38,6 +38,10 @@
   --jg-rail-pad: 12px;
   --jg-communication-shell-width: min(392px, calc(100vw - 32px));
   --jg-communication-shell-gutter: 18px;
+  --jg-communication-shell-height: 214px;
+  --jg-rail-stack-gap: 16px;
+  --jg-rail-above-comms-gap: 0px;
+  --jg-bottom-dock-offset: 18px;
   --jg-system-font-stack: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --jg-system-strip-font-stack: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Courier New", monospace;
   --jg-system-strip-height: 26px;
@@ -8124,7 +8128,7 @@ button.ghost:hover {
 .communication-shell {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--jg-system-strip-bottom) + var(--jg-system-strip-height) + var(--jg-system-strip-gap));
+  bottom: var(--jg-bottom-dock-offset);
   z-index: 12;
   width: var(--jg-communication-shell-width);
   transform: translateX(-50%);
@@ -8143,7 +8147,7 @@ button.ghost:hover {
   justify-content: center;
   gap: 2px;
   width: 100%;
-  height: 214px;
+  height: var(--jg-communication-shell-height);
   padding: 14px 14px 0;
   border-radius: 34px 34px 42px 42px;
   border: 1px solid rgba(255, 255, 255, 0.28);
@@ -10267,11 +10271,11 @@ button.ghost:hover {
 
 .timeline-dock {
   position: fixed;
-  top: calc(var(--brand-strip-h) + 8px);
-  left: 50%;
+  bottom: var(--jg-bottom-dock-offset);
+  left: 18px;
   z-index: 960;
   width: min(32vw, 420px);
-  transform: translateX(-50%);
+  transform: none;
   pointer-events: none;
 }
 
@@ -10787,7 +10791,8 @@ button.ghost:hover {
 
 @media (max-width: 720px) {
   .timeline-dock {
-    top: calc(var(--brand-strip-h) + 6px);
+    bottom: var(--jg-bottom-dock-offset);
+    left: 12px;
     width: calc(100vw - 24px);
   }
 
@@ -12317,9 +12322,11 @@ body.juggernaut-shell .brand-strip .session-tab-action-menu-toggle {
 }
 
 .juggernaut-tool-rail {
-  position: absolute;
-  top: var(--jg-primary-rail-top);
-  left: 0;
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
   display: flex;
   flex-direction: column;
   gap: var(--jg-rail-gap);
@@ -12340,15 +12347,10 @@ body.juggernaut-shell .brand-strip .session-tab-action-menu-toggle {
 }
 
 .juggernaut-shell-chrome .custom-tool-dock {
-  position: absolute;
-  left: 0;
-  top: calc(
-    var(--jg-primary-rail-top) +
-    (var(--jg-rail-pad) * 2) +
-    (var(--jg-rail-button-size) * var(--jg-primary-rail-button-count)) +
-    (var(--jg-rail-gap) * (var(--jg-primary-rail-button-count) - 1)) +
-    16px
-  );
+  position: relative;
+  left: auto;
+  top: auto;
+  right: auto;
   bottom: auto;
   width: 74px;
   min-width: 74px;
@@ -12627,15 +12629,35 @@ body.juggernaut-shell .stage {
 
 body.juggernaut-shell .communication-shell {
   position: absolute;
-  right: 18px;
+  right: var(--jg-communication-shell-gutter);
   left: auto;
-  bottom: calc(var(--jg-system-strip-bottom) + var(--jg-system-strip-height) + var(--jg-system-strip-gap));
+  bottom: var(--jg-bottom-dock-offset);
   width: var(--jg-communication-shell-width);
   height: auto;
   padding: 0;
   transform: none;
   align-items: flex-start;
   justify-content: flex-end;
+}
+
+.juggernaut-side-rail-stack {
+  position: absolute;
+  right: var(--jg-communication-shell-gutter);
+  bottom: calc(
+    var(--jg-bottom-dock-offset) +
+    var(--jg-communication-shell-height) +
+    var(--jg-rail-above-comms-gap)
+  );
+  z-index: 13;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--jg-rail-stack-gap);
+  pointer-events: none;
+}
+
+.juggernaut-side-rail-stack > * {
+  pointer-events: auto;
 }
 
 body.juggernaut-shell .brand-strip {
@@ -12738,12 +12760,18 @@ body.juggernaut-shell .brand-strip {
     position: absolute;
     right: auto;
     left: 50%;
-    bottom: calc(var(--jg-system-strip-bottom) + var(--jg-system-strip-height) + var(--jg-system-strip-gap));
+    bottom: var(--jg-bottom-dock-offset);
     width: var(--jg-communication-shell-width);
     height: auto;
     padding: 0;
     transform: translateX(-50%);
     justify-content: center;
+  }
+
+  .juggernaut-side-rail-stack {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
   }
 }
 
