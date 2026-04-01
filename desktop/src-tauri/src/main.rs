@@ -718,8 +718,11 @@ fn first_non_empty_env(keys: &[&str]) -> Option<String> {
 }
 
 fn first_present_env(keys: &[&str]) -> Option<(String, String)> {
-    keys.iter()
-        .find_map(|key| std::env::var(key).ok().map(|value| ((*key).to_string(), value)))
+    keys.iter().find_map(|key| {
+        std::env::var(key)
+            .ok()
+            .map(|value| ((*key).to_string(), value))
+    })
 }
 
 fn home_config_dir_candidates() -> Vec<PathBuf> {
@@ -4372,16 +4375,13 @@ fn magic_select_worker_error_payload(
 }
 
 fn magic_select_resolve_runtime_config() -> Result<MagicSelectRuntimeConfig, String> {
-    let python_bin = first_non_empty_env(&[
-        "CUE_MAGIC_SELECT_PYTHON",
-        "JUGGERNAUT_MAGIC_SELECT_PYTHON",
-    ])
-        .unwrap_or_else(|| MAGIC_SELECT_LOCAL_DEFAULT_PYTHON.to_string());
+    let python_bin =
+        first_non_empty_env(&["CUE_MAGIC_SELECT_PYTHON", "JUGGERNAUT_MAGIC_SELECT_PYTHON"])
+            .unwrap_or_else(|| MAGIC_SELECT_LOCAL_DEFAULT_PYTHON.to_string());
 
-    let helper_path = if let Some((env_key, path)) = first_present_env(&[
-        "CUE_MAGIC_SELECT_HELPER",
-        "JUGGERNAUT_MAGIC_SELECT_HELPER",
-    ]) {
+    let helper_path = if let Some((env_key, path)) =
+        first_present_env(&["CUE_MAGIC_SELECT_HELPER", "JUGGERNAUT_MAGIC_SELECT_HELPER"])
+    {
         let trimmed = path.trim();
         if trimmed.is_empty() {
             return Err(format!(
@@ -4432,13 +4432,13 @@ fn magic_select_resolve_runtime_config() -> Result<MagicSelectRuntimeConfig, Str
         "CUE_MAGIC_SELECT_MODEL_ID",
         "JUGGERNAUT_MAGIC_SELECT_MODEL_ID",
     ])
-        .unwrap_or_else(|| MAGIC_SELECT_LOCAL_DEFAULT_MODEL_ID.to_string());
+    .unwrap_or_else(|| MAGIC_SELECT_LOCAL_DEFAULT_MODEL_ID.to_string());
     let model_revision = first_non_empty_env(&[
         "CUE_MAGIC_SELECT_MODEL_REVISION",
         "JUGGERNAUT_MAGIC_SELECT_MODEL_REVISION",
     ])
-        .map(Ok)
-        .unwrap_or_else(|| magic_select_default_model_revision(&model_path))?;
+    .map(Ok)
+    .unwrap_or_else(|| magic_select_default_model_revision(&model_path))?;
 
     Ok(MagicSelectRuntimeConfig {
         python_bin,
@@ -8227,7 +8227,6 @@ struct DesktopSessionRef {
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DesktopSessionLaunchPayload {
-    memory_enabled: Option<bool>,
     text_model: Option<String>,
     image_model: Option<String>,
     active_image_path: Option<String>,
@@ -8819,19 +8818,8 @@ fn build_desktop_session_dispatch_line(
 fn start_desktop_session_runtime(
     app: &tauri::AppHandle,
     run_dir: &str,
-    launch: &DesktopSessionLaunchPayload,
+    _launch: &DesktopSessionLaunchPayload,
 ) -> Result<SpawnedRuntimeSession, String> {
-    let memory_enabled = launch.memory_enabled.unwrap_or(false);
-    let mut env = HashMap::new();
-    env.insert(
-        "CUE_MEMORY".to_string(),
-        if memory_enabled { "1" } else { "0" }.to_string(),
-    );
-    env.insert(
-        "BROOD_MEMORY".to_string(),
-        if memory_enabled { "1" } else { "0" }.to_string(),
-    );
-
     let events_path = default_events_path_for_run_dir(run_dir);
     let brood_args = vec![
         "chat".to_string(),
@@ -8859,7 +8847,7 @@ fn start_desktop_session_runtime(
             "cargo".to_string(),
             cargo_args,
             Some(repo_root.join("rust_engine").to_string_lossy().to_string()),
-            Some(env.clone()),
+            None,
         ) {
             Ok(mut spawned) => {
                 spawned.launch_label = "cargo run -p brood-cli".to_string();
@@ -8874,7 +8862,7 @@ fn start_desktop_session_runtime(
         "brood-rs".to_string(),
         brood_args,
         Some(run_dir.to_string()),
-        Some(env),
+        None,
     ) {
         Ok(mut spawned) => {
             spawned.launch_label = "brood-rs".to_string();

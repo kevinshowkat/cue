@@ -38,9 +38,6 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     Chat(ChatArgs),
-    Run(RunArgs),
-    Recreate(RecreateArgs),
-    Export(ExportArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -55,67 +52,22 @@ struct ChatArgs {
     image_model: Option<String>,
 }
 
-#[derive(Debug, Parser)]
-struct RunArgs {
-    #[arg(long)]
-    prompt: String,
-    #[arg(long)]
-    out: PathBuf,
-    #[arg(long)]
-    events: Option<PathBuf>,
-    #[arg(long, default_value = "gpt-5.2")]
-    text_model: String,
-    #[arg(long)]
-    image_model: Option<String>,
-}
-
-#[derive(Debug, Parser)]
-struct RecreateArgs {
-    #[arg(long)]
-    reference: PathBuf,
-    #[arg(long)]
-    out: PathBuf,
-    #[arg(long)]
-    events: Option<PathBuf>,
-    #[arg(long, default_value = "gpt-5.2")]
-    text_model: String,
-    #[arg(long)]
-    image_model: Option<String>,
-}
-
-#[derive(Debug, Parser)]
-struct ExportArgs {
-    #[arg(long)]
-    run: PathBuf,
-    #[arg(long)]
-    out: PathBuf,
-}
-
 const REALTIME_DESCRIPTION_MAX_CHARS: usize = 40;
 const OPENAI_VISION_FALLBACK_MODEL: &str = "gpt-5.2";
 const OPENAI_VISION_SECONDARY_MODEL: &str = "gpt-5-nano";
 const OPENROUTER_OPENAI_VISION_FALLBACK_MODEL: &str = "openai/gpt-5.2";
 
 fn main() {
-    match run() {
-        Ok(code) => std::process::exit(code),
-        Err(err) => {
-            eprintln!("brood-rs error: {err:#}");
-            std::process::exit(1);
-        }
+    if let Err(err) = run() {
+        eprintln!("brood-rs error: {err:#}");
+        std::process::exit(1);
     }
 }
 
-fn run() -> Result<i32> {
+fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Chat(args) => {
-            run_chat_native(args)?;
-            Ok(0)
-        }
-        Command::Run(args) => run_run_native(args),
-        Command::Recreate(args) => run_recreate_native(args),
-        Command::Export(args) => run_export_native(args),
+        Command::Chat(args) => run_chat_native(args),
     }
 }
 
@@ -1940,54 +1892,6 @@ fn run_chat_native(args: ChatArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_run_native(args: RunArgs) -> Result<i32> {
-    let events_path = args
-        .events
-        .clone()
-        .unwrap_or_else(|| args.out.join("events.jsonl"));
-    let mut engine = NativeEngine::new(
-        &args.out,
-        &events_path,
-        Some(args.text_model.clone()),
-        args.image_model.clone(),
-    )?;
-    let mut settings = Map::new();
-    settings.insert("size".to_string(), Value::String("1024x1024".to_string()));
-    settings.insert("n".to_string(), json!(1));
-    settings.insert(
-        "quality_preset".to_string(),
-        Value::String("quality".to_string()),
-    );
-    let mut intent = Map::new();
-    intent.insert("action".to_string(), Value::String("generate".to_string()));
-    engine.generate(&args.prompt, settings, intent)?;
-    engine.finish()?;
-    Ok(0)
-}
-
-fn run_recreate_native(args: RecreateArgs) -> Result<i32> {
-    let events_path = args
-        .events
-        .clone()
-        .unwrap_or_else(|| args.out.join("events.jsonl"));
-    let mut engine = NativeEngine::new(
-        &args.out,
-        &events_path,
-        Some(args.text_model.clone()),
-        args.image_model.clone(),
-    )?;
-    let result = run_native_recreate_loop(&mut engine, &args.reference, "quality", 2);
-    engine.finish()?;
-    result?;
-    Ok(0)
-}
-
-fn run_export_native(args: ExportArgs) -> Result<i32> {
-    export_html_native(&args.run, &args.out)?;
-    println!("Exported to {}", args.out.display());
-    Ok(0)
-}
-
 fn chat_settings(quality_preset: &str) -> Map<String, Value> {
     let mut settings = Map::new();
     settings.insert("size".to_string(), Value::String("1024x1024".to_string()));
@@ -3355,9 +3259,12 @@ impl CanvasContextRealtimeSession {
                 events,
                 canvas_context_realtime_model(),
                 RealtimeSessionKind::CanvasContext,
-                first_non_empty_env(&["CUE_CANVAS_CONTEXT_REALTIME_DISABLED", "BROOD_CANVAS_CONTEXT_REALTIME_DISABLED"])
-                    .map(|value| value.trim() == "1")
-                    .unwrap_or(false),
+                first_non_empty_env(&[
+                    "CUE_CANVAS_CONTEXT_REALTIME_DISABLED",
+                    "BROOD_CANVAS_CONTEXT_REALTIME_DISABLED",
+                ])
+                .map(|value| value.trim() == "1")
+                .unwrap_or(false),
             ),
         }
     }
@@ -3394,9 +3301,12 @@ impl IntentIconsRealtimeSession {
                 events,
                 intent_realtime_model(mother),
                 RealtimeSessionKind::IntentIcons { mother },
-                first_non_empty_env(&["CUE_INTENT_REALTIME_DISABLED", "BROOD_INTENT_REALTIME_DISABLED"])
-                    .map(|value| value.trim() == "1")
-                    .unwrap_or(false),
+                first_non_empty_env(&[
+                    "CUE_INTENT_REALTIME_DISABLED",
+                    "BROOD_INTENT_REALTIME_DISABLED",
+                ])
+                .map(|value| value.trim() == "1")
+                .unwrap_or(false),
             ),
         }
     }
@@ -4329,26 +4239,35 @@ fn open_realtime_websocket(
 }
 
 fn realtime_transport_retry_limit() -> usize {
-    first_non_empty_env(&["CUE_REALTIME_TRANSPORT_RETRIES", "BROOD_REALTIME_TRANSPORT_RETRIES"])
-        .and_then(|raw| raw.trim().parse::<usize>().ok())
-        .map(|value| value.min(6))
-        .unwrap_or(REALTIME_TRANSPORT_RETRY_MAX_DEFAULT)
+    first_non_empty_env(&[
+        "CUE_REALTIME_TRANSPORT_RETRIES",
+        "BROOD_REALTIME_TRANSPORT_RETRIES",
+    ])
+    .and_then(|raw| raw.trim().parse::<usize>().ok())
+    .map(|value| value.min(6))
+    .unwrap_or(REALTIME_TRANSPORT_RETRY_MAX_DEFAULT)
 }
 
 fn realtime_transport_retry_backoff(attempt: usize) -> Duration {
-    let base_ms = first_non_empty_env(&["CUE_REALTIME_TRANSPORT_RETRY_BACKOFF_MS", "BROOD_REALTIME_TRANSPORT_RETRY_BACKOFF_MS"])
-        .and_then(|raw| raw.trim().parse::<u64>().ok())
-        .map(|value| value.clamp(50, 5000))
-        .unwrap_or(REALTIME_TRANSPORT_RETRY_BACKOFF_MS_DEFAULT);
+    let base_ms = first_non_empty_env(&[
+        "CUE_REALTIME_TRANSPORT_RETRY_BACKOFF_MS",
+        "BROOD_REALTIME_TRANSPORT_RETRY_BACKOFF_MS",
+    ])
+    .and_then(|raw| raw.trim().parse::<u64>().ok())
+    .map(|value| value.clamp(50, 5000))
+    .unwrap_or(REALTIME_TRANSPORT_RETRY_BACKOFF_MS_DEFAULT);
     let multiplier = u64::try_from(attempt.max(1)).unwrap_or(u64::MAX);
     Duration::from_millis(base_ms.saturating_mul(multiplier))
 }
 
 fn intent_realtime_reference_image_limit() -> usize {
-    first_non_empty_env(&["CUE_INTENT_REALTIME_REFERENCE_LIMIT", "BROOD_INTENT_REALTIME_REFERENCE_LIMIT"])
-        .and_then(|raw| raw.trim().parse::<usize>().ok())
-        .map(|value| value.clamp(1, REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_MAX))
-        .unwrap_or(REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_DEFAULT)
+    first_non_empty_env(&[
+        "CUE_INTENT_REALTIME_REFERENCE_LIMIT",
+        "BROOD_INTENT_REALTIME_REFERENCE_LIMIT",
+    ])
+    .and_then(|raw| raw.trim().parse::<usize>().ok())
+    .map(|value| value.clamp(1, REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_MAX))
+    .unwrap_or(REALTIME_INTENT_REFERENCE_IMAGE_LIMIT_DEFAULT)
 }
 
 fn is_anyhow_realtime_transport_error(err: &anyhow::Error) -> bool {
@@ -6884,12 +6803,18 @@ fn openrouter_api_base() -> String {
 fn apply_openrouter_request_headers(
     mut request: reqwest::blocking::RequestBuilder,
 ) -> reqwest::blocking::RequestBuilder {
-    if let Some(referer) =
-        first_non_empty_env(&["OPENROUTER_HTTP_REFERER", "CUE_OPENROUTER_HTTP_REFERER", "BROOD_OPENROUTER_HTTP_REFERER"])
-    {
+    if let Some(referer) = first_non_empty_env(&[
+        "OPENROUTER_HTTP_REFERER",
+        "CUE_OPENROUTER_HTTP_REFERER",
+        "BROOD_OPENROUTER_HTTP_REFERER",
+    ]) {
         request = request.header("HTTP-Referer", referer);
     }
-    if let Some(title) = first_non_empty_env(&["OPENROUTER_X_TITLE", "CUE_OPENROUTER_X_TITLE", "BROOD_OPENROUTER_X_TITLE"]) {
+    if let Some(title) = first_non_empty_env(&[
+        "OPENROUTER_X_TITLE",
+        "CUE_OPENROUTER_X_TITLE",
+        "BROOD_OPENROUTER_X_TITLE",
+    ]) {
         request = request.header("X-Title", title);
     }
     request
