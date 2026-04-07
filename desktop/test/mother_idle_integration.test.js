@@ -26,12 +26,8 @@ test("Mother wheel markup exposes the required actions", () => {
 });
 
 test("Canvas app keeps modular event and unified canvas input wiring", () => {
-  assert.match(app, /createDesktopEventRouter/);
-  assert.match(app, /createMotherEventHandler/);
-  assert.match(app, /createArtifactEventHandler/);
-  assert.match(app, /createIntentEventHandler/);
-  assert.match(app, /createDiagnosticsEventHandler/);
-  assert.match(app, /createRecreateEventHandler/);
+  assert.match(app, /createCanvasAppDesktopEventRouter/);
+  assert.match(app, /const desktopEventRouter = createCanvasAppDesktopEventRouter\(/);
   assert.match(app, /installCanvasHandlers as installCanvasInputController/);
   assert.match(app, /installDnD as installCanvasDndController/);
   assert.match(canvasInputController, /installCanvasInputHandlers/);
