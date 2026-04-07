@@ -59,15 +59,15 @@ test("communication rail markup includes a canvas-local cursor host for the sele
   assert.match(html, /id="communication-canvas-cursor"[\s\S]*id="communication-canvas-cursor-art"/);
 });
 
-test("communication rail css anchors a partially submerged pouch rail at the bottom and keeps the proposal tray floating", () => {
+test("communication rail css anchors the communication shell to the bottom dock and keeps the proposal tray floating", () => {
   assert.match(css, /\.communication-shell\s*\{/);
-  assert.match(
-    css,
-    /\.communication-shell\s*\{[\s\S]*bottom:\s*calc\(var\(--jg-system-strip-bottom\)\s*\+\s*var\(--jg-system-strip-height\)\s*\+\s*var\(--jg-system-strip-gap\)\)/
-  );
+  assert.match(css, /\.communication-shell\s*\{[\s\S]*bottom:\s*var\(--jg-bottom-dock-offset\)/);
   assert.match(css, /\.communication-shell\s*\{[\s\S]*width:\s*var\(--jg-communication-shell-width\)/);
+  assert.match(css, /\.juggernaut-side-rail-stack\s*\{[\s\S]*bottom:\s*calc\(/);
+  assert.match(css, /\.juggernaut-side-rail-stack\s*\{[\s\S]*var\(--jg-communication-shell-height\)/);
+  assert.match(css, /\.juggernaut-side-rail-stack\s*\{[\s\S]*var\(--jg-rail-above-comms-gap\)/);
   assert.match(css, /\.communication-rail\s*\{/);
-  assert.match(css, /\.communication-rail\s*\{[\s\S]*height:\s*214px/);
+  assert.match(css, /\.communication-rail\s*\{[\s\S]*height:\s*var\(--jg-communication-shell-height\)/);
   assert.match(css, /\.communication-rail\s*\{[\s\S]*align-items:\s*flex-start/);
   assert.match(css, /\.communication-rail::before\s*\{/);
   assert.match(css, /\.communication-rail::before\s*\{[\s\S]*inset:\s*74px 16px 18px/);

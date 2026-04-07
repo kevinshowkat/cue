@@ -47,7 +47,7 @@ test("Juggernaut shell chrome exposes selection status, export button, rail root
   assert.match(html, /id=\"juggernaut-export-menu\"/);
   assert.match(html, /id=\"juggernaut-export-format-psd\"/);
   assert.match(html, /id=\"juggernaut-export-format-png\"/);
-  assert.match(html, /id=\"action-grid\"[^>]*aria-label=\"Cue left rail\"/);
+  assert.match(html, /id=\"action-grid\"[^>]*aria-label=\"Cue tool rail\"/);
   assert.match(html, /id=\"drop-hint\"/);
   assert.match(html, /id=\"drop-hint\"[^>]*aria-hidden=\"true\"/);
   assert.doesNotMatch(html, /id=\"drop-hint\"[^>]*role=\"button\"/);

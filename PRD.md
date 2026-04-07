@@ -47,3 +47,4 @@ Cue is an image-first desktop app for editing, reviewing, and exporting graphics
 - [AGENTS.md](AGENTS.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)
 - [docs/desktop.md](docs/desktop.md)
+- [docs/canvas-app-rewrite-prd.md](docs/canvas-app-rewrite-prd.md)

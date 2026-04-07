@@ -34753,21 +34753,9 @@ function customToolDockIconFor(tool) {
   </svg>`;
 }
 
-function customToolCreateIcon() {
-  return (
-    getJuggernautRailIconMarkup("create_tool", settings.railIconPack) ||
-    `<svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-      <path d="M17.5 5.5l1 2.3 2.3 1-2.3 1-1 2.3-1-2.3-2.3-1 2.3-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
-    </svg>`
-  );
-}
-
 function customToolDockRenderSignature(tools = []) {
-  const panelOpen = Boolean(els.createToolPanel && !els.createToolPanel.classList.contains("hidden"));
   return [
     state.customToolDockVersion,
-    panelOpen ? 1 : 0,
     state.activeCustomToolId || "",
     tools.map((tool) => `${tool?.toolId || ""}:${tool?.label || ""}:${tool?.shortLabel || ""}:${customToolProvenance(tool)}`).join("|"),
   ].join("||");
@@ -34781,24 +34769,8 @@ function renderCustomToolDock() {
   if (state.lastRenderedCustomToolDockKey === nextKey) return false;
   state.lastRenderedCustomToolDockKey = nextKey;
   root.innerHTML = "";
-
-  const createBtn = document.createElement("button");
-  createBtn.type = "button";
-  createBtn.className = "tool tool-create";
-  createBtn.dataset.provenance = ACTION_PROVENANCE.LOCAL_ONLY;
-  createBtn.classList.toggle("has-action-provenance", actionProvenanceHasModelCost(ACTION_PROVENANCE.LOCAL_ONLY));
-  createBtn.title = appendActionProvenanceDescription("Create Tool", ACTION_PROVENANCE.LOCAL_ONLY);
-  createBtn.setAttribute("aria-label", appendActionProvenanceDescription("Create Tool", ACTION_PROVENANCE.LOCAL_ONLY));
-  createBtn.innerHTML = `${customToolCreateIcon()}${renderActionProvenanceBadge(ACTION_PROVENANCE.LOCAL_ONLY)}`;
-  if (els.createToolPanel && !els.createToolPanel.classList.contains("hidden")) {
-    createBtn.classList.add("selected");
-    createBtn.classList.add("depressed");
-  }
-  createBtn.addEventListener("click", () => {
-    bumpInteraction();
-    showCreateToolPanel();
-  });
-  root.appendChild(createBtn);
+  root.classList.toggle("hidden", tools.length === 0);
+  if (tools.length === 0) return true;
 
   for (const tool of tools) {
     const provenance = customToolProvenance(tool);

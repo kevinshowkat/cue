@@ -3,7 +3,7 @@
  *
  * Integration notes:
  * - Rail icons should be drawn for a 24x24 viewport and centered inside a 54px glass button.
- * - The shell reserves a left gutter equal to the rail width plus shell inset; layout work should preserve that offset.
+ * - The shell keeps the primary rail stack above the communication shell on the right; layout work should preserve that relationship.
  * - Chrome surfaces rely on translucent layers; icon and layout work should avoid flattening those backgrounds.
  */
 
@@ -367,7 +367,7 @@ body.juggernaut-shell .juggernaut-shell-chrome {
 body.juggernaut-shell .juggernaut-shell-head {
   position: absolute;
   top: 0;
-  left: calc(var(--jg-rail-width) + 14px);
+  left: 0;
   right: 0;
   width: auto;
   height: auto;

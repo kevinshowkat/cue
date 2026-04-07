@@ -330,8 +330,10 @@
         <div class="workspace-shell">
           <section class="stage" aria-label="Canvas">
             <div class="juggernaut-shell-chrome" aria-label="Cue shell">
-              <div id="action-grid" class="action-grid juggernaut-tool-rail" role="toolbar" aria-label="Cue left rail"></div>
-              <div id="custom-tool-dock" class="custom-tool-dock" role="toolbar" aria-label="Custom tools"></div>
+              <div class="juggernaut-side-rail-stack">
+                <div id="custom-tool-dock" class="custom-tool-dock" role="toolbar" aria-label="Custom tools"></div>
+                <div id="action-grid" class="action-grid juggernaut-tool-rail" role="toolbar" aria-label="Cue tool rail"></div>
+              </div>
               <div id="juggernaut-selection-status" class="sr-only" aria-live="polite">
                 Drop an image to begin
               </div>
