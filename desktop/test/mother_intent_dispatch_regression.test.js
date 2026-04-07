@@ -6,7 +6,9 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
+const intentEventsPath = join(here, "..", "src", "app", "event_handlers", "intent_events.js");
 const app = readFileSync(appPath, "utf8");
+const intentEventsSource = readFileSync(intentEventsPath, "utf8");
 
 test("Mother intent coalesces rapid realtime intent request dispatches", () => {
   assert.match(app, /const MOTHER_V2_INTENT_REQUEST_COALESCE_MS = 900;/);
@@ -34,7 +36,7 @@ test("Mother reject telemetry increments only in rejectable phases", () => {
 
 test("Mother intent icons early no-route drops are explicitly traced", () => {
   assert.match(
-    app,
+    intentEventsSource,
     /if \(!intent && !ambient && !motherCanAcceptRealtime\) \{[\s\S]*kind: "intent_icons_ignored"[\s\S]*reason: "no_pending_route"[\s\S]*event_action_version:[\s\S]*return;/
   );
 });

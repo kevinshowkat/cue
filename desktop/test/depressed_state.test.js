@@ -9,10 +9,12 @@ const appPath = join(here, "..", "src", "canvas_app.js");
 const cssPath = join(here, "..", "src", "styles.css");
 const visualSystemCssPath = join(here, "..", "src", "juggernaut_shell", "visual_system.css");
 const railPath = join(here, "..", "src", "juggernaut_shell", "rail.js");
+const shellChromeRendererPath = join(here, "..", "src", "app", "shell_chrome_renderer.js");
 const app = readFileSync(appPath, "utf8");
 const css = readFileSync(cssPath, "utf8");
 const visualSystemCss = readFileSync(visualSystemCssPath, "utf8");
 const rail = readFileSync(railPath, "utf8");
+const shellChromeRenderer = readFileSync(shellChromeRendererPath, "utf8");
 
 test("Juggernaut rail: depressed class is applied only when an action is actively running", () => {
   assert.match(app, /const runningKey = currentRunningActionKey\(\);/);
@@ -21,8 +23,8 @@ test("Juggernaut rail: depressed class is applied only when an action is activel
 
 test("Juggernaut rail keeps local-first actions out of local-utility styling", () => {
   assert.match(rail, /toolEl\.classList\.toggle\("is-local-utility", button\.provenance === ACTION_PROVENANCE\.LOCAL_ONLY\);/);
-  assert.match(app, /const isLocalOnly = provenance === ACTION_PROVENANCE\.LOCAL_ONLY;/);
-  assert.match(app, /btn\.classList\.toggle\("is-local-utility", isLocalOnly\);/);
+  assert.match(shellChromeRenderer, /const isLocalOnly = provenance === ACTION_PROVENANCE\.LOCAL_ONLY;/);
+  assert.match(shellChromeRenderer, /btn\.classList\.toggle\("is-local-utility", isLocalOnly\);/);
 });
 
 test("Action Grid: currentRunningActionKey maps pending actions to a single depressed key", () => {

@@ -6,7 +6,9 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
+const intentEventsPath = join(here, "..", "src", "app", "event_handlers", "intent_events.js");
 const app = readFileSync(appPath, "utf8");
+const intentEventsSource = readFileSync(intentEventsPath, "utf8");
 
 test("Ambient intent: edit triggers schedule background inference", () => {
   assert.match(
@@ -27,8 +29,8 @@ test("Ambient intent: viewport wheel/gesture handlers do not schedule inference"
 });
 
 test("Ambient intent: realtime failures flow through ambient fallback", () => {
-  assert.match(app, /applyAmbientIntentFallback\("parse_failed"/);
-  assert.match(app, /applyAmbientIntentFallback\("failed"/);
+  assert.match(intentEventsSource, /applyAmbientIntentFallback\("parse_failed"/);
+  assert.match(intentEventsSource, /applyAmbientIntentFallback\("failed"/);
 });
 
 test("Ambient intent: nudges are clickable and use larger visual sizing", () => {
@@ -41,10 +43,10 @@ test("Ambient intent: nudges are clickable and use larger visual sizing", () => 
 });
 
 test("Ambient intent: realtime event de-staling requires a matching active pending path", () => {
-  assert.match(app, /const routing = classifyIntentIconsRouting\(\{/);
-  assert.match(app, /const \{ matchAmbient, matchIntent, matchMother, ignoreReason \} = routing;/);
-  assert.match(app, /if \(ignoreReason === "snapshot_path_mismatch" \|\| ignoreReason === "path_mismatch"\) \{/);
-  assert.doesNotMatch(app, /const matchesAmbient = !path \|\| !ambient\?\.pendingPath \|\| path === ambient\.pendingPath/);
+  assert.match(intentEventsSource, /const routing = classifyIntentIconsRouting\(\{/);
+  assert.match(intentEventsSource, /const \{ matchAmbient, matchIntent, matchMother, ignoreReason \} = routing;/);
+  assert.match(intentEventsSource, /if \(ignoreReason === "snapshot_path_mismatch" \|\| ignoreReason === "path_mismatch"\) \{/);
+  assert.doesNotMatch(intentEventsSource, /const matchesAmbient = !path \|\| !ambient\?\.pendingPath \|\| path === ambient\.pendingPath/);
 });
 
 test("Ambient intent: allows specific realtime vision labels to replace bland early labels", () => {
@@ -55,15 +57,15 @@ test("Ambient intent: allows specific realtime vision labels to replace bland ea
   assert.match(app, /if \(existingGeneric && !incomingGeneric\) return true;/);
   assert.match(app, /if \(incomingNameTokens >= 2 && existingNameTokens < 2\) return true;/);
   assert.match(app, /if \(incomingScore > existingScore\) return true;/);
-  assert.match(app, /const imageDescs = !isPartial \? extractIntentImageDescriptions\(parsed\) : \[\];/);
-  assert.match(app, /const keepExplicitDescribe =[\s\S]*prevSource === "openai_realtime_describe" \|\| prevSource === "openai_vision"/);
-  assert.match(app, /imgItem\.visionDesc = label;/);
-  assert.match(app, /scheduleVisualPromptWrite\(\);[\s\S]*if \(getActiveImage\(\)\?\.id\) renderHudReadout\(\);/);
+  assert.match(intentEventsSource, /const imageDescs = !isPartial \? extractIntentImageDescriptions\(parsed\) : \[\];/);
+  assert.match(intentEventsSource, /const keepExplicitDescribe =[\s\S]*prevSource === "openai_realtime_describe" \|\| prevSource === "openai_vision"/);
+  assert.match(intentEventsSource, /imgItem\.visionDesc = label;/);
+  assert.match(intentEventsSource, /scheduleVisualPromptWrite\(\);[\s\S]*if \(getActiveImage\(\)\?\.id\) renderHudReadout\(\);/);
 });
 
 test("Ambient intent: missing realtime image_descriptions queues fallback describe", () => {
-  assert.match(app, /const imageDescs = !isPartial \? extractIntentImageDescriptions\(parsed\) : \[\];/);
-  assert.doesNotMatch(app, /function maybeScheduleVisionDescribeFallbackForAmbientRealtime\(/);
+  assert.match(intentEventsSource, /const imageDescs = !isPartial \? extractIntentImageDescriptions\(parsed\) : \[\];/);
+  assert.doesNotMatch(intentEventsSource, /function maybeScheduleVisionDescribeFallbackForAmbientRealtime\(/);
 });
 
 test("Ambient intent: empty vision hints are filtered before building realtime context", () => {
@@ -82,9 +84,9 @@ test("Ambient intent: proactive per-image describe scheduling stays fallback-gat
 });
 
 test("Ambient intent: parse\/failure paths queue fallback describe for touched images", () => {
-  assert.match(app, /applyAmbientIntentFallback\("parse_failed", \{ message: intentParseMessage \}\);/);
-  assert.match(app, /applyAmbientIntentFallback\("failed", \{ message: msg, hardDisable \}\);/);
-  assert.doesNotMatch(app, /maybeScheduleVisionDescribeFallbackForAmbientRealtime/);
+  assert.match(intentEventsSource, /applyAmbientIntentFallback\("parse_failed", \{ message: intentParseMessage \}\);/);
+  assert.match(intentEventsSource, /applyAmbientIntentFallback\("failed", \{ message: msg, hardDisable \}\);/);
+  assert.doesNotMatch(intentEventsSource, /maybeScheduleVisionDescribeFallbackForAmbientRealtime/);
 });
 
 test("Ambient nudge mapping: multi-canvas world->canvas conversion applies DPR", () => {

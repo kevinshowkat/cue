@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(here, "..", "src", "canvas_app.js"), "utf8");
+const shellChromeRenderer = readFileSync(join(here, "..", "src", "app", "shell_chrome_renderer.js"), "utf8");
 const visualSystemCss = readFileSync(join(here, "..", "src", "juggernaut_shell", "visual_system.css"), "utf8");
 
 test("Runtime minimalism hides idle engine status unless diagnostics are enabled or an error occurs", () => {
@@ -25,14 +26,14 @@ test("Runtime minimalism hides the shell selection readout until diagnostics are
 });
 
 test("Runtime minimalism keeps the empty-state upload tool from pulsing", () => {
-  const fnMatch = app.match(/function renderJuggernautShellChrome\(\)[\s\S]*?\n}\n\nasync function invokeJuggernautShellTool/);
+  const fnMatch = shellChromeRenderer.match(/export function renderJuggernautShellChrome\(host = \{\}\)[\s\S]*?\n}\n\nexport function renderCommunicationChrome/);
   assert.ok(fnMatch, "renderJuggernautShellChrome function not found");
   assert.doesNotMatch(fnMatch[0], /classList\.toggle\("pulse"/);
 });
 
 test("Runtime minimalism keeps the upload tool on standard local-button styling even on an empty canvas", () => {
-  assert.match(app, /const emptyCanvas = state\.images\.length === 0;/);
-  assert.doesNotMatch(app, /btn\.classList\.toggle\("is-empty-canvas-cue", key === "upload" && emptyCanvas\);/);
+  assert.match(shellChromeRenderer, /const emptyCanvas = state\.images\.length === 0;/);
+  assert.doesNotMatch(shellChromeRenderer, /btn\.classList\.toggle\("is-empty-canvas-cue", key === "upload" && emptyCanvas\);/);
   assert.doesNotMatch(visualSystemCss, /@keyframes juggernautUploadGoldShimmer/);
   assert.doesNotMatch(
     visualSystemCss,

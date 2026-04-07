@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { createTimelineUi } from "../src/app/timeline_ui.js";
+
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
 const app = readFileSync(appPath, "utf8");
@@ -45,6 +47,37 @@ function instantiateFunction(name, deps = {}) {
   return new Function(...keys, `return (${source});`)(...values);
 }
 
+function createFakeClassList(initialValues = []) {
+  const values = new Set(initialValues);
+  return {
+    add(...tokens) {
+      for (const token of tokens) values.add(token);
+    },
+    remove(...tokens) {
+      for (const token of tokens) values.delete(token);
+    },
+    contains(token) {
+      return values.has(token);
+    },
+    toggle(token, force) {
+      if (force === true) {
+        values.add(token);
+        return true;
+      }
+      if (force === false) {
+        values.delete(token);
+        return false;
+      }
+      if (values.has(token)) {
+        values.delete(token);
+        return false;
+      }
+      values.add(token);
+      return true;
+    },
+  };
+}
+
 function syncStripSiblings(strip) {
   for (let index = 0; index < strip.children.length; index += 1) {
     strip.children[index].nextSibling = strip.children[index + 1] || null;
@@ -53,6 +86,7 @@ function syncStripSiblings(strip) {
 }
 
 function createFakeTimelineCard(nodeId, structureKey) {
+  const attributes = new Map();
   return {
     className: "timeline-card",
     dataset: {
@@ -61,6 +95,12 @@ function createFakeTimelineCard(nodeId, structureKey) {
     },
     parentNode: null,
     nextSibling: null,
+    setAttribute(name, value) {
+      attributes.set(name, value);
+    },
+    getAttribute(name) {
+      return attributes.get(name) || null;
+    },
     remove() {
       if (this.parentNode) this.parentNode.removeChild(this);
     },
@@ -127,7 +167,7 @@ function createFakeTimelineStrip(initialChildren = []) {
         return this.children.filter((child) => child.className === "timeline-card" && child.dataset?.nodeId);
       }
       if (selector === ".timeline-empty") {
-        return this.children.filter((child) => child.className === "timeline-empty");
+        return this.children.filter((child) => child.className === "timeline-empty muted");
       }
       return [];
     },
@@ -139,43 +179,103 @@ function createFakeTimelineStrip(initialChildren = []) {
   return strip;
 }
 
-function createFakeClassList(initialValues = []) {
-  const values = new Set(initialValues);
+function createFakeElement(tagName) {
+  const attributes = new Map();
   return {
-    add(...tokens) {
-      for (const token of tokens) values.add(token);
+    tagName,
+    className: "",
+    classList: createFakeClassList(),
+    dataset: {},
+    children: [],
+    parentNode: null,
+    nextSibling: null,
+    textContent: "",
+    innerHTML: "",
+    title: "",
+    appendChild(child) {
+      this.children.push(child);
+      child.parentNode = this;
+      return child;
     },
-    remove(...tokens) {
-      for (const token of tokens) values.delete(token);
+    setAttribute(name, value) {
+      attributes.set(name, value);
     },
-    contains(token) {
-      return values.has(token);
+    getAttribute(name) {
+      return attributes.get(name) || null;
     },
-    toggle(token, force) {
-      if (force === true) {
-        values.add(token);
-        return true;
-      }
-      if (force === false) {
-        values.delete(token);
-        return false;
-      }
-      if (values.has(token)) {
-        values.delete(token);
-        return false;
-      }
-      values.add(token);
-      return true;
+    remove() {
+      if (this.parentNode?.removeChild) this.parentNode.removeChild(this);
     },
   };
 }
 
-test("timeline carousel target left advances by carousel pages and clamps to the strip bounds", () => {
-  const timelineCarouselAnchors = instantiateFunction("timelineCarouselAnchors");
-  const timelineCarouselTargetLeft = instantiateFunction("timelineCarouselTargetLeft", {
-    timelineCarouselAnchors,
-    TIMELINE_CAROUSEL_PAGE_RATIO: 0.82,
+function makeTimelineUi({
+  state = {},
+  els = {},
+  timelineSortedNodes = () => [],
+  currentTimelineHeadNode = () => null,
+  timelineNodeSummary = (node) => String(node?.action || node?.label || "State"),
+  timelineNodeLabel = (node) => String(node?.label || node?.action || "Timeline"),
+  timelineNodeAriaLabel = (node, { current = false, future = false, historical = false } = {}) => {
+    const pieces = [timelineNodeSummary(node)];
+    if (current) pieces.push("Current state");
+    else if (historical) pieces.push("Historical state");
+    else if (future) pieces.push("Future state");
+    return pieces.join(". ");
+  },
+  timelineCardStateForNode = (node, headNode = null) => {
+    const headNodeId = String(headNode?.nodeId || "").trim() || null;
+    const headSeq = Math.max(0, Number(headNode?.seq) || 0);
+    const current = headNodeId === String(node?.nodeId || "").trim();
+    const future = !current && Math.max(0, Number(node?.seq) || 0) > headSeq;
+    const historical = !current && !future;
+    return {
+      current,
+      future,
+      historical,
+      inactive: !current,
+    };
+  },
+  timelineActionKey = (action = "state") => String(action || "").trim().toLowerCase() || "state",
+  timelineCardGlyphMarkup = () => "",
+  timelineNodeStructureKey = (node = null) => String(node?.structureKey || `${node?.nodeId || ""}:${node?.key || ""}`),
+  document = null,
+  ensureImageUrl = async () => null,
+  THUMB_PLACEHOLDER_SRC = "placeholder",
+} = {}) {
+  state.timelineOpen = "timelineOpen" in state ? state.timelineOpen : true;
+  state.timelinePreviewNodeId = state.timelinePreviewNodeId ?? null;
+  state.timelineNodesById = state.timelineNodesById instanceof Map ? state.timelineNodesById : new Map();
+  state.timelineCarouselWheel =
+    state.timelineCarouselWheel && typeof state.timelineCarouselWheel === "object"
+      ? state.timelineCarouselWheel
+      : { delta: 0, lastAt: 0 };
+  state.timelineCarouselChromeFrame = Number(state.timelineCarouselChromeFrame) || 0;
+  state.timelineSuppressClickUntil = Number(state.timelineSuppressClickUntil) || 0;
+  state.lastTimelineCenteredNodeId = state.lastTimelineCenteredNodeId ?? null;
+  state.timelineVersion = Number(state.timelineVersion) || 0;
+  state.timelineLatestNodeId = state.timelineLatestNodeId ?? null;
+  state.timelineNextSeq = Number(state.timelineNextSeq) || 1;
+  return createTimelineUi({
+    state,
+    els,
+    timelineSortedNodes,
+    currentTimelineHeadNode,
+    timelineNodeSummary,
+    timelineNodeLabel,
+    timelineNodeAriaLabel,
+    timelineCardStateForNode,
+    timelineActionKey,
+    timelineCardGlyphMarkup,
+    timelineNodeStructureKey,
+    THUMB_PLACEHOLDER_SRC,
+    ensureImageUrl,
+    document,
   });
+}
+
+test("timeline carousel target left advances by carousel pages and clamps to the strip bounds", () => {
+  const ui = makeTimelineUi();
   const cards = [0, 60, 120, 180, 240, 300, 360].map((offsetLeft, index) => ({
     offsetLeft,
     dataset: { nodeId: `tl-${index + 1}` },
@@ -190,17 +290,17 @@ test("timeline carousel target left advances by carousel pages and clamps to the
     },
   };
 
-  assert.equal(timelineCarouselTargetLeft(strip, 1), 180);
+  assert.equal(ui.timelineCarouselTargetLeft(strip, 1), 180);
 
   strip.scrollLeft = 180;
-  assert.equal(timelineCarouselTargetLeft(strip, 1), 280);
+  assert.equal(ui.timelineCarouselTargetLeft(strip, 1), 280);
 
   strip.scrollLeft = 280;
-  assert.equal(timelineCarouselTargetLeft(strip, -1), 120);
+  assert.equal(ui.timelineCarouselTargetLeft(strip, -1), 120);
 });
 
 test("timeline carousel anchors include the start and final clamped edge", () => {
-  const timelineCarouselAnchors = instantiateFunction("timelineCarouselAnchors");
+  const ui = makeTimelineUi();
   const strip = {
     clientWidth: 200,
     scrollWidth: 420,
@@ -209,20 +309,18 @@ test("timeline carousel anchors include the start and final clamped edge", () =>
     },
   };
 
-  assert.deepEqual(timelineCarouselAnchors(strip), [0, 80, 160, 220]);
+  assert.deepEqual(ui.timelineCarouselAnchors(strip), [0, 80, 160, 220]);
 });
 
 test("timeline carousel direction state exposes left/right arrow availability at the strip edges", () => {
-  const timelineCarouselDirectionState = instantiateFunction("timelineCarouselDirectionState", {
-    TIMELINE_CAROUSEL_EDGE_EPSILON_PX: 4,
-  });
+  const ui = makeTimelineUi();
   const strip = {
     clientWidth: 180,
     scrollWidth: 420,
     scrollLeft: 0,
   };
 
-  assert.deepEqual(timelineCarouselDirectionState(strip), {
+  assert.deepEqual(ui.timelineCarouselDirectionState(strip), {
     hasOverflow: true,
     currentLeft: 0,
     maxScroll: 240,
@@ -231,7 +329,7 @@ test("timeline carousel direction state exposes left/right arrow availability at
   });
 
   strip.scrollLeft = 120;
-  assert.deepEqual(timelineCarouselDirectionState(strip), {
+  assert.deepEqual(ui.timelineCarouselDirectionState(strip), {
     hasOverflow: true,
     currentLeft: 120,
     maxScroll: 240,
@@ -240,7 +338,7 @@ test("timeline carousel direction state exposes left/right arrow availability at
   });
 
   strip.scrollLeft = 240;
-  assert.deepEqual(timelineCarouselDirectionState(strip), {
+  assert.deepEqual(ui.timelineCarouselDirectionState(strip), {
     hasOverflow: true,
     currentLeft: 240,
     maxScroll: 240,
@@ -258,37 +356,32 @@ test("timeline detail text previews hovered target states and falls back to the 
     ]),
   };
   const headNode = { nodeId: "tl-1", action: "Import", label: "A.jpg" };
-  const timelineDetailText = instantiateFunction("timelineDetailText", {
+  const ui = makeTimelineUi({
     state,
     currentTimelineHeadNode: () => headNode,
     timelineNodeSummary: (node) => `${node.action === "Import" ? "Imported" : "Marked"} ${node.label}`,
   });
 
-  assert.equal(timelineDetailText(headNode), "Imported A.jpg");
+  assert.equal(ui.timelineDetailText(headNode), "Imported A.jpg");
 
   state.timelinePreviewNodeId = "tl-2";
-  assert.equal(timelineDetailText(headNode), "Preview change: Marked A.jpg");
+  assert.equal(ui.timelineDetailText(headNode), "Preview change: Marked A.jpg");
 
   state.timelinePreviewNodeId = "tl-1";
-  assert.equal(timelineDetailText(headNode), "Current state: Imported A.jpg");
+  assert.equal(ui.timelineDetailText(headNode), "Current state: Imported A.jpg");
 });
 
 test("timeline shelf summary uses guidance when expanded and latest-state detail when collapsed", () => {
   const state = { timelineOpen: true };
-  const timelineShelfSummaryText = instantiateFunction("timelineShelfSummaryText", {
-    state,
-    timelineSortedNodes: () => [],
-    currentTimelineHeadNode: () => null,
-    timelineNodeSummary: (node) => `${node.action} ${node.label}`,
-  });
   const nodes = [{ nodeId: "tl-1" }, { nodeId: "tl-2" }];
   const headNode = { nodeId: "tl-2", action: "Moved", label: "A.jpg" };
+  const ui = makeTimelineUi({
+    state,
+    timelineNodeSummary: (node) => `${node.action} ${node.label}`,
+  });
 
-  assert.equal(timelineShelfSummaryText(nodes, headNode), "2 states · Select a state to rewind");
-  assert.equal(
-    timelineShelfSummaryText(nodes, headNode, { timelineOpen: false }),
-    "2 states · Moved A.jpg"
-  );
+  assert.equal(ui.timelineShelfSummaryText(nodes, headNode), "2 states · Select a state to rewind");
+  assert.equal(ui.timelineShelfSummaryText(nodes, headNode, { timelineOpen: false }), "2 states · Moved A.jpg");
 });
 
 test("syncTimelineDockVisibility restores the dock after tab-switch suspension", () => {
@@ -325,27 +418,15 @@ test("syncTimelineDockVisibility restores the dock after tab-switch suspension",
   };
   const headNode = { nodeId: "tl-1", action: "Moved", label: "A.jpg" };
   const nodes = [headNode];
-  const timelineShelfSummaryText = instantiateFunction("timelineShelfSummaryText", {
+  const ui = makeTimelineUi({
     state,
+    els,
     timelineSortedNodes: () => nodes,
     currentTimelineHeadNode: () => headNode,
     timelineNodeSummary: (node) => `${node.action} ${node.label}`,
   });
-  const syncTimelineShelfToggle = instantiateFunction("syncTimelineShelfToggle", {
-    timelineSortedNodes: () => nodes,
-    currentTimelineHeadNode: () => headNode,
-    timelineShelfSummaryText,
-    state,
-    els,
-  });
-  const syncTimelineDockVisibility = instantiateFunction("syncTimelineDockVisibility", {
-    timelineSortedNodes: () => nodes,
-    currentTimelineHeadNode: () => headNode,
-    syncTimelineShelfToggle,
-    els,
-  });
 
-  assert.equal(syncTimelineDockVisibility(), true);
+  assert.equal(ui.syncTimelineDockVisibility(), true);
   assert.equal(timelineDock.classList.contains("hidden"), false);
   assert.equal(timelineDock.classList.contains("is-collapsed"), false);
   assert.equal(timelineShell.classList.contains("is-collapsed"), false);
@@ -357,7 +438,7 @@ test("syncTimelineDockVisibility restores the dock after tab-switch suspension",
 });
 
 test("timeline detail text is empty when no head node exists", () => {
-  const timelineDetailText = instantiateFunction("timelineDetailText", {
+  const ui = makeTimelineUi({
     state: {
       timelinePreviewNodeId: null,
       timelineNodesById: new Map(),
@@ -366,7 +447,7 @@ test("timeline detail text is empty when no head node exists", () => {
     timelineNodeSummary: () => "unused",
   });
 
-  assert.equal(timelineDetailText(null), "");
+  assert.equal(ui.timelineDetailText(null), "");
 });
 
 test("timeline node summary renders import history as readable prose", () => {
@@ -403,20 +484,21 @@ test("rebuildTimelineStrip preserves existing cards when a new timeline node app
   const firstCard = createFakeTimelineCard("tl-1", "tl-1:k1");
   const secondCard = createFakeTimelineCard("tl-2", "tl-2:k2");
   const strip = createFakeTimelineStrip([firstCard, secondCard]);
-  const buildCalls = [];
-  const rebuildTimelineStrip = instantiateFunction("rebuildTimelineStrip", {
+  const builtButtons = [];
+  const ui = makeTimelineUi({
     els: { timelineStrip: strip },
-    buildTimelineCard: (node) => {
-      buildCalls.push(node.nodeId);
-      return createFakeTimelineCard(node.nodeId, `${node.nodeId}:${node.key}`);
-    },
-    timelineNodeStructureKey: (node) => `${node.nodeId}:${node.key}`,
-    syncTimelineCarouselOverflow: () => true,
-    scheduleTimelineCarouselChromeSync: () => {},
     state: { lastTimelineCenteredNodeId: "tl-2" },
+    timelineNodeStructureKey: (node) => `${node.nodeId}:${node.key}`,
+    document: {
+      createElement(tagName) {
+        const element = createFakeElement(tagName);
+        if (tagName === "button") builtButtons.push(element);
+        return element;
+      },
+    },
   });
 
-  const changed = rebuildTimelineStrip(
+  const changed = ui.rebuildTimelineStrip(
     [
       { nodeId: "tl-1", key: "k1" },
       { nodeId: "tl-2", key: "k2" },
@@ -429,7 +511,7 @@ test("rebuildTimelineStrip preserves existing cards when a new timeline node app
   assert.deepEqual(strip.children.map((child) => child.dataset.nodeId), ["tl-1", "tl-2", "tl-3"]);
   assert.equal(strip.children[0], firstCard);
   assert.equal(strip.children[1], secondCard);
-  assert.deepEqual(buildCalls, ["tl-3"]);
+  assert.equal(builtButtons.length, 1);
 });
 
 test("rebuildTimelineStrip switches the tray into centered empty mode with only the empty copy", () => {
@@ -437,28 +519,18 @@ test("rebuildTimelineStrip switches the tray into centered empty mode with only 
   const shell = {
     classList: createFakeClassList(),
   };
-  const rebuildTimelineStrip = instantiateFunction("rebuildTimelineStrip", {
+  const ui = makeTimelineUi({
     els: { timelineShell: shell, timelineStrip: strip },
-    scheduleTimelineCarouselChromeSync: () => {},
     state: { lastTimelineCenteredNodeId: "tl-2" },
     document: {
       createElement(tagName) {
         assert.equal(tagName, "div");
-        return {
-          className: "",
-          textContent: "",
-          dataset: {},
-          parentNode: null,
-          nextSibling: null,
-          remove() {
-            if (this.parentNode) this.parentNode.removeChild(this);
-          },
-        };
+        return createFakeElement(tagName);
       },
     },
   });
 
-  const changed = rebuildTimelineStrip([], null);
+  const changed = ui.rebuildTimelineStrip([], null);
 
   assert.equal(changed, true);
   assert.equal(shell.classList.contains("is-empty"), true);

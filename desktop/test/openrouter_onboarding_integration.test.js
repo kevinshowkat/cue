@@ -7,9 +7,11 @@ import { dirname, join } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const htmlPath = join(here, "..", "src", "index.html");
 const appPath = join(here, "..", "src", "canvas_app.js");
+const bootReadyPath = join(here, "..", "src", "app", "boot_ready.js");
 const cssPath = join(here, "..", "src", "styles.css");
 const html = readFileSync(htmlPath, "utf8");
 const app = readFileSync(appPath, "utf8");
+const bootReady = readFileSync(bootReadyPath, "utf8");
 const css = readFileSync(cssPath, "utf8");
 
 test("OpenRouter onboarding: settings card exposes trigger + status controls", () => {
@@ -30,7 +32,9 @@ test("OpenRouter onboarding: modal scaffolding is present", () => {
 
 test("OpenRouter onboarding: first-run auto open and settings relaunch are wired", () => {
   assert.match(app, /function maybeAutoOpenOpenRouterOnboarding\(/);
-  assert.match(app, /setTimeout\(\(\) => \{\s*maybeAutoOpenOpenRouterOnboarding\(\);/);
+  assert.match(app, /import \{ runCanvasAppBootReadySequence \} from "\.\/app\/boot_ready\.js"/);
+  assert.match(app, /await runCanvasAppBootReadySequence\(\{[\s\S]*maybeAutoOpenOpenRouterOnboarding,[\s\S]*\}\);/);
+  assert.match(bootReady, /setTimeoutFn\(\(\) => \{\s*maybeAutoOpenOpenRouterOnboarding\(\);/);
   assert.match(app, /openOpenRouterOnboardingModal\(\{\s*force:\s*true,\s*source:\s*\"settings\"\s*\}\)/);
 });
 

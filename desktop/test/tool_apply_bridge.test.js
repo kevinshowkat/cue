@@ -225,11 +225,15 @@ test("tool apply bridge: installs the event contract and emits success events", 
 
 test("canvas app keeps a thin bridge into the runtime module", () => {
   assert.match(app, /import \{ applyToolRuntimeRequest, installToolApplyBridge \} from "\.\/tool_apply_runtime\.js"/);
+  assert.match(app, /import \{ runCanvasAppBootPreflight \} from "\.\/app\/boot_preflight\.js"/);
   assert.match(app, /async function applyToolRuntimeEdit\(request = \{\}\)/);
   assert.match(app, /return applyToolRuntimeRequest\(request,\s*\{/);
   assert.match(app, /source:\s*"tool_runtime"/);
   assert.match(app, /replaceActive:\s*true/);
-  assert.match(app, /installToolApplyBridge\(\{\s*windowObj:\s*window,\s*CustomEventCtor:\s*typeof CustomEvent === "function" \? CustomEvent : null,\s*applyToolRuntimeEdit,/s);
+  assert.match(
+    app,
+    /const bootPreflight = runCanvasAppBootPreflight\(\{[\s\S]*installToolApplyBridge,[\s\S]*applyToolRuntimeEdit,[\s\S]*installAgentObservableDriverRuntime,[\s\S]*publishAgentRunnerBridge,[\s\S]*\}\);/s
+  );
 });
 
 test("canvas app routes Agent Run seeded tools through the shaped tool-apply bridge", () => {

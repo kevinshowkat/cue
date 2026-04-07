@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
 const app = readFileSync(appPath, "utf8");
+const tabStripUiSource = readFileSync(join(here, "..", "src", "app", "tab_strip_ui.js"), "utf8");
 
 function extractFunctionSource(name) {
   const markers = [`async function ${name}(`, `function ${name}(`];
@@ -349,11 +350,12 @@ test("titlebar Design review primes the communication tray before bootstrap revi
   assert.match(app, /function communicationTrayAnchorPinnedToTitlebar\(anchor = null\) \{/);
   assert.match(app, /function shouldPinCommunicationReviewTrayToTitlebar\(source = ""\) \{/);
   assert.match(app, /if \(normalizedSource === "agent_runner"\) return true;/);
-  assert.match(app, /els\.sessionTabDesignReview\.addEventListener\("pointerup",\s*\(event\)\s*=>\s*\{/);
-  assert.match(app, /suppressNextDesignReviewTitlebarClick\(\);\s*triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar_pointer" \}\);/);
-  assert.match(app, /els\.sessionTabDesignReview\.addEventListener\("keydown",\s*\(event\)\s*=>\s*\{/);
-  assert.match(app, /triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar_keyboard" \}\);/);
-  assert.match(app, /triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar" \}\);/);
+  assert.match(tabStripUiSource, /els\.sessionTabDesignReview\.addEventListener\("pointerup",\s*\(event\)\s*=>\s*\{/);
+  assert.match(tabStripUiSource, /els\.sessionTabDesignReview\.addEventListener\("keydown",\s*\(event\)\s*=>\s*\{/);
+  assert.match(tabStripUiSource, /els\.sessionTabDesignReview\.addEventListener\("click",\s*\(\)\s*=>\s*\{/);
+  assert.match(app, /onDesignReviewPointer:\s*\(\)\s*=>\s*\{[\s\S]*suppressNextDesignReviewTitlebarClick\(\);[\s\S]*triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar_pointer" \}\);/);
+  assert.match(app, /onDesignReviewKeyboard:\s*\(\)\s*=>\s*\{[\s\S]*suppressNextDesignReviewTitlebarClick\(\);[\s\S]*triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar_keyboard" \}\);/);
+  assert.match(app, /onDesignReviewClick:\s*\(\)\s*=>\s*\{[\s\S]*triggerCommunicationDesignReviewFromTitlebar\(\{ source: "titlebar" \}\);/);
   assert.match(app, /const pinToTitlebar = shouldPinCommunicationReviewTrayToTitlebar\(source\);/);
   assert.match(app, /!communicationTrayAnchorPinnedToTitlebar\(state\.communication\?\.proposalTray\?\.anchor\)/);
   assert.match(app, /window\.addEventListener\(DESIGN_REVIEW_BOOTSTRAP_STATE_EVENT,\s*\(event\)\s*=>\s*\{/);

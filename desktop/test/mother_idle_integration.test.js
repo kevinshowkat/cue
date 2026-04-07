@@ -11,9 +11,13 @@ import { POINTER_KINDS, isEffectTokenPath, isMotherRolePath, isPanPath } from ".
 const here = dirname(fileURLToPath(import.meta.url));
 const htmlPath = join(here, "..", "src", "index.html");
 const appPath = join(here, "..", "src", "canvas_app.js");
+const canvasInputControllerPath = join(here, "..", "src", "app", "canvas_input_controller.js");
+const motherEventsPath = join(here, "..", "src", "app", "event_handlers", "mother_events.js");
 
 const html = readFileSync(htmlPath, "utf8");
 const app = readFileSync(appPath, "utf8");
+const canvasInputController = readFileSync(canvasInputControllerPath, "utf8");
+const motherEvents = readFileSync(motherEventsPath, "utf8");
 
 test("Mother wheel markup exposes the required actions", () => {
   assert.match(html, /id=\"mother-wheel-menu\"/);
@@ -22,9 +26,16 @@ test("Mother wheel markup exposes the required actions", () => {
 });
 
 test("Canvas app keeps modular event and unified canvas input wiring", () => {
-  assert.match(app, /createDesktopEventHandlerMap/);
-  assert.match(app, /installCanvasInputHandlers/);
-  assert.match(app, /installCanvasGestureHandlers/);
+  assert.match(app, /createDesktopEventRouter/);
+  assert.match(app, /createMotherEventHandler/);
+  assert.match(app, /createArtifactEventHandler/);
+  assert.match(app, /createIntentEventHandler/);
+  assert.match(app, /createDiagnosticsEventHandler/);
+  assert.match(app, /createRecreateEventHandler/);
+  assert.match(app, /installCanvasHandlers as installCanvasInputController/);
+  assert.match(app, /installDnD as installCanvasDndController/);
+  assert.match(canvasInputController, /installCanvasInputHandlers/);
+  assert.match(canvasInputController, /installCanvasGestureHandlers/);
   assert.match(app, /POINTER_KINDS/);
 });
 
@@ -38,8 +49,8 @@ test("Mother cancel/clear paths stop realtime intent session and trace compile d
   assert.match(app, /PTY_COMMANDS\.INTENT_RT_MOTHER_STOP/);
   assert.match(app, /function motherV2ClearPendingIntentRequest[\s\S]*motherV2StopRealtimeIntentSession\(\);/);
   assert.match(app, /function motherV2CancelInFlight[\s\S]*motherV2StopRealtimeIntentSession\(\);/);
-  assert.match(app, /kind: "prompt_compiled_dispatch_skipped"/);
-  assert.match(app, /reason: dispatchSkipReason/);
+  assert.match(motherEvents, /kind: "prompt_compiled_dispatch_skipped"/);
+  assert.match(motherEvents, /reason: dispatchSkipReason/);
 });
 
 test("Protocol constants keep stable event and command contracts", () => {

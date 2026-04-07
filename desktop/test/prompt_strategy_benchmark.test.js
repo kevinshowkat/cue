@@ -6,7 +6,13 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
+const artifactEventsPath = join(here, "..", "src", "app", "event_handlers", "artifact_events.js");
+const intentEventsPath = join(here, "..", "src", "app", "event_handlers", "intent_events.js");
+const motherEventsPath = join(here, "..", "src", "app", "event_handlers", "mother_events.js");
 const app = readFileSync(appPath, "utf8");
+const artifactEvents = readFileSync(artifactEventsPath, "utf8");
+const intentEvents = readFileSync(intentEventsPath, "utf8");
+const motherEvents = readFileSync(motherEventsPath, "utf8");
 
 function extractFunctionSource(pattern, label) {
   const match = app.match(pattern);
@@ -111,16 +117,10 @@ test("Mother dispatch registers benchmark trial and records dispatch failure", (
 });
 
 test("Desktop event pipeline updates prompt benchmark on version, artifact, failure, and cost", () => {
-  const fnMatch = app.match(
-    /async function handleEventLegacy\(event\) \{[\s\S]*?\n\}\n\nfunction hitTestEffectToken/
-  );
-  assert.ok(fnMatch, "handleEventLegacy function not found");
-  const fnText = fnMatch[0];
-
-  assert.match(fnText, /promptBenchmarkBindVersion\(motherEventVersionId\(event\)\);/);
-  assert.match(fnText, /promptBenchmarkMarkSuccessFromArtifactEvent\(event\);/);
-  assert.match(fnText, /promptBenchmarkMarkFailureFromGenerationFailedEvent\(event\);/);
-  assert.match(fnText, /promptBenchmarkAttachCostLatencyEvent\(event\);/);
+  assert.match(motherEvents, /promptBenchmarkBindVersion\(motherEventVersionId\(event\)\);/);
+  assert.match(artifactEvents, /promptBenchmarkMarkSuccessFromArtifactEvent\(event\);/);
+  assert.match(artifactEvents, /promptBenchmarkMarkFailureFromGenerationFailedEvent\(event\);/);
+  assert.match(intentEvents, /promptBenchmarkAttachCostLatencyEvent\(event\);/);
 });
 
 test("Settings UI exposes prompt strategy controls and benchmark reset action", () => {

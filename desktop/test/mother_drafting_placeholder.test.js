@@ -6,11 +6,13 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
+const rendererPath = join(here, "..", "src", "app", "canvas_renderer.js");
 const app = readFileSync(appPath, "utf8");
+const rendererSource = readFileSync(rendererPath, "utf8");
 
 test("Mother drafting placeholder renderer is wired into overlay pass", () => {
   assert.match(app, /function renderMotherDraftingPlaceholder\(/);
-  assert.match(app, /renderMotherDraftingPlaceholder\(octx,\s*work\.width,\s*work\.height\);/);
+  assert.match(rendererSource, /renderMotherDraftingPlaceholder\(octx,\s*work\.width,\s*work\.height\);/);
 });
 
 test("Mother drafting dispatch arms preview placement metadata", () => {
