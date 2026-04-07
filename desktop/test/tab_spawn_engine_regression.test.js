@@ -6,19 +6,43 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
-const app = readFileSync(appPath, "utf8");
+const activationRuntimePath = join(here, "..", "src", "app", "tab_activation_runtime.js");
+const activationRuntimeSource = readFileSync(activationRuntimePath, "utf8");
 
-function extractFunctionSource(pattern, label) {
-  const match = app.match(pattern);
-  assert.ok(match, `${label} function not found`);
-  return match[0].replace(/\n\nasync function\s+[\s\S]*$/, "").trim();
+function extractFunctionSourceFromSource(source, name) {
+  const markers = [`async function ${name}(`, `function ${name}(`];
+  const start = markers
+    .map((marker) => source.indexOf(marker))
+    .find((index) => index >= 0);
+  assert.notEqual(start, undefined, `Could not find function ${name}`);
+  const signatureStart = source.indexOf("(", start);
+  assert.notEqual(signatureStart, -1, `Could not find signature for ${name}`);
+  let parenDepth = 0;
+  let bodyStart = -1;
+  for (let index = signatureStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "(") parenDepth += 1;
+    if (char === ")") parenDepth -= 1;
+    if (parenDepth === 0 && char === "{") {
+      bodyStart = index;
+      break;
+    }
+  }
+  assert.notEqual(bodyStart, -1, `Could not find body for ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) {
+      return source.slice(start, index + 1);
+    }
+  }
+  throw new Error(`Could not extract function ${name}`);
 }
 
 function loadAttachActiveTabRuntimeHarness({ runDir = "/runs/tab-a", ptySpawned = true } = {}) {
-  const attachSource = extractFunctionSource(
-    /async function attachActiveTabRuntime\([\s\S]*?\n\}\n\nasync function activateTab/,
-    "attachActiveTabRuntime"
-  );
+  const attachSource = extractFunctionSourceFromSource(activationRuntimeSource, "attachActiveTabRuntime");
   const harnessSource = [
     "const calls = [];",
     `const DEFAULT_TIP = ${JSON.stringify("Default tip")};`,

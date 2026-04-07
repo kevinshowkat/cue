@@ -6,7 +6,9 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
+const intentEventsPath = join(here, "..", "src", "app", "event_handlers", "intent_events.js");
 const app = readFileSync(appPath, "utf8");
+const intentEventsSource = readFileSync(intentEventsPath, "utf8");
 
 test("Portrait videos: refresh path falls back from native agent to legacy swapped clips without dryrun", () => {
   assert.match(app, /function portraitFallbackAgentFromProvider\(/);
@@ -25,7 +27,7 @@ test("Portrait videos: OpenAI realtime activity keeps OpenAI slots in working st
   assert.match(app, /function markOpenAiRealtimePortraitActivity\(\{ extendMs = OPENAI_REALTIME_PORTRAIT_COOLDOWN_MS \} = \{\}\)/);
   assert.match(app, /const openAiBoost = openaiRealtimePortraitBoostActive && isOpenAiProvider\(provider\);/);
   assert.match(app, /const clipState = busy \|\| openAiBoost \? "working" : "idle";/);
-  assert.match(app, /isOpenAiRealtimeSignal\(\{ source: event.source, model: event.model \}\)/);
+  assert.match(intentEventsSource, /isOpenAiRealtimeSignal\(\{ source: event.source, model: event.model \}\)/);
   assert.match(app, /portraitWorking\(\"Intent Realtime\", \{\s*providerOverride: intentRtProvider,\s*forceProvider: true,/);
   assert.match(app, /function portraitWorking\(_actionLabel, \{ providerOverride = null, forceProvider = false, clearDirector = true \} = \{\}\)/);
 });

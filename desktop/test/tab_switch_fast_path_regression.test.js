@@ -8,9 +8,18 @@ import { createTabbedSessionsStore } from "../src/tabbed_sessions.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
+const tabActivationRuntimePath = join(here, "..", "src", "app", "tab_activation_runtime.js");
+const tabPreviewRuntimePath = join(here, "..", "src", "app", "tab_preview_runtime.js");
+const runProvisioningPath = join(here, "..", "src", "app", "run_provisioning.js");
 const app = readFileSync(appPath, "utf8");
+const tabActivationRuntimeSource = readFileSync(tabActivationRuntimePath, "utf8");
+const tabPreviewRuntimeSource = readFileSync(tabPreviewRuntimePath, "utf8");
+const runProvisioningSource = readFileSync(runProvisioningPath, "utf8");
 const createRunSignature = "async function createRun({ announce = true, source = \"new_run\" } = {}) {";
-const ensureRunChunk = app.slice(app.indexOf("async function ensureRun() {"), app.indexOf(createRunSignature));
+const ensureRunChunk = runProvisioningSource.slice(
+  runProvisioningSource.indexOf("async function ensureRun() {"),
+  runProvisioningSource.indexOf(createRunSignature)
+);
 const importLocalPathsChunk = app.slice(
   app.indexOf("async function importLocalPathsAtCanvasPoint("),
   app.indexOf("async function importPhotos(")
@@ -22,6 +31,38 @@ function extractFunctionSource(pattern, label) {
   return match[0].replace(/\n\n(?:async\s+)?function\s+[\s\S]*$/, "").trim();
 }
 
+function extractFunctionSourceFromSource(source, name) {
+  const markers = [`async function ${name}(`, `function ${name}(`];
+  const start = markers
+    .map((marker) => source.indexOf(marker))
+    .find((index) => index >= 0);
+  assert.notEqual(start, undefined, `Could not find function ${name}`);
+  const signatureStart = source.indexOf("(", start);
+  assert.notEqual(signatureStart, -1, `Could not find signature for ${name}`);
+  let parenDepth = 0;
+  let bodyStart = -1;
+  for (let index = signatureStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "(") parenDepth += 1;
+    if (char === ")") parenDepth -= 1;
+    if (parenDepth === 0 && char === "{") {
+      bodyStart = index;
+      break;
+    }
+  }
+  assert.notEqual(bodyStart, -1, `Could not find body for ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) {
+      return source.slice(start, index + 1);
+    }
+  }
+  throw new Error(`Could not extract function ${name}`);
+}
+
 function createDeferred() {
   let resolve = null;
   const promise = new Promise((nextResolve) => {
@@ -31,10 +72,7 @@ function createDeferred() {
 }
 
 function loadActivateTabHarness({ attachGate = null } = {}) {
-  const activateSource = extractFunctionSource(
-    /async function activateTab\([\s\S]*?\n\}\n\nasync function closeTab/,
-    "activateTab"
-  );
+  const activateSource = extractFunctionSourceFromSource(tabActivationRuntimeSource, "activateTab");
   const harnessSource = [
     "const calls = [];",
     "let tabHydrationToken = 0;",
@@ -170,10 +208,7 @@ function loadActivateTabHarness({ attachGate = null } = {}) {
 }
 
 function loadRenderPendingTabSwitchPreviewHarness({ previewEntry = null, paintSucceeds = true } = {}) {
-  const previewSource = extractFunctionSource(
-    /function renderPendingTabSwitchPreview\([\s\S]*?\n\}\n\nfunction tabLabelForRunDir/,
-    "renderPendingTabSwitchPreview"
-  );
+  const previewSource = extractFunctionSourceFromSource(tabPreviewRuntimeSource, "renderPendingTabSwitchPreview");
   const harnessSource = [
     "const calls = [];",
     "const state = { pendingTabSwitchPreview: { tabId: 'tab-b', reason: 'titlebar_tab_click' } };",
@@ -203,10 +238,7 @@ function loadRenderPendingTabSwitchPreviewHarness({ previewEntry = null, paintSu
 }
 
 function loadInvalidateActiveTabPreviewHarness({ version = 2, dirty = false } = {}) {
-  const invalidateSource = extractFunctionSource(
-    /function invalidateActiveTabPreview\([\s\S]*?\n\}\n\nfunction createTabPreviewCaptureSurface/,
-    "invalidateActiveTabPreview"
-  );
+  const invalidateSource = extractFunctionSourceFromSource(tabPreviewRuntimeSource, "invalidateActiveTabPreview");
   const harnessSource = [
     "let cleared = false;",
     "const disposed = [];",

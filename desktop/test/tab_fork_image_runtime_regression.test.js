@@ -6,20 +6,22 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
+const rendererPath = join(here, "..", "src", "app", "canvas_renderer.js");
 const app = readFileSync(appPath, "utf8");
+const rendererSource = readFileSync(rendererPath, "utf8");
 
-function extractFunctionSource(name) {
+function extractFunctionSource(name, source = app) {
   const markers = [`async function ${name}(`, `function ${name}(`];
   const start = markers
-    .map((marker) => app.indexOf(marker))
+    .map((marker) => source.indexOf(marker))
     .find((index) => index >= 0);
   assert.notEqual(start, undefined, `Could not find function ${name}`);
-  const signatureStart = app.indexOf("(", start);
+  const signatureStart = source.indexOf("(", start);
   assert.notEqual(signatureStart, -1, `Could not find signature for ${name}`);
   let parenDepth = 0;
   let bodyStart = -1;
-  for (let index = signatureStart; index < app.length; index += 1) {
-    const char = app[index];
+  for (let index = signatureStart; index < source.length; index += 1) {
+    const char = source[index];
     if (char === "(") parenDepth += 1;
     if (char === ")") parenDepth -= 1;
     if (parenDepth === 0 && char === "{") {
@@ -29,12 +31,12 @@ function extractFunctionSource(name) {
   }
   assert.notEqual(bodyStart, -1, `Could not find body for ${name}`);
   let depth = 0;
-  for (let index = bodyStart; index < app.length; index += 1) {
-    const char = app[index];
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
     if (char === "{") depth += 1;
     if (char === "}") depth -= 1;
     if (depth === 0) {
-      return app.slice(start, index + 1);
+      return source.slice(start, index + 1);
     }
   }
   throw new Error(`Could not extract function ${name}`);
@@ -163,7 +165,7 @@ test("fork rehydration clears unusable cloned image handles when no valid source
 });
 
 test("forked single-image render requests a reload when the cloned session only has persisted image metadata", () => {
-  const renderSource = extractFunctionSource("render");
+  const renderSource = extractFunctionSource("render", rendererSource);
   assert.match(
     renderSource,
     /if \(state\.canvasMode === "multi"\) \{[\s\S]*\} else \{[\s\S]*if \(item\?\.path\) ensureCanvasImageLoaded\(item\);[\s\S]*const img = readSessionRuntimeImageHandle\(item\);/

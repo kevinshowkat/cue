@@ -6,7 +6,9 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
+const intentEventsPath = join(here, "..", "src", "app", "event_handlers", "intent_events.js");
 const app = readFileSync(appPath, "utf8");
+const intentEventsSource = readFileSync(intentEventsPath, "utf8");
 
 test("Realtime pricing constants include OpenAI and Gemini realtime token rates", () => {
   assert.match(
@@ -58,11 +60,11 @@ test("Realtime source helper accepts openai and gemini realtime source tags", ()
 
 test("Realtime final canvas/intents events feed estimated realtime cost into COST", () => {
   assert.match(
-    app,
-    /eventType === DESKTOP_EVENT_TYPES\.CANVAS_CONTEXT[\s\S]*const isPartial = Boolean\(event\.partial\);[\s\S]*if \(!isPartial\) \{[\s\S]*topMetricIngestRealtimeCostFromPayload\(event, \{ render: true \}\);/
+    intentEventsSource,
+    /eventType === types\.CANVAS_CONTEXT[\s\S]*if \(!event\.partial\) \{[\s\S]*topMetricIngestRealtimeCostFromPayload\(event, \{ render: true \}\);/
   );
   assert.match(
-    app,
-    /event\.type === DESKTOP_EVENT_TYPES\.INTENT_ICONS[\s\S]*const isPartial = Boolean\(event\.partial\);[\s\S]*if \(!isPartial\) \{[\s\S]*topMetricIngestRealtimeCostFromPayload\(event, \{ render: true \}\);/
+    intentEventsSource,
+    /eventType === types\.INTENT_ICONS[\s\S]*const isPartial = Boolean\(event\.partial\);[\s\S]*if \(!isPartial\) \{[\s\S]*topMetricIngestRealtimeCostFromPayload\(event, \{ render: true \}\);/
   );
 });

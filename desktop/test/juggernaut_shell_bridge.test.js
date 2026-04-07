@@ -4,9 +4,24 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import { installLegacyCanvasAppBridges } from "../src/app/shell_bridges.js";
+
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "src", "index.html"), "utf8");
 const app = readFileSync(join(here, "..", "src", "canvas_app.js"), "utf8");
+const domSource = readFileSync(join(here, "..", "src", "app", "dom.js"), "utf8");
+const shellBridgeSource = readFileSync(
+  join(here, "..", "src", "app", "shell_bridges.js"),
+  "utf8"
+);
+const shellChromeRenderer = readFileSync(
+  join(here, "..", "src", "app", "shell_chrome_renderer.js"),
+  "utf8"
+);
+const tabStripUiSource = readFileSync(
+  join(here, "..", "src", "app", "tab_strip_ui.js"),
+  "utf8"
+);
 const styles = readFileSync(join(here, "..", "src", "styles.css"), "utf8");
 
 test("Juggernaut shell chrome exposes selection status, export button, rail root, and upload affordance", () => {
@@ -39,17 +54,19 @@ test("Juggernaut shell chrome exposes selection status, export button, rail root
 });
 
 test("Juggernaut shell bridge exposes tool/export registration and request methods", () => {
-  assert.match(app, /window\.__JUGGERNAUT_SHELL__\s*=\s*\{/);
-  assert.match(app, /railContract:\s*JUGGERNAUT_SHELL_RAIL_CONTRACT/);
-  assert.match(app, /registerToolInvoker\(fn\)/);
-  assert.match(app, /registerSingleImageRailRanker\(fn\)/);
-  assert.match(app, /registerPsdExportHandler\(fn\)/);
-  assert.match(app, /requestExport\(meta\s*=\s*\{\}\)/);
-  assert.match(app, /requestToolInvocation\(toolKey,\s*meta\s*=\s*\{\}\)/);
-  assert.match(app, /requestPsdExport\(meta\s*=\s*\{\}\)/);
-  assert.match(app, /agentRunnerBridgeKey:\s*AGENT_RUNNER_BRIDGE_KEY/);
-  assert.match(app, /openAgentRunner\(\)/);
-  assert.match(app, /getAgentRunnerState\(\)/);
+  assert.match(shellBridgeSource, /windowObj\.__JUGGERNAUT_SHELL__\s*=\s*shellBridge/);
+  assert.match(shellBridgeSource, /railContract:\s*JUGGERNAUT_SHELL_RAIL_CONTRACT/);
+  assert.match(shellBridgeSource, /registerToolInvoker:\s*registerBridgeHook/);
+  assert.match(shellBridgeSource, /registerSingleImageRailRanker:\s*registerBridgeHook/);
+  assert.match(shellBridgeSource, /registerPsdExportHandler:\s*registerBridgeHook/);
+  assert.match(shellBridgeSource, /requestExport\(meta\s*=\s*\{\}\)/);
+  assert.match(shellBridgeSource, /requestToolInvocation\(toolKey,\s*meta\s*=\s*\{\}\)/);
+  assert.match(shellBridgeSource, /requestPsdExport\(meta\s*=\s*\{\}\)/);
+  assert.match(shellBridgeSource, /agentRunnerBridgeKey:\s*AGENT_RUNNER_BRIDGE_KEY/);
+  assert.match(shellBridgeSource, /openAgentRunner\(\)/);
+  assert.match(shellBridgeSource, /getAgentRunnerState\(\)/);
+  assert.match(app, /function installJuggernautShellBridge\(\)\s*\{\s*return installLegacyCanvasAppShellBridges\(\{/s);
+  assert.match(app, /function exposeJuggernautShellHooks\(\)\s*\{\s*return exposeLegacyCanvasAppGlobalBridges\(\{/s);
   assert.match(app, /window\[AGENT_RUNNER_BRIDGE_KEY\]\s*=\s*Object\.freeze\(\{/);
   assert.match(app, /runAgentRunnerStep\(/);
   assert.match(app, /runAgentRunnerAuto\(/);
@@ -63,24 +80,125 @@ test("Juggernaut shell bridge exposes tool/export registration and request metho
   assert.match(app, /function collapseAgentRunnerPanelToBanner\(\)/);
   assert.match(app, /panelExpanded:\s*false/);
   assert.match(app, /const setAgentRunnerButtonLabel = \(button,\s*label\) => \{/);
-  assert.match(app, /agentRunnerExpand:\s*document\.getElementById\("agent-runner-expand"\)/);
-  assert.match(app, /agentRunnerSubmit:\s*document\.getElementById\("agent-runner-submit"\)/);
+  assert.match(domSource, /\["agentRunnerExpand", "agent-runner-expand"\]/);
+  assert.match(domSource, /\["agentRunnerSubmit", "agent-runner-submit"\]/);
   assert.match(app, /function showAgentRunnerPanel\(\{ focusGoal = true,\s*expand = false \} = \{\}\) \{/);
   assert.match(app, /function showAgentRunnerPanel\(\{ focusGoal = true,\s*expand = false \} = \{\}\) \{[\s\S]*runner\.panelExpanded = Boolean\(expand\);/);
   assert.match(app, /els\.agentRunnerExpand\.addEventListener\("click", \(\) => \{[\s\S]*runner\.panelExpanded = !runner\.panelExpanded;/);
   assert.match(app, /els\.agentRunnerSubmit\.addEventListener\("click", \(\) => \{[\s\S]*runAgentRunnerAuto\(\{ source: "agent_runner_panel_compact" \}\)/);
   assert.match(app, /classList\.toggle\("agent-runner-active",\s*active\)/);
-  assert.match(app, /getRuntimeVisibility\(\)/);
-  assert.match(app, /setRuntimeVisibility\(next\s*=\s*\{\}\)/);
-  assert.match(app, /getCanvasSnapshot\(\)/);
+  assert.match(shellBridgeSource, /getRuntimeVisibility\(\)/);
+  assert.match(shellBridgeSource, /setRuntimeVisibility\(next\s*=\s*\{\}\)/);
+  assert.match(shellBridgeSource, /getCanvasSnapshot\(\)/);
   assert.match(app, /function syncDropHintInteractivity\(\)\s*\{[\s\S]*tabIndex = -1;[\s\S]*pointerEvents = "none";[\s\S]*cursor = "default";[\s\S]*\}/);
   assert.doesNotMatch(app, /els\.dropHint\.addEventListener\("click",/);
   assert.doesNotMatch(app, /els\.dropHint\.addEventListener\("keydown",/);
 });
 
+test("Juggernaut shell bridge install preserves legacy globals and nested bridge surfaces", () => {
+  const calls = [];
+  const windowObj = {};
+  const state = {
+    juggernautShell: {
+      toolInvoker: null,
+      psdExportHandler: null,
+      singleImageRail: {
+        contract: "juggernaut.single-image.v1",
+        adapter: { id: "mock-adapter" },
+        mock: false,
+        ranker: null,
+      },
+    },
+  };
+  const bridge = installLegacyCanvasAppBridges({
+    windowObj,
+    state,
+    JUGGERNAUT_SHELL_BRIDGE_VERSION: "bridge.v1",
+    JUGGERNAUT_SHELL_RAIL_CONTRACT: "rail.v1",
+    JUGGERNAUT_SHELL_RAIL: [{ toolId: "polish", label: "Polish" }],
+    runtimeChromeVisibilitySnapshot: () => ({ showAssistant: true }),
+    applyJuggernautTool: (toolId) => ({ ok: true, toolId }),
+    exportJuggernautPsd: (meta = {}) => ({ ok: true, meta }),
+    renderQuickActions: () => calls.push("quick"),
+    renderJuggernautShellChrome: () => calls.push("chrome"),
+    invokeJuggernautShellTool: (toolKey, meta = {}) => ({ toolKey, meta }),
+    requestJuggernautExport: (meta = {}) => ({ kind: "export", meta }),
+    requestJuggernautPsdExport: (meta = {}) => ({ kind: "psd", meta }),
+    importPhotos: () => ({ kind: "import" }),
+    listTabs: () => [{ id: "tab-1" }],
+    createRun: () => ({ kind: "new-run" }),
+    openExistingRun: () => ({ kind: "open-run" }),
+    activateTab: (tabId) => tabId,
+    closeTab: (tabId) => tabId,
+    subscribeTabs: () => () => {},
+    buildJuggernautShellContext: () => ({ activeImageId: "img-1" }),
+    buildCommunicationReviewPayload: (meta = {}) => ({ payload: meta }),
+    buildCommunicationBridgeSnapshot: () => ({ tool: "marker" }),
+    buildAgentRunnerBridgeSnapshot: () => ({ running: false }),
+    showAgentRunnerPanel: (options = {}) => options,
+    hideAgentRunnerPanel: () => ({ hidden: true }),
+    agentRunnerActive: () => true,
+    requestCommunicationDesignReview: (meta = {}) => ({ review: meta }),
+    setCommunicationProposalTray: (next = {}, meta = {}) => ({ next, meta }),
+    hideCommunicationProposalTray: (meta = {}) => ({ hidden: meta }),
+    setCommunicationTool: (tool, meta = {}) => ({ tool, meta }),
+    setRuntimeChromeVisibility: (next = {}, meta = {}) => ({ next, meta }),
+    AGENT_RUNNER_BRIDGE_KEY: "__JUGGERNAUT_AGENT_RUNNER__",
+    installTabbedSessionsBridge: (shellBridge) => {
+      calls.push({ tabsInjected: true, shellBridge });
+      shellBridge.tabsBridgeKey = "__TABBED_SESSIONS__";
+    },
+    dispatchJuggernautShellEvent: (type, detail) => {
+      calls.push({ type, detail });
+      return { type, detail };
+    },
+    singleImageRailRecentSuccessfulJobs: () => [{ jobId: "polish" }],
+  });
+
+  assert.equal(windowObj.__JUGGERNAUT_SHELL__, bridge);
+  assert.equal(windowObj.applyJuggernautTool, bridge.applyJuggernautTool);
+  assert.equal(windowObj.exportJuggernautPsd, bridge.exportJuggernautPsd);
+  assert.equal(windowObj.__juggernautShell.state, state.juggernautShell);
+  assert.deepEqual(windowObj.__JUGGERNAUT_RUNTIME_FLAGS__.getRuntimeVisibility(), {
+    showAssistant: true,
+  });
+  assert.deepEqual(bridge.singleImageRail.recentSuccessfulJobs, [{ jobId: "polish" }]);
+  assert.deepEqual(bridge.requestToolInvocation("polish", { source: "shell" }), {
+    toolKey: "polish",
+    meta: { source: "shell" },
+  });
+  assert.deepEqual(bridge.requestExport({ format: "png" }), {
+    kind: "export",
+    meta: { format: "png" },
+  });
+  assert.deepEqual(bridge.showCommunicationProposalTray({ open: true }), {
+    next: { open: true },
+    meta: { source: "bridge" },
+  });
+  assert.deepEqual(bridge.communicationReview.showTray({ open: true }), {
+    next: { open: true },
+    meta: { source: "bridge_nested" },
+  });
+  const unregisterToolInvoker = bridge.registerToolInvoker(() => true);
+  const unregisterRanker = bridge.registerSingleImageRailRanker(() => []);
+  const unregisterPsd = bridge.registerPsdExportHandler(() => true);
+  assert.equal(typeof state.juggernautShell.toolInvoker, "function");
+  assert.equal(typeof state.juggernautShell.singleImageRail.ranker, "function");
+  assert.equal(typeof state.juggernautShell.psdExportHandler, "function");
+  unregisterToolInvoker();
+  unregisterRanker();
+  unregisterPsd();
+  assert.equal(state.juggernautShell.toolInvoker, null);
+  assert.equal(state.juggernautShell.singleImageRail.ranker, null);
+  assert.equal(state.juggernautShell.psdExportHandler, null);
+  assert.ok(calls.some((entry) => entry === "quick"));
+  assert.ok(calls.some((entry) => entry === "chrome"));
+  assert.ok(calls.some((entry) => entry?.type === "juggernaut:shell-ready"));
+});
+
 test("Agent Run panel exposes a copy-logs control and clipboard handler", () => {
-  assert.match(app, /agentRunnerCopy:\s*document\.getElementById\("agent-runner-copy"\)/);
-  assert.match(app, /agentRunnerScore:\s*document\.getElementById\("agent-runner-score"\)/);
+  assert.match(domSource, /\["agentRunnerCopy", "agent-runner-copy"\]/);
+  assert.match(domSource, /\["agentRunnerScore", "agent-runner-score"\]/);
   assert.match(app, /await navigator\.clipboard\.writeText\(text\)/);
   assert.match(app, /showToast\("Agent Run logs copied\.", "tip", 1800\)/);
   assert.match(app, /els\.agentRunnerCopy\.addEventListener\("click", \(\) => \{/);
@@ -167,7 +285,7 @@ test("Expanded Agent Run panel uses the same liquid-glass shell language", () =>
 });
 
 test("Juggernaut shell bridge emits integration events for tools and PSD export", () => {
-  assert.match(app, /juggernaut:shell-ready/);
+  assert.match(shellBridgeSource, /juggernaut:shell-ready/);
   assert.match(app, /juggernaut:runtime-visibility-changed/);
   assert.match(app, /juggernaut:tool-requested/);
   assert.match(app, /juggernaut:export-requested/);
@@ -200,14 +318,14 @@ test("Juggernaut runner and export controls live in the titlebar session actions
   assert.match(html, /data-juggernaut-icon-slot=\"design_review\"/);
   assert.match(app, /function syncJuggernautShellIconography\(packId = settings\.railIconPack\)/);
   assert.match(app, /slot\.innerHTML = getJuggernautRailIconMarkup\(resolvedIconId,\s*resolvedPackId\);/);
-  assert.match(app, /indicator\.dataset\.juggernautIconSlot = "fork_session";/);
+  assert.match(tabStripUiSource, /indicator\.dataset\.juggernautIconSlot = "fork_session";/);
   assert.match(styles, /\.session-tab-runtime-action\.is-ready\s*\{/);
   assert.match(styles, /\.agent-runner-banner\s*\{/);
   assert.match(styles, /\.canvas-wrap\.agent-runner-active\s*\{/);
 });
 
 test("Juggernaut shell export toggle disables until the canvas has an exportable image", () => {
-  assert.match(app, /const exportToggleReady = !emptyCanvas && exportMenuReady;/);
-  assert.match(app, /els\.juggernautExportPsd\.disabled = !exportToggleReady;/);
-  assert.match(app, /if \(!exportToggleReady && isJuggernautExportMenuOpen\(\)\) \{\s*closeJuggernautExportMenu\(\);\s*\}/);
+  assert.match(shellChromeRenderer, /const exportToggleReady = !emptyCanvas && exportMenuReady;/);
+  assert.match(shellChromeRenderer, /els\.juggernautExportPsd\.disabled = !exportToggleReady;/);
+  assert.match(shellChromeRenderer, /if \(!exportToggleReady && isJuggernautExportMenuOpen\(\)\) \{\s*closeJuggernautExportMenu\(\);\s*\}/);
 });

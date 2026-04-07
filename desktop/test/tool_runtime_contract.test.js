@@ -26,8 +26,10 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const htmlPath = join(here, "..", "src", "index.html");
 const appPath = join(here, "..", "src", "canvas_app.js");
+const domPath = join(here, "..", "src", "app", "dom.js");
 const html = readFileSync(htmlPath, "utf8");
 const app = readFileSync(appPath, "utf8");
+const domSource = readFileSync(domPath, "utf8");
 
 test("generateToolManifest maps descriptive input into a deterministic local tool schema", () => {
   const manifest = generateToolManifest({
@@ -147,7 +149,7 @@ test("Create Tool UI and browser bridge are wired into the desktop app", () => {
   assert.match(app, /previewCreateTool:\s*\(\{\s*name = "",\s*description = ""\s*\}\s*=\s*\{\}\)\s*=>/);
   assert.match(app, /TOOL_INVOCATION_EVENT/);
   assert.match(app, /sessionToolRegistry\.createFromDescription/);
-  assert.match(app, /customToolDock:\s*document\.getElementById\("custom-tool-dock"\)/);
+  assert.match(domSource, /\["customToolDock", "custom-tool-dock"\]/);
   assert.match(app, /tool-runtime-\$\{state\.toolInvocationSeq\+\+\}/);
 });
 

@@ -14,6 +14,7 @@ import {
   copyFile,
 } from "@tauri-apps/api/fs";
 
+import { createCanvasRenderer } from "./app/canvas_renderer.js";
 import { computeActionGridSlots } from "./action_grid_logic.js";
 import { createEffectsRuntime } from "./effects_runtime.js";
 import { effectTypeFromTokenType } from "./effect_specs.js";
@@ -125,13 +126,46 @@ import { rankSingleImageIntentJobs } from "./single_image_intent_ranking.js";
 import {
   nextMotherRealtimeIntentFailureAction,
 } from "./realtime_intent_recovery.js";
-import { createDesktopEventHandlerMap } from "./event_handlers/index.js";
-import { installCanvasGestureHandlers } from "./canvas_handlers/gesture_handlers.js";
-import { installCanvasInputHandlers } from "./canvas_handlers/install_canvas_input_handlers.js";
+import { createCanvasAppDesktopEventRouter } from "./app/event_router.js";
+import { installCanvasHandlers as installCanvasInputController } from "./app/canvas_input_controller.js";
+import { installDnD as installCanvasDndController } from "./app/dnd_controller.js";
 import { POINTER_KINDS, isEffectTokenPath, isMotherRolePath } from "./canvas_handlers/pointer_paths.js";
 import { applyToolRuntimeRequest, installToolApplyBridge } from "./tool_apply_runtime.js";
 import { invokeDesignReviewProviderRequest } from "./design_review_backend.js";
 import { createDesignReviewProviderRouter } from "./design_review_provider_router.js";
+import {
+  createCanvasAppNativeMenuActionBridge,
+  createNativeMenuRuntime,
+} from "./app/native_menu_runtime.js";
+import { runCanvasAppBootPreflight } from "./app/boot_preflight.js";
+import { runCanvasAppBootReadySequence } from "./app/boot_ready.js";
+import { installCanvasAppBootRuntime } from "./app/boot_runtime.js";
+import { createCanvasAppDesktopSessionBridge } from "./app/desktop_session_bridge.js";
+import {
+  adaptCanvasAppDesktopSessionStatusResponse,
+  createCanvasAppEngineRuntime,
+} from "./app/engine_runtime.js";
+import { createCanvasAppRunProvisioning } from "./app/run_provisioning.js";
+import { createCanvasAppSessionPersistence } from "./app/session_persistence.js";
+import { createCanvasAppTabActivationRuntime } from "./app/tab_activation_runtime.js";
+import { createCanvasAppTabLifecycleRuntime } from "./app/tab_lifecycle_runtime.js";
+import { createCanvasAppTabPreviewRuntime } from "./app/tab_preview_runtime.js";
+import { createCanvasAppTabSessionStateAdapter } from "./app/tab_session_state.js";
+import { createSessionTabRenameRuntime } from "./app/tab_rename_runtime.js";
+import { createSessionTabStripUi } from "./app/tab_strip_ui.js";
+import { createTimelineUi } from "./app/timeline_ui.js";
+import { runCanvasAppBootShellSetup } from "./app/boot_shell.js";
+import { createCanvasApp } from "./app/create_canvas_app.js";
+import { createCanvasAppDom } from "./app/dom.js";
+import { loadCanvasAppSettings } from "./app/settings_store.js";
+import {
+  exposeLegacyCanvasAppGlobalBridges,
+  installLegacyCanvasAppBridges as installLegacyCanvasAppShellBridges,
+} from "./app/shell_bridges.js";
+import {
+  renderCommunicationChrome as renderCommunicationChromeEntry,
+  renderJuggernautShellChrome as renderJuggernautShellChromeEntry,
+} from "./app/shell_chrome_renderer.js";
 import {
   ACTION_PROVENANCE,
   actionProvenanceHasModelCost,
@@ -162,11 +196,6 @@ import {
   serializeSessionTimeline,
 } from "./session_timeline.js";
 import {
-  buildNativeSystemMenuPayload,
-  NATIVE_SHORTCUT_SLOT_COUNT,
-  NATIVE_TOOLS_SLOT_COUNT,
-} from "./system_menu_state.js";
-import {
   buildCueExportArtifactLayout,
   cueExportLimitationsForFormat,
 } from "./juggernaut_export/contract.js";
@@ -184,27 +213,6 @@ function emptyDesktopSessionStatus() {
     launch_label: null,
     last_exit_detail: null,
     last_error: null,
-  };
-}
-
-function adaptDesktopSessionStatusResponse(response, fallbackRunDir = null) {
-  const runDir =
-    String(response?.session?.runDir || "").trim() || String(fallbackRunDir || "").trim() || null;
-  const running = Boolean(response?.runtime?.running);
-  const phase = String(response?.runtime?.phase || "").trim();
-  const detail = response?.detail ? String(response.detail) : null;
-  return {
-    running,
-    has_child: running,
-    has_writer: running,
-    pid: Number.isFinite(Number(response?.runtime?.pid)) ? Number(response.runtime.pid) : null,
-    automation_frontend_ready: false,
-    run_dir: runDir,
-    events_path: runDir ? `${runDir}/events.jsonl` : null,
-    launch_mode: response?.launch?.mode ? String(response.launch.mode) : null,
-    launch_label: response?.launch?.label ? String(response.launch.label) : null,
-    last_exit_detail: phase === "stopped" ? detail : null,
-    last_error: phase === "error" ? detail : null,
   };
 }
 
@@ -227,7 +235,7 @@ async function invoke(command, payload = {}) {
       tauriInvoke,
       buildDesktopSessionStatusRequest({ runDir })
     );
-    return adaptDesktopSessionStatusResponse(response, runDir);
+    return adaptCanvasAppDesktopSessionStatusResponse(response, runDir);
   }
   return tauriInvoke(command, payload);
 }
@@ -571,7 +579,6 @@ const MOTHER_GENERATION_TIMEOUT_EXTENSION_MS = 90_000;
 const MOTHER_GENERATION_POST_VERSION_TIMEOUT_MS = 240_000;
 const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview";
 const LEGACY_DEFAULT_IMAGE_MODEL = "gemini-2.5-flash-image";
-const IMAGE_MODEL_DEFAULT_MIGRATION_KEY = "brood.imageModel.default.v2";
 const RAIL_ICON_PACK_LS_KEY = "juggernaut.railIconPack.v1";
 const PROMPT_STRATEGY_MODE_KEY = "brood.promptStrategyMode.v1";
 const PROMPT_REPEAT_FULL_KEY = "brood.promptRepeatFull.v1";
@@ -969,247 +976,7 @@ function writeJuggernautRuntimeChromePreference(key, value) {
   }
 }
 
-const els = {
-  runInfo: document.getElementById("run-info"),
-  engineStatus: document.getElementById("engine-status"),
-  topMetricsRoot: document.getElementById("top-metrics"),
-  topMetricTokens: document.getElementById("top-metric-tokens"),
-  topMetricTokensValue: document.getElementById("top-metric-tokens-value"),
-  topMetricTokensSparkIn: document.getElementById("top-metric-tokens-spark-in"),
-  topMetricTokensSparkOut: document.getElementById("top-metric-tokens-spark-out"),
-  topMetricApiCalls: document.getElementById("top-metric-api-calls"),
-  topMetricApiCallsValue: document.getElementById("top-metric-api-calls-value"),
-  topMetricCost: document.getElementById("top-metric-cost"),
-  topMetricCostValue: document.getElementById("top-metric-cost-value"),
-  topMetricQueue: document.getElementById("top-metric-queue"),
-  topMetricQueueValue: document.getElementById("top-metric-queue-value"),
-  topMetricQueueTrend: document.getElementById("top-metric-queue-trend"),
-  topMetricRender: document.getElementById("top-metric-render"),
-  topMetricRenderValue: document.getElementById("top-metric-render-value"),
-  brandStrip: document.querySelector(".brand-strip"),
-  sessionTabStrip: document.getElementById("session-tab-strip"),
-  sessionTabList: document.getElementById("session-tab-list"),
-  sessionTabNew: document.getElementById("session-tab-new"),
-  sessionTabFork: document.getElementById("session-tab-fork"),
-  sessionTabDesignReview: document.getElementById("session-tab-design-review"),
-  appMenuToggle: document.getElementById("app-menu-toggle"),
-  appMenu: document.getElementById("app-menu"),
-  runtimePinAssistantToggle: null,
-  runtimeDiagnosticsToggle: null,
-  newRun: document.getElementById("new-run"),
-  openRun: document.getElementById("open-run"),
-  saveSession: document.getElementById("save-session"),
-  closeSession: document.getElementById("close-session"),
-  import: document.getElementById("import"),
-  canvasImport: document.getElementById("canvas-import"),
-  export: document.getElementById("export"),
-  juggernautToolRail: document.getElementById("juggernaut-tool-rail"),
-  juggernautSelectionStatus: document.getElementById("juggernaut-selection-status"),
-  juggernautAgentRunnerOpen: document.getElementById("juggernaut-agent-runner-open"),
-  juggernautExportPsd: document.getElementById("juggernaut-export-psd"),
-  juggernautExportMenu: document.getElementById("juggernaut-export-menu"),
-  juggernautExportFormatPsd: document.getElementById("juggernaut-export-format-psd"),
-  juggernautExportFormatPng: document.getElementById("juggernaut-export-format-png"),
-  juggernautExportFormatJpg: document.getElementById("juggernaut-export-format-jpg"),
-  juggernautExportFormatWebp: document.getElementById("juggernaut-export-format-webp"),
-  juggernautExportFormatTiff: document.getElementById("juggernaut-export-format-tiff"),
-  reelAdminToggle: document.getElementById("reel-admin-toggle"),
-  settingsToggle: document.getElementById("settings-toggle"),
-  settingsDrawer: document.getElementById("settings-drawer"),
-  settingsClose: document.getElementById("settings-close"),
-  railIconPack: document.getElementById("rail-icon-pack"),
-  memoryToggle: document.getElementById("memory-toggle"),
-  alwaysOnVisionToggle: document.getElementById("always-on-vision-toggle"),
-  alwaysOnVisionReadout: document.getElementById("always-on-vision-readout"),
-  textModel: document.getElementById("text-model"),
-  imageModel: document.getElementById("image-model"),
-  promptStrategyMode: document.getElementById("prompt-strategy-mode"),
-  promptRepeatFullToggle: document.getElementById("prompt-repeat-full-toggle"),
-  promptBenchmarkReadout: document.getElementById("prompt-benchmark-readout"),
-  promptBenchmarkReset: document.getElementById("prompt-benchmark-reset"),
-  installTelemetryToggle: document.getElementById("install-telemetry-toggle"),
-  installTelemetryStatus: document.getElementById("install-telemetry-status"),
-  aestheticOnboardingStatus: document.getElementById("aesthetic-onboarding-status"),
-  aestheticOnboardingOpen: document.getElementById("aesthetic-onboarding-open"),
-  aestheticOnboardingClear: document.getElementById("aesthetic-onboarding-clear"),
-  openrouterOnboardingStatus: document.getElementById("openrouter-onboarding-status"),
-  openrouterOnboardingOpen: document.getElementById("openrouter-onboarding-open"),
-  openrouterOnboardingReset: document.getElementById("openrouter-onboarding-reset"),
-  openrouterApiKeyClear: document.getElementById("openrouter-api-key-clear"),
-  portraitsDir: document.getElementById("portraits-dir"),
-  portraitsDirPick: document.getElementById("portraits-dir-pick"),
-  portraitsDirClear: document.getElementById("portraits-dir-clear"),
-  keyStatus: document.getElementById("key-status"),
-  motherIntentSourceIndicator: document.getElementById("mother-intent-source-indicator"),
-  canvasWrap: document.getElementById("canvas-wrap"),
-  dropHint: document.getElementById("drop-hint"),
-  workCanvas: document.getElementById("work-canvas"),
-  effectsCanvas: document.getElementById("effects-canvas"),
-  imageFx: document.getElementById("image-fx"),
-  imageFx2: document.getElementById("image-fx-2"),
-  overlayCanvas: document.getElementById("overlay-canvas"),
-  communicationShell: document.getElementById("communication-shell"),
-  communicationCanvasCursor: document.getElementById("communication-canvas-cursor"),
-  communicationCanvasCursorArt: document.getElementById("communication-canvas-cursor-art"),
-  communicationRail: document.getElementById("communication-rail"),
-  communicationToolMarker: document.getElementById("communication-tool-marker"),
-  communicationToolProtect: document.getElementById("communication-tool-protect"),
-  communicationToolMagicSelect: document.getElementById("communication-tool-magic-select"),
-  communicationToolStamp: document.getElementById("communication-tool-stamp"),
-  communicationToolMakeSpace: document.getElementById("communication-tool-make-space"),
-  communicationToolEraser: document.getElementById("communication-tool-eraser"),
-  communicationStampPicker: document.getElementById("communication-stamp-picker"),
-  communicationStampPickerTitle: document.getElementById("communication-stamp-picker-title"),
-  communicationStampPickerSubtitle: document.getElementById("communication-stamp-picker-subtitle"),
-  communicationStampIntentList: document.getElementById("communication-stamp-intent-list"),
-  communicationStampCustomPanel: document.getElementById("communication-stamp-custom-panel"),
-  communicationStampCustomInput: document.getElementById("communication-stamp-custom-input"),
-  communicationStampCustomCancel: document.getElementById("communication-stamp-custom-cancel"),
-  communicationStampCustomSubmit: document.getElementById("communication-stamp-custom-submit"),
-  communicationProposalTray: document.getElementById("communication-proposal-tray"),
-  communicationProposalTrayClose: document.getElementById("communication-proposal-tray-close"),
-  communicationProposalSlotList: document.getElementById("communication-proposal-slot-list"),
-  controlStrip: document.getElementById("control-strip"),
-  fileBrowserDock: document.getElementById("file-browser-dock"),
-  fileBrowserHeader: document.getElementById("file-browser-header"),
-  fileBrowserChoose: document.getElementById("file-browser-choose"),
-  fileBrowserUp: document.getElementById("file-browser-up"),
-  fileBrowserRefresh: document.getElementById("file-browser-refresh"),
-  fileBrowserPath: document.getElementById("file-browser-path"),
-  fileBrowserList: document.getElementById("file-browser-list"),
-  annotatePanel: document.getElementById("annotate-panel"),
-  annotateClose: document.getElementById("annotate-close"),
-  annotateMeta: document.getElementById("annotate-meta"),
-  annotateModel: document.getElementById("annotate-model"),
-  annotateText: document.getElementById("annotate-text"),
-  annotateCancel: document.getElementById("annotate-cancel"),
-  annotateSend: document.getElementById("annotate-send"),
-  promptGeneratePanel: document.getElementById("prompt-generate-panel"),
-  promptGenerateClose: document.getElementById("prompt-generate-close"),
-  promptGenerateMeta: document.getElementById("prompt-generate-meta"),
-  promptGenerateModel: document.getElementById("prompt-generate-model"),
-  promptGenerateText: document.getElementById("prompt-generate-text"),
-  promptGenerateCancel: document.getElementById("prompt-generate-cancel"),
-  promptGenerateSend: document.getElementById("prompt-generate-send"),
-  markPanel: document.getElementById("mark-panel"),
-  markTitle: document.getElementById("mark-title"),
-  markClose: document.getElementById("mark-close"),
-  markMeta: document.getElementById("mark-meta"),
-  markText: document.getElementById("mark-text"),
-  markDelete: document.getElementById("mark-delete"),
-  markSave: document.getElementById("mark-save"),
-  hud: document.getElementById("hud"),
-  hudLineUnit: document.getElementById("hud-line-unit"),
-  hudLineDirector: document.getElementById("hud-line-director"),
-  hudDirectorKey: document.getElementById("hud-director-k"),
-  hudDirectorVal: document.getElementById("hud-director-v"),
-  hudLineDesc: document.getElementById("hud-line-desc"),
-  hudLineSel: document.getElementById("hud-line-sel"),
-  hudUnitName: document.getElementById("hud-unit-name"),
-  hudUnitDesc: document.getElementById("hud-unit-desc"),
-  hudUnitSel: document.getElementById("hud-unit-sel"),
-  filmstrip: document.getElementById("filmstrip"),
-  spawnbar: document.getElementById("spawnbar"),
-  toast: document.getElementById("toast"),
-  agentsDock: document.getElementById("agents-dock"),
-  portraitDock: document.getElementById("portrait-dock"),
-  agentSlotPrimary: document.getElementById("agent-slot-primary"),
-  agentSlotSecondary: document.getElementById("agent-slot-secondary"),
-  portraitTitle: document.getElementById("portrait-title"),
-  portraitAvatar: document.getElementById("portrait-avatar"),
-  portraitVideo: document.getElementById("portrait-video"),
-  portraitTitle2: document.getElementById("portrait-title-2"),
-  portraitAvatar2: document.getElementById("portrait-avatar-2"),
-  portraitVideo2: document.getElementById("portrait-video-2"),
-  selectionMeta: document.getElementById("selection-meta"),
-  motherState: document.getElementById("mother-state"),
-  motherRolePreview: document.getElementById("mother-role-preview"),
-  tipsText: document.getElementById("tips-text"),
-  motherOverlay: document.getElementById("mother-overlay"),
-  motherPanelStack: document.getElementById("mother-panel-stack"),
-  motherPanel: document.getElementById("mother-panel"),
-  motherRefineToggle: document.getElementById("mother-refine-toggle"),
-  motherAdvanced: document.getElementById("mother-advanced"),
-  motherTransformationMode: document.getElementById("mother-transformation-mode"),
-  motherRoleSubject: document.getElementById("mother-role-subject"),
-  motherRoleModel: document.getElementById("mother-role-model"),
-  motherRoleMediator: document.getElementById("mother-role-mediator"),
-  motherRoleObject: document.getElementById("mother-role-object"),
-  motherAvatar: document.getElementById("mother-avatar"),
-  motherVideo: document.getElementById("mother-video"),
-  motherAbilityIcon: document.getElementById("mother-ability-icon"),
-  motherConfirm: document.getElementById("mother-confirm"),
-  motherStop: document.getElementById("mother-stop"),
-  canvasMoodStatus: document.getElementById("canvas-mood-status"),
-  motherMoodToggle: document.getElementById("mother-mood-toggle"),
-  motherMoodMenu: document.getElementById("mother-mood-menu"),
-  customToolDock: document.getElementById("custom-tool-dock"),
-  actionGrid: document.getElementById("action-grid"),
-  createToolPanel: document.getElementById("create-tool-panel"),
-  createToolClose: document.getElementById("create-tool-close"),
-  createToolMeta: document.getElementById("create-tool-meta"),
-  createToolName: document.getElementById("create-tool-name"),
-  createToolText: document.getElementById("create-tool-text"),
-  createToolPreview: document.getElementById("create-tool-preview"),
-  createToolCancel: document.getElementById("create-tool-cancel"),
-  createToolSave: document.getElementById("create-tool-save"),
-  agentRunnerPanel: document.getElementById("agent-runner-panel"),
-  agentRunnerExpand: document.getElementById("agent-runner-expand"),
-  agentRunnerClose: document.getElementById("agent-runner-close"),
-  agentRunnerMeta: document.getElementById("agent-runner-meta"),
-  agentRunnerPlanner: document.getElementById("agent-runner-planner"),
-  agentRunnerMaxSteps: document.getElementById("agent-runner-max-steps"),
-  agentRunnerGoal: document.getElementById("agent-runner-goal"),
-  agentRunnerSubmit: document.getElementById("agent-runner-submit"),
-  agentRunnerPlan: document.getElementById("agent-runner-plan"),
-  agentRunnerScore: document.getElementById("agent-runner-score"),
-  agentRunnerLog: document.getElementById("agent-runner-log"),
-  agentRunnerCopy: document.getElementById("agent-runner-copy"),
-  agentRunnerClear: document.getElementById("agent-runner-clear"),
-  agentRunnerStep: document.getElementById("agent-runner-step"),
-  agentRunnerAuto: document.getElementById("agent-runner-auto"),
-  agentRunnerStop: document.getElementById("agent-runner-stop"),
-  agentRunnerBanner: document.getElementById("agent-runner-banner"),
-  agentRunnerBannerMode: document.getElementById("agent-runner-banner-mode"),
-  agentRunnerBannerStep: document.getElementById("agent-runner-banner-step"),
-  agentRunnerBannerSummary: document.getElementById("agent-runner-banner-summary"),
-  agentRunnerBannerDetail: document.getElementById("agent-runner-banner-detail"),
-  agentRunnerBannerShow: document.getElementById("agent-runner-banner-show"),
-  agentRunnerBannerStop: document.getElementById("agent-runner-banner-stop"),
-  imageMenu: document.getElementById("image-menu"),
-  motherWheelMenu: document.getElementById("mother-wheel-menu"),
-  quickActions: document.getElementById("quick-actions"),
-  timelineDock: document.getElementById("timeline-dock"),
-  timelineShell: document.getElementById("timeline-shell"),
-  timelineToggle: document.getElementById("timeline-toggle"),
-  timelineToggleLabel: document.getElementById("timeline-toggle-label"),
-  timelineToggleSummary: document.getElementById("timeline-toggle-summary"),
-  timelineBody: document.getElementById("timeline-body"),
-  timelinePrev: document.getElementById("timeline-prev"),
-  timelineNext: document.getElementById("timeline-next"),
-  timelineStrip: document.getElementById("timeline-strip"),
-  timelineDetail: document.getElementById("timeline-detail"),
-  openrouterOnboardingModal: document.getElementById("openrouter-onboarding-modal"),
-  openrouterOnboardingHeader: document.getElementById("openrouter-onboarding-header"),
-  openrouterOnboardingTitle: document.getElementById("openrouter-onboarding-title"),
-  openrouterOnboardingSubtitle: document.getElementById("openrouter-onboarding-subtitle"),
-  openrouterOnboardingProgress: document.getElementById("openrouter-onboarding-progress"),
-  openrouterOnboardingBody: document.getElementById("openrouter-onboarding-body"),
-  openrouterOnboardingClose: document.getElementById("openrouter-onboarding-close"),
-  openrouterOnboardingBack: document.getElementById("openrouter-onboarding-back"),
-  openrouterOnboardingSkip: document.getElementById("openrouter-onboarding-skip"),
-  openrouterOnboardingNext: document.getElementById("openrouter-onboarding-next"),
-  openrouterOnboardingMediaVideo: document.getElementById("openrouter-onboarding-media-video"),
-  aestheticOnboardingModal: document.getElementById("aesthetic-onboarding-modal"),
-  aestheticOnboardingTitle: document.getElementById("aesthetic-onboarding-title"),
-  aestheticOnboardingSubtitle: document.getElementById("aesthetic-onboarding-subtitle"),
-  aestheticOnboardingProgress: document.getElementById("aesthetic-onboarding-progress"),
-  aestheticOnboardingBody: document.getElementById("aesthetic-onboarding-body"),
-  aestheticOnboardingClose: document.getElementById("aesthetic-onboarding-close"),
-  aestheticOnboardingBack: document.getElementById("aesthetic-onboarding-back"),
-  aestheticOnboardingSkip: document.getElementById("aesthetic-onboarding-skip"),
-  aestheticOnboardingNext: document.getElementById("aesthetic-onboarding-next"),
-};
+const els = createCanvasAppDom(document);
 
 localStorage.setItem("brood.rsNative", "1");
 localStorage.setItem("brood.rsNative.default.v2", "1");
@@ -1749,32 +1516,23 @@ function promptBenchmarkReset() {
   promptBenchmarkRenderReadout();
 }
 
-const settings = {
-  memory: localStorage.getItem("brood.memory") === "1",
-  alwaysOnVision: false,
-  railIconPack: normalizeJuggernautRailIconPackId(
-    localStorage.getItem(RAIL_ICON_PACK_LS_KEY) || DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID
-  ),
-  textModel: localStorage.getItem("brood.textModel") || "gpt-5.2",
-  imageModel: (() => {
-    const storedRaw = String(localStorage.getItem("brood.imageModel") || "").trim();
-    const migrated = localStorage.getItem(IMAGE_MODEL_DEFAULT_MIGRATION_KEY) === "1";
-    if (!storedRaw) {
-      if (!migrated) localStorage.setItem(IMAGE_MODEL_DEFAULT_MIGRATION_KEY, "1");
-      return DEFAULT_IMAGE_MODEL;
-    }
-    if (!migrated && storedRaw === LEGACY_DEFAULT_IMAGE_MODEL) {
-      localStorage.setItem("brood.imageModel", DEFAULT_IMAGE_MODEL);
-      localStorage.setItem(IMAGE_MODEL_DEFAULT_MIGRATION_KEY, "1");
-      return DEFAULT_IMAGE_MODEL;
-    }
-    if (!migrated) localStorage.setItem(IMAGE_MODEL_DEFAULT_MIGRATION_KEY, "1");
-    return storedRaw;
-  })(),
-  promptStrategyMode: normalizePromptStrategyMode(localStorage.getItem(PROMPT_STRATEGY_MODE_KEY) || "auto"),
-  promptRepeatFull: localStorage.getItem(PROMPT_REPEAT_FULL_KEY) === "1",
-  installTelemetryOptIn: localStorage.getItem(INSTALL_TELEMETRY_OPT_IN_KEY) === "1",
-};
+const settings = loadCanvasAppSettings({
+  storage: localStorage,
+  normalizeRailIconPackId: normalizeJuggernautRailIconPackId,
+  defaultRailIconPackId: DEFAULT_JUGGERNAUT_RAIL_ICON_PACK_ID,
+  defaultTextModel: "gpt-5.2",
+  defaultImageModel: DEFAULT_IMAGE_MODEL,
+  legacyDefaultImageModel: LEGACY_DEFAULT_IMAGE_MODEL,
+});
+
+const legacyCanvasAppSettingsStore = Object.freeze({
+  getState() {
+    return settings;
+  },
+  subscribe() {
+    return () => {};
+  },
+});
 
 setJuggernautRailIconPack(settings.railIconPack);
 
@@ -3127,7 +2885,6 @@ const state = {
   pendingTabSwitchPreview: null, // { tabId, reason, requestedAt }
   needsEngineModelResync: false, // restore `/image_model` to settings after one-off overrides.
   engineImageModelRestore: null, // string|null
-  needsRender: false,
   lastInteractionAt: Date.now(),
   lastMotherHotAt: Date.now(),
   userEvents: [], // scoring ring consumed by intent/proposal weighting
@@ -3808,37 +3565,423 @@ const tabbedSessions = createTabbedSessionsStore({
 
 syncTabbedSessionsStateFromStore();
 
+const nativeMenuRuntime = createNativeMenuRuntime({
+  els,
+  state,
+  tabbedSessions,
+  getSessionToolRegistry() {
+    return sessionToolRegistry;
+  },
+  invoke,
+  applyJuggernautTool,
+  invokeRegisteredTool,
+  setCommunicationTool,
+  currentTabSwitchBlockReason,
+  getVisibleCanvasImages,
+  nativeMenuCommunicationTools: NATIVE_MENU_COMMUNICATION_TOOLS,
+  bridgeState: nativeMenuBridge,
+});
+const {
+  buildNativeMenuFileState,
+  syncAppMenuState,
+  buildNativeShortcutSlots,
+  buildNativeToolSlots,
+  syncNativeSystemMenu,
+  queueNativeSystemMenuSync,
+  cacheNativeShortcutSlots,
+  parseNativeSlotIndex,
+  runNativeShortcutSlot,
+  runNativeToolSlot,
+} = nativeMenuRuntime;
+
 syncSessionToolsFromRegistry();
 publishToolRuntimeBridge();
 promptBenchmarkHydrateState();
 
 let flushDeferredEnginePtyExit = async () => {};
 let activeEventsPollToken = 0;
-let releaseSessionTabStripSubscription = null;
 let sessionTabRenameState = {
   tabId: null,
   draft: "",
   focusRequested: false,
   lockedWidth: 0,
 };
+let sessionTabStripUi = null;
+const sessionTabRenameRuntime = createSessionTabRenameRuntime({
+  renameState: sessionTabRenameState,
+  getActiveTabId: () => state.activeTabId,
+  getTabById: (tabId) => tabbedSessions.getTab(tabId),
+  getDisplayLabel: sessionTabDisplayLabel,
+  defaultUntitledTitle: DEFAULT_UNTITLED_TAB_TITLE,
+  maxTitleLength: SESSION_TAB_TITLE_MAX_LENGTH,
+  normalizeTitleInput: normalizeSessionTabTitleInput,
+  automaticLabelForRecord: sessionTabAutomaticLabelForRecord,
+  renderSessionTabStrip: (snapshot = null) => sessionTabStripUi?.renderSessionTabStrip(snapshot),
+  updateTabMetadata: (tabId, metadata) => tabbedSessions.updateTabMetadata(tabId, metadata),
+  getTabListElement: () => els.sessionTabList,
+  cssEscape: typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape : null,
+  InputCtor: typeof HTMLInputElement === "function" ? HTMLInputElement : null,
+});
+sessionTabStripUi = createSessionTabStripUi({
+  els,
+  listTabs,
+  subscribeTabs,
+  buildTabSummary: buildSessionTabUiSummary,
+  renameRuntime: sessionTabRenameRuntime,
+  renderIconSlot: renderJuggernautShellIconSlot,
+  normalizeTitleInput: normalizeSessionTabTitleInput,
+  maxTitleLength: SESSION_TAB_TITLE_MAX_LENGTH,
+  defaultUntitledTitle: DEFAULT_UNTITLED_TAB_TITLE,
+  getPlaceholderLabel: () => (state.ptySpawning ? "Starting session..." : "No session yet"),
+  activateTab: (tabId) => activateTab(tabId, { spawnEngine: true, reason: "titlebar_tab_click" }),
+  closeTab,
+  bumpInteraction,
+  showToast,
+  onTimelineToggle: () => {
+    toggleTimeline({ persist: true });
+  },
+  onNewSession: () => {
+    void runWithUserError("New session", () => createRun(), {
+      retryHint: "Check permissions and try again.",
+    });
+  },
+  onForkSession: () => {
+    void runWithUserError("Fork tab", () => forkActiveTab(), {
+      retryHint: "Wait for the current tab to settle and retry.",
+    });
+  },
+  onDesignReviewPointer: () => {
+    suppressNextDesignReviewTitlebarClick();
+    triggerCommunicationDesignReviewFromTitlebar({ source: "titlebar_pointer" });
+  },
+  onDesignReviewKeyboard: () => {
+    suppressNextDesignReviewTitlebarClick();
+    triggerCommunicationDesignReviewFromTitlebar({ source: "titlebar_keyboard" });
+  },
+  onDesignReviewClick: () => {
+    triggerCommunicationDesignReviewFromTitlebar({ source: "titlebar" });
+  },
+});
+const { renderSessionTabStrip, installSessionTabStripUi } = sessionTabStripUi;
 const TAB_HYDRATION_IDLE_TIMEOUT_MS = 180;
 const TAB_PREVIEW_CAPTURE_SETTLE_MS = 120;
 const TAB_PREVIEW_MAX_EDGE_PX = 1280;
 const PTY_STATUS_CACHE_TTL_MS = 1200;
-let tabHydrationToken = 0;
-let tabHydrationRaf = 0;
-let tabHydrationTimer = null;
-let tabHydrationIdle = null;
-let tabPreviewCaptureRaf = 0;
-let tabPreviewCaptureTimer = null;
-let pendingTabPreviewCapture = null;
-let tabSwitchFullRenderRaf = 0;
-let pendingTabSwitchFullRenderSample = null;
-const tabPreviewCache = new Map();
 let ptyStatusCache = {
   status: null,
   fetchedAt: 0,
 };
+
+const desktopSessionBridge = createCanvasAppDesktopSessionBridge({
+  state,
+  getCachedStatus() {
+    return ptyStatusCache;
+  },
+  setCachedStatus(nextCache) {
+    ptyStatusCache = nextCache;
+  },
+  getPendingStatusPromise() {
+    return ptyStatusPromise;
+  },
+  setPendingStatusPromise(nextPromise) {
+    ptyStatusPromise = nextPromise;
+  },
+  cacheTtlMs: PTY_STATUS_CACHE_TTL_MS,
+  readFirstString,
+  requestDesktopSessionStatus({ runDir }) {
+    return readDesktopSessionStatus(
+      invoke,
+      buildDesktopSessionStatusRequest({ runDir })
+    );
+  },
+  requestLegacyPtyStatus() {
+    return invoke("get_pty_status");
+  },
+  handleEvent,
+  unwrapDesktopSessionUpdate,
+  desktopSessionUpdateKinds: DESKTOP_SESSION_UPDATE_KINDS,
+});
+
+const {
+  normalizePtyStatus,
+  ptyStatusMatchesActiveRun,
+  invalidatePtyStatusCache,
+  cachePtyStatus,
+  activateDesktopSessionBridgeForActiveRun,
+  readPtyStatus,
+  handleDesktopSessionBridgeUpdate,
+} = desktopSessionBridge;
+
+const canvasAppEngineRuntime = createCanvasAppEngineRuntime({
+  state,
+  settings,
+  PTY_COMMANDS,
+  tauriInvoke,
+  buildDesktopSessionStartRequest,
+  startDesktopSession,
+  cachePtyStatus,
+  invalidatePtyStatusCache,
+  readPtyStatus,
+  ptyStatusMatchesActiveRun,
+  writeCanvasRuntimePty,
+  getActiveImage,
+  setStatus,
+  startEventsPolling,
+  showToast,
+  getFlushDeferredEnginePtyExit() {
+    return flushDeferredEnginePtyExit;
+  },
+  processActionQueue,
+});
+
+const {
+  syncActiveRunPtyBinding,
+  ensureEngineSpawned,
+  spawnEngine,
+} = canvasAppEngineRuntime;
+
+const canvasAppTabSessionStateAdapter = createCanvasAppTabSessionStateAdapter({
+  state,
+  settings,
+  tabbedSessions,
+  createFreshTabSession,
+  currentSessionTabReviewFlowState,
+  createFreshCommunicationState,
+  cloneDesignReviewApplyState,
+  cloneToolRuntimeValue,
+  createInSessionToolRegistry,
+  normalizeTabPreviewState,
+  createTabMotherState,
+  createTabMotherIdleState,
+  createTabIntentState,
+  createTabIntentAmbientState,
+  createTabAlwaysOnVisionState,
+  createTabTopMetricsState,
+  buildActiveTabUiMeta,
+  normalizeTabUiMeta,
+  applyTabUiMetaToState,
+  tabUiMetaSignature,
+  sessionTabAutomaticLabelForRecord,
+  normalizeSessionTabTitleInput,
+  normalizeSessionTabReviewFlowState,
+  currentTabSwitchBlockReason,
+  getFallbackLineOffset() {
+    return fallbackLineOffset;
+  },
+  setFallbackLineOffset(nextOffset) {
+    fallbackLineOffset = nextOffset;
+  },
+  getSessionToolRegistry() {
+    return sessionToolRegistry;
+  },
+  setSessionToolRegistry(nextRegistry) {
+    sessionToolRegistry = nextRegistry;
+  },
+  sessionTabTitleMaxLength: SESSION_TAB_TITLE_MAX_LENGTH,
+  defaultUntitledTabTitle: DEFAULT_UNTITLED_TAB_TITLE,
+  defaultTip: DEFAULT_TIP,
+});
+
+const canvasAppTabActivationRuntime = createCanvasAppTabActivationRuntime({
+  state,
+  els,
+  tabbedSessions,
+  createFreshTabSession,
+  bindTabSessionToState,
+  syncActiveTabRecord,
+  currentTabSwitchBlockReason,
+  currentTabSwitchBlockMessage,
+  showToast,
+  syncActiveTabPreviewRuntime,
+  syncLocalMagicSelectUiPrewarmTargets,
+  setRunInfo,
+  setTip,
+  setDirectorText,
+  updateEmptyCanvasHint,
+  syncTimelineDockVisibility,
+  requestRender,
+  releaseLocalMagicSelectUiPrewarmForTab,
+  stopEventsPolling,
+  resetDescribeQueue,
+  stopIntentTicker,
+  clearTabScopedIntentTimers,
+  clearAmbientIntentTimers,
+  clearMotherIdleTimers,
+  clearMotherIdleDispatchTimeout,
+  invoke,
+  PTY_COMMANDS,
+  tauriInvoke,
+  buildDesktopSessionStopRequest,
+  stopDesktopSession,
+  hideImageMenu,
+  hideAnnotatePanel,
+  hidePromptGeneratePanel,
+  hideCreateToolPanel,
+  hideMarkPanel,
+  closeMotherWheelMenu,
+  startPerfSample,
+  finishPerfSample,
+  syncSessionToolsFromRegistry,
+  renderCreateToolPreview,
+  renderCustomToolDock,
+  renderSelectionMeta,
+  renderFilmstrip,
+  chooseSpawnNodes,
+  renderSessionApiCallsReadout,
+  syncIntentModeClass,
+  syncJuggernautShellState,
+  applyRuntimeChromeVisibility,
+  renderMotherMoodStatus,
+  renderTimeline,
+  ensureEngineSpawned,
+  syncActiveRunPtyBinding,
+  startEventsPolling,
+  setStatus,
+  defaultTip: DEFAULT_TIP,
+  tabHydrationIdleTimeoutMs: TAB_HYDRATION_IDLE_TIMEOUT_MS,
+});
+
+const canvasAppTabPreviewRuntime = createCanvasAppTabPreviewRuntime({
+  state,
+  els,
+  tabbedSessions,
+  createFreshTabPreviewState,
+  normalizeTabPreviewState,
+  getDpr,
+  hideImageFxOverlays,
+  shouldAnimateEffectVisuals,
+  startPerfSample,
+  finishPerfSample,
+  requestRender,
+  tabPreviewCaptureSettleMs: TAB_PREVIEW_CAPTURE_SETTLE_MS,
+  tabPreviewMaxEdgePx: TAB_PREVIEW_MAX_EDGE_PX,
+});
+const {
+  syncActiveTabPreviewRuntime,
+  clearPendingTabSwitchFullRender,
+  finishPendingTabSwitchFullRender,
+  getPendingTabSwitchFullRenderTabId,
+  invalidateActiveTabPreview,
+  scheduleActiveTabPreviewCapture,
+  renderPendingTabSwitchPreview,
+  disposeTabPreviewForTab,
+} = canvasAppTabPreviewRuntime;
+
+const canvasAppTabLifecycleRuntime = createCanvasAppTabLifecycleRuntime({
+  state,
+  tabbedSessions,
+  getTabsSnapshot,
+  getSessionTabRenameState() {
+    return sessionTabRenameState;
+  },
+  resetSessionTabRenameState,
+  commitSessionTabRename,
+  sessionTabHasRunningReviewApply,
+  currentTabSwitchBlockReason,
+  currentTabSwitchBlockMessage,
+  showToast,
+  suspendActiveTabRuntimeForSwitch,
+  syncActiveTabRecord,
+  bindTabSessionToState,
+  createFreshTabSession,
+  syncActiveTabPreviewRuntime,
+  publishActiveTabVisibleState,
+  scheduleTabHydration,
+  disposeTabPreviewForTab,
+  sessionTabDisplayLabel,
+  createForkedTabSession,
+  buildSessionTabForkLabel,
+  createTabId,
+  tabLabelForRunDir,
+  normalizeTabUiMeta,
+  activateTab,
+  defaultUntitledTabTitle: DEFAULT_UNTITLED_TAB_TITLE,
+});
+const { ensureBootShellTab } = canvasAppTabLifecycleRuntime;
+
+const canvasAppSessionPersistence = createCanvasAppSessionPersistence({
+  state,
+  joinPath: join,
+  sessionSnapshotFilename: SESSION_SNAPSHOT_FILENAME,
+  legacySessionSnapshotFilename: LEGACY_SESSION_SNAPSHOT_FILENAME,
+  sessionTimelineFilename: SESSION_TIMELINE_FILENAME,
+  serializeSessionTimeline,
+  deserializeSessionTimeline,
+  restoreSessionTimelineSnapshot,
+  serializeSessionSnapshot,
+  deserializeSessionSnapshot,
+  writeTextFile,
+  readTextFile,
+  readDir,
+  captureActiveTabSession,
+  createFreshTabSession,
+  currentTabSwitchBlockReason,
+  currentTabSwitchBlockMessage,
+  showToast,
+  ensureRun,
+  tabbedSessions,
+  syncSessionToolsFromRegistry,
+  syncActiveTabRecord,
+  sessionTabDisplayLabel,
+  defaultUntitledTabTitle: DEFAULT_UNTITLED_TAB_TITLE,
+  queueNativeSystemMenuSync,
+  timelineSortedNodes,
+  basename,
+  addImage,
+  extractReceiptMeta,
+  setActiveImage,
+  setCanvasMode,
+  setTip,
+});
+
+const {
+  sessionSnapshotPathForRunDir,
+  legacySessionSnapshotPathForRunDir,
+  sessionTimelinePathForRunDir,
+  persistSessionTimelineForSession,
+  persistActiveSessionTimeline,
+  loadSessionTimelineFromPath,
+  restoreSessionFromTimelineRecord,
+  saveActiveSessionSnapshot,
+  loadSessionSnapshotFromPath,
+  loadExistingArtifacts,
+} = canvasAppSessionPersistence;
+
+const canvasAppRunProvisioning = createCanvasAppRunProvisioning({
+  state,
+  invokeFn: invoke,
+  openDialog: open,
+  existsFn: exists,
+  setStatus,
+  setRunInfo,
+  showToast,
+  bumpInteraction,
+  emitInstallTelemetryAsync,
+  tabbedSessions,
+  createFreshTabSession,
+  captureActiveTabSession,
+  createTabId,
+  bindTabSessionToState,
+  normalizeTabUiMeta,
+  tabLabelForRunDir,
+  syncActiveTabRecord,
+  syncActiveRunPtyBinding,
+  startEventsPolling,
+  activateTab,
+  currentTabSwitchBlockReason,
+  currentTabSwitchBlockMessage,
+  sessionTimelinePathForRunDir,
+  sessionSnapshotPathForRunDir,
+  legacySessionSnapshotPathForRunDir,
+  loadSessionTimelineFromPath,
+  restoreSessionFromTimelineRecord,
+  loadSessionSnapshotFromPath,
+  normalizeSessionTabTitleInput,
+  readFirstString,
+  sessionTabTitleMaxLength: SESSION_TAB_TITLE_MAX_LENGTH,
+  restoreIntentStateFromRunDir,
+  loadExistingArtifacts,
+});
 
 const DEFAULT_TIP = "Click Studio White to replace the background. Use Lasso if you want a manual mask.";
 const VISUAL_PROMPT_FILENAME = "visual_prompt.json";
@@ -4941,184 +5084,6 @@ let motherDispatchPayloadWarmTimer = null;
 let motherDispatchPayloadWarmToken = 0;
 
 let ptyStatusPromise = null;
-function desktopSessionCommandUnavailable(error, commandName = "") {
-  const message = String(error?.message || error || "");
-  if (!message.includes("unknown Tauri command")) return false;
-  return !commandName || message.includes(commandName);
-}
-
-function desktopSessionInactiveRunError(error) {
-  return String(error?.message || error || "").includes("desktop session runDir is not the active runtime");
-}
-
-function joinRunPathLeaf(runDir = "", leaf = "") {
-  const normalizedRunDir = String(runDir || "").trim();
-  const normalizedLeaf = String(leaf || "").trim();
-  if (!normalizedRunDir || !normalizedLeaf) return "";
-  if (normalizedRunDir.endsWith("/") || normalizedRunDir.endsWith("\\")) {
-    return `${normalizedRunDir}${normalizedLeaf}`;
-  }
-  return `${normalizedRunDir}${normalizedRunDir.includes("\\") ? "\\" : "/"}${normalizedLeaf}`;
-}
-
-function normalizePtyStatus(status = null, { runDir = state.runDir || null, eventsPath = state.eventsPath || null } = {}) {
-  const current = status && typeof status === "object" ? status : {};
-  const runtime = current.runtime && typeof current.runtime === "object" ? current.runtime : {};
-  const launch = current.launch && typeof current.launch === "object" ? current.launch : {};
-  const session = current.session && typeof current.session === "object" ? current.session : {};
-  const normalizedRunDir = readFirstString(current.run_dir, current.runDir, session.runDir, runDir) || null;
-  const normalizedEventsPath =
-    readFirstString(
-      current.events_path,
-      current.eventsPath,
-      eventsPath,
-      normalizedRunDir ? joinRunPathLeaf(normalizedRunDir, "events.jsonl") : ""
-    ) || null;
-  const running = runtime.running != null ? Boolean(runtime.running) : Boolean(current.running);
-  const phase = readFirstString(runtime.phase, current.phase) || (running ? "ready" : "stopped");
-  const rawPid = runtime.pid ?? current.pid;
-  return {
-    contract: readFirstString(current.contract) || null,
-    running,
-    phase,
-    run_dir: normalizedRunDir,
-    events_path: normalizedEventsPath,
-    launch_mode: readFirstString(current.launch_mode, launch.mode) || null,
-    launch_label: readFirstString(current.launch_label, launch.label) || null,
-    detail: readFirstString(current.detail, current.last_error, current.last_exit_detail) || null,
-    pid: Number.isFinite(Number(rawPid)) ? Number(rawPid) : null,
-  };
-}
-
-function ptyStatusMatchesActiveRun(status) {
-  const normalizedStatus = normalizePtyStatus(status);
-  if (!normalizedStatus.running) return false;
-  const runDir = String(state.runDir || "").trim();
-  const eventsPath = String(state.eventsPath || "").trim();
-  if (!runDir || !eventsPath) return false;
-  const statusRunDir = String(normalizedStatus.run_dir || "").trim();
-  const statusEventsPath = String(normalizedStatus.events_path || "").trim();
-  if (statusRunDir && statusRunDir !== runDir) return false;
-  if (statusEventsPath && statusEventsPath !== eventsPath) return false;
-  return statusRunDir === runDir;
-}
-
-function invalidatePtyStatusCache() {
-  ptyStatusCache = {
-    status: null,
-    fetchedAt: 0,
-  };
-}
-
-function cachePtyStatus(status) {
-  ptyStatusCache = {
-    status: status && typeof status === "object" ? normalizePtyStatus(status) : null,
-    fetchedAt: Date.now(),
-  };
-}
-
-function activateDesktopSessionBridgeForActiveRun(runDir = state.runDir || null) {
-  const nextRunDir = String(runDir || "").trim();
-  const activeRunDir = String(state.runDir || "").trim();
-  if (!nextRunDir || !activeRunDir || nextRunDir !== activeRunDir) return false;
-  if (!state.desktopSessionBridgeActive) {
-    state.desktopSessionBridgeActive = true;
-  }
-  return true;
-}
-
-async function readPtyStatus({ useCache = true } = {}) {
-  const now = Date.now();
-  if (
-    useCache &&
-    ptyStatusCache.status &&
-    now - Number(ptyStatusCache.fetchedAt || 0) <= PTY_STATUS_CACHE_TTL_MS
-  ) {
-    return ptyStatusCache.status;
-  }
-  if (!ptyStatusPromise) {
-    ptyStatusPromise = (async () => {
-      const normalizedRunDir = String(state.runDir || "").trim();
-      const normalizedEventsPath = String(state.eventsPath || "").trim() || null;
-      if (normalizedRunDir) {
-        try {
-          const response = await readDesktopSessionStatus(
-            invoke,
-            buildDesktopSessionStatusRequest({ runDir: normalizedRunDir })
-          );
-          activateDesktopSessionBridgeForActiveRun(normalizedRunDir);
-          const status = normalizePtyStatus(response, {
-            runDir: normalizedRunDir,
-            eventsPath: normalizedEventsPath,
-          });
-          cachePtyStatus(status);
-          return status;
-        } catch (error) {
-          if (desktopSessionInactiveRunError(error)) {
-            const inactiveStatus = normalizePtyStatus(
-              {
-                running: false,
-                run_dir: normalizedRunDir,
-                events_path: normalizedEventsPath,
-                detail: String(error?.message || error || "").trim() || null,
-              },
-              { runDir: normalizedRunDir, eventsPath: normalizedEventsPath }
-            );
-            cachePtyStatus(inactiveStatus);
-            return inactiveStatus;
-          }
-          if (!desktopSessionCommandUnavailable(error, "desktop_session_status")) {
-            throw error;
-          }
-        }
-      }
-      const legacyStatus = normalizePtyStatus(await invoke("get_pty_status"), {
-        runDir: normalizedRunDir,
-        eventsPath: normalizedEventsPath,
-      });
-      cachePtyStatus(legacyStatus);
-      return legacyStatus;
-    })()
-      .finally(() => {
-        ptyStatusPromise = null;
-      });
-  }
-  return ptyStatusPromise;
-}
-
-async function syncActiveRunPtyBinding({ useCache = true } = {}) {
-  if (!state.runDir || !state.eventsPath || state.ptySpawning) {
-    state.ptySpawned = false;
-    return false;
-  }
-
-  try {
-    const status = await readPtyStatus({ useCache });
-    state.ptySpawned = ptyStatusMatchesActiveRun(status);
-  } catch (_) {
-    invalidatePtyStatusCache();
-    state.ptySpawned = false;
-  }
-  return Boolean(state.ptySpawned);
-}
-
-async function ensureEngineSpawned({ reason = "engine", showToastOnFailure = true } = {}) {
-  if (state.ptySpawning) return false;
-  if (!state.runDir || !state.eventsPath) return false;
-
-  if (await syncActiveRunPtyBinding()) {
-    startEventsPolling();
-    setStatus("Engine: connected");
-    return true;
-  }
-
-  await spawnEngine();
-  if (state.ptySpawned) startEventsPolling();
-  if (!state.ptySpawned && showToastOnFailure) {
-    showToast(`Engine failed to start for ${reason}.`, "error", 3200);
-  }
-  return Boolean(state.ptySpawned);
-}
 
 function resetDescribeQueue({ clearPending = false } = {}) {
   state.describePendingPath = null;
@@ -5436,6 +5401,15 @@ function ensureIntentTicker() {
 function stopIntentTicker() {
   clearInterval(intentTicker);
   intentTicker = null;
+}
+
+function clearTabScopedIntentTimers() {
+  clearTimeout(intentInferenceTimer);
+  intentInferenceTimer = null;
+  clearTimeout(intentInferenceTimeout);
+  intentInferenceTimeout = null;
+  clearTimeout(intentStateWriteTimer);
+  intentStateWriteTimer = null;
 }
 
 function intentRemainingMs(nowMs = Date.now()) {
@@ -10764,45 +10738,8 @@ function syncActionProvenanceBadge(button, provenance) {
   return normalized;
 }
 
-function timelineShelfSummaryText(
-  nodes = timelineSortedNodes(),
-  headNode = currentTimelineHeadNode(),
-  { timelineOpen = state.timelineOpen !== false } = {}
-) {
-  if (!Array.isArray(nodes) || !nodes.length) return "Upload an image to start your session history.";
-  const count = nodes.length;
-  const countLabel = `${count} state${count === 1 ? "" : "s"}`;
-  if (timelineOpen) return `${countLabel} · Select a state to rewind`;
-  const summary = headNode ? timelineNodeSummary(headNode) : "Committed session history";
-  return `${countLabel} · ${summary}`;
-}
-
 function syncTimelineShelfToggle(nodes = timelineSortedNodes(), headNode = currentTimelineHeadNode()) {
-  const timelineOpen = state.timelineOpen !== false;
-  const actionLabel = timelineOpen ? "Collapse history timeline" : "Expand history timeline";
-  const summary = timelineShelfSummaryText(nodes, headNode, { timelineOpen });
-  if (els.timelineToggle) {
-    els.timelineToggle.title = actionLabel;
-    els.timelineToggle.setAttribute("aria-label", `${actionLabel}. ${summary}`);
-    els.timelineToggle.setAttribute("aria-expanded", timelineOpen ? "true" : "false");
-  }
-  if (els.timelineToggleLabel) {
-    els.timelineToggleLabel.textContent = "History";
-  }
-  if (els.timelineToggleSummary) {
-    els.timelineToggleSummary.textContent = summary;
-  }
-  if (els.timelineDock) {
-    els.timelineDock.classList.toggle("is-collapsed", !timelineOpen);
-  }
-  if (els.timelineShell) {
-    els.timelineShell.classList.toggle("is-collapsed", !timelineOpen);
-  }
-  if (els.timelineBody) {
-    els.timelineBody.hidden = !timelineOpen;
-    els.timelineBody.setAttribute("aria-hidden", timelineOpen ? "false" : "true");
-  }
-  return timelineOpen;
+  return timelineUi.syncTimelineShelfToggle(nodes, headNode);
 }
 
 function singleImageRailMagicSelectSelectionForImage(imageId = "") {
@@ -11150,135 +11087,28 @@ function buildJuggernautShellContext() {
 }
 
 function renderJuggernautShellChrome() {
-  const activeImage = getActiveImage();
-  const selectedIds = getSelectedIds();
-  const emptyCanvas = state.images.length === 0;
-  syncJuggernautShellIconography();
-  if (els.juggernautSelectionStatus) {
-    if (emptyCanvas) {
-      els.juggernautSelectionStatus.textContent = "Drop an image to begin";
-    } else if (activeImage) {
-      const dims =
-        activeImage.width && activeImage.height ? ` · ${activeImage.width}x${activeImage.height}` : "";
-      const multi = selectedIds.length > 1 ? ` · ${selectedIds.length} selected` : "";
-      els.juggernautSelectionStatus.textContent = `${basename(activeImage.path) || "Image"}${dims}${multi}`;
-    } else {
-      els.juggernautSelectionStatus.textContent = `${state.images.length} image${state.images.length === 1 ? "" : "s"} on canvas`;
-    }
-  }
-  syncRuntimeStatusAffordances();
-  syncTimelineDockVisibility();
-
-  const toolHookReady = typeof state.juggernautShell.toolInvoker === "function";
-  const customPsdExportReady = typeof state.juggernautShell.psdExportHandler === "function";
-  const nativeExportReady = nativeRasterExportReady();
-  const psdExportReady = customPsdExportReady || nativeExportReady;
-  const exportMenuReady = psdExportReady;
-  const exportToggleReady = !emptyCanvas && exportMenuReady;
-  renderAgentRunnerActivityChrome();
-  if (els.juggernautExportPsd) {
-    if (!exportToggleReady && isJuggernautExportMenuOpen()) {
-      closeJuggernautExportMenu();
-    }
-    const exportTitleBase = emptyCanvas
-      ? "Upload an image before exporting"
-      : exportMenuReady
-        ? "Export"
-        : "Export is unavailable in this runtime";
-    const exportTitle = appendActionProvenanceDescription(exportTitleBase, ACTION_PROVENANCE.LOCAL_ONLY);
-    syncActionProvenanceBadge(els.juggernautExportPsd, ACTION_PROVENANCE.LOCAL_ONLY);
-    els.juggernautExportPsd.disabled = !exportToggleReady;
-    els.juggernautExportPsd.title = exportTitle;
-    els.juggernautExportPsd.setAttribute("aria-label", exportTitle);
-    els.juggernautExportPsd.setAttribute("aria-disabled", exportToggleReady ? "false" : "true");
-    els.juggernautExportPsd.setAttribute("aria-expanded", exportToggleReady && isJuggernautExportMenuOpen() ? "true" : "false");
-    els.juggernautExportPsd.classList.toggle("is-open", isJuggernautExportMenuOpen());
-    els.juggernautExportPsd.classList.toggle("is-ready", exportToggleReady);
-    els.juggernautExportPsd.classList.toggle("is-pending-hook", !emptyCanvas && !exportMenuReady);
-  }
-  if (els.juggernautExportFormatPsd) {
-    const psdTitle = emptyCanvas
-      ? "Upload an image before exporting PSD"
-      : psdExportReady
-        ? exportFormatTitle("psd")
-        : exportFormatUnavailableMessage("psd");
-    els.juggernautExportFormatPsd.disabled = emptyCanvas || !psdExportReady;
-    els.juggernautExportFormatPsd.title = psdTitle;
-    els.juggernautExportFormatPsd.setAttribute("aria-label", psdTitle);
-    els.juggernautExportFormatPsd.classList.toggle("is-pending-hook", !emptyCanvas && !psdExportReady);
-  }
-  if (els.juggernautExportFormatPng) {
-    const pngTitle = emptyCanvas
-      ? "Upload an image before exporting PNG"
-      : nativeExportReady
-        ? exportFormatTitle("png")
-        : exportFormatUnavailableMessage("png");
-    els.juggernautExportFormatPng.disabled = emptyCanvas || !nativeExportReady;
-    els.juggernautExportFormatPng.title = pngTitle;
-    els.juggernautExportFormatPng.setAttribute("aria-label", pngTitle);
-    els.juggernautExportFormatPng.classList.toggle("is-pending-hook", !emptyCanvas && !nativeExportReady);
-  }
-  if (els.juggernautExportFormatJpg) {
-    const jpgTitle = emptyCanvas
-      ? "Upload an image before exporting JPG"
-      : nativeExportReady
-        ? exportFormatTitle("jpg")
-        : exportFormatUnavailableMessage("jpg");
-    els.juggernautExportFormatJpg.disabled = emptyCanvas || !nativeExportReady;
-    els.juggernautExportFormatJpg.title = jpgTitle;
-    els.juggernautExportFormatJpg.setAttribute("aria-label", jpgTitle);
-    els.juggernautExportFormatJpg.classList.toggle("is-pending-hook", !emptyCanvas && !nativeExportReady);
-  }
-  if (els.juggernautExportFormatWebp) {
-    const webpTitle = emptyCanvas
-      ? "Upload an image before exporting WEBP"
-      : nativeExportReady
-        ? exportFormatTitle("webp")
-        : exportFormatUnavailableMessage("webp");
-    els.juggernautExportFormatWebp.disabled = emptyCanvas || !nativeExportReady;
-    els.juggernautExportFormatWebp.title = webpTitle;
-    els.juggernautExportFormatWebp.setAttribute("aria-label", webpTitle);
-    els.juggernautExportFormatWebp.classList.toggle("is-pending-hook", !emptyCanvas && !nativeExportReady);
-  }
-  if (els.juggernautExportFormatTiff) {
-    const tiffTitle = emptyCanvas
-      ? "Upload an image before exporting TIFF"
-      : nativeExportReady
-        ? exportFormatTitle("tiff")
-        : exportFormatUnavailableMessage("tiff");
-    els.juggernautExportFormatTiff.disabled = emptyCanvas || !nativeExportReady;
-    els.juggernautExportFormatTiff.title = tiffTitle;
-    els.juggernautExportFormatTiff.setAttribute("aria-label", tiffTitle);
-    els.juggernautExportFormatTiff.classList.toggle("is-pending-hook", !emptyCanvas && !nativeExportReady);
-  }
-  if (els.sessionTabDesignReview) {
-    const reviewTitle = appendActionProvenanceDescription("Design Review", ACTION_PROVENANCE.EXTERNAL_MODEL);
-    syncActionProvenanceBadge(els.sessionTabDesignReview, ACTION_PROVENANCE.EXTERNAL_MODEL);
-    els.sessionTabDesignReview.title = reviewTitle;
-    els.sessionTabDesignReview.setAttribute("aria-label", reviewTitle);
-  }
-
-  for (const btn of juggernautToolButtons()) {
-    const key = String(btn.dataset?.toolId || btn.dataset?.toolKey || "").trim();
-    const disabledReason = String(btn.dataset?.disabledReason || "").trim();
-    const provenance = actionElementProvenance(
-      btn,
-      resolveActionProvenance({
-        capability: btn.dataset?.capability || "",
-      })
-    );
-    const isLocalOnly = provenance === ACTION_PROVENANCE.LOCAL_ONLY;
-    const isPending = provenance === ACTION_PROVENANCE.EXTERNAL_MODEL && disabledReason === "capability_unavailable" && !toolHookReady;
-    btn.classList.toggle("is-local-utility", isLocalOnly);
-    btn.classList.toggle("is-local-first", provenance === ACTION_PROVENANCE.LOCAL_FIRST);
-    btn.classList.toggle("is-ai-tool", provenance === ACTION_PROVENANCE.EXTERNAL_MODEL);
-    btn.classList.toggle("is-active-request", String(state.juggernautShell.lastToolKey || "") === key);
-    btn.classList.toggle("is-pending-hook", isPending);
-    btn.classList.toggle(
-      "is-selection-empty",
-      disabledReason === "selection_required" || (key === "select" && disabledReason === "unavailable_in_current_mode")
-    );
-  }
+  return renderJuggernautShellChromeEntry({
+    ACTION_PROVENANCE,
+    actionElementProvenance,
+    appendActionProvenanceDescription,
+    basename,
+    closeJuggernautExportMenu,
+    els,
+    exportFormatTitle,
+    exportFormatUnavailableMessage,
+    getActiveImage,
+    getSelectedIds,
+    isJuggernautExportMenuOpen,
+    juggernautToolButtons,
+    nativeRasterExportReady,
+    renderAgentRunnerActivityChrome,
+    resolveActionProvenance,
+    state,
+    syncActionProvenanceBadge,
+    syncJuggernautShellIconography,
+    syncRuntimeStatusAffordances,
+    syncTimelineDockVisibility,
+  });
 }
 
 async function invokeJuggernautShellTool(toolKey, { source = "shell" } = {}) {
@@ -11411,142 +11241,43 @@ function installTabbedSessionsBridge(shellBridge = null) {
 }
 
 function installJuggernautShellBridge() {
-  if (typeof window === "undefined") return;
-  window.__JUGGERNAUT_SHELL__ = {
-    version: JUGGERNAUT_SHELL_BRIDGE_VERSION,
-    railContract: JUGGERNAUT_SHELL_RAIL_CONTRACT,
-    rail: JUGGERNAUT_SHELL_RAIL.map((item) => ({ ...item })),
-    singleImageRail: {
-      contract: state.juggernautShell.singleImageRail.contract,
-      adapter: { ...state.juggernautShell.singleImageRail.adapter },
-      mock: Boolean(state.juggernautShell.singleImageRail.mock),
-      recentSuccessfulJobs: singleImageRailRecentSuccessfulJobs(),
-    },
-    runtimeVisibility: runtimeChromeVisibilitySnapshot(),
+  return installLegacyCanvasAppShellBridges({
+    windowObj: typeof window !== "undefined" ? window : null,
+    state,
+    JUGGERNAUT_SHELL_BRIDGE_VERSION,
+    JUGGERNAUT_SHELL_RAIL_CONTRACT,
+    JUGGERNAUT_SHELL_RAIL,
+    runtimeChromeVisibilitySnapshot,
     applyJuggernautTool,
     exportJuggernautPsd,
-    registerToolInvoker(fn) {
-      state.juggernautShell.toolInvoker = typeof fn === "function" ? fn : null;
-      renderQuickActions();
-      return () => {
-        if (state.juggernautShell.toolInvoker === fn) {
-          state.juggernautShell.toolInvoker = null;
-          renderQuickActions();
-        }
-      };
-    },
-    registerSingleImageRailRanker(fn) {
-      state.juggernautShell.singleImageRail.ranker = typeof fn === "function" ? fn : null;
-      renderQuickActions();
-      return () => {
-        if (state.juggernautShell.singleImageRail.ranker === fn) {
-          state.juggernautShell.singleImageRail.ranker = null;
-          renderQuickActions();
-        }
-      };
-    },
-    registerPsdExportHandler(fn) {
-      state.juggernautShell.psdExportHandler = typeof fn === "function" ? fn : null;
-      renderJuggernautShellChrome();
-      return () => {
-        if (state.juggernautShell.psdExportHandler === fn) {
-          state.juggernautShell.psdExportHandler = null;
-          renderJuggernautShellChrome();
-        }
-      };
-    },
-    requestToolInvocation(toolKey, meta = {}) {
-      return invokeJuggernautShellTool(toolKey, meta);
-    },
-    requestExport(meta = {}) {
-      return requestJuggernautExport(meta);
-    },
-    requestPsdExport(meta = {}) {
-      return requestJuggernautPsdExport(meta);
-    },
-    getRuntimeVisibility() {
-      return runtimeChromeVisibilitySnapshot();
-    },
-    setRuntimeVisibility(next = {}) {
-      return setRuntimeChromeVisibility(next, { source: "bridge" });
-    },
-    importImages() {
-      return importPhotos();
-    },
+    renderQuickActions,
+    renderJuggernautShellChrome,
+    invokeJuggernautShellTool,
+    requestJuggernautExport,
+    requestJuggernautPsdExport,
+    importPhotos,
     listTabs,
-    createNewRunTab() {
-      return createRun();
-    },
-    openRunTab() {
-      return openExistingRun();
-    },
+    createRun,
+    openExistingRun,
     activateTab,
     closeTab,
     subscribeTabs,
-    getCanvasSnapshot() {
-      return buildJuggernautShellContext();
-    },
-    getCommunicationReviewPayload(meta = {}) {
-      return buildCommunicationReviewPayload(meta);
-    },
-    agentRunnerBridgeKey: AGENT_RUNNER_BRIDGE_KEY,
-    openAgentRunner() {
-      return showAgentRunnerPanel({ focusGoal: !agentRunnerActive(), expand: false });
-    },
-    closeAgentRunner() {
-      return hideAgentRunnerPanel();
-    },
-    getAgentRunnerState() {
-      return buildAgentRunnerBridgeSnapshot();
-    },
-    requestDesignReview(meta = {}) {
-      return requestCommunicationDesignReview(meta);
-    },
-    showCommunicationProposalTray(next = {}) {
-      return setCommunicationProposalTray(next, { source: "bridge" });
-    },
-    hideCommunicationProposalTray(meta = {}) {
-      return hideCommunicationProposalTray({ ...meta, source: "bridge" });
-    },
-    setCommunicationTool(tool = null) {
-      return setCommunicationTool(tool, { source: "bridge" });
-    },
-    communicationReview: {
-      state: buildCommunicationBridgeSnapshot(),
-      getState() {
-        return buildCommunicationBridgeSnapshot();
-      },
-      getPayload(meta = {}) {
-        return buildCommunicationReviewPayload(meta);
-      },
-      request(meta = {}) {
-        return requestCommunicationDesignReview(meta);
-      },
-      showTray(next = {}) {
-        return setCommunicationProposalTray(next, { source: "bridge_nested" });
-      },
-      hideTray(meta = {}) {
-        return hideCommunicationProposalTray({ ...meta, source: "bridge_nested" });
-      },
-      setTool(tool = null) {
-        return setCommunicationTool(tool, { source: "bridge_nested" });
-      },
-    },
-  };
-  installTabbedSessionsBridge(window.__JUGGERNAUT_SHELL__);
-  window.__JUGGERNAUT_RUNTIME_FLAGS__ = {
-    getRuntimeVisibility() {
-      return runtimeChromeVisibilitySnapshot();
-    },
-    setRuntimeVisibility(next = {}) {
-      return setRuntimeChromeVisibility(next, { source: "bridge" });
-    },
-  };
-  dispatchJuggernautShellEvent("juggernaut:shell-ready", {
-    version: JUGGERNAUT_SHELL_BRIDGE_VERSION,
-    railContract: JUGGERNAUT_SHELL_RAIL_CONTRACT,
-    rail: JUGGERNAUT_SHELL_RAIL.map((item) => ({ ...item })),
-    context: buildJuggernautShellContext(),
+    buildJuggernautShellContext,
+    buildCommunicationReviewPayload,
+    buildCommunicationBridgeSnapshot,
+    buildAgentRunnerBridgeSnapshot,
+    showAgentRunnerPanel,
+    hideAgentRunnerPanel,
+    agentRunnerActive,
+    requestCommunicationDesignReview,
+    setCommunicationProposalTray,
+    hideCommunicationProposalTray,
+    setCommunicationTool,
+    setRuntimeChromeVisibility,
+    AGENT_RUNNER_BRIDGE_KEY,
+    installTabbedSessionsBridge,
+    dispatchJuggernautShellEvent,
+    singleImageRailRecentSuccessfulJobs,
   });
 }
 
@@ -25916,13 +25647,13 @@ function renderCommunicationStampPicker() {
 }
 
 function renderCommunicationChrome() {
-  renderCommunicationRail();
-  renderCommunicationStampPicker();
-  renderCommunicationProposalTray();
-  syncCommunicationCanvasCursor();
-  if (typeof window !== "undefined") {
-    syncJuggernautShellState();
-  }
+  return renderCommunicationChromeEntry({
+    renderCommunicationRail,
+    renderCommunicationProposalTray,
+    renderCommunicationStampPicker,
+    syncCommunicationCanvasCursor,
+    syncJuggernautShellState,
+  });
 }
 
 function syncCommunicationProposalTrayFromReviewState(reviewState = {}, { source = "review_runtime_state" } = {}) {
@@ -27491,26 +27222,6 @@ function renderCommunicationOverlay(octx) {
       octx.restore();
     }
   }
-}
-
-function requestRender({ allowTabSwitchPreview = false, reason = "render" } = {}) {
-  if (allowTabSwitchPreview) {
-    const normalizedTabId = String(state.activeTabId || "").trim();
-    if (normalizedTabId) {
-      clearPendingTabSwitchFullRender({ stale: true });
-      state.pendingTabSwitchPreview = {
-        tabId: normalizedTabId,
-        reason: String(reason || "render"),
-        requestedAt: Date.now(),
-      };
-    }
-  }
-  if (state.needsRender) return;
-  state.needsRender = true;
-  requestAnimationFrame(() => {
-    state.needsRender = false;
-    render();
-  });
 }
 
 async function loadImage(path) {
@@ -34781,18 +34492,12 @@ function installBuiltInSingleImageRailIntegration() {
 }
 
 function exposeJuggernautShellHooks() {
-  if (typeof window === "undefined") return;
-  window.applyJuggernautTool = applyJuggernautTool;
-  window.exportJuggernautPsd = exportJuggernautPsd;
-  window.__juggernautShell = {
-    state: state.juggernautShell,
+  return exposeLegacyCanvasAppGlobalBridges({
+    windowObj: typeof window !== "undefined" ? window : null,
+    state,
     applyJuggernautTool,
     exportJuggernautPsd,
-  };
-  if (window.__JUGGERNAUT_SHELL__ && typeof window.__JUGGERNAUT_SHELL__ === "object") {
-    window.__JUGGERNAUT_SHELL__.applyJuggernautTool = applyJuggernautTool;
-    window.__JUGGERNAUT_SHELL__.exportJuggernautPsd = exportJuggernautPsd;
-  }
+  });
 }
 
 function actionGridTitleFor(key) {
@@ -35658,36 +35363,23 @@ function ensureTimelineNodeForImageItem(item) {
 }
 
 function openTimeline(options = {}) {
-  return setTimelineOpen(true, options);
+  return timelineUi.openTimeline(options);
 }
 
 function closeTimeline(options = {}) {
-  return setTimelineOpen(false, options);
+  return timelineUi.closeTimeline(options);
 }
 
 function toggleTimeline(options = {}) {
-  return setTimelineOpen(state.timelineOpen === false, options);
+  return timelineUi.toggleTimeline(options);
 }
 
 function syncTimelineDockVisibility() {
-  if (els.timelineDock) {
-    els.timelineDock.classList.remove("hidden");
-  }
-  const nodes = timelineSortedNodes();
-  const headNode = currentTimelineHeadNode();
-  return syncTimelineShelfToggle(nodes, headNode);
+  return timelineUi.syncTimelineDockVisibility();
 }
 
-function setTimelineOpen(open = true, { persist = false } = {}) {
-  const nextOpen = open !== false;
-  const changed = state.timelineOpen !== nextOpen;
-  state.timelineOpen = nextOpen;
-  syncTimelineDockVisibility();
-  if (nextOpen) renderTimeline();
-  if (changed && persist) {
-    syncActiveTabRecord({ capture: true, publish: true });
-  }
-  return changed;
+function setTimelineOpen(open = true, options = {}) {
+  return timelineUi.setTimelineOpen(open, options);
 }
 
 function timelineRailIconIdForActionKey(actionKey = "state") {
@@ -35897,48 +35589,6 @@ function timelineNodeAriaLabel(node = null, { current = false, future = false, h
   return pieces.join(". ");
 }
 
-function timelineDetailText(headNode = currentTimelineHeadNode()) {
-  const headNodeId = String(headNode?.nodeId || "").trim() || null;
-  const previewNodeId = String(state.timelinePreviewNodeId || "").trim();
-  const previewNode =
-    previewNodeId && state.timelineNodesById instanceof Map
-      ? state.timelineNodesById.get(previewNodeId) || null
-      : null;
-  if (!previewNode) return headNode ? timelineNodeSummary(headNode) : "";
-  const previewSummary = timelineNodeSummary(previewNode);
-  if (previewNodeId === headNodeId) return `Current state: ${previewSummary}`;
-  return `Preview change: ${previewSummary}`;
-}
-
-function syncTimelineDetailText(headNode = currentTimelineHeadNode()) {
-  const detail = els.timelineDetail;
-  if (!detail) return false;
-  if (state.timelinePreviewNodeId) {
-    const previewNodeId = String(state.timelinePreviewNodeId || "").trim();
-    if (!(state.timelineNodesById instanceof Map) || !state.timelineNodesById.has(previewNodeId)) {
-      state.timelinePreviewNodeId = null;
-    }
-  }
-  const nextDetail = timelineDetailText(headNode);
-  if (detail.textContent === nextDetail) return false;
-  detail.textContent = nextDetail;
-  return true;
-}
-
-const TIMELINE_CAROUSEL_PAGE_RATIO = 0.82;
-const TIMELINE_CAROUSEL_GESTURE_LOCK_PX = 12;
-const TIMELINE_CAROUSEL_GESTURE_THRESHOLD_PX = 38;
-const TIMELINE_CAROUSEL_WHEEL_THRESHOLD_PX = 34;
-const TIMELINE_CAROUSEL_CLICK_SUPPRESS_MS = 240;
-const TIMELINE_CAROUSEL_EDGE_EPSILON_PX = 4;
-
-function timelineNowMs() {
-  if (typeof performance !== "undefined" && typeof performance.now === "function") {
-    return performance.now();
-  }
-  return Date.now();
-}
-
 function timelineNodeStructureKey(node = null) {
   return [
     node?.nodeId || "",
@@ -35978,438 +35628,6 @@ function timelineCardStateForNode(node = null, headNode = currentTimelineHeadNod
   const historical = !current && !future;
   const inactive = !current;
   return { current, future, historical, inactive };
-}
-
-function timelineCarouselAnchors(strip = els.timelineStrip) {
-  if (!strip?.querySelectorAll) return [];
-  const maxScroll = Math.max(0, Number(strip.scrollWidth || 0) - Number(strip.clientWidth || 0));
-  const anchors = new Set([0, maxScroll]);
-  const cards = Array.from(strip.querySelectorAll(".timeline-card[data-node-id]"));
-  for (const card of cards) {
-    const left = Math.max(0, Math.round(Number(card?.offsetLeft) || 0));
-    anchors.add(Math.min(maxScroll, left));
-  }
-  return Array.from(anchors)
-    .filter((left) => Number.isFinite(left))
-    .sort((a, b) => a - b);
-}
-
-function timelineCarouselTargetLeft(strip = els.timelineStrip, direction = 0) {
-  const normalizedDirection = Number(direction) > 0 ? 1 : Number(direction) < 0 ? -1 : 0;
-  if (!strip || !normalizedDirection) return 0;
-  const maxScroll = Math.max(0, Number(strip.scrollWidth || 0) - Number(strip.clientWidth || 0));
-  if (maxScroll <= 0) return 0;
-  const currentLeft = Math.min(maxScroll, Math.max(0, Number(strip.scrollLeft) || 0));
-  const anchors = timelineCarouselAnchors(strip);
-  if (!anchors.length) return currentLeft;
-  const pageWidth = Math.max(1, Math.round(Number(strip.clientWidth || 0) * TIMELINE_CAROUSEL_PAGE_RATIO));
-  const currentIndex = anchors.reduce((best, anchor, index) => (anchor <= currentLeft + 4 ? index : best), 0);
-  if (normalizedDirection > 0) {
-    const desired = Math.min(maxScroll, currentLeft + pageWidth);
-    let target = anchors.find((anchor) => anchor >= desired - 4);
-    if (target == null || target <= currentLeft + 4) {
-      target = anchors[Math.min(anchors.length - 1, currentIndex + 1)] ?? maxScroll;
-    }
-    return Math.min(maxScroll, Math.max(0, Number(target) || 0));
-  }
-  const desired = Math.max(0, currentLeft - pageWidth);
-  let target = Array.from(anchors)
-    .reverse()
-    .find((anchor) => anchor <= desired + 4);
-  if (target == null || target >= currentLeft - 4) {
-    target = anchors[Math.max(0, currentIndex - 1)] ?? 0;
-  }
-  return Math.min(maxScroll, Math.max(0, Number(target) || 0));
-}
-
-function timelineCarouselDirectionState(strip = els.timelineStrip) {
-  const maxScroll = Math.max(0, Number(strip?.scrollWidth || 0) - Number(strip?.clientWidth || 0));
-  const currentLeft = Math.min(maxScroll, Math.max(0, Number(strip?.scrollLeft) || 0));
-  const hasOverflow = Boolean(strip && maxScroll > TIMELINE_CAROUSEL_EDGE_EPSILON_PX);
-  return {
-    hasOverflow,
-    currentLeft,
-    maxScroll,
-    canPageLeft: hasOverflow && currentLeft > TIMELINE_CAROUSEL_EDGE_EPSILON_PX,
-    canPageRight: hasOverflow && currentLeft < maxScroll - TIMELINE_CAROUSEL_EDGE_EPSILON_PX,
-  };
-}
-
-function syncTimelineCarouselOverflow(strip = els.timelineStrip) {
-  const { hasOverflow, canPageLeft, canPageRight } = timelineCarouselDirectionState(strip);
-  strip?.classList?.toggle("is-scrollable", hasOverflow);
-  els.timelineShell?.classList?.toggle("is-scrollable", hasOverflow);
-  if (els.timelinePrev) {
-    els.timelinePrev.classList.toggle("is-hidden", !canPageLeft);
-    els.timelinePrev.disabled = !canPageLeft;
-    els.timelinePrev.tabIndex = canPageLeft ? 0 : -1;
-  }
-  if (els.timelineNext) {
-    els.timelineNext.classList.toggle("is-hidden", !canPageRight);
-    els.timelineNext.disabled = !canPageRight;
-    els.timelineNext.tabIndex = canPageRight ? 0 : -1;
-  }
-  return hasOverflow;
-}
-
-function scheduleTimelineCarouselChromeSync() {
-  if (Number(state.timelineCarouselChromeFrame) > 0) return;
-  const run = () => {
-    state.timelineCarouselChromeFrame = 0;
-    syncTimelineCarouselOverflow();
-  };
-  if (typeof requestAnimationFrame === "function") {
-    state.timelineCarouselChromeFrame = requestAnimationFrame(run);
-    return;
-  }
-  run();
-}
-
-function centerTimelineCardInStrip(card = null, strip = els.timelineStrip, { behavior = "smooth", force = false } = {}) {
-  if (!card || !strip) return false;
-  const maxScroll = Math.max(0, Number(strip.scrollWidth || 0) - Number(strip.clientWidth || 0));
-  if (maxScroll <= 0) return false;
-  const currentLeft = Math.min(maxScroll, Math.max(0, Number(strip.scrollLeft) || 0));
-  const cardLeft = Math.max(0, Number(card.offsetLeft) || 0);
-  const cardWidth = Math.max(1, Number(card.offsetWidth) || 0);
-  const visibleLeft = currentLeft + 6;
-  const visibleRight = currentLeft + Math.max(0, Number(strip.clientWidth || 0)) - 6;
-  if (!force && cardLeft >= visibleLeft && cardLeft + cardWidth <= visibleRight) return false;
-  const targetLeft = Math.min(
-    maxScroll,
-    Math.max(0, Math.round(cardLeft - Math.max(0, (Number(strip.clientWidth || 0) - cardWidth) / 2)))
-  );
-  if (Math.abs(targetLeft - currentLeft) <= 2) return false;
-  if (typeof strip.scrollTo === "function") {
-    strip.scrollTo({ left: targetLeft, behavior });
-  } else {
-    strip.scrollLeft = targetLeft;
-  }
-  return true;
-}
-
-function scrollTimelineCarousel(direction = 0, { behavior = "smooth" } = {}) {
-  const strip = els.timelineStrip;
-  const targetLeft = timelineCarouselTargetLeft(strip, direction);
-  if (!strip) return false;
-  const currentLeft = Math.max(0, Number(strip.scrollLeft) || 0);
-  if (Math.abs(targetLeft - currentLeft) <= 2) return false;
-  if (typeof strip.scrollTo === "function") {
-    strip.scrollTo({ left: targetLeft, behavior });
-  } else {
-    strip.scrollLeft = targetLeft;
-  }
-  return true;
-}
-
-function suppressTimelineCardClick() {
-  state.timelineSuppressClickUntil = timelineNowMs() + TIMELINE_CAROUSEL_CLICK_SUPPRESS_MS;
-}
-
-function shouldSuppressTimelineCardClick() {
-  return timelineNowMs() < Math.max(0, Number(state.timelineSuppressClickUntil) || 0);
-}
-
-function resetTimelineCarouselGesture() {
-  const pointerId = state.timelineCarouselGesture?.pointerId;
-  if (pointerId != null && typeof els.timelineShell?.releasePointerCapture === "function") {
-    try {
-      els.timelineShell.releasePointerCapture(pointerId);
-    } catch (_) {}
-  }
-  els.timelineShell?.classList?.remove("is-swiping");
-  state.timelineCarouselGesture = null;
-}
-
-function beginTimelineCarouselGesture(event) {
-  if (!els.timelineStrip || !syncTimelineCarouselOverflow()) return;
-  if (event?.pointerType === "mouse" && Number(event?.button) !== 0) return;
-  if (event?.target?.closest && event.target.closest(".timeline-arrow")) return;
-  state.timelineCarouselGesture = {
-    pointerId: event?.pointerId ?? null,
-    startX: Number(event?.clientX) || 0,
-    startY: Number(event?.clientY) || 0,
-    dragging: false,
-  };
-  if (event?.pointerId != null && typeof els.timelineShell?.setPointerCapture === "function") {
-    try {
-      els.timelineShell.setPointerCapture(event.pointerId);
-    } catch (_) {}
-  }
-}
-
-function updateTimelineCarouselGesture(event) {
-  const gesture = state.timelineCarouselGesture;
-  if (!gesture) return false;
-  if (gesture.pointerId != null && event?.pointerId != null && gesture.pointerId !== event.pointerId) return false;
-  const dx = (Number(event?.clientX) || 0) - gesture.startX;
-  const dy = (Number(event?.clientY) || 0) - gesture.startY;
-  if (!gesture.dragging) {
-    if (Math.abs(dx) < TIMELINE_CAROUSEL_GESTURE_LOCK_PX && Math.abs(dy) < TIMELINE_CAROUSEL_GESTURE_LOCK_PX) {
-      return false;
-    }
-    if (Math.abs(dx) <= Math.abs(dy)) {
-      resetTimelineCarouselGesture();
-      return false;
-    }
-    gesture.dragging = true;
-    els.timelineShell?.classList?.add("is-swiping");
-  }
-  event?.preventDefault?.();
-  return true;
-}
-
-function finishTimelineCarouselGesture(event) {
-  const gesture = state.timelineCarouselGesture;
-  if (!gesture) return false;
-  if (gesture.pointerId != null && event?.pointerId != null && gesture.pointerId !== event.pointerId) return false;
-  const dx = (Number(event?.clientX) || 0) - gesture.startX;
-  const dy = (Number(event?.clientY) || 0) - gesture.startY;
-  const shouldSlide =
-    gesture.dragging &&
-    Math.abs(dx) >= TIMELINE_CAROUSEL_GESTURE_THRESHOLD_PX &&
-    Math.abs(dx) > Math.abs(dy);
-  resetTimelineCarouselGesture();
-  if (!shouldSlide) return false;
-  const moved = scrollTimelineCarousel(dx < 0 ? 1 : -1);
-  if (moved) {
-    suppressTimelineCardClick();
-    event?.preventDefault?.();
-  }
-  return moved;
-}
-
-function handleTimelineCarouselWheel(event) {
-  if (!els.timelineStrip || !syncTimelineCarouselOverflow()) return false;
-  const deltaX = Number(event?.deltaX) || 0;
-  const deltaY = Number(event?.deltaY) || 0;
-  const usesHorizontalGesture = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : 0;
-  const delta = usesHorizontalGesture || (event?.shiftKey ? deltaY : 0);
-  if (!delta) {
-    state.timelineCarouselWheel.delta = 0;
-    return false;
-  }
-  const now = timelineNowMs();
-  if (now - (Number(state.timelineCarouselWheel?.lastAt) || 0) > 220) {
-    state.timelineCarouselWheel.delta = 0;
-  }
-  state.timelineCarouselWheel.lastAt = now;
-  state.timelineCarouselWheel.delta += delta;
-  if (Math.abs(state.timelineCarouselWheel.delta) < TIMELINE_CAROUSEL_WHEEL_THRESHOLD_PX) {
-    return false;
-  }
-  const direction = state.timelineCarouselWheel.delta > 0 ? 1 : -1;
-  state.timelineCarouselWheel.delta = 0;
-  const moved = scrollTimelineCarousel(direction);
-  if (moved) {
-    suppressTimelineCardClick();
-    event?.preventDefault?.();
-  }
-  return moved;
-}
-
-function buildTimelineCard(node = null, headNode = currentTimelineHeadNode()) {
-  if (!node?.nodeId) return null;
-  const { current, future, historical, inactive } = timelineCardStateForNode(node, headNode);
-  const actionKey = timelineActionKey(node.action, node.kind);
-  const usesThumbnail =
-    String(node.visualMode || "").trim() === "thumbnail" &&
-    String(node.previewPath || "").trim();
-  const card = document.createElement("button");
-  card.type = "button";
-  card.className = `timeline-card ${usesThumbnail ? "timeline-card--thumb" : "timeline-card--icon"}${current ? " selected" : ""}${inactive ? " is-inactive" : ""}${historical ? " is-historical" : ""}${future ? " is-future" : ""}`;
-  card.dataset.nodeId = node.nodeId;
-  card.dataset.seq = String(Math.max(1, Number(node.seq) || 1));
-  card.dataset.structureKey = timelineNodeStructureKey(node);
-  card.setAttribute("aria-label", timelineNodeAriaLabel(node, { current, future, historical }));
-  card.title = timelineNodeSummary(node);
-  const seq = document.createElement("span");
-  seq.className = "timeline-card-seq";
-  seq.textContent = card.dataset.seq;
-  card.appendChild(seq);
-  const visual = document.createElement("span");
-  visual.className = "timeline-card-visual";
-  if (usesThumbnail) {
-    const img = document.createElement("img");
-    img.alt = timelineNodeLabel(node);
-    img.loading = "lazy";
-    img.decoding = "async";
-    img.src = THUMB_PLACEHOLDER_SRC;
-    ensureImageUrl(node.previewPath)
-      .then((url) => {
-        if (url) img.src = url;
-      })
-      .catch(() => {});
-    visual.appendChild(img);
-  } else {
-    const glyph = document.createElement("span");
-    glyph.className = `timeline-card-glyph timeline-card-glyph--${actionKey}`;
-    glyph.innerHTML = timelineCardGlyphMarkup(actionKey);
-    visual.appendChild(glyph);
-  }
-  card.appendChild(visual);
-  return card;
-}
-
-function rebuildTimelineStrip(nodes = timelineSortedNodes(), headNode = currentTimelineHeadNode()) {
-  const strip = els.timelineStrip;
-  if (!strip) return false;
-  els.timelineShell?.classList?.toggle("is-empty", !nodes.length);
-  strip.classList?.toggle("is-empty", !nodes.length);
-  if (!nodes.length) {
-    const currentEmpty = strip.querySelector(".timeline-empty");
-    if (!currentEmpty || String(currentEmpty.textContent || "").trim() !== "Your timeline appears here after you upload your first image.") {
-      strip.replaceChildren();
-      const empty = document.createElement("div");
-      empty.className = "timeline-empty muted";
-      empty.textContent = "Your timeline appears here after you upload your first image.";
-      strip.appendChild(empty);
-    }
-    state.lastTimelineCenteredNodeId = null;
-    scheduleTimelineCarouselChromeSync();
-    return true;
-  }
-
-  for (const empty of Array.from(strip.querySelectorAll(".timeline-empty"))) {
-    empty.remove();
-  }
-
-  const desiredNodeIds = new Set();
-  const existingCards = Array.from(strip.querySelectorAll(".timeline-card[data-node-id]"));
-  const existingById = new Map();
-  for (const card of existingCards) {
-    const nodeId = String(card.dataset?.nodeId || "").trim();
-    if (!nodeId) continue;
-    existingById.set(nodeId, card);
-  }
-
-  for (const node of nodes) {
-    const nodeId = String(node?.nodeId || "").trim();
-    if (!nodeId) continue;
-    desiredNodeIds.add(nodeId);
-  }
-
-  for (const card of existingCards) {
-    const nodeId = String(card.dataset?.nodeId || "").trim();
-    if (!nodeId || desiredNodeIds.has(nodeId)) continue;
-    card.remove();
-    existingById.delete(nodeId);
-  }
-
-  let referenceNode = strip.firstChild;
-  for (const node of nodes) {
-    const nodeId = String(node?.nodeId || "").trim();
-    if (!nodeId) continue;
-    const structureKey = timelineNodeStructureKey(node);
-    let card = existingById.get(nodeId) || null;
-    if (!card) {
-      card = buildTimelineCard(node, headNode);
-      if (!card) continue;
-      existingById.set(nodeId, card);
-    } else if (String(card.dataset?.structureKey || "") !== structureKey) {
-      const replacement = buildTimelineCard(node, headNode);
-      if (!replacement) continue;
-      if (card.parentNode === strip) {
-        strip.replaceChild(replacement, card);
-        if (referenceNode === card) referenceNode = replacement;
-      }
-      existingById.set(nodeId, replacement);
-      card = replacement;
-    }
-    if (card.parentNode !== strip) {
-      strip.insertBefore(card, referenceNode);
-    } else if (card !== referenceNode) {
-      strip.insertBefore(card, referenceNode);
-    } else {
-      referenceNode = card.nextSibling;
-      continue;
-    }
-    referenceNode = card.nextSibling;
-  }
-
-  syncTimelineCarouselOverflow(strip);
-  return true;
-}
-
-function syncTimelineViewState(nodes = timelineSortedNodes(), headNode = currentTimelineHeadNode()) {
-  const strip = els.timelineStrip;
-  if (!strip) return false;
-  const headNodeId = String(headNode?.nodeId || "").trim() || null;
-  let changed = false;
-  const cards = Array.from(strip.querySelectorAll(".timeline-card[data-node-id]"));
-  for (const card of cards) {
-    const nodeId = String(card.dataset?.nodeId || "").trim();
-    if (!nodeId) continue;
-    const node = state.timelineNodesById instanceof Map ? state.timelineNodesById.get(nodeId) || null : null;
-    if (!node) continue;
-    const { current, future, historical, inactive } = timelineCardStateForNode(node, headNode);
-    if (card.classList.contains("selected") !== current) {
-      card.classList.toggle("selected", current);
-      changed = true;
-    }
-    if (card.classList.contains("is-inactive") !== inactive) {
-      card.classList.toggle("is-inactive", inactive);
-      changed = true;
-    }
-    if (card.classList.contains("is-historical") !== historical) {
-      card.classList.toggle("is-historical", historical);
-      changed = true;
-    }
-    if (card.classList.contains("is-future") !== future) {
-      card.classList.toggle("is-future", future);
-      changed = true;
-    }
-    const nextAria = timelineNodeAriaLabel(node, { current, future, historical });
-    if (card.getAttribute("aria-label") !== nextAria) {
-      card.setAttribute("aria-label", nextAria);
-      changed = true;
-    }
-  }
-  changed = syncTimelineDetailText(headNode) || changed;
-  const selectedCard = headNodeId
-    ? cards.find((card) => String(card.dataset?.nodeId || "").trim() === headNodeId) || null
-    : null;
-  if (selectedCard && headNodeId) {
-    centerTimelineCardInStrip(selectedCard, strip, {
-      behavior: state.lastTimelineCenteredNodeId === headNodeId ? "auto" : "smooth",
-      force: headNodeId !== state.lastTimelineCenteredNodeId,
-    });
-    state.lastTimelineCenteredNodeId = headNodeId;
-  } else if (!headNodeId) {
-    state.lastTimelineCenteredNodeId = null;
-  }
-  scheduleTimelineCarouselChromeSync();
-  return changed;
-}
-
-function renderTimeline() {
-  const strip = els.timelineStrip;
-  if (!strip) return false;
-  const nodes = timelineSortedNodes();
-  const headNode = currentTimelineHeadNode();
-  syncTimelineShelfToggle(nodes, headNode);
-  const structureKey = [
-    state.timelineVersion,
-    state.timelineLatestNodeId || "",
-    state.timelineNextSeq || 1,
-    timelineStructureSignature(nodes),
-  ].join("||");
-  const viewKey = timelineViewSignature(headNode);
-  let changed = false;
-  if (state.lastRenderedTimelineStructureKey !== structureKey) {
-    state.lastRenderedTimelineStructureKey = structureKey;
-    state.lastRenderedTimelineViewKey = "";
-    rebuildTimelineStrip(nodes, headNode);
-    changed = true;
-  }
-  if (state.lastRenderedTimelineViewKey !== viewKey) {
-    state.lastRenderedTimelineViewKey = viewKey;
-    syncTimelineViewState(nodes, headNode);
-    changed = true;
-  } else if (!changed) {
-    scheduleTimelineCarouselChromeSync();
-  }
-  return changed;
 }
 
 function currentTimelineRestoreBlockReason() {
@@ -36511,6 +35729,55 @@ async function jumpToTimelineNode(nodeId) {
   syncActiveTabRecord({ capture: true, publish: true });
   persistActiveSessionTimeline();
   requestRender();
+}
+
+const timelineUi = createTimelineUi({
+  state,
+  els,
+  timelineSortedNodes,
+  currentTimelineHeadNode,
+  syncActiveTabRecord,
+  timelineNodeSummary,
+  timelineNodeLabel,
+  timelineNodeAriaLabel,
+  timelineCardStateForNode,
+  timelineActionKey,
+  timelineCardGlyphMarkup,
+  timelineNodeStructureKey,
+  timelineStructureSignature,
+  timelineViewSignature,
+  THUMB_PLACEHOLDER_SRC,
+  ensureImageUrl,
+  bumpInteraction,
+  jumpToTimelineNode,
+});
+
+const {
+  timelineShelfSummaryText,
+  timelineDetailText,
+  syncTimelineDetailText,
+  timelineCarouselAnchors,
+  timelineCarouselTargetLeft,
+  timelineCarouselDirectionState,
+  syncTimelineCarouselOverflow,
+  scheduleTimelineCarouselChromeSync,
+  centerTimelineCardInStrip,
+  scrollTimelineCarousel,
+  suppressTimelineCardClick,
+  shouldSuppressTimelineCardClick,
+  resetTimelineCarouselGesture,
+  beginTimelineCarouselGesture,
+  updateTimelineCarouselGesture,
+  finishTimelineCarouselGesture,
+  handleTimelineCarouselWheel,
+  buildTimelineCard,
+  rebuildTimelineStrip,
+  syncTimelineViewState,
+  installTimelineUi,
+} = timelineUi;
+
+function renderTimeline() {
+  return timelineUi.renderTimeline();
 }
 
 const USER_ACTIVE_IMAGE_EVENT_SOURCES = new Set(["user_select", "filmstrip_click", "timeline"]);
@@ -39238,423 +38505,6 @@ function finishPerfSample(sample, metricKey = null, detail = null) {
   return duration;
 }
 
-function disposeTabPreviewCacheEntry(entry = null) {
-  if (!entry || typeof entry !== "object") return;
-  if (entry.bitmap && typeof entry.bitmap.close === "function") {
-    try {
-      entry.bitmap.close();
-    } catch {
-      // ignore
-    }
-  }
-}
-
-function tabPreviewStateForTab(tabId = state.activeTabId || null) {
-  const normalizedTabId = String(tabId || "").trim();
-  if (!normalizedTabId) return createFreshTabPreviewState();
-  if (normalizedTabId === String(state.activeTabId || "").trim()) {
-    return normalizeTabPreviewState(state.tabPreviewState);
-  }
-  const record = tabbedSessions.getTab(normalizedTabId);
-  return normalizeTabPreviewState(record?.session?.tabPreviewState);
-}
-
-function writeTabPreviewStateForTab(tabId = state.activeTabId || null, preview = null) {
-  const normalizedTabId = String(tabId || "").trim();
-  if (!normalizedTabId) return createFreshTabPreviewState();
-  const next = normalizeTabPreviewState(preview);
-  if (normalizedTabId === String(state.activeTabId || "").trim()) {
-    state.tabPreviewState = next;
-    state.tabPreviewDirty = !next.valid;
-  }
-  const record = tabbedSessions.getTab(normalizedTabId);
-  if (record?.session && typeof record.session === "object") {
-    record.session.tabPreviewState = { ...next };
-  }
-  return next;
-}
-
-function previewViewportNumber(value, decimals = 3) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return "0";
-  return numeric.toFixed(decimals);
-}
-
-function buildTabPreviewViewportKey() {
-  if (state.canvasMode === "multi") {
-    return [
-      "multi",
-      previewViewportNumber(state.multiView?.scale, 4),
-      previewViewportNumber(state.multiView?.offsetX, 1),
-      previewViewportNumber(state.multiView?.offsetY, 1),
-      String(state.activeId || ""),
-    ].join(":");
-  }
-  return [
-    "single",
-    previewViewportNumber(state.view?.scale, 4),
-    previewViewportNumber(state.view?.offsetX, 1),
-    previewViewportNumber(state.view?.offsetY, 1),
-    String(state.activeId || ""),
-  ].join(":");
-}
-
-function buildTabPreviewDescriptor(tabId = state.activeTabId || null) {
-  const normalizedTabId = String(tabId || "").trim();
-  const work = els.workCanvas;
-  const previewState = tabPreviewStateForTab(normalizedTabId);
-  return {
-    tabId: normalizedTabId,
-    canvasWidth: Math.max(0, Number(work?.width) || 0),
-    canvasHeight: Math.max(0, Number(work?.height) || 0),
-    dpr: getDpr(),
-    viewportKey: buildTabPreviewViewportKey(),
-    visualVersion: Math.max(0, Number(previewState.version) || 0),
-  };
-}
-
-function canUseTabPreviewEntry(entry = null, descriptor = buildTabPreviewDescriptor()) {
-  if (!entry || typeof entry !== "object") return false;
-  if (!descriptor || typeof descriptor !== "object") return false;
-  return (
-    String(entry.tabId || "") === String(descriptor.tabId || "") &&
-    Math.max(0, Number(entry.canvasWidth) || 0) === Math.max(0, Number(descriptor.canvasWidth) || 0) &&
-    Math.max(0, Number(entry.canvasHeight) || 0) === Math.max(0, Number(descriptor.canvasHeight) || 0) &&
-    Math.abs((Number(entry.dpr) || 0) - (Number(descriptor.dpr) || 0)) < 0.001 &&
-    String(entry.viewportKey || "") === String(descriptor.viewportKey || "") &&
-    Math.max(0, Number(entry.visualVersion) || 0) === Math.max(0, Number(descriptor.visualVersion) || 0) &&
-    Boolean(entry.bitmap || entry.canvas)
-  );
-}
-
-function getUsableTabPreviewEntry(tabId = state.activeTabId || null) {
-  const descriptor = buildTabPreviewDescriptor(tabId);
-  if (!descriptor.tabId) return null;
-  const entry = tabPreviewCache.get(descriptor.tabId) || null;
-  return canUseTabPreviewEntry(entry, descriptor) ? entry : null;
-}
-
-function syncActiveTabPreviewRuntime() {
-  const normalizedTabId = String(state.activeTabId || "").trim();
-  if (!normalizedTabId) {
-    state.tabPreviewState = createFreshTabPreviewState();
-    state.tabPreviewDirty = true;
-    return state.tabPreviewState;
-  }
-  const next = {
-    ...tabPreviewStateForTab(normalizedTabId),
-    valid: Boolean(getUsableTabPreviewEntry(normalizedTabId)),
-  };
-  return writeTabPreviewStateForTab(normalizedTabId, next);
-}
-
-function clearScheduledTabPreviewCapture() {
-  if (tabPreviewCaptureRaf && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
-    window.cancelAnimationFrame(tabPreviewCaptureRaf);
-  }
-  tabPreviewCaptureRaf = 0;
-  if (tabPreviewCaptureTimer) clearTimeout(tabPreviewCaptureTimer);
-  tabPreviewCaptureTimer = null;
-  pendingTabPreviewCapture = null;
-}
-
-function finishPendingTabSwitchFullRender(detail = null) {
-  if (!pendingTabSwitchFullRenderSample) return 0;
-  const pending = pendingTabSwitchFullRenderSample;
-  pendingTabSwitchFullRenderSample = null;
-  return finishPerfSample(pending.sample, "tabFullRenderAfterPreviewMs", {
-    previewHit: Boolean(pending.previewHit),
-    reason: pending.reason,
-    renderedTabId: state.activeTabId || null,
-    tabId: pending.tabId,
-    ...(detail && typeof detail === "object" ? detail : null),
-  });
-}
-
-function clearPendingTabSwitchFullRender({ stale = false } = {}) {
-  if (tabSwitchFullRenderRaf && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
-    window.cancelAnimationFrame(tabSwitchFullRenderRaf);
-  }
-  tabSwitchFullRenderRaf = 0;
-  if (pendingTabSwitchFullRenderSample && stale) {
-    finishPendingTabSwitchFullRender({ stale: true });
-  } else if (!stale) {
-    pendingTabSwitchFullRenderSample = null;
-  }
-}
-
-function currentTabPreviewCaptureBlockedReason() {
-  if (!String(state.activeTabId || "").trim()) return "missing_tab";
-  if (state.pendingTabSwitchPreview) return "switch_preview_pending";
-  if (state.pointer?.active || state.gestureZoom?.active) return "manipulating_canvas";
-  if (shouldAnimateEffectVisuals()) return "animating_effects";
-  const now = Date.now();
-  const visibleUntil = Number(state.reelTouch?.visibleUntil) || 0;
-  const downUntil = Number(state.reelTouch?.downUntil) || 0;
-  if (now < visibleUntil || now < downUntil) return "touch_feedback";
-  return null;
-}
-
-function invalidateActiveTabPreview(reason = "visual_mutation") {
-  const normalizedTabId = String(state.activeTabId || "").trim();
-  if (!normalizedTabId) return null;
-  clearScheduledTabPreviewCapture();
-  const previous = normalizeTabPreviewState(state.tabPreviewState);
-  const nextVersion = state.tabPreviewDirty
-    ? Math.max(0, Number(previous.version) || 0)
-    : Math.max(0, Number(previous.version) || 0) + 1;
-  const next = {
-    version: nextVersion,
-    valid: false,
-  };
-  writeTabPreviewStateForTab(normalizedTabId, next);
-  state.tabPreviewDirty = true;
-  const existing = tabPreviewCache.get(normalizedTabId) || null;
-  if (existing) {
-    tabPreviewCache.delete(normalizedTabId);
-    disposeTabPreviewCacheEntry(existing);
-  }
-  return {
-    reason: String(reason || "visual_mutation"),
-    tabId: normalizedTabId,
-    version: next.version,
-  };
-}
-
-function createTabPreviewCaptureSurface(width, height) {
-  const w = Math.max(1, Math.round(Number(width) || 1));
-  const h = Math.max(1, Math.round(Number(height) || 1));
-  if (typeof OffscreenCanvas === "function") {
-    try {
-      return new OffscreenCanvas(w, h);
-    } catch {
-      // ignore
-    }
-  }
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  return canvas;
-}
-
-function buildCurrentTabPreviewSurface() {
-  const work = els.workCanvas;
-  const overlay = els.overlayCanvas;
-  if (!work || !overlay) return null;
-  const canvasWidth = Math.max(0, Number(work.width) || 0);
-  const canvasHeight = Math.max(0, Number(work.height) || 0);
-  if (!canvasWidth || !canvasHeight) return null;
-  const scale = Math.min(1, TAB_PREVIEW_MAX_EDGE_PX / Math.max(canvasWidth, canvasHeight, 1));
-  const captureWidth = Math.max(1, Math.round(canvasWidth * scale));
-  const captureHeight = Math.max(1, Math.round(canvasHeight * scale));
-  const surface = createTabPreviewCaptureSurface(captureWidth, captureHeight);
-  const ctx = surface?.getContext?.("2d", { alpha: false, desynchronized: true });
-  if (!surface || !ctx) return null;
-  ctx.clearRect(0, 0, captureWidth, captureHeight);
-  ctx.drawImage(work, 0, 0, captureWidth, captureHeight);
-  if (els.effectsCanvas?.width && els.effectsCanvas?.height) {
-    ctx.drawImage(els.effectsCanvas, 0, 0, captureWidth, captureHeight);
-  }
-  ctx.drawImage(overlay, 0, 0, captureWidth, captureHeight);
-  return {
-    surface,
-    captureWidth,
-    captureHeight,
-    canvasWidth,
-    canvasHeight,
-  };
-}
-
-async function captureActiveTabPreview({
-  tabId = state.activeTabId || null,
-  reason = "stable_render",
-  descriptor = buildTabPreviewDescriptor(tabId),
-} = {}) {
-  const normalizedTabId = String(tabId || "").trim();
-  if (!normalizedTabId || normalizedTabId !== String(state.activeTabId || "").trim()) return false;
-  if (currentTabPreviewCaptureBlockedReason()) return false;
-  if (!descriptor.canvasWidth || !descriptor.canvasHeight) return false;
-  if (Math.max(0, Number(tabPreviewStateForTab(normalizedTabId).version) || 0) !== Math.max(0, Number(descriptor.visualVersion) || 0)) {
-    return false;
-  }
-  const surfaceState = buildCurrentTabPreviewSurface();
-  if (!surfaceState) return false;
-  let nextEntry = {
-    tabId: normalizedTabId,
-    canvasWidth: descriptor.canvasWidth,
-    canvasHeight: descriptor.canvasHeight,
-    dpr: descriptor.dpr,
-    viewportKey: descriptor.viewportKey,
-    visualVersion: descriptor.visualVersion,
-    reason: String(reason || "stable_render"),
-    policy: "merged-canvas-v1",
-    bitmap: null,
-    canvas: surfaceState.surface,
-    captureWidth: surfaceState.captureWidth,
-    captureHeight: surfaceState.captureHeight,
-    capturedAt: Date.now(),
-    kind: "canvas",
-  };
-  if (typeof createImageBitmap === "function") {
-    try {
-      const bitmap = await createImageBitmap(surfaceState.surface);
-      nextEntry = {
-        ...nextEntry,
-        bitmap,
-        canvas: null,
-        kind: "bitmap",
-      };
-    } catch {
-      // Canvas fallback is acceptable.
-    }
-  }
-  if (Math.max(0, Number(tabPreviewStateForTab(normalizedTabId).version) || 0) !== Math.max(0, Number(descriptor.visualVersion) || 0)) {
-    disposeTabPreviewCacheEntry(nextEntry);
-    return false;
-  }
-  const previous = tabPreviewCache.get(normalizedTabId) || null;
-  if (previous) disposeTabPreviewCacheEntry(previous);
-  tabPreviewCache.set(normalizedTabId, nextEntry);
-  writeTabPreviewStateForTab(normalizedTabId, {
-    version: descriptor.visualVersion,
-    valid: true,
-  });
-  if (normalizedTabId === String(state.activeTabId || "").trim()) {
-    state.tabPreviewDirty = false;
-  }
-  return true;
-}
-
-function scheduleActiveTabPreviewCapture(reason = "stable_render") {
-  const normalizedTabId = String(state.activeTabId || "").trim();
-  if (!normalizedTabId || !state.tabPreviewDirty) return;
-  if (currentTabPreviewCaptureBlockedReason()) return;
-  const descriptor = buildTabPreviewDescriptor(normalizedTabId);
-  if (!descriptor.canvasWidth || !descriptor.canvasHeight) return;
-  if (
-    pendingTabPreviewCapture &&
-    pendingTabPreviewCapture.tabId === normalizedTabId &&
-    pendingTabPreviewCapture.descriptor?.viewportKey === descriptor.viewportKey &&
-    pendingTabPreviewCapture.descriptor?.visualVersion === descriptor.visualVersion
-  ) {
-    return;
-  }
-  clearScheduledTabPreviewCapture();
-  pendingTabPreviewCapture = {
-    tabId: normalizedTabId,
-    reason: String(reason || "stable_render"),
-    descriptor,
-  };
-  const runCapture = () => {
-    const pending = pendingTabPreviewCapture;
-    pendingTabPreviewCapture = null;
-    if (!pending) return;
-    void captureActiveTabPreview(pending).catch(() => {});
-  };
-  if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-    tabPreviewCaptureRaf = window.requestAnimationFrame(() => {
-      tabPreviewCaptureRaf = 0;
-      tabPreviewCaptureTimer = setTimeout(() => {
-        tabPreviewCaptureTimer = null;
-        runCapture();
-      }, TAB_PREVIEW_CAPTURE_SETTLE_MS);
-    });
-    return;
-  }
-  tabPreviewCaptureTimer = setTimeout(() => {
-    tabPreviewCaptureTimer = null;
-    runCapture();
-  }, TAB_PREVIEW_CAPTURE_SETTLE_MS);
-}
-
-function paintTabPreviewEntry(entry = null) {
-  const work = els.workCanvas;
-  const overlay = els.overlayCanvas;
-  if (!work || !overlay || !entry) return false;
-  const wctx = work.getContext("2d");
-  const octx = overlay.getContext("2d");
-  if (!wctx || !octx) return false;
-  const source = entry.bitmap || entry.canvas || null;
-  if (!source) return false;
-  wctx.clearRect(0, 0, work.width, work.height);
-  if (els.effectsCanvas) {
-    const fxCtx = els.effectsCanvas.getContext("2d");
-    fxCtx?.clearRect(0, 0, els.effectsCanvas.width, els.effectsCanvas.height);
-  }
-  octx.clearRect(0, 0, overlay.width, overlay.height);
-  state.motherOverlayUiHits = [];
-  state.activeImageTransformUiHits = [];
-  hideImageFxOverlays();
-  wctx.imageSmoothingEnabled = true;
-  wctx.imageSmoothingQuality = "high";
-  wctx.drawImage(source, 0, 0, work.width, work.height);
-  return true;
-}
-
-function scheduleTabSwitchFullRender(tabId, reason, { previewHit = false } = {}) {
-  const normalizedTabId = String(tabId || "").trim();
-  if (!normalizedTabId) return;
-  clearPendingTabSwitchFullRender({ stale: true });
-  const sample = startPerfSample("tab:full-render-after-preview", {
-    previewHit: Boolean(previewHit),
-    reason,
-    tabId: normalizedTabId,
-  });
-  if (previewHit && typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-    tabSwitchFullRenderRaf = window.requestAnimationFrame(() => {
-      tabSwitchFullRenderRaf = 0;
-      pendingTabSwitchFullRenderSample = {
-        sample,
-        tabId: normalizedTabId,
-        previewHit: Boolean(previewHit),
-        reason,
-      };
-      requestRender();
-    });
-    return;
-  }
-  pendingTabSwitchFullRenderSample = {
-    sample,
-    tabId: normalizedTabId,
-    previewHit: Boolean(previewHit),
-    reason,
-  };
-}
-
-function renderPendingTabSwitchPreview() {
-  const pending = state.pendingTabSwitchPreview;
-  if (!pending || typeof pending !== "object") return false;
-  const normalizedTabId = String(pending.tabId || "").trim();
-  state.pendingTabSwitchPreview = null;
-  const perfSample = startPerfSample("tab:preview-paint", {
-    reason: pending.reason,
-    tabId: normalizedTabId,
-  });
-  const entry = getUsableTabPreviewEntry(normalizedTabId);
-  if (!entry) {
-    finishPerfSample(perfSample, "tabPreviewPaintMs", {
-      cacheHit: false,
-      reason: pending.reason,
-      tabId: normalizedTabId,
-    });
-    scheduleTabSwitchFullRender(normalizedTabId, pending.reason, { previewHit: false });
-    return false;
-  }
-  const painted = paintTabPreviewEntry(entry);
-  finishPerfSample(perfSample, "tabPreviewPaintMs", {
-    cacheHit: Boolean(painted),
-    previewKind: entry.kind,
-    reason: pending.reason,
-    tabId: normalizedTabId,
-  });
-  if (!painted) {
-    scheduleTabSwitchFullRender(normalizedTabId, pending.reason, { previewHit: false });
-    return false;
-  }
-  scheduleTabSwitchFullRender(normalizedTabId, pending.reason, { previewHit: true });
-  return true;
-}
-
 function normalizeSessionTabTitleInput(value = "", maxLen = SESSION_TAB_TITLE_MAX_LENGTH) {
   const compact = String(value || "").replace(/\s+/g, " ").trim();
   if (!compact) return "";
@@ -39994,80 +38844,23 @@ function syncActiveTabReviewFlowState({ publish = true } = {}) {
 }
 
 function resetSessionTabRenameState({ render = false } = {}) {
-  sessionTabRenameState = {
-    tabId: null,
-    draft: "",
-    focusRequested: false,
-    lockedWidth: 0,
-  };
-  if (render) renderSessionTabStrip();
+  return sessionTabRenameRuntime.resetSessionTabRenameState({ render });
 }
 
 function startSessionTabRename(tabId = "") {
-  const normalizedTabId = String(tabId || "").trim();
-  if (!normalizedTabId) return false;
-  if (normalizedTabId !== String(state.activeTabId || "").trim()) return false;
-  const record = tabbedSessions.getTab(normalizedTabId) || null;
-  if (!record) return false;
-  let lockedWidth = 0;
-  if (typeof els === "object" && els?.sessionTabList && typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-    const item = els.sessionTabList.querySelector(`.session-tab-item[data-tab-id="${CSS.escape(normalizedTabId)}"]`);
-    const measured = Number(item?.getBoundingClientRect?.().width) || 0;
-    if (Number.isFinite(measured) && measured > 0) lockedWidth = Math.ceil(measured);
-  }
-  sessionTabRenameState = {
-    tabId: normalizedTabId,
-    draft: sessionTabDisplayLabel(record, DEFAULT_UNTITLED_TAB_TITLE),
-    focusRequested: true,
-    lockedWidth,
-  };
-  renderSessionTabStrip();
-  return true;
+  return sessionTabRenameRuntime.startSessionTabRename(tabId);
 }
 
 function commitSessionTabRename(tabId = "", rawTitle = sessionTabRenameState.draft) {
-  const normalizedTabId = String(tabId || sessionTabRenameState.tabId || "").trim();
-  if (!normalizedTabId) return false;
-  const record = tabbedSessions.getTab(normalizedTabId) || null;
-  if (!record) {
-    resetSessionTabRenameState({ render: true });
-    return false;
-  }
-  const nextTitle = normalizeSessionTabTitleInput(rawTitle, SESSION_TAB_TITLE_MAX_LENGTH);
-  if (nextTitle) {
-    record.label = nextTitle;
-    record.labelManual = true;
-    if (record.session && typeof record.session === "object") {
-      record.session.label = nextTitle;
-      record.session.labelManual = true;
-    }
-  } else {
-    record.labelManual = false;
-    record.label = sessionTabAutomaticLabelForRecord(record, DEFAULT_UNTITLED_TAB_TITLE);
-    if (record.session && typeof record.session === "object") {
-      record.session.label = record.label;
-      record.session.labelManual = false;
-    }
-  }
-  resetSessionTabRenameState();
-  tabbedSessions.updateTabMetadata(normalizedTabId, { updatedAt: Date.now() });
-  return true;
+  return sessionTabRenameRuntime.commitSessionTabRename(tabId, rawTitle);
 }
 
 function cancelSessionTabRename() {
-  if (!sessionTabRenameState.tabId) return false;
-  resetSessionTabRenameState({ render: true });
-  return true;
+  return sessionTabRenameRuntime.cancelSessionTabRename();
 }
 
 function focusSessionTabRenameInput() {
-  if (!sessionTabRenameState.tabId || !sessionTabRenameState.focusRequested || !els.sessionTabList) return;
-  const selector = `.session-tab-item[data-tab-id="${CSS.escape(sessionTabRenameState.tabId)}"] .session-tab-title-input`;
-  const input = els.sessionTabList.querySelector(selector);
-  if (!(input instanceof HTMLInputElement)) return;
-  sessionTabRenameState.focusRequested = false;
-  input.focus();
-  input.select();
+  return sessionTabRenameRuntime.focusSessionTabRenameInput();
 }
 
 function tabLabelForRunDir(runDir, fallback = DEFAULT_UNTITLED_TAB_TITLE) {
@@ -40079,291 +38872,7 @@ function tabLabelForRunDir(runDir, fallback = DEFAULT_UNTITLED_TAB_TITLE) {
   });
 }
 
-async function sessionSnapshotPathForRunDir(runDir = "") {
-  const targetRunDir = String(runDir || "").trim();
-  if (!targetRunDir) return "";
-  try {
-    return await join(targetRunDir, SESSION_SNAPSHOT_FILENAME);
-  } catch {
-    return `${targetRunDir}/${SESSION_SNAPSHOT_FILENAME}`;
-  }
-}
 
-async function legacySessionSnapshotPathForRunDir(runDir = "") {
-  const targetRunDir = String(runDir || "").trim();
-  if (!targetRunDir) return "";
-  try {
-    return await join(targetRunDir, LEGACY_SESSION_SNAPSHOT_FILENAME);
-  } catch {
-    return `${targetRunDir}/${LEGACY_SESSION_SNAPSHOT_FILENAME}`;
-  }
-}
-
-async function sessionTimelinePathForRunDir(runDir = "") {
-  const targetRunDir = String(runDir || "").trim();
-  if (!targetRunDir) return "";
-  try {
-    return await join(targetRunDir, SESSION_TIMELINE_FILENAME);
-  } catch {
-    return `${targetRunDir}/${SESSION_TIMELINE_FILENAME}`;
-  }
-}
-
-function buildSessionTimelinePayloadFromSession(session = null, { runDir = null } = {}) {
-  const current = session && typeof session === "object" ? session : {};
-  return serializeSessionTimeline({
-    runDir: runDir || current.runDir || null,
-    headNodeId: current.timelineHeadNodeId || null,
-    latestNodeId: current.timelineLatestNodeId || null,
-    nextSeq: current.timelineNextSeq || 1,
-    updatedAt: new Date().toISOString(),
-    nodes: Array.isArray(current.timelineNodes) ? current.timelineNodes : [],
-  });
-}
-
-async function writeSessionTimelineForRunDir(runDir = "", payload = null) {
-  const outPath = await sessionTimelinePathForRunDir(runDir);
-  if (!outPath || !payload || typeof payload !== "object") return null;
-  await writeTextFile(outPath, JSON.stringify(payload, null, 2));
-  return outPath;
-}
-
-async function persistSessionTimelineForSession(session = null) {
-  const current = session && typeof session === "object" ? session : null;
-  const runDir = String(current?.runDir || "").trim();
-  if (!runDir) return null;
-  const payload = buildSessionTimelinePayloadFromSession(current, { runDir });
-  try {
-    return await writeSessionTimelineForRunDir(runDir, payload);
-  } catch (error) {
-    console.warn("session timeline write failed", error);
-    return null;
-  }
-}
-
-async function persistActiveSessionTimeline() {
-  const activeSession = captureActiveTabSession(
-    createFreshTabSession({
-      runDir: state.runDir || null,
-      eventsPath: state.eventsPath || null,
-    })
-  );
-  return await persistSessionTimelineForSession(activeSession);
-}
-
-async function loadSessionTimelineFromPath(path = "") {
-  const targetPath = String(path || "").trim();
-  if (!targetPath) return null;
-  const raw = await readTextFile(targetPath);
-  return deserializeSessionTimeline(JSON.parse(raw));
-}
-
-function restoreSessionFromTimelineRecord(timeline = null, { runDir = null, eventsPath = null } = {}) {
-  const current = timeline && typeof timeline === "object" ? timeline : null;
-  if (!current || !Array.isArray(current.nodes) || !current.nodes.length) return null;
-  const nodes = timelineSortedNodes(current.nodes);
-  const headNodeId = String(current.headNodeId || current.latestNodeId || nodes[nodes.length - 1]?.nodeId || "").trim();
-  const headNode =
-    nodes.find((node) => String(node?.nodeId || "").trim() === headNodeId) ||
-    nodes[nodes.length - 1] ||
-    null;
-  if (!headNode?.snapshot) return null;
-  const restoredSession = restoreSessionTimelineSnapshot(headNode.snapshot, {
-    runDir: runDir || current.runDir || null,
-    eventsPath,
-  });
-  restoredSession.timelineNodes = nodes;
-  restoredSession.timelineNodesById = new Map(
-    nodes
-      .filter((node) => node?.nodeId)
-      .map((node) => [String(node.nodeId), node])
-  );
-  restoredSession.timelineHeadNodeId = headNode.nodeId;
-  restoredSession.timelineLatestNodeId =
-    String(current.latestNodeId || "").trim() ||
-    (nodes[nodes.length - 1]?.nodeId || headNode.nodeId);
-  restoredSession.timelineNextSeq = Math.max(
-    1,
-    Number(current.nextSeq) || 0,
-    nodes.length ? Math.max(...nodes.map((node) => Math.max(1, Number(node?.seq) || 1))) + 1 : 1
-  );
-  restoredSession.timelineOpen = true;
-  return restoredSession;
-}
-
-function buildNativeMenuFileState() {
-  const blockReason = currentTabSwitchBlockReason();
-  const hasActiveTab = Boolean(String(state.activeTabId || "").trim());
-  const hasVisibleImages = getVisibleCanvasImages().length > 0;
-  return {
-    canNewSession: !blockReason,
-    canOpenSession: !blockReason,
-    canSaveSession: hasActiveTab && !blockReason,
-    canCloseSession: hasActiveTab && tabbedSessions.tabsOrder.length > 1 && !blockReason,
-    canExportSession: hasVisibleImages && !blockReason,
-    canImportPhotos: true,
-    canOpenSettings: true,
-  };
-}
-
-function syncAppMenuState(fileState = buildNativeMenuFileState()) {
-  if (els.newRun) els.newRun.disabled = !fileState.canNewSession;
-  if (els.openRun) els.openRun.disabled = !fileState.canOpenSession;
-  if (els.saveSession) els.saveSession.disabled = !fileState.canSaveSession;
-  if (els.closeSession) els.closeSession.disabled = !fileState.canCloseSession;
-  if (els.import) els.import.disabled = !fileState.canImportPhotos;
-  if (els.export) els.export.disabled = !fileState.canExportSession;
-  if (els.settingsToggle) els.settingsToggle.disabled = !fileState.canOpenSettings;
-  return fileState;
-}
-
-function buildNativeShortcutSlots() {
-  return nativeMenuBridge.shortcutSlots
-    .slice(0, NATIVE_SHORTCUT_SLOT_COUNT)
-    .map((slot) => ({
-      label: String(slot?.label || "").trim() || "Shortcut",
-      enabled: Boolean(slot?.enabled),
-    }));
-}
-
-function buildNativeToolSlots() {
-  const customToolLimit = Math.max(0, NATIVE_TOOLS_SLOT_COUNT - NATIVE_MENU_COMMUNICATION_TOOLS.length);
-  const visibleCustomTools = sessionToolRegistry.visible({ limit: customToolLimit });
-  const customToolSlots = Array.from({ length: customToolLimit }, (_, index) => {
-    const tool = visibleCustomTools[index] || null;
-    if (!tool) {
-      return {
-        kind: "custom_tool_placeholder",
-        label: `Custom Tool Slot ${index + 1}`,
-        enabled: false,
-        toolId: null,
-      };
-    }
-    return {
-      kind: "custom_tool",
-      label: String(tool?.label || tool?.shortLabel || tool?.toolId || "").trim() || "Custom Tool",
-      enabled: Boolean(tool?.toolId),
-      toolId: String(tool?.toolId || "").trim() || null,
-    };
-  });
-  nativeMenuBridge.toolSlots = NATIVE_MENU_COMMUNICATION_TOOLS
-    .map((tool) => ({
-      kind: "communication_tool",
-      label: tool.label,
-      enabled: true,
-      toolId: tool.toolId,
-    }))
-    .concat(customToolSlots)
-    .slice(0, NATIVE_TOOLS_SLOT_COUNT)
-    .map((slot) => ({
-      kind: String(slot?.kind || "").trim() || "tool",
-      label: String(slot?.label || "").trim() || "Tool",
-      enabled: Boolean(slot?.enabled),
-      toolId: String(slot?.toolId || "").trim() || null,
-    }));
-  return nativeMenuBridge.toolSlots.map((slot) => ({
-    label: slot.label,
-    enabled: slot.enabled,
-  }));
-}
-
-async function syncNativeSystemMenu() {
-  const fileState = syncAppMenuState();
-  const payload = buildNativeSystemMenuPayload({
-    file: fileState,
-    tools: buildNativeToolSlots(),
-    shortcuts: buildNativeShortcutSlots(),
-  });
-  const signature = JSON.stringify(payload);
-  if (nativeMenuBridge.lastSignature === signature) return;
-  nativeMenuBridge.lastSignature = signature;
-  await invoke("sync_native_menu_state", { payload }).catch((error) => {
-    nativeMenuBridge.lastSignature = "";
-    console.warn("native system menu sync failed", error);
-  });
-}
-
-function queueNativeSystemMenuSync() {
-  if (nativeMenuBridge.syncTimer) return;
-  nativeMenuBridge.syncTimer = setTimeout(() => {
-    nativeMenuBridge.syncTimer = null;
-    void syncNativeSystemMenu();
-  }, 0);
-}
-
-function cacheNativeShortcutSlots(buttons = []) {
-  nativeMenuBridge.shortcutSlots = Array.isArray(buttons)
-    ? buttons.slice(0, NATIVE_SHORTCUT_SLOT_COUNT).map((button) => ({
-        label: String(button?.label || button?.toolId || "").trim() || "Shortcut",
-        enabled: !Boolean(button?.disabled),
-        toolId: String(button?.toolId || "").trim() || null,
-      }))
-    : [];
-  queueNativeSystemMenuSync();
-}
-
-function parseNativeSlotIndex(action = "", prefix = "") {
-  const normalized = String(action || "").trim();
-  if (!normalized.startsWith(prefix)) return -1;
-  const index = Number(normalized.slice(prefix.length));
-  if (!Number.isInteger(index) || index < 0) return -1;
-  return index;
-}
-
-async function runNativeShortcutSlot(index = -1) {
-  const slot = nativeMenuBridge.shortcutSlots[index] || null;
-  const toolId = String(slot?.toolId || "").trim();
-  if (!toolId || !slot?.enabled) return false;
-  return applyJuggernautTool(toolId);
-}
-
-async function runNativeToolSlot(index = -1) {
-  const slot = nativeMenuBridge.toolSlots[index] || null;
-  const toolId = String(slot?.toolId || "").trim();
-  if (!toolId || !slot?.enabled) return false;
-  if (slot.kind === "communication_tool") {
-    return setCommunicationTool(toolId, { source: "native_menu" });
-  }
-  return invokeRegisteredTool(toolId, {
-    source: "native_menu",
-    trigger: "menu",
-  });
-}
-
-async function saveActiveSessionSnapshot({ source = "menu" } = {}) {
-  void source;
-  const blockReason = currentTabSwitchBlockReason();
-  if (blockReason) {
-    showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
-    return { ok: false, reason: blockReason };
-  }
-  const activeTabId = String(state.activeTabId || "").trim();
-  if (!activeTabId) return { ok: false, reason: "missing_tab" };
-  await ensureRun();
-  const record = tabbedSessions.getTab(activeTabId) || null;
-  if (!record) return { ok: false, reason: "missing_tab" };
-  syncSessionToolsFromRegistry();
-  syncActiveTabRecord({ capture: true, publish: true });
-  const session = record.session && typeof record.session === "object" ? record.session : captureActiveTabSession();
-  const outPath = await sessionSnapshotPathForRunDir(session.runDir || state.runDir || "");
-  if (!outPath) return { ok: false, reason: "missing_run_dir" };
-  const timelineOutPath = await persistSessionTimelineForSession(session);
-  const payload = serializeSessionSnapshot({
-    session,
-    label: sessionTabDisplayLabel(record, DEFAULT_UNTITLED_TAB_TITLE),
-  });
-  await writeTextFile(outPath, JSON.stringify(payload, null, 2));
-  showToast(`Saved session to ${basename(outPath)}.`, "tip", 2200);
-  queueNativeSystemMenuSync();
-  return { ok: true, outPath, timelineOutPath };
-}
-
-async function loadSessionSnapshotFromPath(path = "") {
-  const targetPath = String(path || "").trim();
-  if (!targetPath) return null;
-  const raw = await readTextFile(targetPath);
-  return deserializeSessionSnapshot(JSON.parse(raw));
-}
 
 function currentTabSwitchBlockReason({ allowReviewApply = false } = {}) {
   if (state.pointer?.active || state.gestureZoom?.active) return "manipulating_canvas";
@@ -40384,313 +38893,16 @@ function currentTabSwitchBlockMessage(reason = currentTabSwitchBlockReason()) {
   return "The current tab is busy.";
 }
 
-function ensureBootShellTab() {
-  if (tabbedSessions.tabsOrder.length) return tabbedSessions.getTab(tabbedSessions.activeTabId || tabbedSessions.tabsOrder[0]) || null;
-  const tabId = createTabId();
-  const session = createFreshTabSession();
-  const label = tabLabelForRunDir(null, `Run ${tabbedSessions.tabsOrder.length + 1}`);
-  const record = tabbedSessions.upsertTab(
-    {
-      tabId,
-      label,
-      runDir: null,
-      eventsPath: null,
-      session,
-      busy: false,
-      tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
-      thumbnailPath: session.tabUiMeta?.thumbnailPath || null,
-    },
-    { activate: true }
-  );
-  bindTabSessionToState(session);
-  publishActiveTabVisibleState({ reason: "boot_shell_tab" });
-  return record;
-}
-
 function captureActiveTabSession(session = null) {
-  const next = session && typeof session === "object" ? session : createFreshTabSession();
-  next.label = state.activeTabId ? tabbedSessions.getTab(state.activeTabId)?.label || next.label || null : next.label || null;
-  next.labelManual = Boolean(state.activeTabId ? tabbedSessions.getTab(state.activeTabId)?.labelManual : next.labelManual);
-  next.forkedFromTabId =
-    String(state.activeTabId ? tabbedSessions.getTab(state.activeTabId)?.forkedFromTabId || next.forkedFromTabId || "" : next.forkedFromTabId || "").trim() ||
-    null;
-  next.reviewFlowState = currentSessionTabReviewFlowState();
-  next.runDir = state.runDir || null;
-  next.eventsPath = state.eventsPath || null;
-  next.eventsByteOffset = Math.max(0, Number(state.eventsByteOffset) || 0);
-  next.eventsTail = String(state.eventsTail || "");
-  next.eventsDecoder = state.eventsDecoder instanceof TextDecoder ? state.eventsDecoder : new TextDecoder("utf-8");
-  next.fallbackToFullRead = Boolean(state.fallbackToFullRead);
-  next.fallbackLineOffset = Math.max(0, Number(fallbackLineOffset) || 0);
-  next.images = Array.isArray(state.images) ? state.images : [];
-  next.imagesById = state.imagesById instanceof Map ? state.imagesById : new Map();
-  next.imagePaletteSeed = Math.max(0, Number(state.imagePaletteSeed) || 0);
-  next.activeId = state.activeId ? String(state.activeId) : null;
-  next.selectedIds = Array.isArray(state.selectedIds) ? state.selectedIds.slice() : [];
-  next.timelineNodes = Array.isArray(state.timelineNodes) ? state.timelineNodes : [];
-  next.timelineNodesById = state.timelineNodesById instanceof Map ? state.timelineNodesById : new Map();
-  next.timelineHeadNodeId = state.timelineHeadNodeId ? String(state.timelineHeadNodeId) : null;
-  next.timelineLatestNodeId = state.timelineLatestNodeId ? String(state.timelineLatestNodeId) : null;
-  next.timelineNextSeq = Math.max(1, Number(state.timelineNextSeq) || 1);
-  next.timelineOpen = state.timelineOpen !== false;
-  next.canvasMode = String(state.canvasMode || "multi");
-  next.freeformRects = state.freeformRects instanceof Map ? state.freeformRects : new Map();
-  next.freeformZOrder = Array.isArray(state.freeformZOrder) ? state.freeformZOrder.slice() : [];
-  next.multiRects = state.multiRects instanceof Map ? state.multiRects : new Map();
-  next.view = state.view && typeof state.view === "object" ? { ...state.view } : { scale: 1, offsetX: 0, offsetY: 0 };
-  next.multiView =
-    state.multiView && typeof state.multiView === "object"
-      ? { ...state.multiView }
-      : { scale: 1, offsetX: 0, offsetY: 0 };
-  next.communication =
-    state.communication && typeof state.communication === "object" ? state.communication : createFreshCommunicationState();
-  next.designReviewApply = cloneDesignReviewApplyState(state.designReviewApply);
-  next.selection = state.selection && typeof state.selection === "object" ? state.selection : null;
-  next.lassoDraft = Array.isArray(state.lassoDraft) ? state.lassoDraft.slice() : [];
-  next.annotateDraft = state.annotateDraft && typeof state.annotateDraft === "object" ? state.annotateDraft : null;
-  next.annotateBox = state.annotateBox && typeof state.annotateBox === "object" ? state.annotateBox : null;
-  next.promptGenerateDraft =
-    state.promptGenerateDraft && typeof state.promptGenerateDraft === "object"
-      ? { ...state.promptGenerateDraft }
-      : { prompt: "", model: "" };
-  next.promptGenerateDraftAnchor =
-    state.promptGenerateDraftAnchor && typeof state.promptGenerateDraftAnchor === "object"
-      ? {
-          anchorCss: state.promptGenerateDraftAnchor.anchorCss ? { ...state.promptGenerateDraftAnchor.anchorCss } : null,
-          anchorWorldCss: state.promptGenerateDraftAnchor.anchorWorldCss
-            ? { ...state.promptGenerateDraftAnchor.anchorWorldCss }
-            : null,
-        }
-      : null;
-  next.customToolDraft =
-    state.customToolDraft && typeof state.customToolDraft === "object"
-      ? { ...state.customToolDraft }
-      : { name: "", description: "" };
-  next.toolRegistry =
-    sessionToolRegistry && typeof sessionToolRegistry.list === "function"
-      ? sessionToolRegistry
-      : createInSessionToolRegistry();
-  next.sessionTools = next.toolRegistry.list();
-  next.activeCustomToolId = state.activeCustomToolId ? String(state.activeCustomToolId) : null;
-  next.lastToolInvocation = state.lastToolInvocation ? cloneToolRuntimeValue(state.lastToolInvocation) : null;
-  next.toolInvocationSeq = Math.max(1, Number(state.toolInvocationSeq) || 1);
-  next.circleDraft = state.circleDraft && typeof state.circleDraft === "object" ? state.circleDraft : null;
-  next.circlesByImageId = state.circlesByImageId instanceof Map ? state.circlesByImageId : new Map();
-  next.activeCircle = state.activeCircle && typeof state.activeCircle === "object" ? state.activeCircle : null;
-  next.tripletRuleAnnotations =
-    state.tripletRuleAnnotations instanceof Map ? state.tripletRuleAnnotations : new Map();
-  next.tripletOddOneOutId = state.tripletOddOneOutId ? String(state.tripletOddOneOutId) : null;
-  next.tabPreviewState = normalizeTabPreviewState(state.tabPreviewState);
-  next.motherResultDetailsOpenId = state.motherResultDetailsOpenId ? String(state.motherResultDetailsOpenId) : null;
-  next.wheelMenu = {
-    open: false,
-    hideTimer: null,
-    anchorCss: state.wheelMenu?.anchorCss ? { ...state.wheelMenu.anchorCss } : null,
-    anchorWorld: state.wheelMenu?.anchorWorld ? { ...state.wheelMenu.anchorWorld } : null,
-  };
-  next.userEvents = Array.isArray(state.userEvents) ? state.userEvents : [];
-  next.userTelemetryEvents = Array.isArray(state.userTelemetryEvents) ? state.userTelemetryEvents : [];
-  next.userEventSeq = Math.max(0, Number(state.userEventSeq) || 0);
-  next.mother = state.mother && typeof state.mother === "object" ? state.mother : createTabMotherState();
-  next.motherIdle =
-    state.motherIdle && typeof state.motherIdle === "object" ? state.motherIdle : createTabMotherIdleState();
-  next.intent = state.intent && typeof state.intent === "object" ? state.intent : createTabIntentState();
-  next.intentAmbient =
-    state.intentAmbient && typeof state.intentAmbient === "object"
-      ? state.intentAmbient
-      : createTabIntentAmbientState();
-  next.alwaysOnVision =
-    state.alwaysOnVision && typeof state.alwaysOnVision === "object"
-      ? state.alwaysOnVision
-      : createTabAlwaysOnVisionState();
-  next.lastRecreatePrompt = state.lastRecreatePrompt ? String(state.lastRecreatePrompt) : null;
-  next.lastAction = state.lastAction ? String(state.lastAction) : null;
-  next.lastTipText = typeof state.lastTipText === "string" ? state.lastTipText : DEFAULT_TIP;
-  next.lastDirectorText = state.lastDirectorText ? String(state.lastDirectorText) : null;
-  next.lastDirectorMeta = state.lastDirectorMeta && typeof state.lastDirectorMeta === "object" ? state.lastDirectorMeta : null;
-  next.lastCostLatency = state.lastCostLatency && typeof state.lastCostLatency === "object" ? state.lastCostLatency : null;
-  next.sessionApiCalls = Math.max(0, Number(state.sessionApiCalls) || 0);
-  next.topMetrics = state.topMetrics && typeof state.topMetrics === "object" ? state.topMetrics : createTabTopMetricsState();
-  next.lastStatusText = String(state.lastStatusText || "Engine: idle");
-  next.lastStatusError = Boolean(state.lastStatusError);
-  next.juggernautShellRecentSuccessfulJobs = Array.isArray(state.juggernautShell?.singleImageRail?.recentSuccessfulJobs)
-    ? state.juggernautShell.singleImageRail.recentSuccessfulJobs.slice()
-    : [];
-  next.juggernautShellLastToolKey = String(state.juggernautShell?.lastToolKey || "");
-  next.tabUiMeta = buildActiveTabUiMeta(next.tabUiMeta);
-  return next;
+  return canvasAppTabSessionStateAdapter.captureActiveTabSession(session);
 }
 
 function bindTabSessionToState(session = null) {
-  const current = session && typeof session === "object" ? session : createFreshTabSession();
-  current.label = typeof current.label === "string" ? current.label : null;
-  current.labelManual = Boolean(current.labelManual);
-  current.reviewFlowState = normalizeSessionTabReviewFlowState(current.reviewFlowState);
-  state.desktopSessionBridgeActive = false;
-  state.runDir = current.runDir || null;
-  state.eventsPath = current.eventsPath || null;
-  state.eventsByteOffset = Math.max(0, Number(current.eventsByteOffset) || 0);
-  state.eventsTail = String(current.eventsTail || "");
-  state.eventsDecoder = current.eventsDecoder instanceof TextDecoder ? current.eventsDecoder : new TextDecoder("utf-8");
-  state.fallbackToFullRead = Boolean(current.fallbackToFullRead);
-  fallbackLineOffset = Math.max(0, Number(current.fallbackLineOffset) || 0);
-  state.images = Array.isArray(current.images) ? current.images : [];
-  state.imagesById = current.imagesById instanceof Map ? current.imagesById : new Map();
-  state.imagePaletteSeed = Math.max(0, Number(current.imagePaletteSeed) || 0);
-  state.activeId = current.activeId ? String(current.activeId) : null;
-  state.selectedIds = Array.isArray(current.selectedIds) ? current.selectedIds.slice() : [];
-  state.timelineNodes = Array.isArray(current.timelineNodes) ? current.timelineNodes : [];
-  state.timelineNodesById = current.timelineNodesById instanceof Map ? current.timelineNodesById : new Map();
-  state.timelineHeadNodeId = current.timelineHeadNodeId ? String(current.timelineHeadNodeId) : null;
-  state.timelineLatestNodeId = current.timelineLatestNodeId ? String(current.timelineLatestNodeId) : null;
-  state.timelineNextSeq = Math.max(1, Number(current.timelineNextSeq) || 1);
-  state.timelineOpen = current.timelineOpen !== false;
-  state.canvasMode = String(current.canvasMode || "multi");
-  state.freeformRects = current.freeformRects instanceof Map ? current.freeformRects : new Map();
-  state.freeformZOrder = Array.isArray(current.freeformZOrder) ? current.freeformZOrder.slice() : [];
-  state.multiRects = current.multiRects instanceof Map ? current.multiRects : new Map();
-  state.view =
-    current.view && typeof current.view === "object" ? current.view : { scale: 1, offsetX: 0, offsetY: 0 };
-  state.multiView =
-    current.multiView && typeof current.multiView === "object"
-      ? current.multiView
-      : { scale: 1, offsetX: 0, offsetY: 0 };
-  state.communication =
-    current.communication && typeof current.communication === "object"
-      ? current.communication
-      : createFreshCommunicationState();
-  state.designReviewApply = cloneDesignReviewApplyState(current.designReviewApply);
-  state.selection = current.selection && typeof current.selection === "object" ? current.selection : null;
-  state.lassoDraft = Array.isArray(current.lassoDraft) ? current.lassoDraft.slice() : [];
-  state.annotateDraft = current.annotateDraft && typeof current.annotateDraft === "object" ? current.annotateDraft : null;
-  state.annotateBox = current.annotateBox && typeof current.annotateBox === "object" ? current.annotateBox : null;
-  state.promptGenerateDraft =
-    current.promptGenerateDraft && typeof current.promptGenerateDraft === "object"
-      ? current.promptGenerateDraft
-      : { prompt: "", model: "" };
-  state.promptGenerateDraftAnchor =
-    current.promptGenerateDraftAnchor && typeof current.promptGenerateDraftAnchor === "object"
-      ? current.promptGenerateDraftAnchor
-      : null;
-  state.customToolDraft =
-    current.customToolDraft && typeof current.customToolDraft === "object"
-      ? current.customToolDraft
-      : { name: "", description: "" };
-  sessionToolRegistry =
-    current.toolRegistry && typeof current.toolRegistry.list === "function"
-      ? current.toolRegistry
-      : createInSessionToolRegistry();
-  state.sessionTools = Array.isArray(current.sessionTools) ? current.sessionTools : sessionToolRegistry.list();
-  state.activeCustomToolId = current.activeCustomToolId ? String(current.activeCustomToolId) : null;
-  state.lastToolInvocation = current.lastToolInvocation ? cloneToolRuntimeValue(current.lastToolInvocation) : null;
-  state.toolInvocationSeq = Math.max(1, Number(current.toolInvocationSeq) || 1);
-  state.circleDraft = current.circleDraft && typeof current.circleDraft === "object" ? current.circleDraft : null;
-  state.circlesByImageId = current.circlesByImageId instanceof Map ? current.circlesByImageId : new Map();
-  state.activeCircle = current.activeCircle && typeof current.activeCircle === "object" ? current.activeCircle : null;
-  state.tripletRuleAnnotations =
-    current.tripletRuleAnnotations instanceof Map ? current.tripletRuleAnnotations : new Map();
-  state.tripletOddOneOutId = current.tripletOddOneOutId ? String(current.tripletOddOneOutId) : null;
-  state.tabPreviewState = normalizeTabPreviewState(current.tabPreviewState);
-  state.tabPreviewDirty = !Boolean(state.tabPreviewState.valid);
-  state.pendingTabSwitchPreview = null;
-  state.motherResultDetailsOpenId = current.motherResultDetailsOpenId ? String(current.motherResultDetailsOpenId) : null;
-  state.wheelMenu =
-    current.wheelMenu && typeof current.wheelMenu === "object"
-      ? current.wheelMenu
-      : { open: false, hideTimer: null, anchorCss: null, anchorWorld: null };
-  state.userEvents = Array.isArray(current.userEvents) ? current.userEvents : [];
-  state.userTelemetryEvents = Array.isArray(current.userTelemetryEvents) ? current.userTelemetryEvents : [];
-  state.userEventSeq = Math.max(0, Number(current.userEventSeq) || 0);
-  state.mother = current.mother && typeof current.mother === "object" ? current.mother : createTabMotherState();
-  state.motherIdle =
-    current.motherIdle && typeof current.motherIdle === "object" ? current.motherIdle : createTabMotherIdleState();
-  state.intent = current.intent && typeof current.intent === "object" ? current.intent : createTabIntentState();
-  state.intentAmbient =
-    current.intentAmbient && typeof current.intentAmbient === "object"
-      ? current.intentAmbient
-      : createTabIntentAmbientState();
-  state.intentAmbient.enabled = false;
-  state.alwaysOnVision =
-    current.alwaysOnVision && typeof current.alwaysOnVision === "object"
-      ? current.alwaysOnVision
-      : createTabAlwaysOnVisionState();
-  state.alwaysOnVision.enabled = Boolean(settings.alwaysOnVision);
-  if (!state.alwaysOnVision.enabled && state.alwaysOnVision.rtState === "connecting") {
-    state.alwaysOnVision.rtState = "off";
-  }
-  state.lastRecreatePrompt = current.lastRecreatePrompt ? String(current.lastRecreatePrompt) : null;
-  state.lastAction = current.lastAction ? String(current.lastAction) : null;
-  state.lastTipText = typeof current.lastTipText === "string" ? current.lastTipText : DEFAULT_TIP;
-  state.lastDirectorText = current.lastDirectorText ? String(current.lastDirectorText) : null;
-  state.lastDirectorMeta = current.lastDirectorMeta && typeof current.lastDirectorMeta === "object" ? current.lastDirectorMeta : null;
-  state.lastCostLatency = current.lastCostLatency && typeof current.lastCostLatency === "object" ? current.lastCostLatency : null;
-  state.sessionApiCalls = Math.max(0, Number(current.sessionApiCalls) || 0);
-  state.topMetrics =
-    current.topMetrics && typeof current.topMetrics === "object" ? current.topMetrics : createTabTopMetricsState();
-  state.lastStatusText = String(current.lastStatusText || "Engine: idle");
-  state.lastStatusError = Boolean(current.lastStatusError);
-  state.juggernautShell.singleImageRail.recentSuccessfulJobs = Array.isArray(current.juggernautShellRecentSuccessfulJobs)
-    ? current.juggernautShellRecentSuccessfulJobs
-    : [];
-  state.juggernautShell.lastToolKey = String(current.juggernautShellLastToolKey || "");
-  current.tabUiMeta = normalizeTabUiMeta(current.tabUiMeta);
-  applyTabUiMetaToState(current.tabUiMeta);
-  state.imageMenuTargetId = null;
-  state.promptGenerateHoverCss = null;
-  state.effectTokenDrag = null;
-  state.motherOverlayUiHits = [];
-  state.activeImageTransformUiHits = [];
-  state.motherRolePreviewHoverImageId = null;
+  return canvasAppTabSessionStateAdapter.bindTabSessionToState(session);
 }
 
 function syncActiveTabRecord({ capture = false, publish = false } = {}) {
-  const tabId = String(state.activeTabId || "").trim();
-  if (!tabId) return null;
-  const record = tabbedSessions.getTab(tabId);
-  if (!record) return null;
-  const previousMetaSignature = tabUiMetaSignature(record.tabUiMeta);
-  const previousRunDir = record.runDir ? String(record.runDir) : null;
-  const previousLabel = record.label ? String(record.label) : null;
-  const previousBusy = Boolean(record.busy);
-  const previousThumbnailPath = record.thumbnailPath ? String(record.thumbnailPath) : null;
-  const previousReviewFlowState = normalizeSessionTabReviewFlowState(record.reviewFlowState);
-  if (capture) {
-    record.session = captureActiveTabSession(record.session);
-  }
-  const uiMeta = buildActiveTabUiMeta(record.tabUiMeta || record.session?.tabUiMeta);
-  record.tabUiMeta = uiMeta;
-  if (record.session && typeof record.session === "object") {
-    record.session.tabUiMeta = { ...uiMeta };
-  }
-  record.runDir = state.runDir || record.session?.runDir || record.runDir || null;
-  record.reviewFlowState = currentSessionTabReviewFlowState();
-  if (!record.labelManual) {
-    record.label = sessionTabAutomaticLabelForRecord(record, DEFAULT_UNTITLED_TAB_TITLE);
-  } else {
-    record.label = normalizeSessionTabTitleInput(record.label, SESSION_TAB_TITLE_MAX_LENGTH) || DEFAULT_UNTITLED_TAB_TITLE;
-  }
-  if (record.session && typeof record.session === "object") {
-    record.session.label = record.label;
-    record.session.labelManual = Boolean(record.labelManual);
-    record.session.reviewFlowState = record.reviewFlowState;
-  }
-  record.busy = Boolean(currentTabSwitchBlockReason());
-  record.thumbnailPath = uiMeta.thumbnailPath;
-  record.updatedAt = Date.now();
-  if (publish) {
-    const changed =
-      capture ||
-      previousMetaSignature !== tabUiMetaSignature(uiMeta) ||
-      previousRunDir !== record.runDir ||
-      previousLabel !== record.label ||
-      previousBusy !== Boolean(record.busy) ||
-      previousThumbnailPath !== record.thumbnailPath ||
-      previousReviewFlowState !== normalizeSessionTabReviewFlowState(record.reviewFlowState);
-    if (changed) {
-      tabbedSessions.upsertTab({ ...record }, { activate: false });
-    }
-  }
-  return record;
+  return canvasAppTabSessionStateAdapter.syncActiveTabRecord({ capture, publish });
 }
 
 function getTabsSnapshot(snapshot = null) {
@@ -40714,187 +38926,19 @@ function subscribeTabs(listener) {
 }
 
 function suspendActiveTabRuntimeForSwitch() {
-  const activeRunDir = String(state.runDir || "").trim();
-  void releaseLocalMagicSelectUiPrewarmForTab(state.activeTabId || null, {
-    reason: "tab_switch",
-  }).catch(() => {});
-  if (tabHydrationRaf && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
-    window.cancelAnimationFrame(tabHydrationRaf);
-  }
-  tabHydrationRaf = 0;
-  if (tabHydrationTimer) clearTimeout(tabHydrationTimer);
-  tabHydrationTimer = null;
-  if (tabHydrationIdle && typeof window !== "undefined" && typeof window.cancelIdleCallback === "function") {
-    window.cancelIdleCallback(tabHydrationIdle);
-  }
-  tabHydrationIdle = null;
-  tabHydrationToken += 1;
-  stopEventsPolling();
-  state.desktopSessionBridgeActive = false;
-  state.ptySpawned = false;
-  state.pollInFlight = false;
-  resetDescribeQueue({ clearPending: true });
-  stopIntentTicker();
-  clearTimeout(intentInferenceTimer);
-  intentInferenceTimer = null;
-  clearTimeout(intentInferenceTimeout);
-  intentInferenceTimeout = null;
-  clearTimeout(intentStateWriteTimer);
-  intentStateWriteTimer = null;
-  clearAmbientIntentTimers();
-  clearMotherIdleTimers({ first: true, takeover: true });
-  clearMotherIdleDispatchTimeout();
-  if (state.motherIdle) {
-    clearTimeout(state.motherIdle.cooldownTimer);
-    state.motherIdle.cooldownTimer = null;
-    clearTimeout(state.motherIdle.pendingIntentTimeout);
-    state.motherIdle.pendingIntentTimeout = null;
-    clearTimeout(state.motherIdle.pendingPromptCompileTimeout);
-    state.motherIdle.pendingPromptCompileTimeout = null;
-    clearTimeout(state.motherIdle.speculativePrefetchTimer);
-    state.motherIdle.speculativePrefetchTimer = null;
-    clearTimeout(state.motherIdle.liveProposalRefreshTimer);
-    state.motherIdle.liveProposalRefreshTimer = null;
-    clearTimeout(state.motherIdle.intentReplayTimer);
-    state.motherIdle.intentReplayTimer = null;
-    clearTimeout(state.motherIdle.pendingVisionRetryTimer);
-    state.motherIdle.pendingVisionRetryTimer = null;
-    clearTimeout(state.motherIdle.hintFadeTimer);
-    state.motherIdle.hintFadeTimer = null;
-  }
-  void Promise.allSettled([
-    invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_STOP}\n` }),
-    invoke("write_pty", { data: `${PTY_COMMANDS.INTENT_RT_MOTHER_STOP}\n` }),
-  ]).finally(() => {
-    if (!activeRunDir) return;
-    void stopDesktopSession(
-      tauriInvoke,
-      buildDesktopSessionStopRequest({ runDir: activeRunDir })
-    ).catch(() => {});
-  });
-  hideImageMenu();
-  hideAnnotatePanel();
-  hidePromptGeneratePanel();
-  hideCreateToolPanel();
-  hideMarkPanel();
-  if (els.communicationProposalTray) {
-    els.communicationProposalTray.classList.add("hidden");
-  }
-  closeMotherWheelMenu({ immediate: true });
-  if (els.timelineDock) els.timelineDock.classList.add("hidden");
-  if (state.wheelMenu) {
-    clearTimeout(state.wheelMenu.hideTimer);
-    state.wheelMenu.hideTimer = null;
-    state.wheelMenu.open = false;
-  }
+  return canvasAppTabActivationRuntime.suspendActiveTabRuntimeForSwitch();
 }
 
 function currentTabHydrationMatches(tabId, hydrationToken) {
-  const normalizedTabId = String(tabId || "").trim();
-  if (!normalizedTabId) return false;
-  return normalizedTabId === String(state.activeTabId || "").trim() && hydrationToken === tabHydrationToken;
+  return canvasAppTabActivationRuntime.currentTabHydrationMatches(tabId, hydrationToken);
 }
 
 function publishActiveTabVisibleState({ allowTabSwitchPreview = false, reason = "visible_state" } = {}) {
-  setRunInfo(state.runDir ? `Run: ${state.runDir}` : "No run");
-  setTip(state.lastTipText || DEFAULT_TIP);
-  setDirectorText(state.lastDirectorText, state.lastDirectorMeta);
-  updateEmptyCanvasHint();
-  syncTimelineDockVisibility();
-  requestRender({ allowTabSwitchPreview, reason });
+  return canvasAppTabActivationRuntime.publishActiveTabVisibleState({ allowTabSwitchPreview, reason });
 }
 
 function scheduleTabHydration(tabId, reason, { spawnEngine = false, engineFailureToast = true } = {}) {
-  const normalizedTabId = String(tabId || "").trim();
-  if (!normalizedTabId) return Promise.resolve(false);
-  const perfSample = startPerfSample("tab:deferred-hydration", {
-    reason,
-    spawnEngine: Boolean(spawnEngine),
-    tabId: normalizedTabId,
-  });
-  if (tabHydrationRaf && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
-    window.cancelAnimationFrame(tabHydrationRaf);
-  }
-  tabHydrationRaf = 0;
-  if (tabHydrationTimer) clearTimeout(tabHydrationTimer);
-  tabHydrationTimer = null;
-  if (tabHydrationIdle && typeof window !== "undefined" && typeof window.cancelIdleCallback === "function") {
-    window.cancelIdleCallback(tabHydrationIdle);
-  }
-  tabHydrationIdle = null;
-
-  const hydrationToken = ++tabHydrationToken;
-  const runHydration = async () => {
-    if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
-    return attachActiveTabRuntime({
-      tabId: normalizedTabId,
-      spawnEngine,
-      engineFailureToast,
-      reason,
-      hydrationToken,
-    });
-  };
-  const startHydration = () => {
-    if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) {
-      finishPerfSample(perfSample, "deferredHydrationMs", { stale: true, tabId: normalizedTabId });
-      return Promise.resolve(false);
-    }
-    if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
-      return new Promise((resolve) => {
-        tabHydrationIdle = window.requestIdleCallback(
-          () => {
-            tabHydrationIdle = null;
-            void runHydration()
-              .then((ok) => {
-                finishPerfSample(perfSample, "deferredHydrationMs", { tabId: normalizedTabId, ok: Boolean(ok) });
-                resolve(Boolean(ok));
-              })
-              .catch((err) => {
-                console.error("Deferred tab hydration failed:", err);
-                finishPerfSample(perfSample, "deferredHydrationMs", {
-                  error: err?.message || String(err || "deferred hydration failed"),
-                  ok: false,
-                  tabId: normalizedTabId,
-                });
-                resolve(false);
-              });
-          },
-          { timeout: TAB_HYDRATION_IDLE_TIMEOUT_MS }
-        );
-      });
-    }
-    return runHydration()
-      .then((ok) => {
-        finishPerfSample(perfSample, "deferredHydrationMs", { tabId: normalizedTabId, ok: Boolean(ok) });
-        return Boolean(ok);
-      })
-      .catch((err) => {
-        console.error("Deferred tab hydration failed:", err);
-        finishPerfSample(perfSample, "deferredHydrationMs", {
-          error: err?.message || String(err || "deferred hydration failed"),
-          ok: false,
-          tabId: normalizedTabId,
-        });
-        return false;
-      });
-  };
-  if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-    return new Promise((resolve) => {
-      tabHydrationRaf = window.requestAnimationFrame(() => {
-        tabHydrationRaf = 0;
-        tabHydrationTimer = setTimeout(() => {
-          tabHydrationTimer = null;
-          void startHydration().then((ok) => resolve(Boolean(ok)));
-        }, 0);
-      });
-    });
-  }
-  return new Promise((resolve) => {
-    tabHydrationTimer = setTimeout(() => {
-      tabHydrationTimer = null;
-      void startHydration().then((ok) => resolve(Boolean(ok)));
-    }, 0);
-  });
+  return canvasAppTabActivationRuntime.scheduleTabHydration(tabId, reason, { spawnEngine, engineFailureToast });
 }
 
 async function attachActiveTabRuntime({
@@ -40902,512 +38946,44 @@ async function attachActiveTabRuntime({
   spawnEngine: shouldSpawnEngine = false,
   engineFailureToast = true,
   reason = "tab_activate",
-  hydrationToken = tabHydrationToken,
+  hydrationToken,
 } = {}) {
-  const normalizedTabId = String(tabId || "").trim();
-  if (!normalizedTabId) return false;
-  if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
-  syncSessionToolsFromRegistry();
-  renderCreateToolPreview();
-  renderCustomToolDock();
-  renderSelectionMeta();
-  if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
-  renderFilmstrip();
-  chooseSpawnNodes();
-  renderSessionApiCallsReadout();
-  updateEmptyCanvasHint();
-  syncIntentModeClass();
-  syncJuggernautShellState();
-  applyRuntimeChromeVisibility({ source: reason });
-  renderMotherMoodStatus();
-  syncTimelineDockVisibility();
-  if (state.timelineOpen) {
-    renderTimeline();
-  }
-  requestRender();
-  if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
-  if (shouldSpawnEngine && state.runDir) {
-    const ok = await ensureEngineSpawned({ reason, showToastOnFailure: engineFailureToast });
-    if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
-    if (ok) setStatus("Engine: ready");
-  } else {
-    await syncActiveRunPtyBinding({ useCache: true });
-    if (!currentTabHydrationMatches(normalizedTabId, hydrationToken)) return false;
-    startEventsPolling();
-    renderSessionApiCallsReadout();
-  }
-  return true;
+  return canvasAppTabActivationRuntime.attachActiveTabRuntime({
+    tabId,
+    spawnEngine: shouldSpawnEngine,
+    engineFailureToast,
+    reason,
+    hydrationToken,
+  });
 }
 
 async function activateTab(tabId, { spawnEngine = false, reason = "tab_activate", engineFailureToast = true } = {}) {
-  const normalized = String(tabId || "").trim();
-  const perfSample = startPerfSample("tab:activate-fast-path", {
+  return canvasAppTabActivationRuntime.activateTab(tabId, {
+    spawnEngine,
     reason,
-    spawnEngine: Boolean(spawnEngine),
-    tabId: normalized,
+    engineFailureToast,
+    waitForHydration: Boolean(arguments[1]?.waitForHydration),
   });
-  const finalize = (result, detail = null) => {
-    finishPerfSample(perfSample, "activateTabFastPathMs", {
-      ...(detail && typeof detail === "object" ? detail : null),
-      activeTabId: state.activeTabId || null,
-      tabId: normalized,
-    });
-    return result;
-  };
-  if (!normalized) {
-    return finalize({ ok: false, reason: "missing_tab" }, { ok: false, reason: "missing_tab" });
-  }
-  const target = tabbedSessions.getTab(normalized);
-  if (!target) {
-    return finalize({ ok: false, reason: "missing_tab" }, { ok: false, reason: "missing_tab" });
-  }
-  const waitForHydration = Boolean(arguments[1]?.waitForHydration);
-  if (normalized === String(state.activeTabId || "").trim()) {
-    syncActiveTabPreviewRuntime();
-    publishActiveTabVisibleState();
-    syncLocalMagicSelectUiPrewarmTargets({
-      primaryImageId: state.activeId || null,
-      hoverImageId: null,
-      source: "communication_magic_select",
-    });
-    const hydration = scheduleTabHydration(normalized, reason, { spawnEngine, engineFailureToast });
-    if (waitForHydration) await hydration;
-    return finalize(
-      { ok: true, tabId: normalized, activeTabId: state.activeTabId || null, hydration },
-      { ok: true, sameTab: true }
-    );
-  }
-  const blockReason = currentTabSwitchBlockReason({ allowReviewApply: true });
-  if (blockReason) {
-    showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
-    return finalize(
-      { ok: false, reason: blockReason, activeTabId: state.activeTabId || null },
-      { ok: false, reason: blockReason }
-    );
-  }
-  if (state.activeTabId) {
-    suspendActiveTabRuntimeForSwitch();
-    syncActiveTabRecord({ capture: true, publish: true });
-  }
-  target.session = target.session || createFreshTabSession({ runDir: target.runDir || null, eventsPath: target.eventsPath || null });
-  bindTabSessionToState(target.session);
-  tabbedSessions.setActiveTab(normalized);
-  syncActiveTabPreviewRuntime();
-  syncActiveTabRecord({ capture: false, publish: true });
-  syncLocalMagicSelectUiPrewarmTargets({
-    primaryImageId: state.activeId || null,
-    hoverImageId: null,
-    source: "communication_magic_select",
-  });
-  publishActiveTabVisibleState({ allowTabSwitchPreview: true, reason });
-  const hydration = scheduleTabHydration(normalized, reason, { spawnEngine, engineFailureToast });
-  if (waitForHydration) await hydration;
-  return finalize(
-    {
-      ok: true,
-      tabId: normalized,
-      activeTabId: state.activeTabId || null,
-      hydration,
-    },
-    { ok: true, switched: true }
-  );
 }
 
 async function closeTab(tabId) {
-  const normalized = String(tabId || "").trim();
-  const snapshot = getTabsSnapshot();
-  if (!normalized) {
-    return { ok: false, reason: "missing_tab", tabs: snapshot.tabs };
-  }
-  const targetRecord = tabbedSessions.getTab(normalized) || null;
-  if (!targetRecord) {
-    return { ok: false, reason: "missing_tab", tabs: snapshot.tabs };
-  }
-  if (sessionTabHasRunningReviewApply(targetRecord)) {
-    showToast(currentTabSwitchBlockMessage("review_apply"), "tip", 2200);
-    return { ok: false, reason: "review_apply", tabs: snapshot.tabs };
-  }
-  if (tabbedSessions.tabsOrder.length <= 1) {
-    showToast("Keep one tab open in this build.", "tip", 2200);
-    return { ok: false, reason: "last_tab", tabs: snapshot.tabs };
-  }
-  if (String(sessionTabRenameState.tabId || "").trim() === normalized) {
-    resetSessionTabRenameState();
-  }
-  if (normalized === String(state.activeTabId || "").trim()) {
-    const blockReason = currentTabSwitchBlockReason();
-    if (blockReason) {
-      showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
-      return { ok: false, reason: blockReason, tabs: snapshot.tabs };
-    }
-    suspendActiveTabRuntimeForSwitch();
-    syncActiveTabRecord({ capture: true, publish: true });
-    const order = tabbedSessions.tabsOrder.slice();
-    const index = order.indexOf(normalized);
-    const remaining = order.filter((id) => id !== normalized);
-    const nextIndex = Math.max(0, Math.min(index, remaining.length - 1));
-    const nextActiveId = remaining[nextIndex] || remaining[remaining.length - 1] || null;
-    const nextTab = nextActiveId ? tabbedSessions.getTab(nextActiveId) || null : null;
-    if (nextTab) {
-      bindTabSessionToState(nextTab.session || createFreshTabSession({ runDir: nextTab.runDir || null }));
-    }
-    const closed = tabbedSessions.closeTab(normalized, { activateNeighbor: true });
-    if (closed?.nextActiveId) {
-      syncActiveTabPreviewRuntime();
-      publishActiveTabVisibleState({ allowTabSwitchPreview: true, reason: "close_tab" });
-      void scheduleTabHydration(closed.nextActiveId, "close_tab", { spawnEngine: false });
-    }
-    showToast(`Closed ${sessionTabDisplayLabel(closed?.closed, "tab")}.`, "tip", 1800);
-    const previewEntry = tabPreviewCache.get(normalized) || null;
-    if (previewEntry) {
-      tabPreviewCache.delete(normalized);
-      disposeTabPreviewCacheEntry(previewEntry);
-    }
-    return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: getTabsSnapshot().tabs };
-  }
-  const closed = tabbedSessions.closeTab(normalized, { activateNeighbor: false });
-  showToast(`Closed ${sessionTabDisplayLabel(closed?.closed, "tab")}.`, "tip", 1800);
-  const previewEntry = tabPreviewCache.get(normalized) || null;
-  if (previewEntry) {
-    tabPreviewCache.delete(normalized);
-    disposeTabPreviewCacheEntry(previewEntry);
-  }
-  return { ok: true, closedTabId: normalized, activeTabId: state.activeTabId || null, tabs: getTabsSnapshot().tabs };
+  return canvasAppTabLifecycleRuntime.closeTab(tabId);
 }
 
 async function forkActiveTab() {
-  const activeTabId = String(state.activeTabId || "").trim();
-  const activeTab = activeTabId ? tabbedSessions.getTab(activeTabId) : null;
-  if (!activeTabId || !activeTab) {
-    return { ok: false, reason: "missing_tab", activeTabId: state.activeTabId || null };
-  }
-  const blockReason = currentTabSwitchBlockReason();
-  if (blockReason) {
-    showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
-    return { ok: false, reason: blockReason, activeTabId: state.activeTabId || null };
-  }
-  if (String(sessionTabRenameState.tabId || "").trim() === activeTabId) {
-    commitSessionTabRename(activeTabId, sessionTabRenameState.draft);
-  }
-  syncActiveTabRecord({ capture: true, publish: true });
-  const sourceRecord = tabbedSessions.getTab(activeTabId) || activeTab;
-  const sourceLabel = sessionTabDisplayLabel(sourceRecord, DEFAULT_UNTITLED_TAB_TITLE);
-  const forkLabel = buildSessionTabForkLabel(sourceRecord);
-  const session = createForkedTabSession(sourceRecord.session || createFreshTabSession(), { label: forkLabel });
-  session.forkedFromTabId = activeTabId;
-  const tabId = createTabId();
-  const sourceIndex = tabbedSessions.tabsOrder.indexOf(activeTabId);
-  const insertIndex = sourceIndex >= 0 ? sourceIndex + 1 : tabbedSessions.tabsOrder.length;
-  tabbedSessions.upsertTab(
-    {
-      tabId,
-      label: forkLabel,
-      labelManual: true,
-      forkedFromTabId: activeTabId,
-      runDir: null,
-      eventsPath: null,
-      session,
-      busy: false,
-      reviewFlowState: session.reviewFlowState,
-      tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
-      thumbnailPath: session.tabUiMeta?.thumbnailPath || null,
-    },
-    { activate: false, index: insertIndex }
-  );
-  const activation = await activateTab(tabId, { spawnEngine: false, reason: "fork_tab" });
-  if (!activation?.ok) {
-    tabbedSessions.closeTab(tabId, { activateNeighbor: false });
-    return activation;
-  }
-  showToast(`Forked ${sourceLabel} into ${forkLabel}.`, "tip", 2600);
-  return {
-    ok: true,
-    tabId,
-    sourceTabId: activeTabId,
-    activeTabId: state.activeTabId || null,
-  };
+  return canvasAppTabLifecycleRuntime.forkActiveTab();
 }
 
 async function ensureRun() {
-  if (state.runDir) return;
-  const activeTabId = String(state.activeTabId || "").trim();
-  const activeTab = activeTabId ? tabbedSessions.getTab(activeTabId) : null;
-  if (!activeTabId || !activeTab) {
-    await createRun();
-    return;
-  }
-  setStatus("Engine: creating run…");
-  const payload = await invoke("create_run_dir");
-  state.installTelemetry.runSequence = (Number(state.installTelemetry.runSequence) || 0) + 1;
-  emitInstallTelemetryAsync("new_run_created", {
-    run_sequence: Number(state.installTelemetry.runSequence) || 1,
-    source: "active_tab_run",
-  });
-  state.installTelemetry.firstRunLogged = true;
-  const session = captureActiveTabSession(activeTab.session || createFreshTabSession());
-  session.runDir = payload.run_dir;
-  session.eventsPath = payload.events_path;
-  session.eventsByteOffset = 0;
-  session.eventsTail = "";
-  session.eventsDecoder = new TextDecoder("utf-8");
-  session.fallbackToFullRead = false;
-  session.fallbackLineOffset = 0;
-  bindTabSessionToState(session);
-  tabbedSessions.upsertTab(
-    {
-      ...activeTab,
-      tabId: activeTabId,
-      label: tabLabelForRunDir(payload.run_dir, activeTab.label || activeTabId),
-      runDir: payload.run_dir,
-      eventsPath: payload.events_path,
-      session,
-      busy: false,
-      tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
-      thumbnailPath: session.tabUiMeta?.thumbnailPath || null,
-    },
-    { activate: true, index: tabbedSessions.tabsOrder.indexOf(activeTabId) }
-  );
-  syncActiveTabRecord({ capture: false, publish: true });
-  setRunInfo(`Run: ${payload.run_dir}`);
-  await syncActiveRunPtyBinding();
-  startEventsPolling();
+  return canvasAppRunProvisioning.ensureRun();
 }
 
 async function createRun({ announce = true, source = "new_run" } = {}) {
-  const blockReason = currentTabSwitchBlockReason({ allowReviewApply: true });
-  if (blockReason) {
-    showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
-    return { ok: false, reason: blockReason };
-  }
-  const normalizedSource = String(source || "new_run").trim() || "new_run";
-  const showCreateRunToast = announce && normalizedSource !== "new_run" && normalizedSource !== "boot";
-  setStatus("Engine: creating run tab…");
-  const payload = await invoke("create_run_dir");
-  state.installTelemetry.runSequence = (Number(state.installTelemetry.runSequence) || 0) + 1;
-  emitInstallTelemetryAsync("new_run_created", {
-    run_sequence: Number(state.installTelemetry.runSequence) || 1,
-    source: normalizedSource,
-  });
-  state.installTelemetry.firstRunLogged = true;
-  const tabId = createTabId();
-  const session = createFreshTabSession({
-    runDir: payload.run_dir,
-    eventsPath: payload.events_path,
-  });
-  tabbedSessions.upsertTab(
-    {
-      tabId,
-      label: tabLabelForRunDir(payload.run_dir, `Run ${tabbedSessions.tabsOrder.length + 1}`),
-      runDir: payload.run_dir,
-      eventsPath: payload.events_path,
-      session,
-      busy: false,
-      tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
-      thumbnailPath: session.tabUiMeta?.thumbnailPath || null,
-    },
-    { activate: false }
-  );
-  const result = await activateTab(tabId, {
-    spawnEngine: true,
-    engineFailureToast: showCreateRunToast,
-    reason: "new_run_tab",
-  });
-  if (result?.hydration) await result.hydration;
-  return result;
+  return canvasAppRunProvisioning.createRun({ announce, source });
 }
 
 async function openExistingRun() {
-  bumpInteraction();
-  const blockReason = currentTabSwitchBlockReason({ allowReviewApply: true });
-  if (blockReason) {
-    showToast(currentTabSwitchBlockMessage(blockReason), "tip", 2200);
-    return { ok: false, reason: blockReason };
-  }
-  const selected = await open({ directory: true, multiple: false });
-  if (!selected) return { ok: false, reason: "cancelled" };
-  setStatus("Engine: opening run tab…");
-  const tabId = createTabId();
-  const defaultEventsPath = `${selected}/events.jsonl`;
-  let session = createFreshTabSession({
-    runDir: selected,
-    eventsPath: defaultEventsPath,
-  });
-  let restoredTimeline = null;
-  let restoredSnapshot = null;
-  const timelinePath = await sessionTimelinePathForRunDir(selected);
-  if (timelinePath && (await exists(timelinePath).catch(() => false))) {
-    try {
-      restoredTimeline = await loadSessionTimelineFromPath(timelinePath);
-      const restoredFromTimeline = restoreSessionFromTimelineRecord(restoredTimeline, {
-        runDir: selected,
-        eventsPath: defaultEventsPath,
-      });
-      if (restoredFromTimeline) {
-        session = restoredFromTimeline;
-      } else {
-        restoredTimeline = null;
-      }
-    } catch (error) {
-      console.warn("run session timeline restore failed", error);
-      showToast("Saved timeline could not be restored. Falling back to the session snapshot.", "tip", 3200);
-      restoredTimeline = null;
-    }
-  }
-  const snapshotPath = await sessionSnapshotPathForRunDir(selected);
-  const legacySnapshotPath = await legacySessionSnapshotPathForRunDir(selected);
-  if (!restoredTimeline && snapshotPath && (await exists(snapshotPath).catch(() => false))) {
-    try {
-      restoredSnapshot = await loadSessionSnapshotFromPath(snapshotPath);
-      if (restoredSnapshot?.session) {
-        session = restoredSnapshot.session;
-        session.runDir = selected;
-        session.eventsPath = session.eventsPath || defaultEventsPath;
-        if (!session.label && restoredSnapshot.label) {
-          session.label = String(restoredSnapshot.label);
-        }
-      }
-    } catch (error) {
-      console.warn("run session snapshot restore failed", error);
-      showToast("Saved session snapshot could not be restored. Falling back to run artifacts.", "tip", 3200);
-    }
-  }
-  if (!restoredTimeline && !restoredSnapshot && legacySnapshotPath && (await exists(legacySnapshotPath).catch(() => false))) {
-    try {
-      restoredSnapshot = await loadSessionSnapshotFromPath(legacySnapshotPath);
-      if (restoredSnapshot?.session) {
-        session = restoredSnapshot.session;
-        session.runDir = selected;
-        session.eventsPath = session.eventsPath || defaultEventsPath;
-        if (!session.label && restoredSnapshot.label) {
-          session.label = String(restoredSnapshot.label);
-        }
-      }
-    } catch (error) {
-      console.warn("legacy run session snapshot restore failed", error);
-      showToast("Legacy session snapshot could not be restored. Falling back to run artifacts.", "tip", 3200);
-    }
-  }
-  const tabLabel =
-    normalizeSessionTabTitleInput(readFirstString(restoredSnapshot?.label, session.label), SESSION_TAB_TITLE_MAX_LENGTH) ||
-    tabLabelForRunDir(selected, `Run ${tabbedSessions.tabsOrder.length + 1}`);
-  tabbedSessions.upsertTab(
-    {
-      tabId,
-      label: tabLabel,
-      labelManual: Boolean(session.labelManual),
-      runDir: session.runDir || selected,
-      eventsPath: session.eventsPath || defaultEventsPath,
-      session,
-      busy: false,
-      tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
-      thumbnailPath: session.tabUiMeta?.thumbnailPath || null,
-    },
-    { activate: false }
-  );
-  const activation = await activateTab(tabId, { spawnEngine: false, reason: "open_run_tab" });
-  if (!activation?.ok) return activation;
-  if (activation?.hydration) await activation.hydration;
-  if (restoredTimeline) {
-    showToast(`Opened ${tabLabel} from the saved session timeline.`, "tip", 3200);
-    return { ok: true, tabId, activeTabId: state.activeTabId || null, restoredTimeline: true };
-  }
-  if (restoredSnapshot?.session) {
-    showToast(`Opened ${tabLabel} from the saved session snapshot.`, "tip", 3200);
-    return { ok: true, tabId, activeTabId: state.activeTabId || null, restoredSnapshot: true };
-  }
-  await restoreIntentStateFromRunDir().catch(() => {});
-  const restoredArtifacts = await loadExistingArtifacts();
-  showToast(`Opened ${tabLabel} in a new tab${restoredArtifacts ? ` (${restoredArtifacts} artifacts)` : ""}.`, "tip", 3200);
-  return { ok: true, tabId, activeTabId: state.activeTabId || null };
-}
-
-async function loadExistingArtifacts() {
-  if (!state.runDir) return;
-  const entries = await readDir(state.runDir, { recursive: false }).catch(() => []);
-  let restored = 0;
-  for (const entry of entries) {
-    if (!entry?.name) continue;
-    if (!entry.name.startsWith("receipt-") || !entry.name.endsWith(".json")) continue;
-    const receiptPath = entry.path;
-    let payload = null;
-    try {
-      payload = JSON.parse(await readTextFile(receiptPath));
-    } catch {
-      continue;
-    }
-    const imagePath = payload?.artifacts?.image_path;
-    if (typeof imagePath !== "string" || !imagePath) continue;
-    const artifactId = entry.name.slice("receipt-".length).replace(/\.json$/, "");
-    addImage(
-      {
-        id: artifactId,
-        kind: "receipt",
-        path: imagePath,
-        receiptPath,
-        receiptMeta: extractReceiptMeta(payload),
-        receiptMetaChecked: true,
-        label: basename(imagePath),
-      },
-      { select: false }
-    );
-    restored += 1;
-  }
-  // Select latest.
-  if (state.images.length > 0 && !state.activeId) {
-    await setActiveImage(state.images[state.images.length - 1].id);
-  }
-  if (state.images.length > 1) {
-    setCanvasMode("multi");
-    setTip("Multiple photos loaded. Click a photo to focus it.");
-  }
-  return restored;
-}
-
-async function spawnEngine() {
-  if (!state.runDir || !state.eventsPath) return;
-  if (state.ptySpawning) return;
-  state.ptySpawning = true;
-  setStatus("Engine: starting…");
-  state.ptySpawned = false;
-  state.desktopSessionBridgeActive = false;
-  const preferredMode = "native";
-  try {
-    const response = await startDesktopSession(
-      tauriInvoke,
-      buildDesktopSessionStartRequest({
-        runDir: state.runDir,
-        memoryEnabled: settings.memory,
-      })
-    );
-    state.ptySpawned = Boolean(response?.runtime?.running);
-    cachePtyStatus(adaptDesktopSessionStatusResponse(response, state.runDir));
-    state.engineLaunchMode = response?.launch?.mode ? String(response.launch.mode) : "native";
-    state.engineLaunchPath = response?.launch?.label ? String(response.launch.label) : "unknown";
-    console.info(
-      `[brood] engine launch mode=${state.engineLaunchMode} path=${state.engineLaunchPath} preferred=${preferredMode}`
-    );
-    await writeCanvasRuntimePty(`${PTY_COMMANDS.TEXT_MODEL} ${settings.textModel}\n`).catch(() => {});
-    await writeCanvasRuntimePty(`${PTY_COMMANDS.IMAGE_MODEL} ${settings.imageModel}\n`).catch(() => {});
-    const active = getActiveImage();
-    if (active?.path) {
-      await writeCanvasRuntimePty(`${PTY_COMMANDS.USE} ${active.path}\n`).catch(() => {});
-    }
-    if (!state.ptySpawned) {
-      const detail = response?.detail || "native engine launch failed";
-      throw new Error(
-        `${detail}. Native engine launch failed; Python compatibility runtime is no longer available in desktop runtime.`
-      );
-    }
-    setStatus(`Engine: started (${state.engineLaunchMode})`);
-  } catch (err) {
-    console.error(err);
-    invalidatePtyStatusCache();
-    setStatus(`Engine: failed (${err?.message || err})`, true);
-  } finally {
-    state.ptySpawning = false;
-    await flushDeferredEnginePtyExit();
-    processActionQueue().catch(() => {});
-  }
+  return canvasAppRunProvisioning.openExistingRun();
 }
 
 function startEventsPolling() {
@@ -41440,39 +39016,6 @@ async function pollEventsFallback(pollToken = activeEventsPollToken) {
   if (pollToken !== activeEventsPollToken) return;
 }
 
-function isDesktopSessionUpdateActiveForRun(runDir) {
-  const activeRunDir = String(state.runDir || "").trim();
-  const pollRunDir = String(state.poller?.runDir || "").trim();
-  const nextRunDir = String(runDir || "").trim();
-  return Boolean(nextRunDir && nextRunDir === activeRunDir && nextRunDir === pollRunDir);
-}
-
-async function handleDesktopSessionBridgeUpdate(event) {
-  const update = unwrapDesktopSessionUpdate(event?.payload);
-  if (!update || !isDesktopSessionUpdateActiveForRun(update.runDir)) return;
-  if (update.kind === DESKTOP_SESSION_UPDATE_KINDS.STATUS) {
-    cachePtyStatus({
-      running: update?.runtime?.running === true || update?.runtime?.phase === "ready",
-      has_child: update?.runtime?.running === true || update?.runtime?.phase === "ready",
-      has_writer: update?.runtime?.running === true || update?.runtime?.phase === "ready",
-      pid: Number.isFinite(Number(update?.runtime?.pid)) ? Number(update.runtime.pid) : null,
-      automation_frontend_ready: false,
-      run_dir: update.runDir || null,
-      events_path: update.runDir ? `${update.runDir}/events.jsonl` : null,
-      launch_mode: update?.launch?.mode ? String(update.launch.mode) : null,
-      launch_label: update?.launch?.label ? String(update.launch.label) : null,
-      last_exit_detail:
-        update?.runtime?.phase === "stopped" && update?.detail ? String(update.detail) : null,
-      last_error:
-        update?.runtime?.phase === "error" && update?.detail ? String(update.detail) : null,
-    });
-    return;
-  }
-  if (update.kind === DESKTOP_SESSION_UPDATE_KINDS.EVENT && update.event) {
-    await handleEvent(update.event);
-  }
-}
-
 function handleMotherDesktopEvent(event) {
   return handleEventLegacy(event);
 }
@@ -41493,1604 +39036,148 @@ function handleRecreateDesktopEvent(event) {
   return handleEventLegacy(event);
 }
 
-let desktopEventHandlerMap = null;
+const desktopEventHandlerDeps = {
+  types: DESKTOP_EVENT_TYPES,
+  state,
+  MOTHER_IDLE_STATES,
+  MOTHER_V2_SINGLE_RESULT_GUARD_WINDOW_MS,
+  MOTHER_V2_INTENT_RT_TIMEOUT_MS,
+  MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_MAX,
+  REALTIME_VISION_LABEL_MAX_CHARS,
+  INTENT_FORCE_CHOICE_ENABLED,
+  INTENT_ROUNDS_ENABLED,
+  INTENT_TIMER_ENABLED,
+  INTENT_DEADLINE_MS,
+  bumpSessionApiCalls,
+  promptBenchmarkBindVersion,
+  motherEventVersionId,
+  motherIdleTrackVersionCreated,
+  appendMotherTraceLog,
+  motherV2MarkStale,
+  motherV2DispatchCompiledPrompt,
+  motherIdleHandleGenerationFailed,
+  motherV2CompilePromptLocal,
+  motherV2RoleMapClone,
+  motherV2NormalizeTransformationMode,
+  clamp,
+  getVisibleActiveId,
+  motherV2PromptCompileImageRows,
+  topMetricIngestRenderDuration,
+  ingestTopMetricsFromReceiptPath,
+  renderSessionApiCallsReadout,
+  handleCreateLayersArtifact,
+  finishCreateLayersFailure,
+  maybeEmitFirstAbilitySuccess,
+  removeFile,
+  promptBenchmarkMarkSuccessFromArtifactEvent,
+  motherV2DispatchInFlight,
+  motherIdleDispatchVersionMatches,
+  motherIdleRememberIgnoredVersion,
+  appendMotherSuggestionLog,
+  motherIdleHandleSuggestionArtifact,
+  restoreEngineImageModelIfNeeded,
+  setStatus,
+  updatePortraitIdle,
+  setImageFxActive,
+  renderMotherReadout,
+  renderQuickActions,
+  renderHudReadout,
+  processActionQueue,
+  motherIdleIsIgnoredVersion,
+  getActiveImage,
+  setTip,
+  showToast,
+  clearPendingReplace,
+  compositeAnnotateBoxEdit,
+  replaceImageInPlace,
+  recordTimelineNode,
+  basename,
+  consumeEffectToken,
+  clearEffectTokenForImageId,
+  removeImageFromCanvas,
+  requestRender,
+  recoverEffectTokenApply,
+  seedPromptGeneratePlacementRectCss,
+  addImage,
+  promptBenchmarkMarkFailureFromGenerationFailedEvent,
+  clearMotherIdleDispatchTimeout,
+  motherIdlePickRetryModel,
+  motherPreferredGenerationModel,
+  motherIdleResetDispatchCorrelation,
+  motherIdleDispatchGeneration,
+  maybeEmitFirstAbilityFail,
+  telemetryClassifyErrorCode,
+  resetActionQueue,
+  chooseSpawnNodes,
+  promptBenchmarkAttachCostLatencyEvent,
+  topMetricIngestCost,
+  topMetricIngestRealtimeCostFromPayload,
+  updateAlwaysOnVisionReadout,
+  isOpenAiRealtimeSignal,
+  markOpenAiRealtimePortraitActivity,
+  classifyIntentIconsRouting,
+  clearAmbientIntentPending,
+  motherV2ArmRealtimeIntentTimeout,
+  parseIntentIconsJsonDetailed,
+  intentIconsPayloadChecksum,
+  intentIconsPayloadSafeSnippet,
+  appendIntentTrace,
+  extractIntentImageDescriptions,
+  _normalizeVisionLabel,
+  intentModeActive,
+  scheduleVisualPromptWrite,
+  rebuildAmbientIntentSuggestions,
+  motherV2IntentPayload,
+  motherV2IntentFromRealtimeIcons,
+  motherV2MaybeTransformationMode,
+  motherV2ApplyIntent,
+  pickSuggestedIntentBranch,
+  pickDefaultIntentFocusBranchId,
+  ensureIntentFallbackIconState,
+  scheduleIntentStateWrite,
+  clearIntentInferenceTimeout() {
+    clearTimeout(intentInferenceTimeout);
+    intentInferenceTimeout = null;
+  },
+  clearIntentAmbientInferenceTimeout() {
+    clearTimeout(intentAmbientInferenceTimeout);
+    intentAmbientInferenceTimeout = null;
+  },
+  motherV2ClearIntentRealtimeBusy,
+  nextMotherRealtimeIntentFailureAction,
+  motherV2RetryRealtimeIntentTransport,
+  applyAmbientIntentFallback,
+  pickSuggestedIntentBranchId,
+  intentRemainingMs,
+  scheduleIntentInference,
+  consumePendingEffectExtraction,
+  resolveExtractionEventImageIdByPath,
+  createOrUpdateEffectToken,
+  suppressReelDnaToasts,
+  clampText,
+  setDirectorText,
+};
+
+const desktopEventRouter = createCanvasAppDesktopEventRouter({
+  types: DESKTOP_EVENT_TYPES,
+  deps: desktopEventHandlerDeps,
+  beforeHandleEvent(event, eventType) {
+    if (eventType && eventType !== DESKTOP_EVENT_TYPES.ARTIFACT_CREATED) {
+      topMetricIngestTokensFromPayload(event, { atMs: Date.now(), render: false });
+    }
+  },
+});
+
 function getDesktopEventHandlerMap() {
-  if (desktopEventHandlerMap) return desktopEventHandlerMap;
-  desktopEventHandlerMap = createDesktopEventHandlerMap(DESKTOP_EVENT_TYPES, {
-    onMother: handleMotherDesktopEvent,
-    onArtifact: handleArtifactDesktopEvent,
-    onIntent: handleIntentDesktopEvent,
-    onDiagnostics: handleDiagnosticsDesktopEvent,
-    onRecreate: handleRecreateDesktopEvent,
-  });
-  return desktopEventHandlerMap;
+  return desktopEventRouter.getDesktopEventHandlerMap();
 }
 
 async function handleEvent(event) {
-  if (!event || typeof event !== "object") return;
-  const type = String(event.type || "");
-  const handler = getDesktopEventHandlerMap().get(type);
-  if (!handler) return;
-  await handler(event);
+  await desktopEventRouter.handleEvent(event);
 }
 
 async function handleEventLegacy(event) {
-  if (!event || typeof event !== "object") return;
-  const eventType = String(event.type || "");
-  if (eventType && eventType !== DESKTOP_EVENT_TYPES.ARTIFACT_CREATED) {
-    topMetricIngestTokensFromPayload(event, { atMs: Date.now(), render: false });
-  }
-  if (eventType === DESKTOP_EVENT_TYPES.PLAN_PREVIEW) {
-    const cached = Boolean(event?.plan && event.plan.cached);
-    if (!cached) bumpSessionApiCalls();
-    return;
-  }
-  if (eventType === DESKTOP_EVENT_TYPES.VERSION_CREATED) {
-    promptBenchmarkBindVersion(motherEventVersionId(event));
-    motherIdleTrackVersionCreated(event);
-    return;
-  }
-  if (eventType === DESKTOP_EVENT_TYPES.MOTHER_INTENT_INFERRED) {
-    appendMotherTraceLog({
-      kind: "intent_inferred_ignored",
-      traceId: state.motherIdle?.telemetry?.traceId || null,
-      actionVersion: Number(state.motherIdle?.actionVersion) || 0,
-      reason: "heuristic_intent_disabled",
-      source: event.source ? String(event.source) : null,
-    }).catch(() => {});
-    return;
-  }
-  if (eventType === DESKTOP_EVENT_TYPES.MOTHER_INTENT_INFER_FAILED) {
-    appendMotherTraceLog({
-      kind: "intent_infer_failed_ignored",
-      traceId: state.motherIdle?.telemetry?.traceId || null,
-      actionVersion: Number(state.motherIdle?.actionVersion) || 0,
-      reason: "heuristic_intent_disabled",
-      source: event.source ? String(event.source) : null,
-    }).catch(() => {});
-    return;
-  }
-  if (eventType === DESKTOP_EVENT_TYPES.MOTHER_PROMPT_COMPILED) {
-    const idle = state.motherIdle;
-    if (!idle) return;
-    const actionVersion = Number(event.action_version) || 0;
-    if (actionVersion !== (Number(idle.actionVersion) || 0)) {
-      motherV2MarkStale({
-        stage: "prompt_compiled",
-        event_action_version: actionVersion,
-      });
-      return;
-    }
-    // Ignore late compile results after local fallback dispatch (prevents duplicate generation requests).
-    if (!idle.pendingPromptCompile || idle.pendingGeneration || Boolean(idle.pendingDispatchToken)) {
-      let dispatchSkipReason = "unknown";
-      if (!idle.pendingPromptCompile) {
-        dispatchSkipReason = "pending_prompt_compile_false";
-      } else if (idle.pendingGeneration) {
-        dispatchSkipReason = "pending_generation_true";
-      } else if (Boolean(idle.pendingDispatchToken)) {
-        dispatchSkipReason = "pending_dispatch_token_active";
-      }
-      appendMotherTraceLog({
-        kind: "prompt_compiled_dispatch_skipped",
-        traceId: idle.telemetry?.traceId || null,
-        actionVersion,
-        reason: dispatchSkipReason,
-        pending_prompt_compile: Boolean(idle.pendingPromptCompile),
-        pending_generation: Boolean(idle.pendingGeneration),
-        pending_dispatch_token: Number(idle.pendingDispatchToken) || 0,
-      }).catch(() => {});
-      return;
-    }
-    await motherV2DispatchCompiledPrompt(event.compiled || {}).catch((err) => {
-      motherIdleHandleGenerationFailed(err?.message || "Mother prompt compile dispatch failed.");
-    });
-    return;
-  }
-  if (eventType === DESKTOP_EVENT_TYPES.MOTHER_PROMPT_COMPILE_FAILED) {
-    const idle = state.motherIdle;
-    if (!idle) return;
-    if (!idle.pendingPromptCompile) return;
-    idle.pendingPromptCompile = false;
-    const compileWasSpeculative = Boolean(idle.pendingPromptCompileSpeculative);
-    idle.pendingPromptCompileSpeculative = false;
-    idle.pendingPromptCompilePath = null;
-    clearTimeout(idle.pendingPromptCompileTimeout);
-    idle.pendingPromptCompileTimeout = null;
-    if ((Number(idle.pendingActionVersion) || 0) !== (Number(idle.actionVersion) || 0)) {
-      motherV2MarkStale({ stage: "prompt_compile_failed" });
-      return;
-    }
-    const compiled = motherV2CompilePromptLocal({
-      action_version: Number(idle.actionVersion) || 0,
-      intent: idle.intent || null,
-      roles: motherV2RoleMapClone(),
-      transformation_mode: motherV2NormalizeTransformationMode(idle.intent?.transformation_mode),
-      intensity: clamp(Number(idle.intensity) || 62, 0, 100),
-      active_id: getVisibleActiveId() || null,
-      images: motherV2PromptCompileImageRows(),
-    });
-    idle.pendingPromptCompileSpeculative = compileWasSpeculative;
-    await motherV2DispatchCompiledPrompt(compiled).catch((err) => {
-      motherIdleHandleGenerationFailed(err?.message || "Mother prompt compile fallback failed.");
-    });
-    return;
-  }
-  if (eventType === DESKTOP_EVENT_TYPES.ARTIFACT_CREATED) {
-    const id = event.artifact_id;
-    const path = event.image_path;
-    if (!id || !path) return;
-    const eventMetrics = event.metrics && typeof event.metrics === "object" ? event.metrics : null;
-    if (eventMetrics) {
-      topMetricIngestRenderDuration(eventMetrics.latency_per_image_s);
-    }
-    if (event.receipt_path) {
-      ingestTopMetricsFromReceiptPath(event.receipt_path, {
-        allowCostFallback: false,
-        allowLatencyFallback: !eventMetrics,
-      }).catch(() => {});
-    }
-    renderSessionApiCallsReadout();
-    if (state.pendingCreateLayers) {
-      const handledCreateLayers = await handleCreateLayersArtifact(event).catch((err) => {
-        console.error(err);
-        finishCreateLayersFailure(`Create Layers failed (${err?.message || err}).`);
-        return true;
-      });
-      if (handledCreateLayers) {
-        maybeEmitFirstAbilitySuccess({
-          source: "artifact_created",
-          route: "create_layers",
-          action: String(state.lastAction || "unknown"),
-        });
-        return;
-      }
-    }
-    const idleForCancel = state.motherIdle;
-    const noForegroundPendingForCancel =
-      !state.pendingReplace &&
-      !state.pendingBlend &&
-      !state.pendingSwapDna &&
-      !state.pendingBridge &&
-      !state.pendingCreateLayers &&
-      !state.pendingExtractDna &&
-      !state.pendingSoulLeech &&
-      !state.pendingExtractRule &&
-      !state.pendingOddOneOut &&
-      !state.pendingTriforce &&
-      !state.pendingRecast &&
-      !state.pendingPromptGenerate &&
-      !state.pendingRecreate;
-    if (
-      idleForCancel &&
-      Date.now() < (Number(idleForCancel.cancelArtifactUntil) || 0) &&
-      noForegroundPendingForCancel &&
-      String(state.lastAction || "") === "Mother Suggestion"
-    ) {
-      appendMotherTraceLog({
-        kind: "discard_artifact_after_cancel",
-        traceId: idleForCancel.telemetry?.traceId || null,
-        actionVersion: Number(idleForCancel.actionVersion) || 0,
-        image_id: String(id),
-        image_path: String(path),
-        reason: idleForCancel.cancelArtifactReason || "cancel",
-      }).catch(() => {});
-      removeFile(path).catch(() => {});
-      if (event.receipt_path) removeFile(event.receipt_path).catch(() => {});
-      return;
-    }
-    const eventVersionId = motherEventVersionId(event);
-    if (eventVersionId) {
-      promptBenchmarkMarkSuccessFromArtifactEvent(event);
-    }
-    const motherDispatchInFlight =
-      motherV2DispatchInFlight(state.motherIdle) &&
-      !state.pendingReplace &&
-      !state.pendingBlend &&
-      !state.pendingSwapDna &&
-      !state.pendingBridge &&
-      !state.pendingCreateLayers &&
-      !state.pendingExtractDna &&
-      !state.pendingSoulLeech &&
-      !state.pendingExtractRule &&
-      !state.pendingOddOneOut &&
-      !state.pendingTriforce &&
-      !state.pendingRecast &&
-      !state.pendingPromptGenerate &&
-      !state.pendingRecreate;
-    if (motherDispatchInFlight && !motherIdleDispatchVersionMatches(eventVersionId)) {
-      if (eventVersionId) motherIdleRememberIgnoredVersion(eventVersionId);
-      appendMotherSuggestionLog({
-        stage: "out_of_band_result_ignored",
-        request_id: state.motherIdle?.pendingSuggestionLog?.request_id || null,
-        expected_version_id: state.motherIdle?.pendingVersionId || null,
-        ignored_version_id: eventVersionId,
-        ignored_image_id: String(id),
-        ignored_image_path: String(path),
-        ignored_receipt_path: event.receipt_path ? String(event.receipt_path) : null,
-      }).catch(() => {});
-      console.warn("[mother_suggestion] ignored out-of-band artifact during active dispatch", {
-        expected_version_id: state.motherIdle?.pendingVersionId || null,
-        ignored_version_id: eventVersionId,
-        ignored_image_id: String(id),
-      });
-      removeFile(path).catch(() => {});
-      if (event.receipt_path) removeFile(event.receipt_path).catch(() => {});
-      return;
-    }
-    if (motherDispatchInFlight) {
-      const handled = await motherIdleHandleSuggestionArtifact({
-        id,
-        path,
-        receiptPath: event.receipt_path || null,
-        versionId: eventVersionId,
-      }).catch((err) => {
-        console.error(err);
-        return false;
-      });
-      if (handled) {
-        maybeEmitFirstAbilitySuccess({
-          source: "artifact_created",
-          route: "mother_suggestion",
-          action: String(state.lastAction || "Mother Suggestion"),
-        });
-        state.expectingArtifacts = false;
-        restoreEngineImageModelIfNeeded();
-        setStatus("Engine: ready");
-        updatePortraitIdle();
-        setImageFxActive(false);
-        renderMotherReadout();
-        renderQuickActions();
-        renderHudReadout();
-        processActionQueue().catch(() => {});
-        return;
-      }
-    }
-    if (eventVersionId && motherIdleIsIgnoredVersion(eventVersionId)) {
-      appendMotherSuggestionLog({
-        stage: "late_result_ignored",
-        ignored_version_id: eventVersionId,
-        ignored_image_id: String(id),
-        ignored_image_path: String(path),
-        ignored_receipt_path: event.receipt_path ? String(event.receipt_path) : null,
-      }).catch(() => {});
-      console.warn("[mother_suggestion] ignored late artifact from blocked version", {
-        ignored_version_id: eventVersionId,
-        ignored_image_id: String(id),
-      });
-      removeFile(path).catch(() => {});
-      if (event.receipt_path) removeFile(event.receipt_path).catch(() => {});
-      return;
-    }
-    const motherIdle = state.motherIdle || null;
-    const noForegroundPending =
-      !state.pendingReplace &&
-      !state.pendingBlend &&
-      !state.pendingSwapDna &&
-      !state.pendingBridge &&
-      !state.pendingCreateLayers &&
-      !state.pendingExtractDna &&
-      !state.pendingSoulLeech &&
-      !state.pendingExtractRule &&
-      !state.pendingOddOneOut &&
-      !state.pendingTriforce &&
-      !state.pendingRecast &&
-      !state.pendingPromptGenerate &&
-      !state.pendingRecreate;
-    const motherSingleSuggestionGuard =
-      !motherDispatchInFlight &&
-      motherIdle?.phase === MOTHER_IDLE_STATES.WAITING_FOR_USER &&
-      Boolean(motherIdle?.generatedImageId) &&
-      Boolean(motherIdle?.hasGeneratedSinceInteraction) &&
-      noForegroundPending &&
-      String(state.lastAction || "") === "Mother Suggestion" &&
-      Date.now() <= (Number(motherIdle?.lastSuggestionAt) || 0) + MOTHER_V2_SINGLE_RESULT_GUARD_WINDOW_MS;
-    if (motherSingleSuggestionGuard && String(id) !== String(motherIdle.generatedImageId)) {
-      appendMotherSuggestionLog({
-        stage: "extra_result_ignored",
-        retained_image_id: String(motherIdle.generatedImageId || ""),
-        ignored_image_id: String(id),
-        ignored_image_path: String(path),
-        ignored_receipt_path: event.receipt_path ? String(event.receipt_path) : null,
-      }).catch(() => {});
-      console.info("[mother_suggestion] ignored extra artifact", {
-        retained_image_id: String(motherIdle.generatedImageId || ""),
-        ignored_image_id: String(id),
-      });
-      removeFile(path).catch(() => {});
-      if (event.receipt_path) removeFile(event.receipt_path).catch(() => {});
-      state.expectingArtifacts = false;
-      restoreEngineImageModelIfNeeded();
-      setStatus("Engine: ready");
-      updatePortraitIdle();
-      setImageFxActive(false);
-      renderQuickActions();
-      renderHudReadout();
-      processActionQueue().catch(() => {});
-      return;
-    }
-    const blend = state.pendingBlend;
-    const swapDna = state.pendingSwapDna;
-    const bridge = state.pendingBridge;
-    const triforce = state.pendingTriforce;
-    const recast = state.pendingRecast;
-    const promptGenerate = state.pendingPromptGenerate;
-    const recreate = state.pendingRecreate;
-    const pending = state.pendingReplace;
-
-    const wasBlend = Boolean(blend);
-    const wasSwapDna = Boolean(swapDna);
-    const wasBridge = Boolean(bridge);
-    const wasTriforce = Boolean(triforce);
-    const wasRecast = Boolean(recast);
-    const wasPromptGenerate = Boolean(promptGenerate);
-    const wasRecreate = Boolean(recreate);
-    const wasMultiGenAction = wasBlend || wasSwapDna || wasBridge || wasTriforce;
-
-    // Timeline metadata for this newly created artifact.
-    let timelineAction = state.lastAction || null;
-    let timelineParents = [];
-    if (blend?.sourceIds?.length) {
-      timelineAction = "Combine";
-      timelineParents = blend.sourceIds.map((src) => state.imagesById.get(src)?.timelineNodeId).filter(Boolean);
-    } else if (swapDna?.structureId && swapDna?.surfaceId) {
-      timelineAction = "Swap DNA";
-      timelineParents = [swapDna.structureId, swapDna.surfaceId]
-        .map((src) => state.imagesById.get(src)?.timelineNodeId)
-        .filter(Boolean);
-    } else if (bridge?.sourceIds?.length) {
-      timelineAction = "Bridge";
-      timelineParents = bridge.sourceIds.map((src) => state.imagesById.get(src)?.timelineNodeId).filter(Boolean);
-    } else if (triforce?.sourceIds?.length) {
-      timelineAction = "Triforce";
-      timelineParents = triforce.sourceIds.map((src) => state.imagesById.get(src)?.timelineNodeId).filter(Boolean);
-    } else if (recast?.sourceId) {
-      timelineAction = "Recast";
-      const parent = state.imagesById.get(recast.sourceId)?.timelineNodeId || null;
-      timelineParents = parent ? [parent] : [];
-    } else if (wasPromptGenerate) {
-      timelineAction = "Prompt Generate";
-      timelineParents = [];
-    } else {
-      const activeParent = getActiveImage()?.timelineNodeId || null;
-      timelineParents = activeParent ? [activeParent] : [];
-    }
-    if (wasBlend) {
-      state.pendingBlend = null;
-      setTip("Combine complete. Output selected.");
-      showToast("Combine complete.", "tip", 2400);
-    }
-    if (wasSwapDna) {
-      state.pendingSwapDna = null;
-      setTip("Swap DNA complete. Output selected.");
-      showToast("Swap DNA complete.", "tip", 2400);
-    }
-    if (wasBridge) {
-      state.pendingBridge = null;
-      setTip("Bridge complete. Output selected.");
-      showToast("Bridge complete.", "tip", 2400);
-    }
-    if (wasTriforce) {
-      state.pendingTriforce = null;
-      setTip("Triforce complete. Output selected.");
-      showToast("Triforce complete.", "tip", 2400);
-    }
-    if (wasRecast) {
-      state.pendingRecast = null;
-      setTip("Recast complete. Output selected.");
-      showToast("Recast complete.", "tip", 2400);
-    }
-    if (wasPromptGenerate) {
-      state.pendingPromptGenerate = null;
-      setTip("Prompt Generate complete. Output selected.");
-      showToast("Prompt Generate complete.", "tip", 2400);
-    }
-    if (pending?.targetId) {
-      const targetId = pending.targetId;
-      const mode = pending.mode ? String(pending.mode) : "";
-      const box = pending.box || null;
-      const instruction = pending.instruction || null;
-      const actionLabel = pending.label || timelineAction || "Edit";
-      const parentNodeId = state.imagesById.get(targetId)?.timelineNodeId || null;
-      const effectTokenId = mode === "effect_token_apply" ? String(pending.effect_token_id || "").trim() : "";
-      const effectTokenDispatchId = Number(pending.effect_token_dispatch_id) || 0;
-      clearPendingReplace();
-      if (mode === "annotate_box") {
-        const cropPath = pending.cropPath || null;
-        const ok = await compositeAnnotateBoxEdit(targetId, path, { box, instruction }).catch((err) => {
-          console.error(err);
-          return false;
-        });
-        // Clean up intermediate artifacts so they don't surface as "weird" partial images
-        // in the filmstrip when the run is reopened.
-        if (cropPath) {
-          removeFile(cropPath).catch(() => {});
-        }
-        if (ok) {
-          removeFile(path).catch(() => {});
-          if (event.receipt_path) removeFile(event.receipt_path).catch(() => {});
-        }
-        if (!ok) {
-          showToast("Annotate failed to apply the box edit.", "error", 3600);
-        }
-      } else {
-        const ok = await replaceImageInPlace(targetId, {
-          path,
-          receiptPath: event.receipt_path || null,
-          kind: "engine",
-        }).catch((err) => {
-          console.error(err);
-          return false;
-        });
-        if (ok) {
-          const nodeId = recordTimelineNode({
-            imageId: targetId,
-            path,
-            receiptPath: event.receipt_path || null,
-            label: basename(path),
-            action: actionLabel,
-            kind: "image_result",
-            visualMode: "thumbnail",
-            parents: parentNodeId ? [parentNodeId] : [],
-            previewImageId: targetId,
-            previewPath: path,
-            receiptPaths: event.receipt_path ? [event.receipt_path] : [],
-          });
-          const item = state.imagesById.get(targetId) || null;
-          if (item && nodeId) item.timelineNodeId = nodeId;
-          if (effectTokenId) {
-            const token = state.effectTokensById.get(effectTokenId) || null;
-            const sourceImageId = String(token?.sourceImageId || pending.source_image_id || "").trim();
-            if (token) {
-              consumeEffectToken(token);
-              clearEffectTokenForImageId(sourceImageId);
-            } else if (sourceImageId) {
-              clearEffectTokenForImageId(sourceImageId);
-            }
-            if (sourceImageId && sourceImageId !== targetId) {
-              await removeImageFromCanvas(sourceImageId).catch(() => {});
-            }
-            state.effectTokenApplyLocks.delete(effectTokenId);
-            showToast("Effect consumed.", "tip", 1800);
-            requestRender();
-          }
-        } else if (effectTokenId) {
-          const token = state.effectTokensById.get(effectTokenId) || null;
-          state.effectTokenApplyLocks.delete(effectTokenId);
-          if (token) recoverEffectTokenApply(token);
-          requestRender();
-        }
-      }
-    } else {
-      if (wasPromptGenerate) {
-        seedPromptGeneratePlacementRectCss(id, promptGenerate);
-      }
-      addImage(
-        {
-          id,
-          kind: "engine",
-          path,
-          receiptPath: event.receipt_path || null,
-          label: basename(path),
-          timelineAction,
-          timelineParents,
-        },
-        { select: state.expectingArtifacts || !state.activeId }
-      );
-    }
-
-    // After multi-image generations (Combine / Swap DNA / Bridge / Triforce), show only the output
-    // image on the canvas and collapse the run to the output (source images removed from the filmstrip).
-    // Keep multi canvas active so the resulting image remains draggable/resizable.
-    if (wasMultiGenAction) {
-      const sourceIds = [];
-      if (blend?.sourceIds?.length) sourceIds.push(...blend.sourceIds);
-      if (swapDna?.structureId) sourceIds.push(swapDna.structureId);
-      if (swapDna?.surfaceId) sourceIds.push(swapDna.surfaceId);
-      if (bridge?.sourceIds?.length) sourceIds.push(...bridge.sourceIds);
-      if (triforce?.sourceIds?.length) sourceIds.push(...triforce.sourceIds);
-
-      const outputId = String(id);
-      for (const srcId of Array.from(new Set(sourceIds.map((v) => String(v || "").trim())))) {
-        if (!srcId || srcId === outputId) continue;
-        await removeImageFromCanvas(srcId).catch(() => {});
-      }
-    }
-
-    // For Recast, keep only the output on canvas while preserving multi-canvas interactions.
-    if (wasRecast) {
-      const outputId = String(id);
-      const removeIds = Array.from(new Set((state.images || []).map((item) => String(item?.id || "")).filter(Boolean)))
-        .filter((imageId) => imageId !== outputId);
-      for (const imageId of removeIds) {
-        await removeImageFromCanvas(imageId).catch(() => {});
-      }
-    }
-
-    // Same workflow for Variations/Recreate: keep only the new artifact while preserving multi mode.
-    if (wasRecreate) {
-      const outputId = String(id);
-      const removeIds = Array.from(new Set((state.images || []).map((item) => String(item?.id || "")).filter(Boolean)))
-        .filter((imageId) => imageId !== outputId);
-      for (const imageId of removeIds) {
-        await removeImageFromCanvas(imageId).catch(() => {});
-      }
-    }
-    maybeEmitFirstAbilitySuccess({
-      source: "artifact_created",
-      route: pending?.targetId ? "replace" : "add_image",
-      action: String(timelineAction || state.lastAction || "unknown"),
-    });
-    state.expectingArtifacts = false;
-    restoreEngineImageModelIfNeeded();
-    setStatus("Engine: ready");
-    updatePortraitIdle();
-    setImageFxActive(false);
-    renderQuickActions();
-    renderHudReadout();
-    processActionQueue().catch(() => {});
-  } else if (eventType === DESKTOP_EVENT_TYPES.GENERATION_FAILED) {
-    promptBenchmarkMarkFailureFromGenerationFailedEvent(event);
-    const idleDrafting = state.motherIdle?.phase === MOTHER_IDLE_STATES.DRAFTING;
-    const idleDispatching = motherV2DispatchInFlight(state.motherIdle);
-    if (idleDrafting && idleDispatching) {
-      const msg = event.error ? `Mother draft failed: ${event.error}` : "Mother draft failed.";
-      setStatus(`Engine: ${msg}`, true);
-      motherIdleHandleGenerationFailed(msg);
-      renderQuickActions();
-      renderHudReadout();
-      processActionQueue().catch(() => {});
-      return;
-    }
-    const eventVersionId = motherEventVersionId(event);
-    const wasMotherDispatch = motherV2DispatchInFlight(state.motherIdle);
-    const hiddenSpeculativeDispatch = Boolean(
-      wasMotherDispatch &&
-      state.motherIdle?.phase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING &&
-      state.motherIdle?.pendingDispatchSpeculative
-    );
-    if (wasMotherDispatch) {
-      if (!motherIdleDispatchVersionMatches(eventVersionId)) {
-        if (eventVersionId) motherIdleRememberIgnoredVersion(eventVersionId);
-        appendMotherSuggestionLog({
-          stage: "out_of_band_failed_ignored",
-          request_id: state.motherIdle?.pendingSuggestionLog?.request_id || null,
-          expected_version_id: state.motherIdle?.pendingVersionId || null,
-          ignored_version_id: eventVersionId,
-          error: event.error ? String(event.error) : null,
-        }).catch(() => {});
-        console.warn("[mother_suggestion] ignored out-of-band failure during active dispatch", {
-          expected_version_id: state.motherIdle?.pendingVersionId || null,
-          ignored_version_id: eventVersionId,
-          error: event.error ? String(event.error) : null,
-        });
-        return;
-      }
-      if (hiddenSpeculativeDispatch) {
-        const msg = event.error ? `Mother speculative prefetch failed: ${event.error}` : "Mother speculative prefetch failed.";
-        motherIdleHandleGenerationFailed(msg, { speculative: true });
-        renderMotherReadout();
-        requestRender();
-        return;
-      }
-      clearMotherIdleDispatchTimeout();
-      const idle = state.motherIdle;
-      const retryModel =
-        idle && !idle.retryAttempted
-          ? motherIdlePickRetryModel(idle.lastDispatchModel || idle.pendingSuggestionLog?.model || motherPreferredGenerationModel())
-          : null;
-      if (idle && retryModel) {
-        const failedVersionId = idle.pendingVersionId || eventVersionId || null;
-        idle.retryAttempted = true;
-        idle.pendingDispatchToken = 0;
-        idle.pendingDispatchSpeculative = false;
-        idle.pendingDispatchProposalMode = null;
-        idle.pendingPromptCompileSpeculative = false;
-        idle.dispatchTimeoutExtensions = 0;
-        motherIdleResetDispatchCorrelation({ rememberPendingVersion: true });
-        state.expectingArtifacts = false;
-        restoreEngineImageModelIfNeeded();
-        appendMotherSuggestionLog({
-          stage: "retry_scheduled",
-          request_id: idle.pendingSuggestionLog?.request_id || null,
-          from_model: idle.lastDispatchModel || idle.pendingSuggestionLog?.model || null,
-          to_model: retryModel,
-          version_id: failedVersionId,
-          error: event.error ? String(event.error) : null,
-        }).catch(() => {});
-        setStatus(`Engine: Mother retrying with ${retryModel}…`);
-        const retried = await motherIdleDispatchGeneration().catch(() => false);
-        if (retried) {
-          renderQuickActions();
-          renderHudReadout();
-          processActionQueue().catch(() => {});
-          return;
-        }
-      }
-      const msg = event.error ? `Mother suggestion failed: ${event.error}` : "Mother suggestion failed.";
-      maybeEmitFirstAbilityFail({
-        source: "generation_failed",
-        route: "mother_suggestion",
-        error_code: telemetryClassifyErrorCode(event.error || msg),
-      });
-      setStatus(`Engine: ${msg}`, true);
-      state.expectingArtifacts = false;
-      restoreEngineImageModelIfNeeded();
-      updatePortraitIdle();
-      setImageFxActive(false);
-      motherIdleHandleGenerationFailed(msg);
-      renderQuickActions();
-      renderHudReadout();
-      processActionQueue().catch(() => {});
-      return;
-    }
-    const motherIdle = state.motherIdle || null;
-    if (eventVersionId && motherIdleIsIgnoredVersion(eventVersionId)) {
-      appendMotherSuggestionLog({
-        stage: "late_failed_ignored",
-        ignored_version_id: eventVersionId,
-        error: event.error ? String(event.error) : null,
-        phase: motherIdle?.phase || null,
-      }).catch(() => {});
-      console.warn("[mother_suggestion] ignored late failure from blocked version", {
-        ignored_version_id: eventVersionId,
-        phase: motherIdle?.phase || null,
-        error: event.error ? String(event.error) : null,
-      });
-      return;
-    }
-    if (state.pendingCreateLayers) {
-      const pending = state.pendingCreateLayers;
-      const idx = Math.max(0, Number(pending?.nextIndex) || 0);
-      const specs = Array.isArray(pending?.layerSpecs) ? pending.layerSpecs : [];
-      const spec = specs[idx] || null;
-      const stageLabel = spec?.summary ? String(spec.summary) : `layer ${idx + 1}`;
-      const msg = event.error
-        ? `Create Layers failed while generating ${stageLabel}: ${event.error}`
-        : `Create Layers failed while generating ${stageLabel}.`;
-      maybeEmitFirstAbilityFail({
-        source: "generation_failed",
-        route: "create_layers",
-        error_code: telemetryClassifyErrorCode(event.error || msg),
-      });
-      finishCreateLayersFailure(msg);
-      return;
-    }
-    const errText = String(event.error || "").trim();
-    const errLower = errText.toLowerCase();
-    const anyForegroundPending =
-      Boolean(state.pendingReplace) ||
-      Boolean(state.pendingBlend) ||
-      Boolean(state.pendingSwapDna) ||
-      Boolean(state.pendingBridge) ||
-      Boolean(state.pendingCreateLayers) ||
-      Boolean(state.pendingExtractDna) ||
-      Boolean(state.pendingSoulLeech) ||
-      Boolean(state.pendingTriforce) ||
-      Boolean(state.pendingRecast) ||
-      Boolean(state.pendingExtractRule) ||
-      Boolean(state.pendingOddOneOut) ||
-      Boolean(state.pendingRecreate) ||
-      Boolean(state.pendingPromptGenerate) ||
-      Boolean(state.pendingGeneration?.remaining);
-    const motherRecentSuccess =
-      !wasMotherDispatch &&
-      Boolean(motherIdle?.generatedImageId) &&
-      !state.expectingArtifacts &&
-      !anyForegroundPending &&
-      String(state.lastAction || "") === "Mother Suggestion" &&
-      Date.now() <= (Number(motherIdle?.suppressFailureUntil) || 0);
-    const looksLikeNoImageError = /no images?|failed to return|no artifacts?|no output/i.test(errLower);
-    if (motherRecentSuccess && looksLikeNoImageError) {
-      appendMotherSuggestionLog({
-        stage: "spurious_failed_after_success",
-        image_id: String(motherIdle.generatedImageId || ""),
-        error: errText || null,
-        phase: motherIdle?.phase || null,
-        last_action: state.lastAction || null,
-      }).catch(() => {});
-      console.warn("[mother_suggestion] ignored spurious failure after successful artifact", {
-        image_id: String(motherIdle.generatedImageId || ""),
-        phase: motherIdle?.phase || null,
-        error: errText || null,
-      });
-      state.expectingArtifacts = false;
-      restoreEngineImageModelIfNeeded();
-      setStatus("Engine: ready");
-      updatePortraitIdle();
-      setImageFxActive(false);
-      renderQuickActions();
-      renderHudReadout();
-      processActionQueue().catch(() => {});
-      return;
-    }
-    const msg = event.error ? `Generation failed: ${event.error}` : "Generation failed.";
-    maybeEmitFirstAbilityFail({
-      source: "generation_failed",
-      route: "general",
-      error_code: telemetryClassifyErrorCode(event.error || msg),
-    });
-    setStatus(`Engine: ${msg}`, true);
-    showToast(msg, "error", 3200);
-    state.expectingArtifacts = false;
-    state.pendingRecreate = null;
-    state.pendingBlend = null;
-    state.pendingSwapDna = null;
-    state.pendingBridge = null;
-    state.pendingExtractDna = null;
-    state.pendingSoulLeech = null;
-    state.pendingTriforce = null;
-    state.pendingRecast = null;
-    state.pendingCreateLayers = null;
-    state.pendingPromptGenerate = null;
-    state.pendingExtractRule = null;
-    state.pendingOddOneOut = null;
-    state.tripletRuleAnnotations.clear();
-    state.tripletOddOneOutId = null;
-    resetActionQueue();
-    clearPendingReplace();
-    for (const [tokenId] of state.effectTokenApplyLocks.entries()) {
-      const token = state.effectTokensById.get(tokenId) || null;
-      if (token) recoverEffectTokenApply(token);
-    }
-    state.effectTokenApplyLocks.clear();
-    restoreEngineImageModelIfNeeded();
-    updatePortraitIdle();
-    setImageFxActive(false);
-    renderQuickActions();
-    renderHudReadout();
-    chooseSpawnNodes();
-    requestRender();
-    processActionQueue().catch(() => {});
-  } else if (eventType === DESKTOP_EVENT_TYPES.COST_LATENCY_UPDATE) {
-    promptBenchmarkAttachCostLatencyEvent(event);
-    state.lastCostLatency = {
-      provider: event.provider,
-      model: event.model,
-      cost_total_usd: event.cost_total_usd,
-      cost_per_1k_images_usd: event.cost_per_1k_images_usd,
-      latency_per_image_s: event.latency_per_image_s,
-      at: Date.now(),
-    };
-    topMetricIngestCost(event.cost_total_usd);
-    renderHudReadout();
-    renderSessionApiCallsReadout();
-  } else if (eventType === DESKTOP_EVENT_TYPES.CANVAS_CONTEXT) {
-    if (!event.partial) {
-      topMetricIngestRealtimeCostFromPayload(event, { render: true });
-    }
-  } else if (eventType === DESKTOP_EVENT_TYPES.CANVAS_CONTEXT_FAILED) {
-    updateAlwaysOnVisionReadout();
-  } else if (event.type === DESKTOP_EVENT_TYPES.INTENT_ICONS) {
-    const intent = state.intent;
-    const ambient = state.intentAmbient;
-    const motherIdle = state.motherIdle;
-    const motherPhase = String(motherIdle?.phase || "");
-    const motherActionVersion = Number(motherIdle?.actionVersion) || 0;
-    const motherPendingActionVersion = Number(motherIdle?.pendingActionVersion) || 0;
-    const motherVersionMatches = motherPendingActionVersion === motherActionVersion;
-    const motherRealtimePath = String(motherIdle?.pendingIntentRealtimePath || "").trim();
-    const motherRequestId = String(motherIdle?.pendingIntentRequestId || "").trim() || null;
-    const motherHasFallbackIntent = String(motherIdle?.intent?._intent_source_kind || "").trim().toLowerCase() === "fallback";
-    const motherLateRealtimeUpgrade = Boolean(
-      !motherIdle?.pendingIntent &&
-      motherHasFallbackIntent &&
-      motherPhase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING &&
-      motherVersionMatches &&
-      motherRealtimePath &&
-      Date.now() <= (Number(motherIdle?.pendingIntentUpgradeUntil) || 0) &&
-      !motherIdle?.pendingPromptCompile &&
-      !motherIdle?.pendingGeneration
-    );
-    const motherCanAcceptRealtime = Boolean(
-      (motherIdle?.pendingIntent && motherPhase === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING && motherVersionMatches) ||
-      motherLateRealtimeUpgrade
-    );
-    const isPartial = Boolean(event.partial);
-    const path = event.image_path ? String(event.image_path) : "";
-    const eventIntentScope = String(event.intent_scope || "").trim().toLowerCase();
-    const eventIsMotherScoped = !eventIntentScope || eventIntentScope === "mother";
-    const eventActionVersionRaw = Number(event.action_version);
-    if (!intent && !ambient && !motherCanAcceptRealtime) {
-      if (!isPartial && motherIdle && eventIsMotherScoped) {
-        appendMotherTraceLog({
-          kind: "intent_icons_ignored",
-          traceId: motherIdle.telemetry?.traceId || null,
-          actionVersion: motherActionVersion,
-          request_id: motherRequestId,
-          reason: "no_pending_route",
-          event_action_version: Number.isFinite(eventActionVersionRaw) ? eventActionVersionRaw : null,
-          snapshot_path: path || null,
-          intent_scope: eventIntentScope || null,
-        }).catch(() => {});
-      }
-      return;
-    }
-    if (isOpenAiRealtimeSignal({ source: event.source, model: event.model })) {
-      markOpenAiRealtimePortraitActivity();
-    }
-    if (!isPartial) {
-      topMetricIngestRealtimeCostFromPayload(event, { render: true });
-    }
-    const text = event.text;
-    if (!path) return;
-    const routing = classifyIntentIconsRouting({
-      path,
-      intentPendingPath: intent?.pendingPath,
-      ambientPendingPath: ambient?.pendingPath,
-      motherCanAcceptRealtime,
-      motherRealtimePath,
-      motherActionVersion,
-      eventActionVersion: eventActionVersionRaw,
-      eventIntentScope,
-    });
-    const { matchAmbient, matchIntent, matchMother, ignoreReason } = routing;
-    if (ignoreReason === "scope_mismatch") {
-      return;
-    }
-    if (ignoreReason === "snapshot_path_mismatch" || ignoreReason === "path_mismatch") {
-      if (!isPartial && ignoreReason === "snapshot_path_mismatch") {
-        appendMotherTraceLog({
-          kind: "intent_icons_ignored",
-          traceId: motherIdle?.telemetry?.traceId || null,
-          actionVersion: motherActionVersion,
-          request_id: motherRequestId,
-          reason: ignoreReason,
-          expected_snapshot_path: motherRealtimePath || null,
-          event_snapshot_path: path || null,
-          event_action_version: Number.isFinite(eventActionVersionRaw) ? eventActionVersionRaw : null,
-        }).catch(() => {});
-      }
-      return;
-    }
-    if (ignoreReason === "event_action_version_mismatch") {
-      appendMotherTraceLog({
-        kind: "intent_icons_ignored",
-        traceId: motherIdle?.telemetry?.traceId || null,
-        actionVersion: motherActionVersion,
-        request_id: motherRequestId,
-        reason: ignoreReason,
-        event_action_version: eventActionVersionRaw,
-      }).catch(() => {});
-      return;
-    }
-
-    if (isPartial) {
-      if (matchIntent && intent) intent.pending = true;
-      if (matchAmbient && ambient) ambient.pending = true;
-    } else {
-      if (matchIntent && intent) {
-        intent.pending = false;
-        intent.pendingPath = null;
-        intent.pendingAt = 0;
-        intent.pendingFrameId = null;
-      }
-      if (matchAmbient && ambient) {
-        clearAmbientIntentPending();
-      }
-    }
-
-    const hasText = typeof text === "string" && text.trim();
-    if (hasText) {
-      if (isPartial && matchMother && motherIdle?.pendingIntent) {
-        // Sliding timeout: keep request alive while realtime stream is actively delivering deltas.
-        motherV2ArmRealtimeIntentTimeout({ timeoutMs: MOTHER_V2_INTENT_RT_TIMEOUT_MS });
-      }
-      const parsedResult = parseIntentIconsJsonDetailed(text);
-      const parsed = parsedResult?.ok ? parsedResult.value : null;
-      const parseStrategy = String(parsedResult?.strategy || "none");
-      const parseReason = parsedResult?.reason ? String(parsedResult.reason) : null;
-      const parseError = parsedResult?.error ? String(parsedResult.error) : null;
-      const textLen = text.length;
-      const textHash = intentIconsPayloadChecksum(text);
-
-      if (!isPartial) {
-        const snippet = parsed ? { head: "", tail: "" } : intentIconsPayloadSafeSnippet(text);
-        if (matchIntent || matchAmbient) {
-          appendIntentTrace({
-            kind: "model_icons_payload_parse",
-            parse_ok: Boolean(parsed),
-            parse_strategy: parseStrategy,
-            parse_reason: parseReason,
-            parse_error: parseError,
-            snapshot_path: path ? String(path) : null,
-            request_id: matchMother ? motherRequestId : null,
-            action_version: matchMother ? motherActionVersion : null,
-            source: event.source || null,
-            model: event.model || null,
-            response_status: event.response_status ? String(event.response_status) : null,
-            response_status_reason: event.response_status_reason ? String(event.response_status_reason) : null,
-            text_len: textLen,
-            text_hash: textHash,
-            snippet_head: snippet.head || null,
-            snippet_tail: snippet.tail || null,
-          }).catch(() => {});
-        }
-        if (matchMother && motherIdle) {
-          appendMotherTraceLog({
-            kind: "intent_payload_parse",
-            traceId: motherIdle.telemetry?.traceId || null,
-            actionVersion: Number(motherIdle.actionVersion) || 0,
-            request_id: motherRequestId,
-            snapshot_path: path || null,
-            parse_ok: Boolean(parsed),
-            parse_strategy: parseStrategy,
-            parse_reason: parseReason,
-            parse_error: parseError,
-            source: event.source || null,
-            model: event.model || null,
-            response_status: event.response_status ? String(event.response_status) : null,
-            response_status_reason: event.response_status_reason ? String(event.response_status_reason) : null,
-            text_len: textLen,
-            text_hash: textHash,
-            snippet_head: snippet.head || null,
-            snippet_tail: snippet.tail || null,
-          }).catch(() => {});
-        }
-      }
-
-      if (parsed) {
-        // Capture per-image vision labels from the intent realtime response so we can
-        // use them as signals without issuing separate /describe calls.
-        const imageDescs = !isPartial ? extractIntentImageDescriptions(parsed) : [];
-        let wroteVision = false;
-        if (!isPartial && imageDescs.length) {
-          for (const rec of imageDescs) {
-            const imageId = rec?.image_id ? String(rec.image_id) : "";
-            const label = rec?.label ? String(rec.label) : "";
-            if (!imageId || !label) continue;
-            const imgItem = state.imagesById.get(imageId) || null;
-            if (!imgItem) continue;
-            const prevLabel = _normalizeVisionLabel(imgItem.visionDesc, { maxChars: REALTIME_VISION_LABEL_MAX_CHARS });
-            const prevSource = String(imgItem?.visionDescMeta?.source || "").trim();
-            const keepExplicitDescribe =
-              Boolean(prevLabel) &&
-              (prevSource === "openai_realtime_describe" || prevSource === "openai_vision");
-            if (keepExplicitDescribe) {
-              continue;
-            }
-            if (prevLabel && prevLabel === label) continue;
-            imgItem.visionDesc = label;
-            imgItem.visionPending = false;
-            imgItem.visionDescMeta = {
-              source: event.source || null,
-              model: event.model || null,
-              at: Date.now(),
-            };
-            wroteVision = true;
-            if (intentModeActive()) {
-              appendIntentTrace({
-                kind: "vision_description",
-                image_id: imageId,
-                image_path: imgItem?.path ? String(imgItem.path) : null,
-                description: label,
-                source: event.source || null,
-                model: event.model || null,
-              }).catch(() => {});
-            }
-          }
-        }
-
-        if (wroteVision) {
-          scheduleVisualPromptWrite();
-          if (getActiveImage()?.id) renderHudReadout();
-        }
-
-        const parsedAt = Date.now();
-        if (matchIntent && intent) {
-          intent.iconState = parsed;
-          intent.iconStateAt = parsedAt;
-          intent.rtState = "ready";
-          intent.disabledReason = null;
-          intent.lastError = null;
-          intent.lastErrorAt = 0;
-          intent.uiHideSuggestion = false;
-        }
-        if (matchAmbient && ambient) {
-          ambient.iconState = parsed;
-          ambient.iconStateAt = parsedAt;
-          ambient.rtState = "ready";
-          ambient.disabledReason = null;
-          ambient.lastError = null;
-          ambient.lastErrorAt = 0;
-          if (!isPartial) rebuildAmbientIntentSuggestions(parsed, { reason: "realtime", nowMs: parsedAt });
-        }
-        if (matchMother && motherIdle && !isPartial) {
-          const payloadForMother = motherIdle.pendingIntentPayload && typeof motherIdle.pendingIntentPayload === "object"
-            ? motherIdle.pendingIntentPayload
-            : motherV2IntentPayload();
-          const realtimeIntent = motherV2IntentFromRealtimeIcons(parsed, payloadForMother);
-          const hasRealtimeModeSignal = Boolean(
-            motherV2MaybeTransformationMode(realtimeIntent?.transformation_mode) ||
-              (Array.isArray(realtimeIntent?.transformation_mode_candidates) &&
-                realtimeIntent.transformation_mode_candidates.some((entry) =>
-                  Boolean(motherV2MaybeTransformationMode(entry?.mode || entry?.transformation_mode))
-                ))
-          );
-          if (!hasRealtimeModeSignal) {
-            const missingModeMessage = "Mother realtime intent missing transformation mode.";
-            appendMotherTraceLog({
-              kind: "intent_realtime_failed",
-              traceId: motherIdle.telemetry?.traceId || null,
-              actionVersion: Number(motherIdle.actionVersion) || 0,
-              request_id: motherRequestId,
-              source: event.source || "intent_rt_realtime",
-              error: missingModeMessage,
-            }).catch(() => {});
-            motherIdleHandleGenerationFailed(missingModeMessage);
-            return;
-          }
-          const isLateRealtimeUpgrade = !motherIdle.pendingIntent;
-          if (!motherIdle.pendingIntent) {
-            appendMotherTraceLog({
-              kind: "intent_realtime_upgrade",
-              traceId: motherIdle.telemetry?.traceId || null,
-              actionVersion: Number(motherIdle.actionVersion) || 0,
-              request_id: motherRequestId,
-              snapshot_path: path || null,
-            }).catch(() => {});
-          }
-          motherV2ApplyIntent(realtimeIntent, {
-            source: event.source || "intent_rt_realtime",
-            sourceModel: event.model || null,
-            requestId: motherRequestId,
-            preserveMode: isLateRealtimeUpgrade,
-          });
-        }
-        // Keep focus stable if possible (unless rejected); otherwise pick the next suggestion.
-        const picked = pickSuggestedIntentBranch(parsed);
-        if (matchIntent && intent) {
-          intent.focusBranchId = (picked?.branch_id ? String(picked.branch_id) : "") || pickDefaultIntentFocusBranchId(parsed);
-        }
-        if (!isPartial && (matchIntent || matchAmbient)) {
-          const branchIds = Array.isArray(parsed?.branches)
-            ? parsed.branches.map((b) => (b?.branch_id ? String(b.branch_id) : "")).filter(Boolean)
-            : [];
-          const branchRank = Array.isArray(parsed?.branches)
-            ? parsed.branches
-                .map((b) => ({
-                  branch_id: b?.branch_id ? String(b.branch_id) : "",
-                  confidence: typeof b?.confidence === "number" && Number.isFinite(b.confidence) ? clamp(Number(b.confidence) || 0, 0, 1) : null,
-                  evidence_image_ids: Array.isArray(b?.evidence_image_ids)
-                    ? b.evidence_image_ids.map((v) => String(v || "").trim()).filter(Boolean).slice(0, 3)
-                    : [],
-                }))
-                .filter((b) => Boolean(b.branch_id))
-            : [];
-          appendIntentTrace({
-            kind: "model_icons",
-            partial: false,
-            frame_id: parsed?.frame_id ? String(parsed.frame_id) : null,
-            snapshot_path: path ? String(path) : null,
-            branch_ids: branchIds,
-            branch_rank: branchRank.length ? branchRank : null,
-            focus_branch_id: intent?.focusBranchId ? String(intent.focusBranchId) : null,
-            checkpoint_applies_to: parsed?.checkpoint?.applies_to ? String(parsed.checkpoint.applies_to) : null,
-            checkpoint_branch_id: picked?.checkpoint_branch_id ? String(picked.checkpoint_branch_id) : null,
-            ranked_branch_ids: Array.isArray(picked?.ranked_branch_ids) && picked.ranked_branch_ids.length ? picked.ranked_branch_ids : null,
-            suggestion_reason: picked?.reason ? String(picked.reason) : null,
-            image_descriptions: imageDescs.length ? imageDescs : null,
-            text_len: textLen,
-            text_hash: textHash,
-            parse_strategy: parseStrategy,
-          }).catch(() => {});
-        }
-        if (matchIntent && intent) {
-          const total = Math.max(1, Number(intent.totalRounds) || 3);
-          const round = Math.max(1, Number(intent.round) || 1);
-          // After the final round proposals arrive, force an explicit YES to proceed.
-          if (INTENT_FORCE_CHOICE_ENABLED && INTENT_ROUNDS_ENABLED && !isPartial && round >= total && !intent.forceChoice) {
-            intent.forceChoice = true;
-            ensureIntentFallbackIconState("final_round");
-            scheduleIntentStateWrite({ immediate: true });
-          } else {
-            if (!INTENT_FORCE_CHOICE_ENABLED) intent.forceChoice = false;
-            scheduleIntentStateWrite();
-          }
-        }
-      } else if (!isPartial) {
-        // Treat invalid JSON as a non-fatal failure: fall back to local branches and keep the UI interactive.
-        const parseReasonLabel = parseReason ? parseReason.replace(/_/g, " ") : "parse failed";
-        const intentParseMessage = `Intent icons parse failed (${parseReasonLabel}).`;
-        const snippet = intentIconsPayloadSafeSnippet(text);
-        if (matchIntent && intent) {
-          intent.rtState = "failed";
-          intent.disabledReason = "Intent icons parse failed.";
-          intent.lastError = intent.disabledReason;
-          intent.lastErrorAt = Date.now();
-          intent.uiHideSuggestion = false;
-          if (!INTENT_FORCE_CHOICE_ENABLED) intent.forceChoice = false;
-          const icon = ensureIntentFallbackIconState("parse_failed");
-          if (!intent.focusBranchId) intent.focusBranchId = pickSuggestedIntentBranchId(icon) || pickDefaultIntentFocusBranchId(icon);
-        }
-        if (matchAmbient && ambient) {
-          applyAmbientIntentFallback("parse_failed", { message: intentParseMessage });
-        }
-        if (matchMother && motherIdle) {
-          const fallbackMessage = parseReason === "truncated_json"
-            ? "Mother realtime intent response was truncated."
-            : "Mother realtime intent parse failed.";
-          appendMotherTraceLog({
-            kind: "intent_realtime_failed",
-            traceId: motherIdle.telemetry?.traceId || null,
-            actionVersion: Number(motherIdle.actionVersion) || 0,
-            request_id: motherRequestId,
-            source: "intent_rt_parse_failed",
-            parse_reason: parseReason,
-            parse_strategy: parseStrategy,
-            parse_error: parseError,
-            response_status: event.response_status ? String(event.response_status) : null,
-            response_status_reason: event.response_status_reason ? String(event.response_status_reason) : null,
-            snapshot_path: path || null,
-            text_len: textLen,
-            text_hash: textHash,
-            snippet_head: snippet.head || null,
-            snippet_tail: snippet.tail || null,
-            error: fallbackMessage,
-          }).catch(() => {});
-          motherIdleHandleGenerationFailed(fallbackMessage);
-        }
-        if (matchIntent || matchAmbient) {
-          appendIntentTrace({
-            kind: "model_icons_parse_failed",
-            reason: intent?.disabledReason || intentParseMessage,
-            parse_reason: parseReason,
-            parse_strategy: parseStrategy,
-            parse_error: parseError,
-            response_status: event.response_status ? String(event.response_status) : null,
-            response_status_reason: event.response_status_reason ? String(event.response_status_reason) : null,
-            snapshot_path: path ? String(path) : null,
-            text_len: textLen,
-            text_hash: textHash,
-            snippet_head: snippet.head || null,
-            snippet_tail: snippet.tail || null,
-            rt_state: intent?.rtState || ambient?.rtState || "failed",
-          }).catch(() => {});
-        }
-        if (matchIntent && intent) scheduleIntentStateWrite({ immediate: true });
-      }
-    }
-
-    if (!isPartial) {
-      if (matchIntent) {
-        clearTimeout(intentInferenceTimeout);
-        intentInferenceTimeout = null;
-      }
-      if (matchAmbient) {
-        clearTimeout(intentAmbientInferenceTimeout);
-        intentAmbientInferenceTimeout = null;
-      }
-    }
-
-    requestRender();
-    renderQuickActions();
-  } else if (event.type === DESKTOP_EVENT_TYPES.INTENT_ICONS_FAILED) {
-    const intent = state.intent;
-    const ambient = state.intentAmbient;
-    let motherIdle = state.motherIdle;
-    const path = event.image_path ? String(event.image_path) : "";
-    if (!path) return;
-    const eventIntentScope = String(event.intent_scope || "").trim().toLowerCase();
-    const eventIsMotherScoped = !eventIntentScope || eventIntentScope === "mother";
-    if (eventIsMotherScoped) {
-      motherV2ClearIntentRealtimeBusy({
-        path,
-        reason: "intent_icons_failed",
-      });
-    }
-    const resolveActiveMotherRealtimeFailureTarget = () => {
-      const motherIdleLatest = state.motherIdle;
-      const matchMotherLatest = Boolean(
-        eventIsMotherScoped &&
-          motherIdleLatest?.pendingIntent &&
-          String(motherIdleLatest?.phase || "") === MOTHER_IDLE_STATES.INTENT_HYPOTHESIZING &&
-          String(motherIdleLatest?.pendingIntentRealtimePath || "") === path &&
-          (Number(motherIdleLatest?.pendingActionVersion) || 0) === (Number(motherIdleLatest?.actionVersion) || 0)
-      );
-      const motherRequestIdLatest = String(motherIdleLatest?.pendingIntentRequestId || "").trim() || null;
-      return { motherIdleLatest, matchMotherLatest, motherRequestIdLatest };
-    };
-    const matchAmbient = Boolean(ambient?.pendingPath && String(ambient.pendingPath) === path);
-    const matchIntent = Boolean(intent?.pendingPath && String(intent.pendingPath) === path);
-    let { motherIdleLatest: resolvedMotherIdle, matchMotherLatest: matchMother, motherRequestIdLatest: motherRequestId } =
-      resolveActiveMotherRealtimeFailureTarget();
-    motherIdle = resolvedMotherIdle;
-    if (!matchIntent && !matchAmbient && !matchMother) return;
-    if (isOpenAiRealtimeSignal({ source: event.source, model: event.model })) {
-      markOpenAiRealtimePortraitActivity();
-    }
-
-    if (matchIntent && intent) {
-      intent.pending = false;
-      intent.pendingPath = null;
-      intent.pendingAt = 0;
-      intent.pendingFrameId = null;
-    }
-    if (matchAmbient && ambient) {
-      clearAmbientIntentPending();
-    }
-    if (matchIntent) {
-      clearTimeout(intentInferenceTimeout);
-      intentInferenceTimeout = null;
-    }
-    if (matchAmbient) {
-      clearTimeout(intentAmbientInferenceTimeout);
-      intentAmbientInferenceTimeout = null;
-    }
-
-    const errRaw = typeof event.error === "string" ? event.error.trim() : "";
-    const msg = errRaw ? `Intent inference failed: ${errRaw}` : "Intent inference failed.";
-    const retryDecision = nextMotherRealtimeIntentFailureAction({
-      event,
-      matchMother,
-      pendingIntent: Boolean(motherIdle?.pendingIntent),
-      phase: motherIdle?.phase || "",
-      actionVersion: Number(motherIdle?.actionVersion) || 0,
-      pendingActionVersion: Number(motherIdle?.pendingActionVersion) || 0,
-      retryCount: Number(motherIdle?.pendingIntentTransportRetryCount) || 0,
-      maxRetries: MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_MAX,
-    });
-    if (retryDecision.action === "retry") {
-      const retried = await motherV2RetryRealtimeIntentTransport({
-        path,
-        errorMessage: msg,
-      });
-      if (retried) {
-        setStatus("Mother: retrying realtime intent…");
-        renderMotherReadout();
-        requestRender();
-        return;
-      }
-      ({ motherIdleLatest: motherIdle, matchMotherLatest: matchMother, motherRequestIdLatest: motherRequestId } =
-        resolveActiveMotherRealtimeFailureTarget());
-      if (!matchIntent && !matchAmbient && !matchMother) return;
-    }
-    if (retryDecision.retryable && retryDecision.action === "fail") {
-      appendMotherTraceLog({
-        kind: "intent_realtime_retry_exhausted",
-        traceId: motherIdle?.telemetry?.traceId || null,
-        actionVersion: Number(motherIdle?.actionVersion) || 0,
-        request_id: motherRequestId,
-        retry_count: Number(motherIdle?.pendingIntentTransportRetryCount) || 0,
-        max_retries: MOTHER_V2_INTENT_RT_TRANSPORT_RETRY_MAX,
-        reason: retryDecision.reason || null,
-        error: msg,
-      }).catch(() => {});
-    }
-		    if (matchIntent && intent) {
-		      intent.rtState = "failed";
-		      intent.lastError = msg;
-	      intent.lastErrorAt = Date.now();
-	      intent.uiHideSuggestion = false;
-	    }
-	    if (matchIntent || matchAmbient) {
-	      appendIntentTrace({
-	        kind: "model_icons_failed",
-	        reason: msg,
-	        snapshot_path: path ? String(path) : null,
-	        rt_state: intent?.rtState || ambient?.rtState || "failed",
-	      }).catch(() => {});
-	    }
-
-    const errLower = errRaw.toLowerCase();
-    const hardDisable = Boolean(
-      errLower.includes("missing openai_api_key") ||
-        errLower.includes("missing gemini_api_key") ||
-        errLower.includes("missing google_api_key") ||
-        errLower.includes("gemini_api_key (or google_api_key)") ||
-        errLower.includes("realtime provider 'openai_realtime'") ||
-        errLower.includes("realtime provider 'gemini_flash'") ||
-        errLower.includes("openrouter_api_key alone is insufficient") ||
-        errLower.includes("missing dependency") ||
-        errLower.includes("disabled (brood_intent_realtime_disabled=1") ||
-        errLower.includes("realtime intent inference is disabled")
-    );
-    // Only treat clearly-unrecoverable cases as a "hard" disabled state. Otherwise,
-    // keep retrying opportunistically while the user continues arranging images.
-    if (matchIntent && intent) intent.disabledReason = hardDisable ? msg : null;
-
-    // Fall back to a local branch set so the user can still lock an intent.
-    if (matchIntent && intent) {
-      ensureIntentFallbackIconState("failed");
-      if (!intent.focusBranchId) {
-        intent.focusBranchId = pickSuggestedIntentBranchId(intent.iconState) || pickDefaultIntentFocusBranchId();
-      }
-    }
-    if (matchAmbient && ambient) {
-      applyAmbientIntentFallback("failed", { message: msg, hardDisable });
-    }
-    if (matchMother && motherIdle) {
-      appendMotherTraceLog({
-        kind: "intent_realtime_failed",
-        traceId: motherIdle.telemetry?.traceId || null,
-        actionVersion: Number(motherIdle.actionVersion) || 0,
-        request_id: motherRequestId,
-        source: "intent_rt_failed",
-        error: msg,
-      }).catch(() => {});
-      motherIdleHandleGenerationFailed(`Mother realtime intent failed. ${msg}`);
-    }
-
-    if (matchIntent && intent && !INTENT_FORCE_CHOICE_ENABLED) {
-      intent.forceChoice = false;
-    } else if (matchIntent && intent) {
-      // Only force choice if time is up or we're already at the final round gate.
-      const total = Math.max(1, Number(intent.totalRounds) || 3);
-      const round = Math.max(1, Number(intent.round) || 1);
-      const remainingMs = intent.startedAt ? intentRemainingMs(Date.now()) : INTENT_DEADLINE_MS;
-      const gateByTimer = Boolean(INTENT_TIMER_ENABLED) && remainingMs <= 0;
-      const gateByRounds = Boolean(INTENT_ROUNDS_ENABLED) && round >= total;
-      if (gateByTimer || gateByRounds) {
-        intent.forceChoice = true;
-      }
-    }
-
-    if (matchIntent && intent) scheduleIntentStateWrite({ immediate: true });
-    if (matchIntent || matchAmbient) setStatus(`Engine: ${msg}`, true);
-    requestRender();
-    renderQuickActions();
-
-    if (!hardDisable && matchIntent && intentModeActive() && intent && !intent.forceChoice) {
-      scheduleIntentInference({ immediate: false, reason: "retry" });
-    }
-	  } else if (event.type === DESKTOP_EVENT_TYPES.IMAGE_DESCRIPTION) {
-	    const path = event.image_path;
-	    const desc = event.description;
-	    if (typeof path === "string" && typeof desc === "string" && desc.trim()) {
-	      const cleaned = _normalizeVisionLabel(desc, { maxChars: REALTIME_VISION_LABEL_MAX_CHARS }) || desc.trim();
-	      for (const item of state.images) {
-	        if (item?.path === path) {
-	          item.visionDesc = cleaned;
-	          item.visionPending = false;
-	          item.visionDescMeta = {
-	            source: event.source || null,
-	            model: event.model || null,
-	            at: Date.now(),
-	          };
-	          break;
-	        }
-	      }
-	      // Persist the new per-image description into run artifacts.
-	      scheduleVisualPromptWrite();
-	      if (getActiveImage()?.path === path) renderHudReadout();
-	    }
-	  } else if (event.type === DESKTOP_EVENT_TYPES.IMAGE_DNA_EXTRACTED) {
-    const path = typeof event.image_path === "string" ? event.image_path : "";
-    const matchedImageId = consumePendingEffectExtraction("dna", path);
-    const resolvedImageId = matchedImageId || resolveExtractionEventImageIdByPath(path);
-    if (!resolvedImageId) {
-      requestRender();
-      return;
-    }
-    const item = state.imagesById.get(resolvedImageId) || null;
-    if (item?.id) {
-      const token = createOrUpdateEffectToken({
-        type: "extract_dna",
-        imageId: item.id,
-        imagePath: path,
-        palette: Array.isArray(event.palette) ? event.palette : [],
-        colors: Array.isArray(event.colors) ? event.colors : [],
-        materials: Array.isArray(event.materials) ? event.materials : [],
-        summary: typeof event.summary === "string" ? event.summary : "",
-        source: event.source || null,
-        model: event.model || null,
-      });
-      if (token) {
-        if (!suppressReelDnaToasts()) {
-          showToast(`DNA extracted: ${item.label || basename(item.path)}`, "tip", 1800);
-        }
-      }
-      requestRender();
-    }
-  } else if (event.type === DESKTOP_EVENT_TYPES.IMAGE_DNA_EXTRACTED_FAILED) {
-    const path = typeof event.image_path === "string" ? event.image_path : "";
-    const msg = event.error ? `Extract DNA failed: ${event.error}` : "Extract DNA failed.";
-    showToast(msg, "error", 2600);
-    if (path) consumePendingEffectExtraction("dna", path);
-    else {
-      state.pendingExtractDna = null;
-      updatePortraitIdle();
-      renderQuickActions();
-      processActionQueue().catch(() => {});
-    }
-  } else if (event.type === DESKTOP_EVENT_TYPES.IMAGE_SOUL_EXTRACTED) {
-    const path = typeof event.image_path === "string" ? event.image_path : "";
-    const matchedImageId = consumePendingEffectExtraction("soul", path);
-    const resolvedImageId = matchedImageId || resolveExtractionEventImageIdByPath(path);
-    if (!resolvedImageId) {
-      requestRender();
-      return;
-    }
-    const item = state.imagesById.get(resolvedImageId) || null;
-    if (item?.id) {
-      const token = createOrUpdateEffectToken({
-        type: "soul_leech",
-        imageId: item.id,
-        imagePath: path,
-        emotion: typeof event.emotion === "string" ? event.emotion : "",
-        summary: typeof event.summary === "string" ? event.summary : "",
-        source: event.source || null,
-        model: event.model || null,
-      });
-      if (token) {
-        showToast(`Soul extracted: ${item.label || basename(item.path)}`, "tip", 1800);
-      }
-      requestRender();
-    }
-  } else if (event.type === DESKTOP_EVENT_TYPES.IMAGE_SOUL_EXTRACTED_FAILED) {
-    const path = typeof event.image_path === "string" ? event.image_path : "";
-    const msg = event.error ? `Soul Leech failed: ${event.error}` : "Soul Leech failed.";
-    showToast(msg, "error", 2600);
-    if (path) consumePendingEffectExtraction("soul", path);
-    else {
-      state.pendingSoulLeech = null;
-      updatePortraitIdle();
-      renderQuickActions();
-      processActionQueue().catch(() => {});
-    }
-  } else if (event.type === DESKTOP_EVENT_TYPES.TRIPLET_RULE) {
-    state.pendingExtractRule = null;
-    const paths = Array.isArray(event.image_paths) ? event.image_paths : [];
-    const principle = typeof event.principle === "string" ? event.principle.trim() : "";
-    const evidence = Array.isArray(event.evidence) ? event.evidence : [];
-    const textRaw = typeof event.text === "string" ? event.text.trim() : "";
-    let text = textRaw;
-    if (!text) {
-      const lines = [];
-      if (principle) {
-        lines.push("RULE:");
-        lines.push(principle);
-      }
-      if (evidence.length) {
-        if (lines.length) lines.push("");
-        lines.push("EVIDENCE:");
-        for (const item of evidence.slice(0, 6)) {
-          const img = item?.image ? String(item.image).trim() : "";
-          const note = item?.note ? String(item.note).trim() : "";
-          if (!note) continue;
-          lines.push(`- ${img ? `${img}: ` : ""}${note}`);
-        }
-      }
-      text = lines.join("\n").trim();
-    }
-
-    state.tripletRuleAnnotations.clear();
-    state.tripletOddOneOutId = null;
-    const annotations = Array.isArray(event.annotations) ? event.annotations : [];
-    if (paths.length === 3 && annotations.length) {
-      for (const ann of annotations) {
-        const tag = String(ann?.image || "").trim().toUpperCase();
-        const idx = tag === "A" ? 0 : tag === "B" ? 1 : tag === "C" ? 2 : -1;
-        if (idx < 0) continue;
-        const x = Number(ann?.x);
-        const y = Number(ann?.y);
-        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-        const label = ann?.label ? String(ann.label).trim() : "";
-        const targetPath = paths[idx];
-        const imgItem = state.images.find((it) => it?.path === targetPath) || null;
-        if (!imgItem?.id) continue;
-        const points = state.tripletRuleAnnotations.get(imgItem.id) || [];
-        points.push({ x: clamp(x, 0, 1), y: clamp(y, 0, 1), label: clampText(label, 64) });
-        state.tripletRuleAnnotations.set(imgItem.id, points);
-      }
-    }
-
-    if (text) {
-      setDirectorText(text, {
-        kind: "extract_rule",
-        source: event.source || null,
-        model: event.model || null,
-        at: Date.now(),
-        paths,
-      });
-    }
-    setStatus("Director: rule ready");
-    showToast("Extract the Rule ready.", "tip", 2400);
-    updatePortraitIdle();
-    renderQuickActions();
-    requestRender();
-    processActionQueue().catch(() => {});
-  } else if (event.type === DESKTOP_EVENT_TYPES.TRIPLET_RULE_FAILED) {
-    state.pendingExtractRule = null;
-    const msg = event.error ? `Extract the Rule failed: ${event.error}` : "Extract the Rule failed.";
-    setStatus(`Director: ${msg}`, true);
-    showToast(msg, "error", 3200);
-    updatePortraitIdle();
-    renderQuickActions();
-    processActionQueue().catch(() => {});
-  } else if (event.type === DESKTOP_EVENT_TYPES.TRIPLET_ODD_ONE_OUT) {
-    state.pendingOddOneOut = null;
-    const paths = Array.isArray(event.image_paths) ? event.image_paths : [];
-    const oddIndex = typeof event.odd_index === "number" ? event.odd_index : null;
-    const oddTag = typeof event.odd_image === "string" ? event.odd_image.trim().toUpperCase() : "";
-    let oddPath = null;
-    if (oddIndex !== null && oddIndex >= 0 && oddIndex < paths.length) {
-      oddPath = paths[oddIndex];
-    } else if (paths.length === 3) {
-      if (oddTag === "A") oddPath = paths[0];
-      if (oddTag === "B") oddPath = paths[1];
-      if (oddTag === "C") oddPath = paths[2];
-    }
-    const oddItem = oddPath ? state.images.find((it) => it?.path === oddPath) || null : null;
-    state.tripletOddOneOutId = oddItem?.id || null;
-    state.tripletRuleAnnotations.clear();
-
-    const textRaw = typeof event.text === "string" ? event.text.trim() : "";
-    let text = textRaw;
-    if (!text) {
-      const pattern = typeof event.pattern === "string" ? event.pattern.trim() : "";
-      const why = typeof event.explanation === "string" ? event.explanation.trim() : "";
-      const lines = [];
-      if (oddTag || oddIndex !== null) lines.push(`ODD ONE OUT: ${oddTag || String(oddIndex + 1)}`);
-      if (pattern) {
-        if (lines.length) lines.push("");
-        lines.push("THE SHARED PATTERN:");
-        lines.push(pattern);
-      }
-      if (why) {
-        if (lines.length) lines.push("");
-        lines.push("WHY IT BREAKS:");
-        lines.push(why);
-      }
-      text = lines.join("\n").trim();
-    }
-
-    if (text) {
-      setDirectorText(text, {
-        kind: "odd_one_out",
-        source: event.source || null,
-        model: event.model || null,
-        at: Date.now(),
-        paths,
-      });
-    }
-    setStatus("Director: odd one out ready");
-    showToast("Odd One Out ready.", "tip", 2400);
-    updatePortraitIdle();
-    renderQuickActions();
-    requestRender();
-    processActionQueue().catch(() => {});
-  } else if (event.type === DESKTOP_EVENT_TYPES.TRIPLET_ODD_ONE_OUT_FAILED) {
-    state.pendingOddOneOut = null;
-    const msg = event.error ? `Odd One Out failed: ${event.error}` : "Odd One Out failed.";
-    setStatus(`Director: ${msg}`, true);
-    showToast(msg, "error", 3200);
-    updatePortraitIdle();
-    renderQuickActions();
-    processActionQueue().catch(() => {});
-  } else if (event.type === DESKTOP_EVENT_TYPES.RECREATE_PROMPT_INFERRED) {
-    const prompt = event.prompt;
-    if (typeof prompt === "string") {
-      state.lastRecreatePrompt = prompt;
-      const ref = event.reference;
-      if (typeof ref === "string" && ref) {
-        for (const item of state.images) {
-          if (item?.path === ref) {
-            item.recreatePrompt = prompt;
-            break;
-          }
-        }
-      }
-      setStatus("Engine: recreate (zero-prompt) running…");
-    }
-    renderHudReadout();
-  } else if (event.type === DESKTOP_EVENT_TYPES.RECREATE_ITERATION_UPDATE) {
-    const iter = event.iteration;
-    const sim = event.similarity;
-    if (typeof iter === "number") {
-      const pct = typeof sim === "number" ? `${Math.round(sim * 100)}%` : "—";
-      setStatus(`Engine: recreate iter ${iter} (best ${pct})`);
-    }
-    renderHudReadout();
-  } else if (event.type === DESKTOP_EVENT_TYPES.RECREATE_DONE) {
-    state.pendingRecreate = null;
-    setStatus("Engine: variations ready");
-    setTip("Variations complete.");
-    updatePortraitIdle();
-    renderQuickActions();
-    renderHudReadout();
-    processActionQueue().catch(() => {});
-  }
+  await desktopEventRouter.handleEventLegacy(event);
 }
 
 function hitTestEffectToken(ptCanvas) {
@@ -45608,244 +41695,52 @@ function renderReelTouchIndicator(octx, canvasW, canvasH) {
   if (now < visibleUntil || now < downUntil) requestRender();
 }
 
-function render() {
-  const work = els.workCanvas;
-  const overlay = els.overlayCanvas;
-  if (!work || !overlay) return;
-  if (renderPendingTabSwitchPreview()) {
-    return;
-  }
-  // Keep CSS-only intent effects (cursor/border) in sync with realtime activity.
-  syncIntentRealtimeClass();
-  renderJuggernautShellChrome();
-  renderCommunicationChrome();
-  const wctx = work.getContext("2d");
-  const octx = overlay.getContext("2d");
-  if (!wctx || !octx) return;
-
-  wctx.clearRect(0, 0, work.width, work.height);
-  octx.clearRect(0, 0, overlay.width, overlay.height);
-  state.motherOverlayUiHits = [];
-  state.activeImageTransformUiHits = [];
-
-  const item = getActiveImage();
-  let singleImageStatusPill = null;
-
-  if (state.canvasMode === "multi") {
-    renderMultiCanvas(wctx, octx, work.width, work.height);
-  } else {
-    const imageLoading = item?.path ? canvasImageLoadingAffordance(item) : null;
-    const singleTransform = readFreeformRectTransform(state.freeformRects.get(String(item?.id || "")) || null);
-    if (item?.path) ensureCanvasImageLoaded(item);
-    const img = readSessionRuntimeImageHandle(item);
-    if (img) {
-      const singleW = img.naturalWidth || item?.width || 1;
-      const singleH = img.naturalHeight || item?.height || 1;
-      wctx.save();
-      wctx.setTransform(state.view.scale, 0, 0, state.view.scale, state.view.offsetX, state.view.offsetY);
-      wctx.imageSmoothingEnabled = true;
-      wctx.imageSmoothingQuality = isFreeformTransformPointerDragActive() ? "medium" : "high";
-      drawImageRectWithTransform(wctx, img, {
-        x: 0,
-        y: 0,
-        w: singleW,
-        h: singleH,
-        rotateDeg: singleTransform.rotateDeg,
-        skewXDeg: singleTransform.skewXDeg,
-      });
-      wctx.restore();
-
-      // Keep single-view active selection clearly visible, matching multi-view behavior.
-      const dpr = getDpr();
-      const motherGenerated = isMotherGeneratedImageItem(item);
-      const palette = selectionChromePalette({ motherGenerated });
-      const outerStroke = palette.outerStroke;
-      const mainStroke = palette.mainStroke;
-      const mainShadow = palette.mainShadow;
-      const innerStroke = palette.innerStroke;
-      const singleDragPerfMode = isFreeformTransformPointerDragActive() && String(state.pointer?.imageId || "") === String(item?.id || "");
-      const singleOuterLineWidth = singleDragPerfMode ? Math.max(1, Math.round(6 * dpr)) : Math.max(1, Math.round(10 * dpr));
-      const singleOuterShadowBlur = singleDragPerfMode ? Math.round(20 * dpr) : Math.round(44 * dpr);
-      const singleMainShadowBlur = singleDragPerfMode ? Math.round(14 * dpr) : Math.round(28 * dpr);
-      const ix = state.view.offsetX;
-      const iy = state.view.offsetY;
-      const iw = (img.naturalWidth || item.width || 1) * state.view.scale;
-      const ih = (img.naturalHeight || item.height || 1) * state.view.scale;
-      const singleBorderPoints = transformedRectPolygonPoints({
-        x: ix,
-        y: iy,
-        w: iw,
-        h: ih,
-        rotateDeg: singleTransform.rotateDeg,
-        skewXDeg: singleTransform.skewXDeg,
-      });
-      if (imageLoading?.statusLabel) {
-        singleImageStatusPill = {
-          polygon: singleBorderPoints,
-          affordance: imageLoading,
-        };
-      }
-
-      octx.save();
-      octx.lineJoin = "round";
-      octx.strokeStyle = outerStroke;
-      octx.lineWidth = singleOuterLineWidth;
-      octx.shadowColor = mainShadow;
-      octx.shadowBlur = singleOuterShadowBlur;
-      if (drawPolygonPath(octx, singleBorderPoints)) octx.stroke();
-
-      octx.strokeStyle = mainStroke;
-      octx.lineWidth = Math.max(1, Math.round(3.4 * dpr));
-      octx.shadowColor = mainShadow;
-      octx.shadowBlur = singleMainShadowBlur;
-      if (drawPolygonPath(octx, singleBorderPoints)) octx.stroke();
-
-	      octx.shadowBlur = 0;
-	      octx.strokeStyle = innerStroke;
-	      octx.lineWidth = Math.max(1, Math.round(1.2 * dpr));
-	      if (drawPolygonPath(octx, singleBorderPoints)) octx.stroke();
-	      octx.restore();
-	      if (state.tool === "pan" || intentModeActive()) {
-	        renderActiveImageTransformControls(octx, {
-	          anchorRect: { x: ix, y: iy, w: iw, h: ih },
-            anchorPoints: singleBorderPoints,
-	          dpr,
-	          accent: palette.handleStroke,
-	          targetId: item.id,
-	        });
-	      }
-    } else if (item?.path && imageLoading?.showPlaceholder) {
-      const placeholderPoints = singleCanvasLoadingPlaceholderPolygon(item, work, singleTransform);
-      renderCanvasImagePlaceholder(wctx, placeholderPoints);
-      singleImageStatusPill = {
-        polygon: placeholderPoints,
-        affordance: imageLoading,
-      };
-    }
-  }
-  syncEffectsRuntimeScene();
-  updateImageFxRect();
-
-  const pts = state.selection?.points || state.lassoDraft;
-  if (pts && pts.length >= 2) {
-    octx.save();
-    octx.lineWidth = Math.max(1, Math.round(2 * getDpr()));
-    octx.strokeStyle = "rgba(255, 179, 0, 0.95)";
-    octx.fillStyle = "rgba(255, 179, 0, 0.12)";
-    octx.beginPath();
-    const c0 = imageToCanvas(pts[0]);
-    octx.moveTo(c0.x, c0.y);
-    for (let i = 1; i < pts.length; i += 1) {
-      const c = imageToCanvas(pts[i]);
-      octx.lineTo(c.x, c.y);
-    }
-    if (state.selection && state.selection.closed) {
-      octx.closePath();
-      octx.fill();
-    }
-    octx.stroke();
-    octx.restore();
-  }
-
-  const annotateBox = state.annotateDraft || state.annotateBox;
-  if (annotateBox && item?.id && annotateBox.imageId === item.id) {
-    const dpr = getDpr();
-    const a = imageToCanvas({ x: Number(annotateBox.x0) || 0, y: Number(annotateBox.y0) || 0 });
-    const b = imageToCanvas({ x: Number(annotateBox.x1) || 0, y: Number(annotateBox.y1) || 0 });
-    const x = Math.min(a.x, b.x);
-    const y = Math.min(a.y, b.y);
-    const w = Math.max(1, Math.abs(a.x - b.x));
-    const h = Math.max(1, Math.abs(a.y - b.y));
-    octx.save();
-    octx.lineWidth = Math.max(1, Math.round(2 * dpr));
-    octx.strokeStyle = "rgba(82, 255, 148, 0.92)";
-    octx.fillStyle = "rgba(82, 255, 148, 0.10)";
-    if (state.annotateDraft) {
-      octx.setLineDash([Math.round(8 * dpr), Math.round(6 * dpr)]);
-    }
-    octx.fillRect(x, y, w, h);
-    octx.strokeRect(x, y, w, h);
-    octx.setLineDash([]);
-    octx.restore();
-  }
-
-  if (item?.id) {
-    const dpr = getDpr();
-    const circles = _getCircles(item.id);
-    const draft = state.circleDraft && state.circleDraft.imageId === item.id ? state.circleDraft : null;
-    const activeCircleId = state.activeCircle?.imageId === item.id ? state.activeCircle.id : null;
-
-    const drawCircle = (circle, { isDraft = false } = {}) => {
-      if (!circle) return;
-      const geom = circleImageToCanvasGeom(circle);
-      if (!geom.r || geom.r < 1) return;
-      const color = circle.color || "rgba(255, 95, 95, 0.92)";
-      const fill = "rgba(255, 95, 95, 0.08)";
-      const isActive = !isDraft && activeCircleId && circle.id === activeCircleId;
-
-      octx.save();
-      octx.lineWidth = Math.max(1, Math.round((isActive ? 2.8 : 2) * dpr));
-      octx.strokeStyle = color;
-      octx.fillStyle = fill;
-      if (isActive) {
-        octx.shadowColor = "rgba(255, 95, 95, 0.22)";
-        octx.shadowBlur = Math.round(16 * dpr);
-      }
-      if (isDraft) {
-        octx.setLineDash([Math.round(10 * dpr), Math.round(8 * dpr)]);
-      }
-      octx.beginPath();
-      octx.arc(geom.cx, geom.cy, geom.r, 0, Math.PI * 2);
-      octx.stroke();
-      if (!isDraft) octx.fill();
-      octx.setLineDash([]);
-
-      const label = String(circle.label || "").trim();
-	      if (label) {
-	        octx.shadowBlur = 0;
-	        octx.font = `${Math.max(10, Math.round(11 * dpr))}px IBM Plex Mono`;
-	        octx.textBaseline = "middle";
-	        octx.fillStyle = color;
-	        const x = geom.cx + geom.r + Math.round(10 * dpr);
-	        const y = geom.cy;
-	        // Tiny dark underlay for legibility against bright pixels.
-	        octx.globalAlpha = 0.85;
-        octx.fillStyle = "rgba(0, 0, 0, 0.62)";
-        octx.fillText(label, x + Math.round(1 * dpr), y + Math.round(1 * dpr));
-	        octx.globalAlpha = 1;
-	        octx.fillStyle = color;
-	        octx.fillText(label, x, y);
-	      }
-      octx.restore();
-    };
-
-    for (const circle of circles.slice(-24)) {
-      drawCircle(circle, { isDraft: false });
-    }
-    if (draft) {
-      drawCircle(draft, { isDraft: true });
-    }
-  }
-
-  if (singleImageStatusPill?.affordance?.statusLabel) {
-    renderCanvasImageStatusPill(octx, singleImageStatusPill.polygon, singleImageStatusPill.affordance);
-  }
-
-  renderDesignReviewApplyShimmer(octx);
-  renderCommunicationOverlay(octx);
-  renderIntentOverlay(octx, work.width, work.height);
-  renderMotherDraftingPlaceholder(octx, work.width, work.height);
-  renderPromptGeneratePlaceholder(octx, work.width, work.height);
-  renderReelTouchIndicator(octx, work.width, work.height);
-  renderMotherRolePreview();
-  finishPendingTabSwitchFullRender({
-    stale: String(state.activeTabId || "").trim() !== String(pendingTabSwitchFullRenderSample?.tabId || "").trim(),
-  });
-  scheduleActiveTabPreviewCapture("render_complete");
-  if (!document.hidden && (shouldAnimateDesignReviewApplyShimmer() || (!effectsRuntime && shouldAnimateEffectVisuals()))) {
-    requestRender();
-  }
-}
+const { requestRender, render } = createCanvasRenderer({
+  state,
+  els,
+  documentObj: typeof document !== "undefined" ? document : null,
+  clearPendingTabSwitchFullRender,
+  renderPendingTabSwitchPreview,
+  syncIntentRealtimeClass,
+  renderJuggernautShellChrome,
+  renderCommunicationChrome,
+  getActiveImage,
+  renderMultiCanvas,
+  canvasImageLoadingAffordance,
+  readFreeformRectTransform,
+  ensureCanvasImageLoaded,
+  readSessionRuntimeImageHandle,
+  isFreeformTransformPointerDragActive,
+  drawImageRectWithTransform,
+  getDpr,
+  isMotherGeneratedImageItem,
+  selectionChromePalette,
+  transformedRectPolygonPoints,
+  drawPolygonPath,
+  intentModeActive,
+  renderActiveImageTransformControls,
+  singleCanvasLoadingPlaceholderPolygon,
+  renderCanvasImagePlaceholder,
+  syncEffectsRuntimeScene,
+  updateImageFxRect,
+  imageToCanvas,
+  getCircles: _getCircles,
+  circleImageToCanvasGeom,
+  renderCanvasImageStatusPill,
+  renderDesignReviewApplyShimmer,
+  renderCommunicationOverlay,
+  renderIntentOverlay,
+  renderMotherDraftingPlaceholder,
+  renderPromptGeneratePlaceholder,
+  renderReelTouchIndicator,
+  renderMotherRolePreview,
+  finishPendingTabSwitchFullRender,
+  getPendingTabSwitchFullRenderTabId,
+  scheduleActiveTabPreviewCapture,
+  shouldAnimateDesignReviewApplyShimmer,
+  hasEffectsRuntime: () => Boolean(effectsRuntime),
+  shouldAnimateEffectVisuals,
+});
 
 function startSpawnTimer() {
   clearInterval(state.spawnTimer);
@@ -45858,8 +41753,8 @@ function startSpawnTimer() {
   }, 5000);
 }
 
-function installCanvasHandlers() {
-  if (!els.overlayCanvas) return;
+function createCanvasHandlerConfig() {
+  if (!els.overlayCanvas) return null;
 
   let lastOverlayCursor = null;
   const setOverlayCursor = (value) => {
@@ -45898,25 +41793,22 @@ function installCanvasHandlers() {
     requestRender();
   };
 
-  if (els.motherRolePreview && els.motherRolePreview.dataset.liveTetherHoverBound !== "1") {
-    els.motherRolePreview.dataset.liveTetherHoverBound = "1";
-    els.motherRolePreview.addEventListener("pointermove", (event) => {
-      const imageId = motherRolePreviewImageIdFromEvent(event);
-      setMotherRolePreviewHoverImageId(imageId, { requestFrame: true });
-    });
-    els.motherRolePreview.addEventListener("pointerleave", () => {
-      setMotherRolePreviewHoverImageId("", { requestFrame: true });
-    });
-    els.motherRolePreview.addEventListener("pointerdown", (event) => {
-      if (Number(event?.button) !== 0) return;
-      const imageId = motherRolePreviewImageIdFromEvent(event);
-      if (!imageId) return;
-      bumpInteraction({ semantic: false });
-      setMotherRolePreviewHoverImageId(imageId, { requestFrame: false });
-      selectCanvasImage(imageId, { toggle: false }).catch(() => {});
-      requestRender();
-    });
-  }
+  const handleMotherRolePreviewPointerMove = (event) => {
+    const imageId = motherRolePreviewImageIdFromEvent(event);
+    setMotherRolePreviewHoverImageId(imageId, { requestFrame: true });
+  };
+  const handleMotherRolePreviewPointerLeave = () => {
+    setMotherRolePreviewHoverImageId("", { requestFrame: true });
+  };
+  const handleMotherRolePreviewPointerDown = (event) => {
+    if (Number(event?.button) !== 0) return;
+    const imageId = motherRolePreviewImageIdFromEvent(event);
+    if (!imageId) return;
+    bumpInteraction({ semantic: false });
+    setMotherRolePreviewHoverImageId(imageId, { requestFrame: false });
+    selectCanvasImage(imageId, { toggle: false }).catch(() => {});
+    requestRender();
+  };
 
   const handleOverlayKeyDown = (event) => {
     const key = String(event?.key || "");
@@ -47358,21 +43250,6 @@ function installCanvasHandlers() {
     }
   }
 
-  installCanvasInputHandlers(els.overlayCanvas, {
-    pointer: {
-      onPointerEnter: handlePointerEnter,
-      onPointerLeave: handlePointerLeave,
-      onContextMenu: handleContextMenu,
-      onPointerDown: handlePointerDown,
-      onPointerMove: handlePointerMove,
-      onPointerUp: finalizePointer,
-      onPointerCancel: finalizePointer,
-    },
-    keyboard: {
-      onKeyDown: handleOverlayKeyDown,
-    },
-  });
-
   const handleOverlayWheel = (event) => {
       bumpInteraction({ motherHot: false, semantic: false });
       if (!state.images || state.images.length === 0) return;
@@ -47458,265 +43335,125 @@ function installCanvasHandlers() {
 		      scheduleVisualPromptWrite();
 		      requestRender();
 		    };
-  installCanvasInputHandlers(els.overlayCanvas, {
+  // WKWebView/Safari trackpad pinch-to-zoom is exposed via non-standard gesture events.
+  // If we only listen for wheel+ctrlKey, users can lose pinch zoom.
+  const shouldHandleGesture = (event) => {
+    if (!els.overlayCanvas) return false;
+    const cx = Number(event?.clientX);
+    const cy = Number(event?.clientY);
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return false;
+    const rect = els.overlayCanvas.getBoundingClientRect();
+    if (!rect?.width || !rect?.height) return false;
+    return cx >= rect.left && cx <= rect.right && cy >= rect.top && cy <= rect.bottom;
+  };
+  const onGestureStart = (event) => {
+    if (!shouldHandleGesture(event)) return;
+    if (!state.images || state.images.length === 0) return;
+    bumpInteraction({ motherHot: false, semantic: false });
+    event.preventDefault();
+    state.gestureZoom.active = true;
+    const s = Number(event?.scale);
+    state.gestureZoom.lastScale = Number.isFinite(s) && s > 0 ? s : 1;
+  };
+  const onGestureChange = (event) => {
+    if (!state.gestureZoom?.active) return;
+    if (!shouldHandleGesture(event)) return;
+    if (!state.images || state.images.length === 0) return;
+    bumpInteraction({ motherHot: false, semantic: false });
+    event.preventDefault();
+
+    const scaleEvent = Number(event?.scale);
+    const nextScaleEvent = Number.isFinite(scaleEvent) && scaleEvent > 0 ? scaleEvent : 1;
+    const lastScaleEvent = Math.max(0.0001, Number(state.gestureZoom?.lastScale) || 1);
+    state.gestureZoom.lastScale = nextScaleEvent;
+    const factor = nextScaleEvent / lastScaleEvent;
+
+    const p = canvasPointFromEvent(event);
+    if (state.canvasMode === "multi") {
+      const before = {
+        x: (p.x - (state.multiView?.offsetX || 0)) / Math.max(state.multiView?.scale || 1, 0.0001),
+        y: (p.y - (state.multiView?.offsetY || 0)) / Math.max(state.multiView?.scale || 1, 0.0001),
+      };
+      const next = clamp((state.multiView?.scale || 1) * factor, 0.05, 40);
+      state.multiView.scale = next;
+      state.multiView.offsetX = p.x - before.x * state.multiView.scale;
+      state.multiView.offsetY = p.y - before.y * state.multiView.scale;
+    } else {
+      const before = canvasToImage(p);
+      const next = clamp(state.view.scale * factor, 0.05, 40);
+      state.view.scale = next;
+      state.view.offsetX = p.x - before.x * state.view.scale;
+      state.view.offsetY = p.y - before.y * state.view.scale;
+    }
+    invalidateActiveTabPreview("viewport_zoom");
+    renderHudReadout();
+    scheduleVisualPromptWrite();
+    requestRender();
+  };
+  const onGestureEnd = (event) => {
+    if (!state.gestureZoom?.active) return;
+    if (!shouldHandleGesture(event)) return;
+    bumpInteraction({ motherHot: false, semantic: false });
+    event.preventDefault();
+    state.gestureZoom.active = false;
+    state.gestureZoom.lastScale = 1;
+  };
+
+  return {
+    motherRolePreview: {
+      onPointerMove: handleMotherRolePreviewPointerMove,
+      onPointerLeave: handleMotherRolePreviewPointerLeave,
+      onPointerDown: handleMotherRolePreviewPointerDown,
+    },
+    pointer: {
+      onPointerEnter: handlePointerEnter,
+      onPointerLeave: handlePointerLeave,
+      onContextMenu: handleContextMenu,
+      onPointerDown: handlePointerDown,
+      onPointerMove: handlePointerMove,
+      onPointerUp: finalizePointer,
+      onPointerCancel: finalizePointer,
+    },
+    keyboard: {
+      onKeyDown: handleOverlayKeyDown,
+    },
     wheel: {
       onWheel: handleOverlayWheel,
     },
+    gestures: {
+      onGestureStart,
+      onGestureChange,
+      onGestureEnd,
+    },
+  };
+}
+
+function installCanvasHandlers() {
+  const canvasHandlerConfig = createCanvasHandlerConfig();
+  if (!canvasHandlerConfig) return;
+  installCanvasInputController({
+    els,
+    state,
+    ...canvasHandlerConfig,
   });
-
-    // WKWebView/Safari trackpad pinch-to-zoom is exposed via non-standard gesture events.
-    // If we only listen for wheel+ctrlKey, users can lose pinch zoom.
-    if (!state.gestureZoom) state.gestureZoom = { active: false, lastScale: 1 };
-    const shouldHandleGesture = (event) => {
-      if (!els.overlayCanvas) return false;
-      const cx = Number(event?.clientX);
-      const cy = Number(event?.clientY);
-      if (!Number.isFinite(cx) || !Number.isFinite(cy)) return false;
-      const rect = els.overlayCanvas.getBoundingClientRect();
-      if (!rect?.width || !rect?.height) return false;
-      return cx >= rect.left && cx <= rect.right && cy >= rect.top && cy <= rect.bottom;
-    };
-    const onGestureStart = (event) => {
-      if (!shouldHandleGesture(event)) return;
-      if (!state.images || state.images.length === 0) return;
-      bumpInteraction({ motherHot: false, semantic: false });
-      event.preventDefault();
-      state.gestureZoom.active = true;
-      const s = Number(event?.scale);
-      state.gestureZoom.lastScale = Number.isFinite(s) && s > 0 ? s : 1;
-    };
-    const onGestureChange = (event) => {
-      if (!state.gestureZoom?.active) return;
-      if (!shouldHandleGesture(event)) return;
-      if (!state.images || state.images.length === 0) return;
-      bumpInteraction({ motherHot: false, semantic: false });
-      event.preventDefault();
-
-      const scaleEvent = Number(event?.scale);
-      const nextScaleEvent = Number.isFinite(scaleEvent) && scaleEvent > 0 ? scaleEvent : 1;
-      const lastScaleEvent = Math.max(0.0001, Number(state.gestureZoom?.lastScale) || 1);
-      state.gestureZoom.lastScale = nextScaleEvent;
-      const factor = nextScaleEvent / lastScaleEvent;
-
-      const p = canvasPointFromEvent(event);
-      if (state.canvasMode === "multi") {
-        const before = {
-          x: (p.x - (state.multiView?.offsetX || 0)) / Math.max(state.multiView?.scale || 1, 0.0001),
-          y: (p.y - (state.multiView?.offsetY || 0)) / Math.max(state.multiView?.scale || 1, 0.0001),
-        };
-        const next = clamp((state.multiView?.scale || 1) * factor, 0.05, 40);
-        state.multiView.scale = next;
-        state.multiView.offsetX = p.x - before.x * state.multiView.scale;
-        state.multiView.offsetY = p.y - before.y * state.multiView.scale;
-      } else {
-        const before = canvasToImage(p);
-        const next = clamp(state.view.scale * factor, 0.05, 40);
-        state.view.scale = next;
-        state.view.offsetX = p.x - before.x * state.view.scale;
-        state.view.offsetY = p.y - before.y * state.view.scale;
-      }
-      invalidateActiveTabPreview("viewport_zoom");
-      renderHudReadout();
-      scheduleVisualPromptWrite();
-      requestRender();
-    };
-    const onGestureEnd = (event) => {
-      if (!state.gestureZoom?.active) return;
-      if (!shouldHandleGesture(event)) return;
-      bumpInteraction({ motherHot: false, semantic: false });
-      event.preventDefault();
-      state.gestureZoom.active = false;
-      state.gestureZoom.lastScale = 1;
-    };
-	    try {
-      installCanvasGestureHandlers(els.overlayCanvas, {
-        onGestureStart,
-        onGestureChange,
-        onGestureEnd,
-      });
-	    } catch {
-	      // ignore
-	    }
-		}
+}
 
 function installDnD() {
-  if (!els.canvasWrap) return;
-
-  // Even when drag/drop import is disabled, we must still prevent the WebView's
-  // default file-drop navigation (which can wipe the current session/run).
-  const preventNav = (event) => {
-    if (!event) return;
-    event.preventDefault();
-  };
-
-  const canvasWorldPointFromClient = (clientX, clientY) => {
-    const wrapRect = els.canvasWrap?.getBoundingClientRect?.();
-    if (!wrapRect || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
-    if (clientX < wrapRect.left || clientX > wrapRect.right || clientY < wrapRect.top || clientY > wrapRect.bottom) {
-      return null;
-    }
-    const overlayRect = els.overlayCanvas?.getBoundingClientRect?.() || wrapRect;
-    const css = { x: clientX - overlayRect.left, y: clientY - overlayRect.top };
-    return canvasScreenCssToWorldCss(css);
-  };
-
-  const tryImportInternalDragAtClient = async (clientX, clientY, { source = "browser_drag_fallback" } = {}) => {
-    const path = normalizeLocalFsPath(state.fileBrowser?.draggingPath || "");
-    if (!path || !isBrowserImagePath(path)) return false;
-    const world = canvasWorldPointFromClient(clientX, clientY);
-    if (!world) return false;
-    const result = await importLocalPathsAtCanvasPoint([path], world, {
-      source,
-      idPrefix: "dockdrop",
-      enforceIntentLimit: true,
-      focusImported: true,
-    });
-    if (!result?.ok) {
-      showToast("Could not import dropped image.", "error", 2600);
-      return false;
-    }
-    fileBrowserSetDragPath(null);
-    return true;
-  };
-
-  let lastInternalImportAt = 0;
-  try {
-    window.addEventListener("dragover", preventNav, { passive: false });
-    window.addEventListener(
-      "drop",
-      (event) => {
-        preventNav(event);
-        const now = Date.now();
-        if (now - lastInternalImportAt < 500) {
-          fileBrowserSetDragPath(null);
-          return;
-        }
-        const clientX = Number(event?.clientX);
-        const clientY = Number(event?.clientY);
-        if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
-          fileBrowserSetDragPath(null);
-          return;
-        }
-        tryImportInternalDragAtClient(clientX, clientY, { source: "browser_drag_window" }).catch(() => {});
-      },
-      { passive: false }
-    );
-  } catch {
-    // ignore
-  }
-
-  function stop(event) {
-    preventNav(event);
-    event?.stopPropagation?.();
-  }
-
-  let browserDragDepth = 0;
-  const setBrowserDragHover = (on) => {
-    els.canvasWrap.classList.toggle("is-browser-drag-over", Boolean(on));
-  };
-  const clearBrowserDragHover = () => {
-    browserDragDepth = 0;
-    setBrowserDragHover(false);
-  };
-
-  try {
-    window.addEventListener("dragend", clearBrowserDragHover, { passive: true });
-    window.addEventListener(
-      "dragend",
-      (event) => {
-        const clientX = Number(event?.clientX);
-        const clientY = Number(event?.clientY);
-        if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
-          fileBrowserClearDragPathDeferred(120);
-          return;
-        }
-        tryImportInternalDragAtClient(clientX, clientY, { source: "browser_drag_end" })
-          .catch(() => {})
-          .finally(() => {
-            fileBrowserClearDragPathDeferred(120);
-          });
-      },
-      { passive: true }
-    );
-    window.addEventListener("drop", clearBrowserDragHover, { passive: false });
-  } catch {
-    // ignore
-  }
-
-  const handleDragEnter = (event) => {
-    stop(event);
-    const internalPath = fileBrowserReadInternalDragPath(event?.dataTransfer);
-    if (internalPath) {
-      browserDragDepth += 1;
-      setBrowserDragHover(true);
-    }
-  };
-  const handleDragLeave = (event) => {
-    stop(event);
-    const internalPath = fileBrowserReadInternalDragPath(event?.dataTransfer);
-    if (!internalPath) return;
-    browserDragDepth = Math.max(0, browserDragDepth - 1);
-    if (!browserDragDepth) setBrowserDragHover(false);
-  };
-  const handleDragOver = (event) => {
-    stop(event);
-    const internalPath = fileBrowserReadInternalDragPath(event?.dataTransfer);
-    if (internalPath) {
-      if (event?.dataTransfer) event.dataTransfer.dropEffect = "copy";
-      setBrowserDragHover(true);
-    }
-  };
-
-  let disabledToastAt = 0;
-  const handleDrop = async (event) => {
-    stop(event);
-    clearBrowserDragHover();
-    bumpInteraction();
-    const internalPath = fileBrowserReadInternalDragPath(event?.dataTransfer);
-    if (internalPath) {
-      const world = canvasScreenCssToWorldCss(canvasCssPointFromEvent(event));
-      lastInternalImportAt = Date.now();
-      const result = await importLocalPathsAtCanvasPoint([internalPath], world, {
-        source: "browser_drag",
-        idPrefix: "dockdrop",
-        enforceIntentLimit: true,
-        focusImported: true,
-      });
-      if (!result?.ok) {
-        showToast("Could not import dropped image.", "error", 2600);
-      }
-      fileBrowserSetDragPath(null);
-      return;
-    }
-    fileBrowserSetDragPath(null);
-    const files = Array.from(event.dataTransfer?.files || []);
-    const paths = files.map((f) => f?.path).filter(Boolean);
-    if (paths.length === 0) return;
-    if (!ENABLE_DRAG_DROP_IMPORT) {
-      const now = Date.now();
-      if (!disabledToastAt || now - disabledToastAt > 3500) {
-        disabledToastAt = now;
-        showToast("Drag/drop disabled. Click anywhere to add a photo.", "tip", 2400);
-      }
-      return;
-    }
-    const world = canvasScreenCssToWorldCss(canvasCssPointFromEvent(event));
-    await importLocalPathsAtCanvasPoint(paths, world, {
-      source: "drop",
-      idPrefix: "drop",
-      enforceIntentLimit: true,
-    });
-  };
-
-  const dndTargets = [els.canvasWrap, els.overlayCanvas].filter(Boolean);
-  for (const target of dndTargets) {
-    target.addEventListener("dragenter", handleDragEnter, { passive: false });
-    target.addEventListener("dragleave", handleDragLeave, { passive: false });
-    target.addEventListener("dragover", handleDragOver, { passive: false });
-    target.addEventListener("drop", (event) => {
-      handleDrop(event).catch((err) => console.error(err));
-    });
-  }
+  installCanvasDndController({
+    els,
+    state,
+    canvasScreenCssToWorldCss,
+    normalizeLocalFsPath,
+    isBrowserImagePath,
+    importLocalPathsAtCanvasPoint,
+    showToast,
+    fileBrowserSetDragPath,
+    fileBrowserReadInternalDragPath,
+    fileBrowserClearDragPathDeferred,
+    bumpInteraction,
+    canvasCssPointFromEvent,
+    ENABLE_DRAG_DROP_IMPORT,
+  });
 }
 
 function installJuggernautShellUi() {
@@ -47804,361 +43541,6 @@ function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
   };
 }
 
-function createSessionTabForkIndicator() {
-  const indicator = document.createElement("span");
-  indicator.className = "session-tab-fork-indicator";
-  indicator.setAttribute("aria-hidden", "true");
-  indicator.dataset.juggernautIconSlot = "fork_session";
-  renderJuggernautShellIconSlot(indicator, "fork_session");
-  return indicator;
-}
-
-function createSessionTabReviewIcon(summary = {}) {
-  const reviewFlowState = normalizeSessionTabReviewFlowState(summary.reviewFlowState);
-  if (!reviewFlowState) return null;
-  const icon = document.createElement("span");
-  icon.className = "session-tab-review-icon";
-  icon.classList.add(`is-${reviewFlowState}`);
-  const reviewFlowLabel = String(summary.reviewFlowLabel || sessionTabReviewFlowLabel(reviewFlowState) || "Review").trim() || "Review";
-  icon.setAttribute("role", "img");
-  icon.setAttribute("aria-label", reviewFlowLabel);
-  icon.title = reviewFlowLabel;
-  if (reviewFlowState === "planning" || reviewFlowState === "applying") {
-    icon.classList.add("session-tab-review-spinner");
-    return icon;
-  }
-  if (reviewFlowState === "ready") {
-    icon.innerHTML = `
-      <svg viewBox="0 0 12 12" aria-hidden="true">
-        <path
-          d="M2.4 6.4 4.85 8.85 9.6 3.95"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.6"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    `;
-    return icon;
-  }
-  icon.innerHTML = `
-    <svg viewBox="0 0 12 12" aria-hidden="true">
-      <path
-        d="M6 2.4v3.35M6 8.55h.01"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.65"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-      <circle cx="6" cy="6" r="4.2" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.42" />
-    </svg>
-  `;
-  return icon;
-}
-
-function appendSessionTabTitleRowLead(titleRow, summary = {}) {
-  if (summary.isForked) titleRow.append(createSessionTabForkIndicator());
-  const reviewIcon = createSessionTabReviewIcon(summary);
-  if (reviewIcon) titleRow.append(reviewIcon);
-}
-
-function createSessionTabFlags() {
-  const flags = document.createElement("span");
-  flags.className = "session-tab-flags";
-  flags.setAttribute("aria-hidden", "true");
-  const busyIndicator = document.createElement("span");
-  busyIndicator.className = "session-tab-busy-indicator";
-  flags.append(busyIndicator);
-  return flags;
-}
-
-function createSessionTabStripItem(tab = null, totalTabs = 0) {
-  const summary = buildSessionTabUiSummary(tab, totalTabs);
-  const item = document.createElement("div");
-  item.className = "session-tab-item";
-  if (summary.isForked) item.classList.add("is-forked");
-  if (summary.isActive) item.classList.add("is-active");
-  if (summary.isBusy) item.classList.add("is-busy");
-  if (summary.isDirty) item.classList.add("is-dirty");
-  if (summary.reviewFlowState) item.classList.add(`is-review-${summary.reviewFlowState}`);
-  if (summary.showReviewSpinner) item.classList.add("is-review-progress");
-  if (summary.isRenaming) item.classList.add("is-renaming");
-  item.dataset.tabId = summary.tabId;
-  item.dataset.title = summary.title;
-  item.dataset.runDir = summary.runDir;
-  item.dataset.active = summary.isActive ? "true" : "false";
-  item.dataset.busy = summary.isBusy ? "true" : "false";
-  item.dataset.dirty = summary.isDirty ? "true" : "false";
-  item.dataset.forked = summary.isForked ? "true" : "false";
-  item.dataset.canClose = summary.canClose ? "true" : "false";
-  item.dataset.reviewFlowState = summary.reviewFlowState;
-  item.dataset.reviewProgress = summary.showReviewSpinner ? "true" : "false";
-  if (summary.isRenaming && Number.isFinite(sessionTabRenameState.lockedWidth) && sessionTabRenameState.lockedWidth > 0) {
-    const fixedWidth = `${sessionTabRenameState.lockedWidth}px`;
-    item.style.width = fixedWidth;
-    item.style.minWidth = fixedWidth;
-    item.style.maxWidth = fixedWidth;
-  }
-
-  if (summary.isRenaming) {
-    const renameShell = document.createElement("div");
-    renameShell.className = "session-tab-rename-shell";
-
-    const labels = document.createElement("span");
-    labels.className = "session-tab-labels";
-
-    const rename = document.createElement("label");
-    rename.className = "session-tab-rename";
-
-    const renameRow = document.createElement("span");
-    renameRow.className = "session-tab-title-row";
-
-    const input = document.createElement("input");
-    input.className = "session-tab-title-input";
-    input.type = "text";
-    input.value = String(sessionTabRenameState.draft || summary.title || "");
-    input.maxLength = SESSION_TAB_TITLE_MAX_LENGTH;
-    input.placeholder = DEFAULT_UNTITLED_TAB_TITLE;
-    input.setAttribute("aria-label", "Rename tab");
-    input.spellcheck = false;
-    input.autocomplete = "off";
-    input.addEventListener("pointerdown", (event) => {
-      event.stopPropagation();
-    });
-    input.addEventListener("click", (event) => {
-      event.stopPropagation();
-    });
-    input.addEventListener("input", () => {
-      const next = normalizeSessionTabTitleInput(input.value, SESSION_TAB_TITLE_MAX_LENGTH);
-      sessionTabRenameState.draft = next;
-      if (input.value !== next) input.value = next;
-    });
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        commitSessionTabRename(summary.tabId, input.value);
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        cancelSessionTabRename();
-      }
-    });
-    input.addEventListener("blur", () => {
-      if (String(sessionTabRenameState.tabId || "").trim() !== summary.tabId) return;
-      commitSessionTabRename(summary.tabId, input.value);
-    });
-
-    appendSessionTabTitleRowLead(renameRow, summary);
-    renameRow.append(input);
-    rename.append(renameRow);
-    labels.append(rename);
-    renameShell.append(labels, createSessionTabFlags(summary));
-    item.append(renameShell);
-  } else {
-    const hit = document.createElement("button");
-    hit.className = "session-tab-hit";
-    hit.type = "button";
-    hit.setAttribute("role", "tab");
-    hit.setAttribute("aria-selected", summary.isActive ? "true" : "false");
-    hit.tabIndex = summary.isActive ? 0 : -1;
-    hit.title = summary.runDir ? `${summary.title}\n${summary.runDir}` : summary.title;
-
-    const labels = document.createElement("span");
-    labels.className = "session-tab-labels";
-
-    const titleRow = document.createElement("span");
-    titleRow.className = "session-tab-title-row";
-
-    const title = document.createElement("span");
-    title.className = "session-tab-title";
-    title.textContent = summary.title;
-    appendSessionTabTitleRowLead(titleRow, summary);
-    titleRow.append(title);
-    labels.append(titleRow);
-
-    const runDir = document.createElement("span");
-    runDir.className = "session-tab-run-dir";
-    runDir.textContent = summary.runDir;
-    labels.append(runDir);
-
-    hit.append(labels, createSessionTabFlags(summary));
-    item.append(hit);
-  }
-
-  const close = document.createElement("button");
-  close.className = "session-tab-close";
-  close.type = "button";
-  close.setAttribute("aria-label", `Close ${summary.title}`);
-  close.title = `Close ${summary.title}`;
-  close.hidden = !summary.canClose;
-  close.disabled = !summary.canClose;
-  close.innerHTML = `
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M7 7l10 10M17 7 7 17"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.8"
-        stroke-linecap="round"
-      />
-    </svg>
-  `;
-  item.append(close);
-  return item;
-}
-
-function createSessionTabStripPlaceholderItem() {
-  const item = document.createElement("div");
-  item.className = "session-tab-item is-placeholder";
-  item.dataset.placeholder = "true";
-  item.setAttribute("aria-hidden", "true");
-
-  const shell = document.createElement("div");
-  shell.className = "session-tab-placeholder-shell";
-
-  const labels = document.createElement("span");
-  labels.className = "session-tab-labels";
-
-  const title = document.createElement("span");
-  title.className = "session-tab-placeholder-label";
-  title.textContent = state.ptySpawning ? "Starting session..." : "No session yet";
-  labels.append(title);
-
-  shell.append(labels);
-  item.append(shell);
-  return item;
-}
-
-function renderSessionTabStrip(snapshot = null) {
-  if (!els.sessionTabList) return;
-  const tabs = Array.isArray(snapshot?.tabs) ? snapshot.tabs : listTabs();
-  const fragment = document.createDocumentFragment();
-  if (!tabs.length) {
-    fragment.append(createSessionTabStripPlaceholderItem());
-  } else {
-    for (const tab of tabs) {
-      fragment.append(createSessionTabStripItem(tab, tabs.length));
-    }
-  }
-  els.sessionTabList.replaceChildren(fragment);
-  focusSessionTabRenameInput();
-}
-
-function installSessionTabStripUi() {
-  if (!els.sessionTabStrip || !els.sessionTabList) return;
-  renderSessionTabStrip();
-  if (!releaseSessionTabStripSubscription) {
-    releaseSessionTabStripSubscription = subscribeTabs((snapshot) => {
-      renderSessionTabStrip(snapshot);
-    });
-  }
-
-  if (els.sessionTabList.dataset.bound !== "1") {
-    els.sessionTabList.dataset.bound = "1";
-    els.sessionTabList.addEventListener("click", (event) => {
-      const target = event?.target;
-      const title = target?.closest ? target.closest(".session-tab-title") : null;
-      if (title && els.sessionTabList.contains(title)) {
-        event.preventDefault();
-        event.stopPropagation();
-        const item = title.closest(".session-tab-item");
-        const tabId = String(item?.dataset?.tabId || "").trim();
-        if (!tabId) return;
-        const isActive = String(item?.dataset?.active || "").trim() === "true";
-        if (!isActive) {
-          bumpInteraction();
-          void activateTab(tabId, { spawnEngine: true, reason: "titlebar_tab_click" }).catch((err) => {
-            console.error(err);
-            showToast(err?.message || "Could not switch tabs.", "error", 2600);
-          });
-          return;
-        }
-        bumpInteraction({ semantic: false });
-        startSessionTabRename(tabId);
-        return;
-      }
-      const closeButton = target?.closest ? target.closest(".session-tab-close") : null;
-      if (closeButton && els.sessionTabList.contains(closeButton)) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (closeButton.disabled) return;
-        const item = closeButton.closest(".session-tab-item");
-        const tabId = String(item?.dataset?.tabId || "").trim();
-        if (!tabId) return;
-        bumpInteraction();
-        void closeTab(tabId).catch((err) => {
-          console.error(err);
-          showToast(err?.message || "Could not close tab.", "error", 2600);
-        });
-        return;
-      }
-      const hit = target?.closest ? target.closest(".session-tab-hit") : null;
-      if (!hit || !els.sessionTabList.contains(hit)) return;
-      event.preventDefault();
-      const item = hit.closest(".session-tab-item");
-      const tabId = String(item?.dataset?.tabId || "").trim();
-      if (!tabId) return;
-      bumpInteraction();
-      void activateTab(tabId, { spawnEngine: true, reason: "titlebar_tab_click" }).catch((err) => {
-        console.error(err);
-        showToast(err?.message || "Could not switch tabs.", "error", 2600);
-      });
-    });
-  }
-
-  if (els.timelineToggle && els.timelineToggle.dataset.bound !== "1") {
-    els.timelineToggle.dataset.bound = "1";
-    els.timelineToggle.addEventListener("click", () => {
-      bumpInteraction();
-      toggleTimeline({ persist: true });
-    });
-  }
-
-  if (els.sessionTabNew && els.sessionTabNew.dataset.bound !== "1") {
-    els.sessionTabNew.dataset.bound = "1";
-    els.sessionTabNew.addEventListener("click", () => {
-      bumpInteraction();
-      void runWithUserError("New session", () => createRun(), {
-        retryHint: "Check permissions and try again.",
-      });
-    });
-  }
-
-  if (els.sessionTabFork && els.sessionTabFork.dataset.bound !== "1") {
-    els.sessionTabFork.dataset.bound = "1";
-    els.sessionTabFork.addEventListener("click", () => {
-      bumpInteraction();
-      void runWithUserError("Fork tab", () => forkActiveTab(), {
-        retryHint: "Wait for the current tab to settle and retry.",
-      });
-    });
-  }
-
-  if (els.sessionTabDesignReview && els.sessionTabDesignReview.dataset.bound !== "1") {
-    els.sessionTabDesignReview.dataset.bound = "1";
-    els.sessionTabDesignReview.addEventListener("pointerup", (event) => {
-      if (typeof event?.button === "number" && event.button !== 0) return;
-      bumpInteraction();
-      suppressNextDesignReviewTitlebarClick();
-      triggerCommunicationDesignReviewFromTitlebar({ source: "titlebar_pointer" });
-    });
-    els.sessionTabDesignReview.addEventListener("keydown", (event) => {
-      const key = String(event?.key || "");
-      if (key !== "Enter" && key !== " " && key !== "Spacebar") return;
-      bumpInteraction();
-      suppressNextDesignReviewTitlebarClick();
-      triggerCommunicationDesignReviewFromTitlebar({ source: "titlebar_keyboard" });
-    });
-    els.sessionTabDesignReview.addEventListener("click", () => {
-      bumpInteraction();
-      triggerCommunicationDesignReviewFromTitlebar({ source: "titlebar" });
-    });
-  }
-}
-
 function buildRuntimeChromeMenuToggle({ id, menuKey, label, ariaLabel, title }) {
   const row = document.createElement("label");
   row.className = "app-menu-toggle-row";
@@ -48184,9 +43566,21 @@ function ensureRuntimeChromeMenu() {
 }
 
 function installUi() {
-  ensureRuntimeChromeMenu();
-  installSessionTabStripUi();
-  syncAppMenuState();
+  try {
+    ensureRuntimeChromeMenu();
+  } catch (error) {
+    console.error("Cue UI bootstrap failed during runtime chrome menu install:", error);
+  }
+  try {
+    installSessionTabStripUi();
+  } catch (error) {
+    console.error("Cue UI bootstrap failed during session tab strip install:", error);
+  }
+  try {
+    syncAppMenuState();
+  } catch (error) {
+    console.error("Cue UI bootstrap failed during app menu sync:", error);
+  }
   if (els.appMenuToggle && els.appMenu) {
     const toggle = els.appMenuToggle;
     const menu = els.appMenu;
@@ -48777,103 +44171,10 @@ function installUi() {
     });
   }
 
-  if (els.timelineShell) {
-    els.timelineShell.addEventListener("pointerdown", (event) => {
-      beginTimelineCarouselGesture(event);
-    });
-    els.timelineShell.addEventListener("pointermove", (event) => {
-      updateTimelineCarouselGesture(event);
-    });
-    const finishTimelineShellGesture = (event) => {
-      if (finishTimelineCarouselGesture(event)) {
-        bumpInteraction();
-      }
-    };
-    els.timelineShell.addEventListener("pointerup", finishTimelineShellGesture);
-    els.timelineShell.addEventListener("pointercancel", () => {
-      resetTimelineCarouselGesture();
-    });
-    els.timelineShell.addEventListener(
-      "wheel",
-      (event) => {
-        if (handleTimelineCarouselWheel(event)) {
-          bumpInteraction();
-        }
-      },
-      { passive: false }
-    );
-  }
-  if (els.timelinePrev) {
-    els.timelinePrev.addEventListener("click", () => {
-      if (els.timelinePrev.disabled) return;
-      bumpInteraction();
-      scrollTimelineCarousel(-1);
-    });
-  }
-  if (els.timelineNext) {
-    els.timelineNext.addEventListener("click", () => {
-      if (els.timelineNext.disabled) return;
-      bumpInteraction();
-      scrollTimelineCarousel(1);
-    });
-  }
-  if (els.timelineStrip) {
-    els.timelineStrip.addEventListener("scroll", () => {
-      scheduleTimelineCarouselChromeSync();
-    });
-    els.timelineStrip.addEventListener("pointerover", (event) => {
-      const card = event?.target?.closest ? event.target.closest(".timeline-card[data-node-id]") : null;
-      if (!card || !els.timelineStrip.contains(card)) return;
-      const nodeId = String(card.dataset?.nodeId || "").trim();
-      if (!nodeId || state.timelinePreviewNodeId === nodeId) return;
-      state.timelinePreviewNodeId = nodeId;
-      syncTimelineDetailText();
-    });
-    els.timelineStrip.addEventListener("pointerleave", () => {
-      if (!state.timelinePreviewNodeId) return;
-      state.timelinePreviewNodeId = null;
-      syncTimelineDetailText();
-    });
-    els.timelineStrip.addEventListener("focusin", (event) => {
-      const card = event?.target?.closest ? event.target.closest(".timeline-card[data-node-id]") : null;
-      if (!card || !els.timelineStrip.contains(card)) return;
-      const nodeId = String(card.dataset?.nodeId || "").trim();
-      if (!nodeId || state.timelinePreviewNodeId === nodeId) return;
-      state.timelinePreviewNodeId = nodeId;
-      syncTimelineDetailText();
-    });
-    els.timelineStrip.addEventListener("focusout", (event) => {
-      const related = event?.relatedTarget;
-      if (related && els.timelineStrip.contains(related)) return;
-      if (!state.timelinePreviewNodeId) return;
-      state.timelinePreviewNodeId = null;
-      syncTimelineDetailText();
-    });
-    els.timelineStrip.addEventListener("click", (event) => {
-      if (shouldSuppressTimelineCardClick()) {
-        event.preventDefault();
-        return;
-      }
-      const card = event?.target?.closest ? event.target.closest(".timeline-card[data-node-id]") : null;
-      if (!card || !els.timelineStrip.contains(card)) return;
-      const nodeId = card.dataset?.nodeId;
-      if (!nodeId) return;
-      state.timelinePreviewNodeId = null;
-      bumpInteraction();
-      jumpToTimelineNode(nodeId).catch((err) => console.error(err));
-    });
-    els.timelineStrip.addEventListener("keydown", (event) => {
-      const key = String(event?.key || "");
-      if (key !== "Enter" && key !== " ") return;
-      const card = event?.target?.closest ? event.target.closest(".timeline-card[data-node-id]") : null;
-      if (!card || !els.timelineStrip.contains(card)) return;
-      const nodeId = card.dataset?.nodeId;
-      if (!nodeId) return;
-      event.preventDefault();
-      state.timelinePreviewNodeId = null;
-      bumpInteraction();
-      jumpToTimelineNode(nodeId).catch((err) => console.error(err));
-    });
+  try {
+    installTimelineUi();
+  } catch (error) {
+    console.error("Cue UI bootstrap failed during timeline UI install:", error);
   }
 
   if (els.memoryToggle) {
@@ -49671,330 +44972,157 @@ async function boot() {
     return;
   }
 
-  setStatus("Engine: booting…");
-  setRunInfo("No run");
-  ensureInstallTelemetryReady().catch(() => {});
-  renderInstallTelemetryStatus();
-  ensureIntentUiIconsLoaded().catch(() => {});
-  refreshKeyStatus().catch(() => {});
-  updateAlwaysOnVisionReadout();
-  renderQuickActions();
-  applyRuntimeChromeVisibility({ source: "boot" });
-  if (typeof window !== "undefined") {
-    installToolApplyBridge({
-      windowObj: window,
-      CustomEventCtor: typeof CustomEvent === "function" ? CustomEvent : null,
-      applyToolRuntimeEdit,
-    });
-    installAgentObservableDriverRuntime();
-    publishAgentRunnerBridge();
-  }
-  renderSessionApiCallsReadout();
-  clearInterval(topMetricsTickTimer);
-  topMetricsTickTimer = setInterval(() => {
-    renderSessionApiCallsReadout();
-  }, 15_000);
-  syncBrandStripHeightVar();
-  if (typeof ResizeObserver === "function" && els.brandStrip) {
-    try {
-      if (brandStripResizeObserver) brandStripResizeObserver.disconnect();
-      brandStripResizeObserver = new ResizeObserver(() => {
-        syncBrandStripHeightVar();
-      });
-      brandStripResizeObserver.observe(els.brandStrip);
-      requestAnimationFrame(() => syncBrandStripHeightVar());
-    } catch {
-      // ignore
-    }
-  }
-  ensurePortraitIndex().catch(() => {});
-  updatePortraitIdle({ fromSettings: true });
-  syncIntentModeClass();
-  updateEmptyCanvasHint();
-  renderSelectionMeta();
-  chooseSpawnNodes();
-  renderFilmstrip();
-  renderAgentRunnerPlannerOptions();
-  renderAgentRunnerPanel();
-  ensureCanvasSize();
-  effectsRuntime = createEffectsRuntime({ canvas: els.effectsCanvas });
-  effectsRuntime.resize({
-    width: els.workCanvas.width,
-    height: els.workCanvas.height,
-    dpr: getDpr(),
+  const bootPreflight = runCanvasAppBootPreflight({
+    windowObj: typeof window !== "undefined" ? window : null,
+    documentObj: document,
+    CustomEventCtor: typeof CustomEvent === "function" ? CustomEvent : null,
+    ResizeObserverCtor: typeof ResizeObserver === "function" ? ResizeObserver : null,
+    requestAnimationFrameFn: typeof requestAnimationFrame === "function" ? requestAnimationFrame : null,
+    clearIntervalFn: clearInterval,
+    setIntervalFn: setInterval,
+    dom: els,
+    state,
+    topMetricsTickTimer,
+    brandStripResizeObserver,
+    hudResizeObserver,
+    setStatus,
+    setRunInfo,
+    ensureInstallTelemetryReady,
+    renderInstallTelemetryStatus,
+    ensureIntentUiIconsLoaded,
+    refreshKeyStatus,
+    updateAlwaysOnVisionReadout,
+    renderQuickActions,
+    applyRuntimeChromeVisibility,
+    installToolApplyBridge,
+    applyToolRuntimeEdit,
+    installAgentObservableDriverRuntime,
+    publishAgentRunnerBridge,
+    renderSessionApiCallsReadout,
+    syncBrandStripHeightVar,
+    ensurePortraitIndex,
+    updatePortraitIdle,
+    syncIntentModeClass,
+    updateEmptyCanvasHint,
+    renderSelectionMeta,
+    chooseSpawnNodes,
+    renderFilmstrip,
+    renderAgentRunnerPlannerOptions,
+    renderAgentRunnerPanel,
+    ensureCanvasSize,
+    createEffectsRuntime,
+    getDpr,
+    syncHudHeightVar,
+    installDprWatcher,
   });
-  effectsRuntime.setSuspended(document.hidden || state.canvasMode !== "multi");
-  // Keep decorative canvas bumpers matched to the HUD height.
-  const hudShell = els.hud ? els.hud.querySelector(".hud-shell") : null;
-  if (typeof ResizeObserver === "function" && (hudShell || els.hud)) {
-    try {
-      if (hudResizeObserver) hudResizeObserver.disconnect();
-      hudResizeObserver = new ResizeObserver(() => {
-        syncHudHeightVar();
-      });
-      hudResizeObserver.observe(hudShell || els.hud);
-      requestAnimationFrame(() => syncHudHeightVar());
-    } catch {
-      // ignore
-    }
-  }
-  installDprWatcher();
+  effectsRuntime = bootPreflight.effectsRuntime;
+  topMetricsTickTimer = bootPreflight.topMetricsTickTimer;
+  brandStripResizeObserver = bootPreflight.brandStripResizeObserver;
+  hudResizeObserver = bootPreflight.hudResizeObserver;
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      stopLarvaAnimator();
-      stopMotherGlitchLoop();
-    } else {
-      ensureLarvaAnimator();
-      startMotherGlitchLoop();
-    }
-    if (effectsRuntime) {
-      effectsRuntime.setSuspended(document.hidden || state.canvasMode !== "multi");
-    }
+  await runCanvasAppBootShellSetup({
+    documentObj: document,
+    ResizeObserverCtor: typeof ResizeObserver === "function" ? ResizeObserver : null,
+    dom: els,
+    state,
+    effectsRuntime,
+    stopLarvaAnimator,
+    stopMotherGlitchLoop,
+    ensureLarvaAnimator,
+    startMotherGlitchLoop,
+    ensureCanvasSize,
+    scheduleVisualPromptWrite,
+    requestRender,
+    ensureBootShellTab,
+    installCanvasHandlers,
+    installDnD,
+    installUi,
+    installJuggernautShellUi,
+    renderCommunicationChrome,
+    renderMotherMoodStatus,
+    setMotherMoodMenuOpen,
+    initializeFileBrowserDock,
+    enableFileBrowserDock: ENABLE_FILE_BROWSER_DOCK,
+    startSpawnTimer,
   });
 
-  new ResizeObserver(() => {
-    ensureCanvasSize();
-    scheduleVisualPromptWrite();
-    requestRender();
-  }).observe(els.canvasWrap);
-
-  ensureBootShellTab();
-  installCanvasHandlers();
-  installDnD();
-  installUi();
-  installJuggernautShellUi();
-  renderCommunicationChrome();
-  renderMotherMoodStatus();
-  setMotherMoodMenuOpen(false);
-  if (ENABLE_FILE_BROWSER_DOCK) {
-    await initializeFileBrowserDock();
-  }
-  startMotherGlitchLoop();
-  startSpawnTimer();
-
-  const handleEnginePtyExit = async ({ detail = null, useStaleGuard = true } = {}) => {
-    if (useStaleGuard) {
-      try {
-        const status = await readPtyStatus({ useCache: false });
-        if (status?.running) {
-          if (state.pendingPtyExit) {
-            state.pendingPtyExit = false;
-          }
-          console.info("[brood] ignored stale pty-exit while PTY remains running");
-          return;
-        }
-      } catch (_) {
-        // Best-effort stale-exit guard; fall back to existing handling if unavailable.
-      }
-    }
-
-    if (state.ptySpawning) {
-      state.pendingPtyExit = true;
-      console.info("[brood] deferred pty-exit while spawn is in progress");
-      return;
-    }
-    cachePtyStatus({ running: false, run_dir: null, events_path: null, detail });
-    state.pendingPtyExit = false;
-    state.desktopSessionBridgeActive = false;
-    setStatus(detail ? `Engine: exited (${detail})` : "Engine: exited", true);
-    state.ptySpawned = false;
-    resetDescribeQueue({ clearPending: true });
-    state.expectingArtifacts = false;
-    state.pendingBlend = null;
-    state.pendingSwapDna = null;
-    state.pendingBridge = null;
-    state.pendingExtractDna = null;
-    state.pendingSoulLeech = null;
-    state.pendingRecast = null;
-    state.pendingCreateLayers = null;
-    state.pendingPromptGenerate = null;
-    for (const [tokenId] of state.effectTokenApplyLocks.entries()) {
-      const token = state.effectTokensById.get(tokenId) || null;
-      if (token) recoverEffectTokenApply(token);
-    }
-    state.effectTokenApplyLocks.clear();
-    clearPendingReplace();
-    state.runningActionKey = null;
-    state.engineImageModelRestore = null;
-    setImageFxActive(false);
-    updatePortraitIdle();
-    setDirectorText(null, null);
-    renderQuickActions();
-  };
-
-  const handleDesktopSessionUpdate = async (payload = null) => {
-    const update = unwrapDesktopSessionUpdate(payload);
-    if (!update) return;
-    const activeRunDir = String(state.runDir || "").trim();
-    if (!activeRunDir || update.runDir !== activeRunDir) return;
-
-    activateDesktopSessionBridgeForActiveRun(update.runDir);
-
-    const launchMode = readFirstString(update.launch?.mode) || null;
-    const launchLabel = readFirstString(update.launch?.label) || null;
-    if (launchMode) state.engineLaunchMode = launchMode;
-    if (launchLabel) state.engineLaunchPath = launchLabel;
-
-    if (update.kind === DESKTOP_SESSION_UPDATE_KINDS.EVENT) {
-      if (update.event && typeof update.event === "object") {
-        await handleEvent(update.event);
-      }
-      return;
-    }
-
-    if (update.kind !== DESKTOP_SESSION_UPDATE_KINDS.STATUS) return;
-
-    const status = normalizePtyStatus(
-      {
-        contract: update.contract,
-        session: {
-          runDir: update.runDir,
-        },
-        runtime: update.runtime,
-        launch: update.launch,
-        detail: update.detail,
-      },
-      {
-        runDir: update.runDir,
-        eventsPath: state.eventsPath || null,
-      }
-    );
-    cachePtyStatus(status);
-    state.ptySpawned = Boolean(status.running);
-
-    if (!status.running && !state.ptySpawning) {
-      await handleEnginePtyExit({
-        detail: update.detail || status.detail || null,
-        useStaleGuard: false,
-      });
-    }
-  };
-
-  flushDeferredEnginePtyExit = async () => {
-    if (!state.pendingPtyExit || state.ptySpawning) return;
-    await handleEnginePtyExit();
-  };
-
-  await listen("pty-exit", async () => {
-    await handleEnginePtyExit();
+  await installCanvasAppBootRuntime({
+    listen,
+    desktopSessionUpdateEvent: DESKTOP_SESSION_UPDATE_EVENT,
+    state,
+    readPtyStatus,
+    cachePtyStatus,
+    setStatus,
+    resetDescribeQueue,
+    recoverEffectTokenApply,
+    clearPendingReplace,
+    setImageFxActive,
+    updatePortraitIdle,
+    setDirectorText,
+    renderQuickActions,
+    handleDesktopSessionBridgeUpdate,
+    handleDesktopAutomation,
+    handleNativeMenuAction,
+    setFlushDeferredEnginePtyExit(nextHandler) {
+      flushDeferredEnginePtyExit = nextHandler;
+    },
   });
 
-  await listen(DESKTOP_SESSION_UPDATE_EVENT, async (event) => {
-    await handleDesktopSessionBridgeUpdate(event);
+  await runCanvasAppBootReadySequence({
+    railIconPack: settings.railIconPack,
+    syncNativeIconographyMenu,
+    ensureRun,
+    installJuggernautShellBridge,
+    installBuiltInSingleImageRailIntegration,
+    renderQuickActions,
+    applyRuntimeChromeVisibility,
+    setTimeoutFn: setTimeout,
+    maybeAutoOpenOpenRouterOnboarding,
+    invokeFn: invoke,
+    requestRender,
   });
-
-  await listen("desktop-automation", (event) => {
-    console.log("[desktop-automation] listener hit", event);
-    void handleDesktopAutomation(event);
-  });
-
-  await listen("native-menu-action", (event) => {
-    const payload = event?.payload;
-    const action =
-      typeof payload === "string"
-        ? payload
-        : payload && typeof payload === "object"
-          ? String(payload.action || "").trim()
-          : "";
-    const nativeToolSlotIndex = parseNativeSlotIndex(action, "tools_slot_");
-    if (nativeToolSlotIndex >= 0) {
-      bumpInteraction();
-      void runWithUserError("Tool", () => runNativeToolSlot(nativeToolSlotIndex), {
-        retryHint: "Adjust the canvas state and retry.",
-      });
-      return;
-    }
-    const nativeShortcutSlotIndex = parseNativeSlotIndex(action, "shortcuts_slot_");
-    if (nativeShortcutSlotIndex >= 0) {
-      bumpInteraction();
-      void runWithUserError("Shortcut", () => runNativeShortcutSlot(nativeShortcutSlotIndex), {
-        retryHint: "Pick a visible image or selection and retry.",
-      });
-      return;
-    }
-    if (action.startsWith("settings_icon_pack:")) {
-      bumpInteraction();
-      applyRailIconPackSetting(action.slice("settings_icon_pack:".length), {
-        source: "native_menu",
-      });
-      return;
-    }
-    if (action === "new_session") {
-      bumpInteraction();
-      void runWithUserError("New session", () => createRun(), {
-        retryHint: "Check permissions and try again.",
-      });
-      return;
-    }
-    if (action === "open_session") {
-      bumpInteraction();
-      void runWithUserError("Open session", () => openExistingRun(), {
-        retryHint: "Choose a valid run folder and retry.",
-      });
-      return;
-    }
-    if (action === "save_session") {
-      bumpInteraction();
-      void runWithUserError("Save session", () => saveActiveSessionSnapshot({ source: "native_menu" }), {
-        retryHint: "Wait for the current action to settle and retry.",
-      });
-      return;
-    }
-    if (action === "close_session") {
-      bumpInteraction();
-      void runWithUserError("Close session", () => closeTab(state.activeTabId), {
-        retryHint: "Wait for the current action to finish and retry.",
-      });
-      return;
-    }
-    if (action === "export_session" || action === "export_psd") {
-      bumpInteraction();
-      void runWithUserError("Export session", () => requestJuggernautExport({ format: "psd", source: "native_menu" }), {
-        retryHint: juggernautExportRetryHint("psd"),
-      });
-      return;
-    }
-    if (action === "open_create_tool") {
-      bumpInteraction();
-      showCreateToolPanel();
-      return;
-    }
-    if (action === "import_photos") {
-      bumpInteraction();
-      runWithUserError("Import photos", () => importPhotos(), {
-        retryHint: "Choose supported image files and retry.",
-      });
-      return;
-    }
-    if (action === "open_settings") {
-      bumpInteraction();
-      els.settingsToggle?.click();
-    }
-  });
-
-  await syncNativeIconographyMenu(settings.railIconPack);
-
-  // Provision the visible boot tab with a real run as soon as the backend is ready.
-  await ensureRun();
-  installJuggernautShellBridge();
-  installBuiltInSingleImageRailIntegration();
-  applyRuntimeChromeVisibility({ source: "bridge_ready" });
-  setTimeout(() => {
-    maybeAutoOpenOpenRouterOnboarding();
-  }, 140);
-  await invoke("report_automation_frontend_ready", { ready: true }).catch((err) => {
-    console.warn("desktop automation readiness handshake failed", err);
-  });
-  requestRender();
 }
 
-bindCommunicationReviewBootstrapBridge();
-bindDesignReviewApplyRuntimeBridge();
-exposeJuggernautShellHooks();
-syncJuggernautShellState();
+function installLegacyCanvasAppBridges() {
+  bindCommunicationReviewBootstrapBridge();
+  bindDesignReviewApplyRuntimeBridge();
+  exposeJuggernautShellHooks();
+  syncJuggernautShellState();
+}
 
-boot().catch((err) => {
-  console.error(err);
-  setStatus(`Engine: boot failed (${err?.message || err})`, true);
+const { handleNativeMenuAction } = createCanvasAppNativeMenuActionBridge({
+  parseNativeSlotIndex,
+  bumpInteraction,
+  runWithUserError,
+  runNativeToolSlot,
+  runNativeShortcutSlot,
+  applyRailIconPackSetting,
+  createRun,
+  openExistingRun,
+  saveActiveSessionSnapshot,
+  closeTab,
+  getActiveTabId: () => state.activeTabId || null,
+  requestJuggernautExport,
+  juggernautExportRetryHint,
+  showCreateToolPanel,
+  importPhotos,
+  settingsToggleEl: els.settingsToggle,
 });
+
+function handleCanvasAppFatalBootError({ error }) {
+  console.error(error);
+  setStatus(`Engine: boot failed (${error?.message || error})`, true);
+}
+
+const canvasApp = createCanvasApp({
+  documentObj: document,
+  dom: els,
+  settingsStore: legacyCanvasAppSettingsStore,
+  installBridges: [installLegacyCanvasAppBridges],
+  onBoot: async () => {
+    await boot();
+  },
+  onFatalBootError: handleCanvasAppFatalBootError,
+});
+
+void canvasApp.boot().catch(() => {});

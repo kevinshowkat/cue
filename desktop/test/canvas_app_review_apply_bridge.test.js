@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
+const rendererPath = join(here, "..", "src", "app", "canvas_renderer.js");
 const app = readFileSync(appPath, "utf8");
+const rendererSource = readFileSync(rendererPath, "utf8");
 
 function extractFunctionSource(name) {
   const markers = [`async function ${name}(`, `function ${name}(`];
@@ -1086,7 +1088,7 @@ test("canvas runtime binds the unified review-apply lifecycle event", () => {
 test("review apply success animates the active images and dismisses the tray after replacement", () => {
   assert.match(app, /function shouldAnimateDesignReviewApplyShimmer\(\) \{/);
   assert.match(app, /function renderDesignReviewApplyShimmer\(octx\) \{/);
-  assert.match(app, /renderDesignReviewApplyShimmer\(octx\);/);
+  assert.match(rendererSource, /renderDesignReviewApplyShimmer\(octx\);/);
   assert.match(app, /dismissCommunicationProposalTrayAfterReviewApply\(\{\s*requestId: normalized\.requestId,/s);
   assert.match(app, /tray\.classList\.add\("is-dismissing"\);/);
   assert.match(app, /source: "review_apply_success"/);

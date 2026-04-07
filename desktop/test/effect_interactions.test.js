@@ -18,10 +18,16 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
+const rendererPath = join(here, "..", "src", "app", "canvas_renderer.js");
+const artifactEventsPath = join(here, "..", "src", "app", "event_handlers", "artifact_events.js");
+const diagnosticsEventsPath = join(here, "..", "src", "app", "event_handlers", "diagnostics_events.js");
 const runtimePath = join(here, "..", "src", "effects_runtime.js");
 const htmlPath = join(here, "..", "src", "index.html");
 const cssPath = join(here, "..", "src", "styles.css");
 const app = readFileSync(appPath, "utf8");
+const rendererSource = readFileSync(rendererPath, "utf8");
+const artifactEventsSource = readFileSync(artifactEventsPath, "utf8");
+const diagnosticsEventsSource = readFileSync(diagnosticsEventsPath, "utf8");
 const runtime = readFileSync(runtimePath, "utf8");
 const html = readFileSync(htmlPath, "utf8");
 const css = readFileSync(cssPath, "utf8");
@@ -33,10 +39,15 @@ test("pixi layer: dedicated transparent effects canvas sits between work and int
 });
 
 test("effects runtime wiring: initialized once, resized, and synced from render loop", () => {
-  assert.match(app, /effectsRuntime = createEffectsRuntime\(\{ canvas: els\.effectsCanvas \}\);/);
+  assert.match(app, /import \{ runCanvasAppBootPreflight \} from "\.\/app\/boot_preflight\.js"/);
+  assert.match(
+    app,
+    /const bootPreflight = runCanvasAppBootPreflight\(\{[\s\S]*createEffectsRuntime,[\s\S]*syncHudHeightVar,[\s\S]*installDprWatcher,[\s\S]*\}\);/s
+  );
+  assert.match(app, /effectsRuntime = bootPreflight\.effectsRuntime;/);
   assert.match(app, /effectsRuntime\.resize\(\{\s*width,\s*height,\s*dpr\s*\}\);/);
   assert.match(app, /function syncEffectsRuntimeScene\(\)/);
-  assert.match(app, /syncEffectsRuntimeScene\(\);\s*updateImageFxRect\(\);/);
+  assert.match(rendererSource, /syncEffectsRuntimeScene\(\);\s*updateImageFxRect\(\);/);
   assert.match(app, /function buildEffectsRuntimeScene\(\)/);
   assert.match(app, /const motherDrafting = buildMotherDraftingEffectsScene\(transform\);/);
   assert.match(app, /return \{ extracting, tokens, drag, motherDrafting \};/);
@@ -124,10 +135,13 @@ test("dna apply prompt preserves target subject shape and blocks literal helix t
 });
 
 test("effect token apply consumes token and removes extracted source image tile", () => {
-  assert.match(app, /if \(effectTokenId\) \{[\s\S]*const sourceImageId = String\(token\?\.sourceImageId \|\| pending\.source_image_id \|\| \"\"\)\.trim\(\);/);
-  assert.match(app, /if \(token\) \{[\s\S]*consumeEffectToken\(token\);/);
-  assert.match(app, /clearEffectTokenForImageId\(sourceImageId\);/);
-  assert.match(app, /await removeImageFromCanvas\(sourceImageId\)\.catch\(\(\) => \{\}\);/);
+  assert.match(
+    artifactEventsSource,
+    /if \(effectTokenId\) \{[\s\S]*const sourceImageId = String\(token\?\.sourceImageId \|\| pending\.source_image_id \|\| ""\)\.trim\(\);/
+  );
+  assert.match(artifactEventsSource, /if \(token\) \{[\s\S]*consumeEffectToken\(token\);/);
+  assert.match(artifactEventsSource, /clearEffectTokenForImageId\(sourceImageId\);/);
+  assert.match(artifactEventsSource, /await removeImageFromCanvas\(sourceImageId\)\.catch\(\(\) => \{\}\);/);
 });
 
 test("effect token apply early exits recover token lifecycle and clear lock", () => {
@@ -155,7 +169,7 @@ test("pending extraction state: duplicate source paths resolve per image slot", 
 
 test("extraction success events can resolve image id by path without pending ui slots", () => {
   assert.match(app, /function resolveExtractionEventImageIdByPath\(imagePath\)/);
-  assert.match(app, /const resolvedImageId = matchedImageId \|\| resolveExtractionEventImageIdByPath\(path\);/);
-  assert.match(app, /DESKTOP_EVENT_TYPES\.IMAGE_DNA_EXTRACTED/);
-  assert.match(app, /DESKTOP_EVENT_TYPES\.IMAGE_SOUL_EXTRACTED/);
+  assert.match(diagnosticsEventsSource, /const resolvedImageId = matchedImageId \|\| resolveExtractionEventImageIdByPath\(path\);/);
+  assert.match(diagnosticsEventsSource, /types\.IMAGE_DNA_EXTRACTED/);
+  assert.match(diagnosticsEventsSource, /types\.IMAGE_SOUL_EXTRACTED/);
 });

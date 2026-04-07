@@ -190,3 +190,35 @@ test("Timeline shelf CSS keeps a visible collapsed stub with an in-dock toggle",
   assert.match(css, /\.timeline-body\s*\{[\s\S]*display:\s*grid[\s\S]*gap:\s*6px/);
   assert.match(css, /\.timeline-shell\.is-collapsed \.timeline-body\s*\{[\s\S]*display:\s*none/);
 });
+
+const tabStripUi = readFileSync(join(here, "..", "src", "app", "tab_strip_ui.js"), "utf8");
+const tabRenameRuntime = readFileSync(join(here, "..", "src", "app", "tab_rename_runtime.js"), "utf8");
+
+test("tab strip ui module owns the titlebar tab DOM contract and inline rename shell", () => {
+  assert.match(tabStripUi, /export function createSessionTabStripUi\(/);
+  assert.match(tabStripUi, /renameShell\.className = "session-tab-rename-shell";/);
+  assert.match(tabStripUi, /input\.className = "session-tab-title-input";/);
+  assert.match(tabStripUi, /icon\.className = "session-tab-review-icon";/);
+  assert.match(tabStripUi, /indicator\.className = "session-tab-fork-indicator";/);
+  assert.match(tabStripUi, /shell\.className = "session-tab-placeholder-shell";/);
+  assert.match(tabStripUi, /hit\.setAttribute\("role", "tab"\);/);
+  assert.match(tabStripUi, /item\.dataset\.reviewFlowState = String\(summary\.reviewFlowState \|\| ""\);/);
+  assert.match(tabStripUi, /close\.className = "session-tab-close";/);
+  assert.match(tabStripUi, /renameRuntime\?\.focusSessionTabRenameInput\?\.\(\);/);
+});
+
+test("rename runtime module owns active-tab gating, width locking, commit behavior, and focus handoff", () => {
+  assert.match(tabRenameRuntime, /export function createSessionTabRenameRuntime\(/);
+  assert.match(tabRenameRuntime, /if \(normalizedTabId !== activeTabId\) return false;/);
+  assert.match(tabRenameRuntime, /const item = tabList\.querySelector\(`\.session-tab-item\[data-tab-id="\$\{escapeValue\(normalizedTabId\)\}"\]`\);/);
+  assert.match(tabRenameRuntime, /lockedWidth = Math\.ceil\(measured\);/);
+  assert.match(tabRenameRuntime, /record\.labelManual = true;/);
+  assert.match(tabRenameRuntime, /record\.labelManual = false;/);
+  assert.match(tabRenameRuntime, /updateTabMetadata\(normalizedTabId, \{ updatedAt: Date\.now\(\) \}\);/);
+  assert.match(
+    tabRenameRuntime,
+    /const selector = `\.session-tab-item\[data-tab-id="\$\{escapeValue\(state\.tabId\)\}"\] \.session-tab-title-input`;/s
+  );
+  assert.match(tabRenameRuntime, /input\.focus\(\);/);
+  assert.match(tabRenameRuntime, /input\.select\(\);/);
+});

@@ -6,24 +6,26 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = join(here, "..", "src", "canvas_app.js");
+const intentEventsPath = join(here, "..", "src", "app", "event_handlers", "intent_events.js");
 const app = readFileSync(appPath, "utf8");
+const intentEventsSource = readFileSync(intentEventsPath, "utf8");
 
 test("Mother realtime recovery: retry decision is wired before hard failure", () => {
-  assert.match(app, /nextMotherRealtimeIntentFailureAction\(\{/);
-  assert.match(app, /if \(retryDecision\.action === "retry"\) \{/);
-  assert.match(app, /const retried = await motherV2RetryRealtimeIntentTransport\(\{/);
-  assert.match(app, /if \(retried\) \{\s*setStatus\("Mother: retrying realtime intent…"\);[\s\S]*return;/);
+  assert.match(intentEventsSource, /nextMotherRealtimeIntentFailureAction\(\{/);
+  assert.match(intentEventsSource, /if \(retryDecision\.action === "retry"\) \{/);
+  assert.match(intentEventsSource, /const retried = await motherV2RetryRealtimeIntentTransport\(\{/);
+  assert.match(intentEventsSource, /if \(retried\) \{\s*setStatus\("Mother: retrying realtime intent…"\);[\s\S]*return;/);
   assert.match(
-    app,
-    /\(\{ motherIdleLatest: motherIdle, matchMotherLatest: matchMother, motherRequestIdLatest: motherRequestId \} =\s*resolveActiveMotherRealtimeFailureTarget\(\)\);[\s\S]*if \(!matchIntent && !matchAmbient && !matchMother\) return;/
+    intentEventsSource,
+    /\(\{\s*motherIdleLatest:\s*motherIdle,\s*matchMotherLatest:\s*matchMother,\s*motherRequestIdLatest:\s*motherRequestId,\s*\}\s*=\s*resolveActiveMotherRealtimeFailureTarget\(\)\);[\s\S]*if \(!matchIntent && !matchAmbient && !matchMother\) return;/
   );
   assert.match(app, /const workerTimeoutMs = Math\.max\(ms, MOTHER_V2_INTENT_RT_WORKER_TIMEOUT_MS\);/);
   assert.match(app, /elapsedMs \+ MOTHER_V2_INTENT_RT_TIMEOUT_DEFER_GRACE_MS < workerTimeoutMs/);
   assert.match(app, /kind:\s*"intent_realtime_retry_deferred"/);
   assert.match(app, /motherV2ArmRealtimeIntentTimeout\(\{ timeoutMs: deferMs \}\);/);
-  assert.match(app, /if \(retryDecision\.retryable && retryDecision\.action === "fail"\) \{/);
-  assert.match(app, /kind:\s*"intent_realtime_retry_exhausted"/);
-  assert.match(app, /motherIdleHandleGenerationFailed\(`Mother realtime intent failed\. \${msg}`\);/);
+  assert.match(intentEventsSource, /if \(retryDecision\.retryable && retryDecision\.action === "fail"\) \{/);
+  assert.match(intentEventsSource, /kind:\s*"intent_realtime_retry_exhausted"/);
+  assert.match(intentEventsSource, /motherIdleHandleGenerationFailed\(`Mother realtime intent failed\. \${msg}`\);/);
 });
 
 test("Mother realtime source kind recognizes provider tags as realtime", () => {
