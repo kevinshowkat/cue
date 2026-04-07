@@ -8,7 +8,7 @@ export function handleCanvasAppNativeMenuAction(
   return nativeMenuActionBridge.handleNativeMenuAction(event);
 }
 
-export async function installCanvasAppBootRuntime({
+export function installCanvasAppBootRuntime({
   listen,
   desktopSessionUpdateEvent,
   state,
@@ -125,11 +125,17 @@ export async function installCanvasAppBootRuntime({
     setFlushDeferredEnginePtyExit(flushDeferredEnginePtyExit);
   }
 
-  await listen("pty-exit", async () => {
+  const registerListener = (eventName, handler) => {
+    Promise.resolve(listen(eventName, handler)).catch((error) => {
+      consoleObj?.error?.(`Cue boot runtime failed to register ${eventName}:`, error);
+    });
+  };
+
+  registerListener("pty-exit", async () => {
     await handleEnginePtyExit();
   });
 
-  await listen(desktopSessionUpdateEvent, async (event) => {
+  registerListener(desktopSessionUpdateEvent, async (event) => {
     const bridgeUpdate = await handleDesktopSessionBridgeUpdate(event);
     const update = bridgeUpdate?.update && typeof bridgeUpdate.update === "object" ? bridgeUpdate.update : null;
     const status = bridgeUpdate?.status && typeof bridgeUpdate.status === "object" ? bridgeUpdate.status : null;
@@ -147,12 +153,12 @@ export async function installCanvasAppBootRuntime({
     }
   });
 
-  await listen("desktop-automation", (event) => {
+  registerListener("desktop-automation", (event) => {
     consoleObj.log("[desktop-automation] listener hit", event);
     void handleDesktopAutomation(event);
   });
 
-  await listen("native-menu-action", (event) => {
+  registerListener("native-menu-action", (event) => {
     nativeMenuActionHandler(event);
   });
 

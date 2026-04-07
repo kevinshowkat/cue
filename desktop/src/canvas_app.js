@@ -367,6 +367,7 @@ const COMMUNICATION_CANVAS_CURSOR_FORWARD_SHIFT_CSS = Object.freeze({ x: -10, y:
 const IMAGE_SELECTION_INACTIVE_STROKE = "rgba(118, 211, 255, 0.56)";
 const DEFAULT_UNTITLED_TAB_TITLE = "Untitled Canvas";
 const SESSION_TAB_TITLE_MAX_LENGTH = 40;
+const DEFAULT_TIP = "Click Studio White to replace the background. Use Lasso if you want a manual mask.";
 const SESSION_SNAPSHOT_FILENAME = "session.json";
 const LEGACY_SESSION_SNAPSHOT_FILENAME = "juggernaut-session.json";
 const CANVAS_IMAGE_PREPARING_LABEL = "Preparing image…";
@@ -3782,6 +3783,11 @@ const canvasAppTabSessionStateAdapter = createCanvasAppTabSessionStateAdapter({
   defaultTip: DEFAULT_TIP,
 });
 
+let canvasRendererRuntime = null;
+function requestCanvasRender(...args) {
+  return canvasRendererRuntime?.requestRender?.(...args);
+}
+
 const canvasAppTabActivationRuntime = createCanvasAppTabActivationRuntime({
   state,
   els,
@@ -3792,14 +3798,16 @@ const canvasAppTabActivationRuntime = createCanvasAppTabActivationRuntime({
   currentTabSwitchBlockReason,
   currentTabSwitchBlockMessage,
   showToast,
-  syncActiveTabPreviewRuntime,
+  syncActiveTabPreviewRuntime(...args) {
+    return canvasAppTabPreviewRuntime.syncActiveTabPreviewRuntime(...args);
+  },
   syncLocalMagicSelectUiPrewarmTargets,
   setRunInfo,
   setTip,
   setDirectorText,
   updateEmptyCanvasHint,
   syncTimelineDockVisibility,
-  requestRender,
+  requestRender: requestCanvasRender,
   releaseLocalMagicSelectUiPrewarmForTab,
   stopEventsPolling,
   resetDescribeQueue,
@@ -3852,7 +3860,7 @@ const canvasAppTabPreviewRuntime = createCanvasAppTabPreviewRuntime({
   shouldAnimateEffectVisuals,
   startPerfSample,
   finishPerfSample,
-  requestRender,
+  requestRender: requestCanvasRender,
   tabPreviewCaptureSettleMs: TAB_PREVIEW_CAPTURE_SETTLE_MS,
   tabPreviewMaxEdgePx: TAB_PREVIEW_MAX_EDGE_PX,
 });
@@ -3884,10 +3892,14 @@ const canvasAppTabLifecycleRuntime = createCanvasAppTabLifecycleRuntime({
   syncActiveTabRecord,
   bindTabSessionToState,
   createFreshTabSession,
-  syncActiveTabPreviewRuntime,
+  syncActiveTabPreviewRuntime(...args) {
+    return canvasAppTabPreviewRuntime.syncActiveTabPreviewRuntime(...args);
+  },
   publishActiveTabVisibleState,
   scheduleTabHydration,
-  disposeTabPreviewForTab,
+  disposeTabPreviewForTab(...args) {
+    return canvasAppTabPreviewRuntime.disposeTabPreviewForTab(...args);
+  },
   sessionTabDisplayLabel,
   createForkedTabSession,
   buildSessionTabForkLabel,
@@ -3983,7 +3995,6 @@ const canvasAppRunProvisioning = createCanvasAppRunProvisioning({
   loadExistingArtifacts,
 });
 
-const DEFAULT_TIP = "Click Studio White to replace the background. Use Lasso if you want a manual mask.";
 const VISUAL_PROMPT_FILENAME = "visual_prompt.json";
 const VISUAL_PROMPT_SCHEMA_VERSION = 1;
 const VISUAL_GRAMMAR_VERSION = "v0";
@@ -34890,11 +34901,11 @@ function quickActionsRenderSignature() {
 function renderQuickActions() {
   const nextKey = quickActionsRenderSignature();
   if (state.lastRenderedQuickActionsKey === nextKey) return false;
-  state.lastRenderedQuickActionsKey = nextKey;
   renderActionGrid();
   renderJuggernautShellChrome();
   renderCustomToolDock();
   renderAgentRunnerPanel();
+  state.lastRenderedQuickActionsKey = nextKey;
   return true;
 }
 
@@ -39067,7 +39078,7 @@ const desktopEventHandlerDeps = {
   consumeEffectToken,
   clearEffectTokenForImageId,
   removeImageFromCanvas,
-  requestRender,
+  requestRender: requestCanvasRender,
   recoverEffectTokenApply,
   seedPromptGeneratePlacementRectCss,
   addImage,
@@ -41667,7 +41678,7 @@ function renderReelTouchIndicator(octx, canvasW, canvasH) {
   if (now < visibleUntil || now < downUntil) requestRender();
 }
 
-const { requestRender, render } = createCanvasRenderer({
+canvasRendererRuntime = createCanvasRenderer({
   state,
   els,
   documentObj: typeof document !== "undefined" ? document : null,
@@ -41713,6 +41724,7 @@ const { requestRender, render } = createCanvasRenderer({
   hasEffectsRuntime: () => Boolean(effectsRuntime),
   shouldAnimateEffectVisuals,
 });
+const { requestRender, render } = canvasRendererRuntime;
 
 function startSpawnTimer() {
   clearInterval(state.spawnTimer);
@@ -45017,6 +45029,8 @@ async function boot() {
     enableFileBrowserDock: ENABLE_FILE_BROWSER_DOCK,
     startSpawnTimer,
   });
+  renderQuickActions();
+  requestRender({ reason: "boot_shell_quick_actions" });
 
   await installCanvasAppBootRuntime({
     listen,
