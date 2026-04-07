@@ -15,6 +15,11 @@ This folder holds the main public documentation for Cue.
 - [benchmark-playbook.md](benchmark-playbook.md)
 - [macos-local-private-image-editing.md](macos-local-private-image-editing.md)
 
+## Rewrite Planning
+
+- [rewrite-parity-matrix.md](rewrite-parity-matrix.md): live coordinator tracker for the active tab inventory, merge gates, dependency edges, blocker register, and parity signoff state
+- [runbooks/CODEX_REWRITE_WAVE.md](runbooks/CODEX_REWRITE_WAVE.md): ownership split, merge-order enforcement, blocker-escalation rules, and first-day wave checklist
+
 ## Feature Notes
 
 - [features/visual-timeline/README.md](features/visual-timeline/README.md)
