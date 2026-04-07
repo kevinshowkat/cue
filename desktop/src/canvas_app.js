@@ -3664,6 +3664,7 @@ sessionTabStripUi = createSessionTabStripUi({
     triggerCommunicationDesignReviewFromTitlebar({ source: "titlebar" });
   },
 });
+const { renderSessionTabStrip, installSessionTabStripUi } = sessionTabStripUi;
 const TAB_HYDRATION_IDLE_TIMEOUT_MS = 180;
 const TAB_PREVIEW_CAPTURE_SETTLE_MS = 120;
 const TAB_PREVIEW_MAX_EDGE_PX = 1280;
@@ -3857,6 +3858,16 @@ const canvasAppTabPreviewRuntime = createCanvasAppTabPreviewRuntime({
   tabPreviewCaptureSettleMs: TAB_PREVIEW_CAPTURE_SETTLE_MS,
   tabPreviewMaxEdgePx: TAB_PREVIEW_MAX_EDGE_PX,
 });
+const {
+  syncActiveTabPreviewRuntime,
+  clearPendingTabSwitchFullRender,
+  finishPendingTabSwitchFullRender,
+  getPendingTabSwitchFullRenderTabId,
+  invalidateActiveTabPreview,
+  scheduleActiveTabPreviewCapture,
+  renderPendingTabSwitchPreview,
+  disposeTabPreviewForTab,
+} = canvasAppTabPreviewRuntime;
 
 const canvasAppTabLifecycleRuntime = createCanvasAppTabLifecycleRuntime({
   state,
@@ -38494,38 +38505,6 @@ function finishPerfSample(sample, metricKey = null, detail = null) {
   return duration;
 }
 
-function syncActiveTabPreviewRuntime() {
-  return canvasAppTabPreviewRuntime.syncActiveTabPreviewRuntime();
-}
-
-function clearPendingTabSwitchFullRender({ stale = false } = {}) {
-  return canvasAppTabPreviewRuntime.clearPendingTabSwitchFullRender({ stale });
-}
-
-function finishPendingTabSwitchFullRender(detail = null) {
-  return canvasAppTabPreviewRuntime.finishPendingTabSwitchFullRender(detail);
-}
-
-function getPendingTabSwitchFullRenderTabId() {
-  return canvasAppTabPreviewRuntime.getPendingTabSwitchFullRenderTabId();
-}
-
-function invalidateActiveTabPreview(reason = "visual_mutation") {
-  return canvasAppTabPreviewRuntime.invalidateActiveTabPreview(reason);
-}
-
-function scheduleActiveTabPreviewCapture(reason = "stable_render") {
-  return canvasAppTabPreviewRuntime.scheduleActiveTabPreviewCapture(reason);
-}
-
-function renderPendingTabSwitchPreview() {
-  return canvasAppTabPreviewRuntime.renderPendingTabSwitchPreview();
-}
-
-function disposeTabPreviewForTab(tabId = state.activeTabId || null) {
-  return canvasAppTabPreviewRuntime.disposeTabPreviewForTab(tabId);
-}
-
 function normalizeSessionTabTitleInput(value = "", maxLen = SESSION_TAB_TITLE_MAX_LENGTH) {
   const compact = String(value || "").replace(/\s+/g, " ").trim();
   if (!compact) return "";
@@ -43590,14 +43569,6 @@ function buildSessionTabUiSummary(tab = null, totalTabs = 0) {
     showReviewSpinner,
     isRenaming: String(sessionTabRenameState.tabId || "").trim() === tabId,
   };
-}
-
-function renderSessionTabStrip(snapshot = null) {
-  return sessionTabStripUi.renderSessionTabStrip(snapshot);
-}
-
-function installSessionTabStripUi() {
-  return sessionTabStripUi.installSessionTabStripUi();
 }
 
 function buildRuntimeChromeMenuToggle({ id, menuKey, label, ariaLabel, title }) {
