@@ -10,12 +10,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(here, "..");
 const app = readFileSync(join(desktopRoot, "src", "canvas_app.js"), "utf8");
 const tabActivationRuntimeSource = readFileSync(join(desktopRoot, "src", "app", "tab_activation_runtime.js"), "utf8");
+const tabLifecycleRuntimeSource = readFileSync(join(desktopRoot, "src", "app", "tab_lifecycle_runtime.js"), "utf8");
 const bootShellSource = readFileSync(join(desktopRoot, "src", "app", "boot_shell.js"), "utf8");
 const bootReadySource = readFileSync(join(desktopRoot, "src", "app", "boot_ready.js"), "utf8");
 const engineRuntimeSource = readFileSync(join(desktopRoot, "src", "app", "engine_runtime.js"), "utf8");
 const runProvisioningSource = readFileSync(join(desktopRoot, "src", "app", "run_provisioning.js"), "utf8");
 const createRunSignature = "async function createRun({ announce = true, source = \"new_run\" } = {}) {";
-const ensureBootShellTabChunk = app.slice(app.indexOf("function ensureBootShellTab() {"), app.indexOf("function captureActiveTabSession("));
+const ensureBootShellTabChunk = extractFunctionSourceFromSource(tabLifecycleRuntimeSource, "ensureBootShellTab");
 const ensureRunChunk = extractFunctionSourceFromSource(runProvisioningSource, "ensureRun");
 const ensureEngineSpawnedChunk = extractFunctionSourceFromSource(engineRuntimeSource, "ensureEngineSpawned");
 const spawnEngineChunk = extractFunctionSourceFromSource(engineRuntimeSource, "spawnEngine");
@@ -188,9 +189,17 @@ test("boot creates the initial run without showing the new-tab toast", () => {
 });
 
 test("boot seeds a visible shell tab before the backend provisions the first run", () => {
-  assert.equal(app.includes("function ensureBootShellTab() {"), true);
+  assert.equal(app.includes("function ensureBootShellTab() {"), false);
+  assert.match(app, /const \{\s*ensureBootShellTab\s*\} = canvasAppTabLifecycleRuntime;/);
+  assert.equal(tabLifecycleRuntimeSource.includes("function ensureBootShellTab() {"), true);
   assert.equal(bootShellSource.includes("ensureBootShellTab();"), true);
-  assert.equal(ensureBootShellTabChunk.includes("if (tabbedSessions.tabsOrder.length) return"), true);
+  assert.equal(ensureBootShellTabChunk.includes("if (tabbedSessions.tabsOrder.length) {"), true);
+  assert.equal(
+    ensureBootShellTabChunk.includes(
+      "return tabbedSessions.getTab(tabbedSessions.activeTabId || tabbedSessions.tabsOrder[0]) || null;"
+    ),
+    true
+  );
   assert.equal(ensureBootShellTabChunk.includes("const session = createFreshTabSession();"), true);
   assert.equal(ensureBootShellTabChunk.includes("const label = tabLabelForRunDir(null, `Run ${tabbedSessions.tabsOrder.length + 1}`);"), true);
   assert.equal(ensureBootShellTabChunk.includes("runDir: null,"), true);

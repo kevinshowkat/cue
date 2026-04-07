@@ -21,6 +21,146 @@ function resolveSessionToolRegistry(getSessionToolRegistry) {
   return null;
 }
 
+export function readCanvasAppNativeMenuAction(payload = null) {
+  if (typeof payload === "string") return payload;
+  if (payload && typeof payload === "object") {
+    return String(payload.action || "").trim();
+  }
+  return "";
+}
+
+export function createCanvasAppNativeMenuActionBridge({
+  parseNativeSlotIndex: parseNativeSlotIndexFn = parseNativeSlotIndex,
+  bumpInteraction = null,
+  runWithUserError = null,
+  runNativeToolSlot = null,
+  runNativeShortcutSlot = null,
+  applyRailIconPackSetting = null,
+  createRun = null,
+  openExistingRun = null,
+  saveActiveSessionSnapshot = null,
+  closeTab = null,
+  getActiveTabId = () => null,
+  requestJuggernautExport = null,
+  juggernautExportRetryHint = () => "",
+  showCreateToolPanel = null,
+  importPhotos = null,
+  settingsToggleEl = null,
+} = {}) {
+  function bumpMenuInteraction() {
+    bumpInteraction?.();
+  }
+
+  function runGuardedAction(label, task, retryHint = "") {
+    bumpMenuInteraction();
+    const resolvedRetryHint = typeof retryHint === "function" ? retryHint() : retryHint;
+    if (typeof runWithUserError === "function") {
+      return runWithUserError(label, task, {
+        retryHint: resolvedRetryHint,
+      });
+    }
+    return task?.();
+  }
+
+  function dispatchNativeMenuAction(action = "") {
+    const normalizedAction = String(action || "").trim();
+    if (!normalizedAction) return false;
+
+    const nativeToolSlotIndex = parseNativeSlotIndexFn(normalizedAction, "tools_slot_");
+    if (nativeToolSlotIndex >= 0) {
+      void runGuardedAction("Tool", () => runNativeToolSlot?.(nativeToolSlotIndex), "Adjust the canvas state and retry.");
+      return true;
+    }
+
+    const nativeShortcutSlotIndex = parseNativeSlotIndexFn(normalizedAction, "shortcuts_slot_");
+    if (nativeShortcutSlotIndex >= 0) {
+      void runGuardedAction(
+        "Shortcut",
+        () => runNativeShortcutSlot?.(nativeShortcutSlotIndex),
+        "Pick a visible image or selection and retry."
+      );
+      return true;
+    }
+
+    if (normalizedAction.startsWith("settings_icon_pack:")) {
+      bumpMenuInteraction();
+      applyRailIconPackSetting?.(normalizedAction.slice("settings_icon_pack:".length), {
+        source: "native_menu",
+      });
+      return true;
+    }
+
+    if (normalizedAction === "new_session") {
+      void runGuardedAction("New session", () => createRun?.(), "Check permissions and try again.");
+      return true;
+    }
+
+    if (normalizedAction === "open_session") {
+      void runGuardedAction("Open session", () => openExistingRun?.(), "Choose a valid run folder and retry.");
+      return true;
+    }
+
+    if (normalizedAction === "save_session") {
+      void runGuardedAction(
+        "Save session",
+        () => saveActiveSessionSnapshot?.({ source: "native_menu" }),
+        "Wait for the current action to settle and retry."
+      );
+      return true;
+    }
+
+    if (normalizedAction === "close_session") {
+      void runGuardedAction(
+        "Close session",
+        () => closeTab?.(getActiveTabId()),
+        "Wait for the current action to finish and retry."
+      );
+      return true;
+    }
+
+    if (normalizedAction === "export_session" || normalizedAction === "export_psd") {
+      void runGuardedAction(
+        "Export session",
+        () => requestJuggernautExport?.({ format: "psd", source: "native_menu" }),
+        () => juggernautExportRetryHint("psd")
+      );
+      return true;
+    }
+
+    if (normalizedAction === "open_create_tool") {
+      bumpMenuInteraction();
+      showCreateToolPanel?.();
+      return true;
+    }
+
+    if (normalizedAction === "import_photos") {
+      void runGuardedAction(
+        "Import photos",
+        () => importPhotos?.(),
+        "Choose supported image files and retry."
+      );
+      return true;
+    }
+
+    if (normalizedAction === "open_settings") {
+      bumpMenuInteraction();
+      settingsToggleEl?.click?.();
+      return true;
+    }
+
+    return false;
+  }
+
+  function handleNativeMenuAction(event = null) {
+    return dispatchNativeMenuAction(readCanvasAppNativeMenuAction(event?.payload));
+  }
+
+  return Object.freeze({
+    dispatchNativeMenuAction,
+    handleNativeMenuAction,
+  });
+}
+
 export function parseNativeSlotIndex(action = "", prefix = "") {
   const normalized = String(action || "").trim();
   if (!normalized.startsWith(prefix)) return -1;

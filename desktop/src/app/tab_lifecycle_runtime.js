@@ -21,10 +21,40 @@ export function createCanvasAppTabLifecycleRuntime({
   createForkedTabSession,
   buildSessionTabForkLabel,
   createTabId,
+  tabLabelForRunDir = (_runDir, fallback) => fallback || "Untitled Canvas",
   normalizeTabUiMeta,
   activateTab,
   defaultUntitledTabTitle = "Untitled Canvas",
 } = {}) {
+  function ensureBootShellTab() {
+    if (tabbedSessions.tabsOrder.length) {
+      return tabbedSessions.getTab(tabbedSessions.activeTabId || tabbedSessions.tabsOrder[0]) || null;
+    }
+    const tabId = createTabId();
+    const session = createFreshTabSession();
+    const label = tabLabelForRunDir(null, `Run ${tabbedSessions.tabsOrder.length + 1}`);
+    const record = tabbedSessions.upsertTab(
+      {
+        tabId,
+        label,
+        runDir: null,
+        eventsPath: null,
+        session,
+        busy: false,
+        tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
+        thumbnailPath: session.tabUiMeta?.thumbnailPath || null,
+      },
+      { activate: true }
+    );
+    bindTabSessionToState(session);
+    publishActiveTabVisibleState({ reason: "boot_shell_tab" });
+    void scheduleTabHydration(tabId, "boot_shell_tab", {
+      spawnEngine: false,
+      engineFailureToast: false,
+    });
+    return record;
+  }
+
   async function closeTab(tabId) {
     const normalized = String(tabId || "").trim();
     const snapshot = getTabsSnapshot();
@@ -133,6 +163,7 @@ export function createCanvasAppTabLifecycleRuntime({
   }
 
   return Object.freeze({
+    ensureBootShellTab,
     closeTab,
     forkActiveTab,
   });

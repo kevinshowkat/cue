@@ -418,6 +418,48 @@ test("boot runtime ignores stale PTY exit events and clears deferred state witho
   });
 });
 
+test("boot runtime forwards native menu events to an injected action adapter", async () => {
+  const listeners = new Map();
+  const calls = [];
+
+  await installCanvasAppBootRuntime({
+    listen: async (eventName, handler) => {
+      listeners.set(eventName, handler);
+      return () => {};
+    },
+    desktopSessionUpdateEvent: "desktop-session-update",
+    state: {
+      effectTokenApplyLocks: new Map(),
+      effectTokensById: new Map(),
+    },
+    readPtyStatus: async () => ({ running: false }),
+    cachePtyStatus() {},
+    setStatus() {},
+    resetDescribeQueue() {},
+    recoverEffectTokenApply() {},
+    clearPendingReplace() {},
+    setImageFxActive() {},
+    updatePortraitIdle() {},
+    setDirectorText() {},
+    renderQuickActions() {},
+    handleDesktopSessionBridgeUpdate() {
+      return null;
+    },
+    handleDesktopAutomation() {},
+    handleNativeMenuAction(event) {
+      calls.push(event);
+    },
+    consoleObj: {
+      info() {},
+      log() {},
+    },
+  });
+
+  listeners.get("native-menu-action")({ payload: "open_settings" });
+
+  assert.deepEqual(calls, [{ payload: "open_settings" }]);
+});
+
 test("native menu action helper routes tool slots, settings, and exports through the existing runtime hooks", async () => {
   const calls = [];
   const settingsToggleEl = {

@@ -2,7 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { createNativeMenuRuntime } from "../src/app/native_menu_runtime.js";
+import {
+  createCanvasAppNativeMenuActionBridge,
+  createNativeMenuRuntime,
+} from "../src/app/native_menu_runtime.js";
 
 const bridgeSource = readFileSync(
   new URL("../src-tauri/src/main.rs", import.meta.url),
@@ -26,6 +29,67 @@ test("native system menu exposes a sync command for dynamic slot state", () => {
   assert.match(bridgeSource, /fn sync_native_menu_state\(/);
   assert.match(bridgeSource, /sync_native_menu_slots\(/);
   assert.match(bridgeSource, /sync_native_menu_state,/);
+});
+
+test("native menu action bridge routes host actions through explicit adapter hooks", () => {
+  const calls = [];
+  const settingsToggleEl = {
+    click() {
+      calls.push("settingsToggle.click");
+    },
+  };
+  const bridge = createCanvasAppNativeMenuActionBridge({
+    parseNativeSlotIndex(action, prefix) {
+      return action.startsWith(prefix) ? Number(action.slice(prefix.length)) : -1;
+    },
+    bumpInteraction() {
+      calls.push("bumpInteraction");
+    },
+    runWithUserError(label, task, options) {
+      calls.push({ type: "runWithUserError", label, options });
+      return task();
+    },
+    runNativeShortcutSlot(index) {
+      calls.push({ type: "runNativeShortcutSlot", index });
+      return true;
+    },
+    createRun() {
+      calls.push("createRun");
+      return true;
+    },
+    showCreateToolPanel() {
+      calls.push("showCreateToolPanel");
+      return true;
+    },
+    settingsToggleEl,
+  });
+
+  assert.equal(bridge.handleNativeMenuAction({ payload: "shortcuts_slot_2" }), true);
+  assert.equal(bridge.handleNativeMenuAction({ payload: "new_session" }), true);
+  assert.equal(bridge.handleNativeMenuAction({ payload: "open_create_tool" }), true);
+  assert.equal(bridge.handleNativeMenuAction({ payload: { action: "open_settings" } }), true);
+  assert.equal(bridge.handleNativeMenuAction({ payload: "unknown_action" }), false);
+
+  assert.deepEqual(calls, [
+    "bumpInteraction",
+    {
+      type: "runWithUserError",
+      label: "Shortcut",
+      options: { retryHint: "Pick a visible image or selection and retry." },
+    },
+    { type: "runNativeShortcutSlot", index: 2 },
+    "bumpInteraction",
+    {
+      type: "runWithUserError",
+      label: "New session",
+      options: { retryHint: "Check permissions and try again." },
+    },
+    "createRun",
+    "bumpInteraction",
+    "showCreateToolPanel",
+    "bumpInteraction",
+    "settingsToggle.click",
+  ]);
 });
 
 test("native tools menu mirrors the Bridge baseline and excludes Make Space before custom tools", async () => {

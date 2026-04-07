@@ -59,16 +59,7 @@ function createLifecycleHarness({
   activeTabId = "tab-a",
   renameState = { tabId: null, draft: "" },
   activateResult = { ok: true },
-} = {}) {
-  const calls = [];
-  const state = {
-    activeTabId,
-  };
-  let currentRenameState = {
-    tabId: renameState.tabId || null,
-    draft: renameState.draft || "",
-  };
-  const tabbedSessions = createTabbedSessionsHarness(state, [
+  initialTabs = [
     {
       tabId: "tab-a",
       label: "Tab A",
@@ -105,7 +96,17 @@ function createLifecycleHarness({
         },
       },
     },
-  ]);
+  ],
+} = {}) {
+  const calls = [];
+  const state = {
+    activeTabId,
+  };
+  let currentRenameState = {
+    tabId: renameState.tabId || null,
+    draft: renameState.draft || "",
+  };
+  const tabbedSessions = createTabbedSessionsHarness(state, initialTabs);
   tabbedSessions.activeTabId = activeTabId;
 
   const runtime = createCanvasAppTabLifecycleRuntime({
@@ -207,6 +208,10 @@ function createLifecycleHarness({
       calls.push({ type: "createTabId" });
       return "tab-new";
     },
+    tabLabelForRunDir(runDir, fallback) {
+      calls.push({ type: "tabLabelForRunDir", runDir, fallback });
+      return `label:${runDir}:${fallback}`;
+    },
     normalizeTabUiMeta(meta = null) {
       calls.push({ type: "normalizeTabUiMeta", meta });
       return meta ? { ...meta, normalized: true } : { normalized: true };
@@ -229,6 +234,93 @@ function createLifecycleHarness({
     runtime,
   };
 }
+
+test("tab lifecycle runtime boots an initial shell tab when the workspace is empty", () => {
+  const harness = createLifecycleHarness({
+    activeTabId: null,
+    initialTabs: [],
+  });
+
+  const result = harness.runtime.ensureBootShellTab();
+
+  assert.deepEqual(result, {
+    tabId: "tab-new",
+    label: "label:null:Run 1",
+    runDir: null,
+    eventsPath: null,
+    session: {
+      reviewFlowState: "idle",
+      tabUiMeta: {},
+    },
+    busy: false,
+    tabUiMeta: {
+      normalized: true,
+    },
+    thumbnailPath: null,
+  });
+  assert.equal(harness.state.activeTabId, "tab-new");
+  assert.equal(harness.tabbedSessions.activeTabId, "tab-new");
+  assert.deepEqual(harness.tabbedSessions.tabsOrder, ["tab-new"]);
+  assert.deepEqual(
+    harness.calls.filter((entry) => entry.type === "createTabId" || entry.type === "createFreshTabSession"),
+    [
+      { type: "createTabId" },
+      { type: "createFreshTabSession", seed: {} },
+    ]
+  );
+  assert.deepEqual(
+    harness.calls.find((entry) => entry.type === "tabLabelForRunDir"),
+    {
+      type: "tabLabelForRunDir",
+      runDir: null,
+      fallback: "Run 1",
+    }
+  );
+  assert.deepEqual(
+    harness.calls.find((entry) => entry.type === "bindTabSessionToState"),
+    {
+      type: "bindTabSessionToState",
+      session: {
+        reviewFlowState: "idle",
+        tabUiMeta: {},
+      },
+    }
+  );
+  assert.deepEqual(
+    harness.calls.find((entry) => entry.type === "publishActiveTabVisibleState"),
+    {
+      type: "publishActiveTabVisibleState",
+      options: {
+        reason: "boot_shell_tab",
+      },
+    }
+  );
+  assert.deepEqual(
+    harness.calls.find((entry) => entry.type === "scheduleTabHydration"),
+    {
+      type: "scheduleTabHydration",
+      tabId: "tab-new",
+      reason: "boot_shell_tab",
+      options: {
+        spawnEngine: false,
+        engineFailureToast: false,
+      },
+    }
+  );
+});
+
+test("tab lifecycle runtime leaves the current boot tab alone when one already exists", () => {
+  const harness = createLifecycleHarness();
+
+  const result = harness.runtime.ensureBootShellTab();
+
+  assert.deepEqual(result, harness.tabbedSessions.getTab("tab-a"));
+  assert.equal(harness.calls.some((entry) => entry.type === "createTabId"), false);
+  assert.equal(harness.calls.some((entry) => entry.type === "createFreshTabSession"), false);
+  assert.equal(harness.calls.some((entry) => entry.type === "bindTabSessionToState"), false);
+  assert.equal(harness.calls.some((entry) => entry.type === "publishActiveTabVisibleState"), false);
+  assert.equal(harness.calls.some((entry) => entry.type === "scheduleTabHydration"), false);
+});
 
 test("tab lifecycle runtime closes the active tab through the neighbor-preview handoff", async () => {
   const harness = createLifecycleHarness({

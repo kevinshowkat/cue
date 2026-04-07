@@ -126,19 +126,17 @@ import { rankSingleImageIntentJobs } from "./single_image_intent_ranking.js";
 import {
   nextMotherRealtimeIntentFailureAction,
 } from "./realtime_intent_recovery.js";
-import { createDesktopEventRouter } from "./app/event_router.js";
-import { createArtifactEventHandler } from "./app/event_handlers/artifact_events.js";
+import { createCanvasAppDesktopEventRouter } from "./app/event_router.js";
 import { installCanvasHandlers as installCanvasInputController } from "./app/canvas_input_controller.js";
-import { createDiagnosticsEventHandler } from "./app/event_handlers/diagnostics_events.js";
 import { installDnD as installCanvasDndController } from "./app/dnd_controller.js";
-import { createIntentEventHandler } from "./app/event_handlers/intent_events.js";
-import { createMotherEventHandler } from "./app/event_handlers/mother_events.js";
-import { createRecreateEventHandler } from "./app/event_handlers/recreate_events.js";
 import { POINTER_KINDS, isEffectTokenPath, isMotherRolePath } from "./canvas_handlers/pointer_paths.js";
 import { applyToolRuntimeRequest, installToolApplyBridge } from "./tool_apply_runtime.js";
 import { invokeDesignReviewProviderRequest } from "./design_review_backend.js";
 import { createDesignReviewProviderRouter } from "./design_review_provider_router.js";
-import { createNativeMenuRuntime } from "./app/native_menu_runtime.js";
+import {
+  createCanvasAppNativeMenuActionBridge,
+  createNativeMenuRuntime,
+} from "./app/native_menu_runtime.js";
 import { runCanvasAppBootPreflight } from "./app/boot_preflight.js";
 import { runCanvasAppBootReadySequence } from "./app/boot_ready.js";
 import { installCanvasAppBootRuntime } from "./app/boot_runtime.js";
@@ -3894,10 +3892,12 @@ const canvasAppTabLifecycleRuntime = createCanvasAppTabLifecycleRuntime({
   createForkedTabSession,
   buildSessionTabForkLabel,
   createTabId,
+  tabLabelForRunDir,
   normalizeTabUiMeta,
   activateTab,
   defaultUntitledTabTitle: DEFAULT_UNTITLED_TAB_TITLE,
 });
+const { ensureBootShellTab } = canvasAppTabLifecycleRuntime;
 
 const canvasAppSessionPersistence = createCanvasAppSessionPersistence({
   state,
@@ -38893,33 +38893,6 @@ function currentTabSwitchBlockMessage(reason = currentTabSwitchBlockReason()) {
   return "The current tab is busy.";
 }
 
-function ensureBootShellTab() {
-  if (tabbedSessions.tabsOrder.length) return tabbedSessions.getTab(tabbedSessions.activeTabId || tabbedSessions.tabsOrder[0]) || null;
-  const tabId = createTabId();
-  const session = createFreshTabSession();
-  const label = tabLabelForRunDir(null, `Run ${tabbedSessions.tabsOrder.length + 1}`);
-  const record = tabbedSessions.upsertTab(
-    {
-      tabId,
-      label,
-      runDir: null,
-      eventsPath: null,
-      session,
-      busy: false,
-      tabUiMeta: normalizeTabUiMeta(session.tabUiMeta),
-      thumbnailPath: session.tabUiMeta?.thumbnailPath || null,
-    },
-    { activate: true }
-  );
-  bindTabSessionToState(session);
-  publishActiveTabVisibleState({ reason: "boot_shell_tab" });
-  void scheduleTabHydration(tabId, "boot_shell_tab", {
-    spawnEngine: false,
-    engineFailureToast: false,
-  });
-  return record;
-}
-
 function captureActiveTabSession(session = null) {
   return canvasAppTabSessionStateAdapter.captureActiveTabSession(session);
 }
@@ -39185,17 +39158,14 @@ const desktopEventHandlerDeps = {
   setDirectorText,
 };
 
-const desktopEventRouter = createDesktopEventRouter(DESKTOP_EVENT_TYPES, {
+const desktopEventRouter = createCanvasAppDesktopEventRouter({
+  types: DESKTOP_EVENT_TYPES,
+  deps: desktopEventHandlerDeps,
   beforeHandleEvent(event, eventType) {
     if (eventType && eventType !== DESKTOP_EVENT_TYPES.ARTIFACT_CREATED) {
       topMetricIngestTokensFromPayload(event, { atMs: Date.now(), render: false });
     }
   },
-  onMotherEvent: createMotherEventHandler(desktopEventHandlerDeps),
-  onArtifactEvent: createArtifactEventHandler(desktopEventHandlerDeps),
-  onIntentEvent: createIntentEventHandler(desktopEventHandlerDeps),
-  onDiagnosticsEvent: createDiagnosticsEventHandler(desktopEventHandlerDeps),
-  onRecreateEvent: createRecreateEventHandler(desktopEventHandlerDeps),
 });
 
 function getDesktopEventHandlerMap() {
@@ -45092,21 +45062,7 @@ async function boot() {
     renderQuickActions,
     handleDesktopSessionBridgeUpdate,
     handleDesktopAutomation,
-    parseNativeSlotIndex,
-    bumpInteraction,
-    runWithUserError,
-    runNativeToolSlot,
-    runNativeShortcutSlot,
-    applyRailIconPackSetting,
-    createRun,
-    openExistingRun,
-    saveActiveSessionSnapshot,
-    closeTab,
-    requestJuggernautExport,
-    juggernautExportRetryHint,
-    showCreateToolPanel,
-    importPhotos,
-    settingsToggleEl: els.settingsToggle,
+    handleNativeMenuAction,
     setFlushDeferredEnginePtyExit(nextHandler) {
       flushDeferredEnginePtyExit = nextHandler;
     },
@@ -45133,6 +45089,25 @@ function installLegacyCanvasAppBridges() {
   exposeJuggernautShellHooks();
   syncJuggernautShellState();
 }
+
+const { handleNativeMenuAction } = createCanvasAppNativeMenuActionBridge({
+  parseNativeSlotIndex,
+  bumpInteraction,
+  runWithUserError,
+  runNativeToolSlot,
+  runNativeShortcutSlot,
+  applyRailIconPackSetting,
+  createRun,
+  openExistingRun,
+  saveActiveSessionSnapshot,
+  closeTab,
+  getActiveTabId: () => state.activeTabId || null,
+  requestJuggernautExport,
+  juggernautExportRetryHint,
+  showCreateToolPanel,
+  importPhotos,
+  settingsToggleEl: els.settingsToggle,
+});
 
 function handleCanvasAppFatalBootError({ error }) {
   console.error(error);

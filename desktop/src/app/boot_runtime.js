@@ -1,107 +1,11 @@
-function readNativeMenuAction(payload = null) {
-  if (typeof payload === "string") return payload;
-  if (payload && typeof payload === "object") {
-    return String(payload.action || "").trim();
-  }
-  return "";
-}
+import { createCanvasAppNativeMenuActionBridge } from "./native_menu_runtime.js";
 
 export function handleCanvasAppNativeMenuAction(
   event,
-  {
-    parseNativeSlotIndex,
-    bumpInteraction,
-    runWithUserError,
-    runNativeToolSlot,
-    runNativeShortcutSlot,
-    applyRailIconPackSetting,
-    createRun,
-    openExistingRun,
-    saveActiveSessionSnapshot,
-    closeTab,
-    getActiveTabId = () => null,
-    requestJuggernautExport,
-    juggernautExportRetryHint,
-    showCreateToolPanel,
-    importPhotos,
-    settingsToggleEl = null,
-  } = {}
+  deps = {}
 ) {
-  const action = readNativeMenuAction(event?.payload);
-  const nativeToolSlotIndex = parseNativeSlotIndex(action, "tools_slot_");
-  if (nativeToolSlotIndex >= 0) {
-    bumpInteraction();
-    void runWithUserError("Tool", () => runNativeToolSlot(nativeToolSlotIndex), {
-      retryHint: "Adjust the canvas state and retry.",
-    });
-    return;
-  }
-  const nativeShortcutSlotIndex = parseNativeSlotIndex(action, "shortcuts_slot_");
-  if (nativeShortcutSlotIndex >= 0) {
-    bumpInteraction();
-    void runWithUserError("Shortcut", () => runNativeShortcutSlot(nativeShortcutSlotIndex), {
-      retryHint: "Pick a visible image or selection and retry.",
-    });
-    return;
-  }
-  if (action.startsWith("settings_icon_pack:")) {
-    bumpInteraction();
-    applyRailIconPackSetting(action.slice("settings_icon_pack:".length), {
-      source: "native_menu",
-    });
-    return;
-  }
-  if (action === "new_session") {
-    bumpInteraction();
-    void runWithUserError("New session", () => createRun(), {
-      retryHint: "Check permissions and try again.",
-    });
-    return;
-  }
-  if (action === "open_session") {
-    bumpInteraction();
-    void runWithUserError("Open session", () => openExistingRun(), {
-      retryHint: "Choose a valid run folder and retry.",
-    });
-    return;
-  }
-  if (action === "save_session") {
-    bumpInteraction();
-    void runWithUserError("Save session", () => saveActiveSessionSnapshot({ source: "native_menu" }), {
-      retryHint: "Wait for the current action to settle and retry.",
-    });
-    return;
-  }
-  if (action === "close_session") {
-    bumpInteraction();
-    void runWithUserError("Close session", () => closeTab(getActiveTabId()), {
-      retryHint: "Wait for the current action to finish and retry.",
-    });
-    return;
-  }
-  if (action === "export_session" || action === "export_psd") {
-    bumpInteraction();
-    void runWithUserError("Export session", () => requestJuggernautExport({ format: "psd", source: "native_menu" }), {
-      retryHint: juggernautExportRetryHint("psd"),
-    });
-    return;
-  }
-  if (action === "open_create_tool") {
-    bumpInteraction();
-    showCreateToolPanel();
-    return;
-  }
-  if (action === "import_photos") {
-    bumpInteraction();
-    runWithUserError("Import photos", () => importPhotos(), {
-      retryHint: "Choose supported image files and retry.",
-    });
-    return;
-  }
-  if (action === "open_settings") {
-    bumpInteraction();
-    settingsToggleEl?.click?.();
-  }
+  const nativeMenuActionBridge = createCanvasAppNativeMenuActionBridge(deps);
+  return nativeMenuActionBridge.handleNativeMenuAction(event);
 }
 
 export async function installCanvasAppBootRuntime({
@@ -136,9 +40,32 @@ export async function installCanvasAppBootRuntime({
   importPhotos,
   settingsToggleEl = null,
   getActiveTabId = () => state?.activeTabId || null,
+  handleNativeMenuAction = null,
   setFlushDeferredEnginePtyExit = null,
   consoleObj = globalThis.console,
 } = {}) {
+  const nativeMenuActionHandler =
+    typeof handleNativeMenuAction === "function"
+      ? handleNativeMenuAction
+      : (event) =>
+          handleCanvasAppNativeMenuAction(event, {
+            parseNativeSlotIndex,
+            bumpInteraction,
+            runWithUserError,
+            runNativeToolSlot,
+            runNativeShortcutSlot,
+            applyRailIconPackSetting,
+            createRun,
+            openExistingRun,
+            saveActiveSessionSnapshot,
+            closeTab,
+            getActiveTabId,
+            requestJuggernautExport,
+            juggernautExportRetryHint,
+            showCreateToolPanel,
+            importPhotos,
+            settingsToggleEl,
+          });
   const handleEnginePtyExit = async ({ detail = null, useStaleGuard = true } = {}) => {
     if (useStaleGuard) {
       try {
@@ -226,24 +153,7 @@ export async function installCanvasAppBootRuntime({
   });
 
   await listen("native-menu-action", (event) => {
-    handleCanvasAppNativeMenuAction(event, {
-      parseNativeSlotIndex,
-      bumpInteraction,
-      runWithUserError,
-      runNativeToolSlot,
-      runNativeShortcutSlot,
-      applyRailIconPackSetting,
-      createRun,
-      openExistingRun,
-      saveActiveSessionSnapshot,
-      closeTab,
-      getActiveTabId,
-      requestJuggernautExport,
-      juggernautExportRetryHint,
-      showCreateToolPanel,
-      importPhotos,
-      settingsToggleEl,
-    });
+    nativeMenuActionHandler(event);
   });
 
   return {
