@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { createCanvasAppSettingsStore, loadCanvasAppSettings } from "../src/app/settings_store.js";
+import {
+  createCanvasAppSettingsStore,
+  createReadonlyCanvasAppSettingsStore,
+  loadCanvasAppSettings,
+} from "../src/app/settings_store.js";
 
 function createStorage(seed = {}) {
   const data = new Map(Object.entries(seed));
@@ -77,4 +81,20 @@ test("settings store: setters persist normalized values and notify subscribers",
   assert.equal(storage.getItem("brood.imageModel"), "gpt-image-1.5");
   assert.equal(storage.getItem("brood.imageModel.default.v2"), "1");
   assert.equal(seen.at(-1)?.imageModel, "gpt-image-1.5");
+});
+
+test("settings store: readonly settings adapters expose a stable snapshot store surface", () => {
+  const settings = {
+    railIconPack: "oscillo_ink",
+    promptStrategyMode: "tail",
+  };
+
+  const store = createReadonlyCanvasAppSettingsStore(settings);
+  const unsubscribe = store.subscribe(() => {
+    throw new Error("readonly settings stores should not emit");
+  });
+
+  assert.equal(store.getState(), settings);
+  assert.equal(typeof unsubscribe, "function");
+  assert.equal(unsubscribe(), undefined);
 });

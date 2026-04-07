@@ -1,5 +1,5 @@
 import { createCanvasAppDom, validateCanvasAppBootDom } from "./dom.js";
-import { createCanvasAppSettingsStore } from "./settings_store.js";
+import { createCanvasAppSettingsStore, createReadonlyCanvasAppSettingsStore } from "./settings_store.js";
 import { createCanvasAppStore } from "./store.js";
 
 function createInitialCanvasAppState(settings = {}) {
@@ -37,6 +37,24 @@ function setBootDomState(documentObj, phase, error = null) {
   }
 }
 
+function resolveCanvasAppSettingsStore({
+  providedSettingsStore = null,
+  storage = globalThis.localStorage,
+  settingsStoreFactory = createCanvasAppSettingsStore,
+  settingsOptions = {},
+} = {}) {
+  if (providedSettingsStore && typeof providedSettingsStore.getState === "function") {
+    return providedSettingsStore;
+  }
+  if (providedSettingsStore && typeof providedSettingsStore === "object") {
+    return createReadonlyCanvasAppSettingsStore(providedSettingsStore);
+  }
+  return settingsStoreFactory({
+    storage,
+    ...settingsOptions,
+  });
+}
+
 export function createCanvasApp({
   documentObj = globalThis.document,
   storage = globalThis.localStorage,
@@ -51,12 +69,12 @@ export function createCanvasApp({
   ...settingsOptions
 } = {}) {
   const dom = providedDom || domFactory(documentObj);
-  const settingsStore =
-    providedSettingsStore ||
-    settingsStoreFactory({
-      storage,
-      ...settingsOptions,
-    });
+  const settingsStore = resolveCanvasAppSettingsStore({
+    providedSettingsStore,
+    storage,
+    settingsStoreFactory,
+    settingsOptions,
+  });
   const store = storeFactory(createInitialCanvasAppState(settingsStore.getState()));
 
   if (typeof settingsStore?.subscribe === "function") {

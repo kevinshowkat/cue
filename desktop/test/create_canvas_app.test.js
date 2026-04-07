@@ -177,3 +177,27 @@ test("create canvas app: provided dom and settings store are used before boot ca
   assert.deepEqual(calls, ["bridge:provided-session-tab-list", "boot:provided-session-tab-list"]);
   assert.equal(app.store.getState().settings, settingsState);
 });
+
+test("create canvas app: raw settings snapshots are wrapped as readonly bootstrap stores", async () => {
+  const documentObj = createDocumentMock();
+  const settingsState = {
+    railIconPack: "oscillo_ink",
+    promptStrategyMode: "tail",
+  };
+  const seen = [];
+  const app = createCanvasApp({
+    documentObj,
+    settingsStore: settingsState,
+    onBoot({ settingsStore, store }) {
+      seen.push(settingsStore.getState());
+      seen.push(store.getState().settings);
+    },
+  });
+
+  await app.boot();
+
+  assert.equal(typeof app.settingsStore.getState, "function");
+  assert.equal(typeof app.settingsStore.subscribe, "function");
+  assert.equal(app.settingsStore.getState(), settingsState);
+  assert.deepEqual(seen, [settingsState, settingsState]);
+});

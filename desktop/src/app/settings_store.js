@@ -6,6 +6,7 @@ const RAIL_ICON_PACK_KEY = "juggernaut.railIconPack.v1";
 const PROMPT_STRATEGY_MODE_KEY = "brood.promptStrategyMode.v1";
 const PROMPT_REPEAT_FULL_KEY = "brood.promptRepeatFull.v1";
 const INSTALL_TELEMETRY_OPT_IN_KEY = "brood.installTelemetry.optIn.v1";
+const NOOP_UNSUBSCRIBE = () => {};
 
 function safeGetItem(storage, key) {
   try {
@@ -72,6 +73,18 @@ export function loadCanvasAppSettings({
     promptRepeatFull: safeGetItem(storage, PROMPT_REPEAT_FULL_KEY) === "1",
     installTelemetryOptIn: safeGetItem(storage, INSTALL_TELEMETRY_OPT_IN_KEY) === "1",
   };
+}
+
+export function createReadonlyCanvasAppSettingsStore(initialState = {}) {
+  const state = initialState && typeof initialState === "object" ? initialState : {};
+  return Object.freeze({
+    getState() {
+      return state;
+    },
+    subscribe() {
+      return NOOP_UNSUBSCRIBE;
+    },
+  });
 }
 
 export function createCanvasAppSettingsStore(options = {}) {
