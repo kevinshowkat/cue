@@ -5,36 +5,238 @@ export const TIMELINE_CAROUSEL_WHEEL_THRESHOLD_PX = 34;
 export const TIMELINE_CAROUSEL_CLICK_SUPPRESS_MS = 240;
 export const TIMELINE_CAROUSEL_EDGE_EPSILON_PX = 4;
 
+function timelinePathBaseName(path = "") {
+  const normalized = String(path || "").trim();
+  if (!normalized) return "";
+  const segments = normalized.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] || "";
+}
+
+function defaultTimelineActionKey(action = null, kind = null) {
+  const normalized = String(action || "").trim().toLowerCase();
+  if (normalized.includes("highlight") || normalized.includes("protect")) return "highlight";
+  if (normalized.includes("magic")) return "magic";
+  if (normalized.includes("erase region")) return "erase";
+  if (normalized.includes("erase mark")) return "erase";
+  if (normalized.includes("delete")) return "delete";
+  if (normalized.includes("annotate")) return "annotate";
+  if (normalized.includes("circle")) return "circle";
+  if (normalized.includes("resize")) return "resize";
+  if (normalized.includes("rotate")) return "rotate";
+  if (normalized.includes("skew")) return "skew";
+  if (normalized.includes("move")) return "move";
+  if (normalized.includes("mark")) return "mark";
+  if (normalized.includes("import") || normalized.includes("upload") || normalized.includes("add image")) return "import";
+  if (
+    normalized.includes("generate") ||
+    normalized.includes("recast") ||
+    normalized.includes("variation") ||
+    normalized.includes("review") ||
+    normalized.includes("bridge") ||
+    normalized.includes("combine") ||
+    normalized.includes("swap dna") ||
+    normalized.includes("subject isolation") ||
+    normalized.includes("cut out")
+  ) {
+    return "result";
+  }
+  if (kind === "image_result") return "result";
+  if (kind === "transform") return "move";
+  if (kind === "annotation") return "mark";
+  if (kind === "delete") return "delete";
+  return "state";
+}
+
+function defaultTimelineNodeLabel(node = null) {
+  if (!node) return "Timeline";
+  return (
+    String(node?.label || "").trim() ||
+    String(node?.action || "").trim() ||
+    timelinePathBaseName(node?.previewPath) ||
+    "State"
+  );
+}
+
+function defaultTimelineNodeSummary(node = null, labelFn = defaultTimelineNodeLabel) {
+  if (!node) return "Committed session history";
+  const action = String(node.action || "").trim();
+  const label = typeof labelFn === "function" ? labelFn(node) : defaultTimelineNodeLabel(node);
+  const imageCount = Array.isArray(node.imageIds) ? node.imageIds.length : 0;
+  const countText = imageCount ? `${imageCount} image${imageCount === 1 ? "" : "s"}` : "";
+  const canvasCountText = imageCount ? `${imageCount}-image` : "";
+  const targetLabel =
+    label && label !== action && label !== "State" && label !== "Timeline"
+      ? String(label).trim()
+      : "";
+  const normalizedAction = action.toLowerCase();
+  const singleCanvasContext = countText ? ` (${countText})` : "";
+  const multiCanvasContext = imageCount > 1 ? ` in a ${canvasCountText} canvas` : "";
+  const parentheticalCanvasContext = countText ? ` (${countText} on canvas)` : "";
+  const targetWithContext = targetLabel ? `${targetLabel}${multiCanvasContext}` : "";
+  if (normalizedAction === "import" || normalizedAction === "upload" || normalizedAction === "add image") {
+    if (targetLabel) return `Imported ${targetLabel}${singleCanvasContext}`;
+    if (countText) return `Imported an image${singleCanvasContext}`;
+    return "Imported an image";
+  }
+  if (normalizedAction === "mark") {
+    return targetWithContext ? `Marked ${targetWithContext}` : "Added a marker annotation";
+  }
+  if (normalizedAction === "highlight" || normalizedAction === "protect") {
+    return targetWithContext ? `Highlighted ${targetWithContext}` : "Added a highlight annotation";
+  }
+  if (normalizedAction === "magic select" || normalizedAction === "select" || normalizedAction === "select region") {
+    return targetWithContext ? `Selected a region on ${targetWithContext}` : "Selected a region";
+  }
+  if (normalizedAction === "erase") {
+    return targetWithContext ? `Erased part of ${targetWithContext}` : "Erased part of the image";
+  }
+  if (normalizedAction === "annotate") {
+    return targetWithContext ? `Annotated ${targetWithContext}` : "Added an annotation";
+  }
+  if (normalizedAction === "circle") {
+    return targetWithContext ? `Circled ${targetWithContext}` : "Circled a region";
+  }
+  if (normalizedAction === "delete" || normalizedAction === "remove") {
+    if (targetLabel && countText) return `Removed ${targetLabel}${parentheticalCanvasContext}`;
+    if (targetLabel) return `Removed ${targetLabel}`;
+    if (countText) return `Removed an image${singleCanvasContext}`;
+    return "Removed an image";
+  }
+  if (normalizedAction === "move") {
+    return targetWithContext ? `Moved ${targetWithContext}` : "Moved the selection";
+  }
+  if (normalizedAction === "resize") {
+    return targetWithContext ? `Resized ${targetWithContext}` : "Resized the selection";
+  }
+  if (normalizedAction === "rotate") {
+    return targetWithContext ? `Rotated ${targetWithContext}` : "Rotated the selection";
+  }
+  if (normalizedAction === "skew") {
+    return targetWithContext ? `Skewed ${targetWithContext}` : "Skewed the selection";
+  }
+  if (normalizedAction === "combine") {
+    return countText ? `Combined images${parentheticalCanvasContext}` : "Combined multiple images";
+  }
+  if (normalizedAction === "bridge") {
+    return countText ? `Bridged images${parentheticalCanvasContext}` : "Bridged multiple images";
+  }
+  if (normalizedAction === "triforce") {
+    return countText ? `Merged images${parentheticalCanvasContext}` : "Merged multiple images";
+  }
+  if (normalizedAction === "swap dna") {
+    return targetWithContext ? `Swapped the DNA of ${targetWithContext}` : "Swapped image DNA";
+  }
+  if (normalizedAction === "recast") {
+    return targetWithContext ? `Recast ${targetWithContext}` : "Recast the active image";
+  }
+  if (normalizedAction === "prompt generate") {
+    if (targetLabel) return `Generated ${targetLabel}${singleCanvasContext}`;
+    if (countText) return `Generated a new image${singleCanvasContext}`;
+    return "Generated a new image";
+  }
+  if (normalizedAction === "create layers") {
+    if (targetWithContext) return `Created layers for ${targetWithContext}`;
+    if (countText) return `Created layers${singleCanvasContext}`;
+    return "Created layers";
+  }
+  if (normalizedAction === "export") {
+    if (targetLabel) return `Exported ${targetLabel}${singleCanvasContext}`;
+    if (countText) return `Exported the canvas${singleCanvasContext}`;
+    return "Exported the canvas";
+  }
+  if (action) {
+    if (targetWithContext) return `Applied ${action} to ${targetWithContext}`;
+    if (countText) return `Applied ${action}${singleCanvasContext}`;
+    return `Applied ${action}`;
+  }
+  return targetLabel || countText || "Committed session history";
+}
+
+function defaultTimelineNodeAriaLabel(
+  node = null,
+  { current = false, future = false, historical = false } = {},
+  summaryFn = defaultTimelineNodeSummary
+) {
+  const pieces = [];
+  const summary = typeof summaryFn === "function" ? summaryFn(node) : defaultTimelineNodeSummary(node);
+  pieces.push(summary);
+  if (current) pieces.push("Current state");
+  else if (historical) pieces.push("Historical state");
+  else if (future) pieces.push("Future state");
+  return pieces.join(". ");
+}
+
+function defaultTimelineCardStateForNode(node = null, headNode = null) {
+  const headNodeId = String(headNode?.nodeId || "").trim() || null;
+  const headSeq = Math.max(0, Number(headNode?.seq) || 0);
+  const current = headNodeId === String(node?.nodeId || "").trim();
+  const future = !current && Math.max(0, Number(node?.seq) || 0) > headSeq;
+  const historical = !current && !future;
+  return {
+    current,
+    future,
+    historical,
+    inactive: !current,
+  };
+}
+
+function defaultTimelineNodeStructureKey(node = null) {
+  return [
+    node?.nodeId || "",
+    node?.seq || 0,
+    node?.kind || "",
+    node?.action || "",
+    node?.visualMode || "",
+    node?.label || "",
+    node?.detail || "",
+    node?.previewPath || "",
+    node?.previewImageId || "",
+    Array.isArray(node?.parents) ? node.parents.join(",") : "",
+    Array.isArray(node?.imageIds) ? node.imageIds.join(",") : "",
+    Array.isArray(node?.receiptPaths) ? node.receiptPaths.join(",") : "",
+    node?.createdAt || 0,
+  ].join(":");
+}
+
+function defaultTimelineStructureSignature(nodes = [], nodeStructureKey = defaultTimelineNodeStructureKey) {
+  const structureKeyForNode =
+    typeof nodeStructureKey === "function" ? nodeStructureKey : defaultTimelineNodeStructureKey;
+  return Array.from(Array.isArray(nodes) ? nodes : [])
+    .map((node) => structureKeyForNode(node))
+    .join("|");
+}
+
+function defaultTimelineViewSignature(headNode = null) {
+  return [String(headNode?.nodeId || "").trim(), Math.max(0, Number(headNode?.seq) || 0)].join(":");
+}
+
+export {
+  defaultTimelineActionKey as timelineActionKey,
+  defaultTimelineNodeLabel as timelineNodeLabel,
+  defaultTimelineNodeSummary as timelineNodeSummary,
+  defaultTimelineNodeAriaLabel as timelineNodeAriaLabel,
+  defaultTimelineCardStateForNode as timelineCardStateForNode,
+  defaultTimelineNodeStructureKey as timelineNodeStructureKey,
+  defaultTimelineStructureSignature as timelineStructureSignature,
+  defaultTimelineViewSignature as timelineViewSignature,
+};
+
 export function createTimelineUi({
   state = {},
   els = {},
   timelineSortedNodes = () => [],
   currentTimelineHeadNode = () => null,
   syncActiveTabRecord = () => {},
-  timelineNodeSummary = (node = null) => String(node?.label || node?.action || "State"),
-  timelineNodeLabel = (node = null) => String(node?.label || node?.action || "Timeline"),
-  timelineNodeAriaLabel = (node = null, { current = false, future = false, historical = false } = {}) => {
-    const pieces = [timelineNodeSummary(node)];
-    if (current) pieces.push("Current state");
-    else if (historical) pieces.push("Historical state");
-    else if (future) pieces.push("Future state");
-    return pieces.join(". ");
-  },
-  timelineCardStateForNode = () => ({
-    current: false,
-    future: false,
-    historical: false,
-    inactive: true,
-  }),
-  timelineActionKey = (action = "state") => String(action || "").trim().toLowerCase() || "state",
+  timelineNodeLabel = defaultTimelineNodeLabel,
+  timelineNodeSummary = (node = null) => defaultTimelineNodeSummary(node, timelineNodeLabel),
+  timelineNodeAriaLabel = (node = null, flags = {}) => defaultTimelineNodeAriaLabel(node, flags, timelineNodeSummary),
+  timelineCardStateForNode = defaultTimelineCardStateForNode,
+  timelineActionKey = defaultTimelineActionKey,
   timelineCardGlyphMarkup = () => "",
-  timelineNodeStructureKey = (node = null) => String(node?.nodeId || "").trim(),
+  timelineNodeStructureKey = defaultTimelineNodeStructureKey,
   timelineStructureSignature = (nodes = timelineSortedNodes()) =>
-    Array.from(Array.isArray(nodes) ? nodes : [])
-      .map((node) => timelineNodeStructureKey(node))
-      .join("|"),
-  timelineViewSignature = (headNode = currentTimelineHeadNode()) =>
-    [String(headNode?.nodeId || "").trim(), Math.max(0, Number(headNode?.seq) || 0)].join(":"),
+    defaultTimelineStructureSignature(nodes, timelineNodeStructureKey),
+  timelineViewSignature = (headNode = currentTimelineHeadNode()) => defaultTimelineViewSignature(headNode),
   THUMB_PLACEHOLDER_SRC = "",
   ensureImageUrl = async () => null,
   document: documentRef = globalThis.document,

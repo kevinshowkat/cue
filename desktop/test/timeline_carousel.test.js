@@ -1,51 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { createTimelineUi } from "../src/app/timeline_ui.js";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const appPath = join(here, "..", "src", "canvas_app.js");
-const app = readFileSync(appPath, "utf8");
-
-function extractFunctionSource(name) {
-  const markers = [`async function ${name}(`, `function ${name}(`];
-  const start = markers
-    .map((marker) => app.indexOf(marker))
-    .find((index) => index >= 0);
-  assert.notEqual(start, undefined, `Could not find function ${name}`);
-  const signatureStart = app.indexOf("(", start);
-  assert.notEqual(signatureStart, -1, `Could not find signature for ${name}`);
-  let parenDepth = 0;
-  let bodyStart = -1;
-  for (let index = signatureStart; index < app.length; index += 1) {
-    const char = app[index];
-    if (char === "(") parenDepth += 1;
-    if (char === ")") parenDepth -= 1;
-    if (parenDepth === 0 && char === "{") {
-      bodyStart = index;
-      break;
-    }
-  }
-  assert.notEqual(bodyStart, -1, `Could not find body for ${name}`);
-  let depth = 0;
-  for (let index = bodyStart; index < app.length; index += 1) {
-    const char = app[index];
-    if (char === "{") depth += 1;
-    if (char === "}") depth -= 1;
-    if (depth === 0) return app.slice(start, index + 1);
-  }
-  throw new Error(`Could not extract function ${name}`);
-}
-
-function instantiateFunction(name, deps = {}) {
-  const source = extractFunctionSource(name);
-  const keys = Object.keys(deps);
-  const values = Object.values(deps);
-  return new Function(...keys, `return (${source});`)(...values);
-}
+import {
+  createTimelineUi,
+  timelineActionKey,
+  timelineCardStateForNode,
+  timelineNodeAriaLabel,
+  timelineNodeSummary,
+} from "../src/app/timeline_ui.js";
 
 function createFakeClassList(initialValues = []) {
   const values = new Set(initialValues);
@@ -450,11 +412,13 @@ test("timeline detail text is empty when no head node exists", () => {
   assert.equal(ui.timelineDetailText(null), "");
 });
 
-test("timeline node summary renders import history as readable prose", () => {
-  const timelineNodeSummary = instantiateFunction("timelineNodeSummary", {
-    timelineNodeLabel: (node) => String(node?.label || node?.action || "State"),
-  });
+test("timeline module classifies result and transform actions for card glyphs", () => {
+  assert.equal(timelineActionKey("Prompt Generate"), "result");
+  assert.equal(timelineActionKey("Move"), "move");
+  assert.equal(timelineActionKey("", "annotation"), "mark");
+});
 
+test("timeline node summary renders import history as readable prose", () => {
   assert.equal(
     timelineNodeSummary({
       action: "Import",
@@ -466,10 +430,6 @@ test("timeline node summary renders import history as readable prose", () => {
 });
 
 test("timeline node summary treats canvas image counts as context for transforms", () => {
-  const timelineNodeSummary = instantiateFunction("timelineNodeSummary", {
-    timelineNodeLabel: (node) => String(node?.label || node?.action || "State"),
-  });
-
   assert.equal(
     timelineNodeSummary({
       action: "Move",
@@ -477,6 +437,32 @@ test("timeline node summary treats canvas image counts as context for transforms
       imageIds: ["img-1", "img-2", "img-3", "img-4"],
     }),
     "Moved squidward.jpeg in a 4-image canvas"
+  );
+});
+
+test("timeline module exposes current and future card state in its aria labels", () => {
+  const headNode = { nodeId: "tl-2", seq: 2, action: "Move", label: "B.png" };
+  const currentState = timelineCardStateForNode({ nodeId: "tl-2", seq: 2 }, headNode);
+  const futureState = timelineCardStateForNode({ nodeId: "tl-3", seq: 3 }, headNode);
+
+  assert.deepEqual(currentState, {
+    current: true,
+    future: false,
+    historical: false,
+    inactive: false,
+  });
+  assert.deepEqual(futureState, {
+    current: false,
+    future: true,
+    historical: false,
+    inactive: true,
+  });
+  assert.equal(
+    timelineNodeAriaLabel(
+      { action: "Move", label: "B.png", imageIds: ["img-1", "img-2"] },
+      { current: true }
+    ),
+    "Moved B.png in a 2-image canvas. Current state"
   );
 });
 
