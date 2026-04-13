@@ -11,6 +11,8 @@ This folder holds the main public documentation for Cue.
 ## Technical Reference
 
 - [canvas-app-rewrite-prd.md](canvas-app-rewrite-prd.md): from-scratch desktop canvas runtime rewrite plan
+- [extensibility-and-orchestration-prd.md](extensibility-and-orchestration-prd.md): platform plan for Cue registries, packs, jobs, and batch orchestration
+- [game-dev-assets-prd.md](game-dev-assets-prd.md): vertical product plan for Cue's `game_dev_assets` branch, workflow packs, verification, and batch asset production
 - [local-magic-select-runtime.md](local-magic-select-runtime.md): local weights-backed Magic Select setup and runtime contract
 - [psd-export-slice.md](psd-export-slice.md)
 - [benchmark-playbook.md](benchmark-playbook.md)
